@@ -14,8 +14,6 @@ import path from "node:path";
 import { assetStoreConfigured, ensureFile, saveFile } from "./assetStore.js";
 import { signedMediaUrl } from "./vpsMedia.js";
 import { buildRenderArgs, overlayConcatList, renderDuration } from "./vibeEditRender.js";
-import { chatPrompt, sanitizeActions, summarizeProject } from "../src/utils/vibeEditActions.js";
-import { SOUND_PRESETS } from "../src/utils/vibeSound.js";
 import { hyperframesAvailable, hyperframesKit, renderHyperframesProject } from "./hyperframesRenderer.js";
 import { normalizeOverlay, OVERLAY_FONTS, OVERLAY_KINDS, overlayTemplate } from "../src/utils/videoOverlays.js";
 import { downloadStockClip, generateStockSearchTerms, searchStockVideos, stockCredit, stockFootageCapability } from "./stockFootage.js";
@@ -478,31 +476,6 @@ async function transcribe(userId, body) {
   return { text: String(result?.text || "").trim(), words };
 }
 
-// ---------- Chat ----------
-async function chat(userId, body) {
-  const project = checkProject(body?.project);
-  const message = String(body?.message || "").trim();
-  if (!message) throw fail("Say what you'd like to change");
-  if (!deps.generateJson) throw fail("The assistant isn't available on this server", 503);
-  const voices = (Array.isArray(body?.voices) ? body.voices : []).map((v) => String(v).slice(0, 60)).filter(Boolean).slice(0, 60);
-  const summary = summarizeProject(project, {
-    playhead: Number(body?.playhead) || 0,
-    ...(body?.selection ? { selected: body.selection } : {}),
-  });
-  const prompt = chatPrompt({
-    summary,
-    message,
-    history: Array.isArray(body?.history) ? body.history : [],
-    voices,
-    presets: SOUND_PRESETS.map((p) => `${p.id} (${p.character})`),
-  });
-  const result = await deps.generateJson(prompt, { maxTokens: 6000, timeoutMs: 90000, requiredAnyKeys: ["reply", "actions"] });
-  return {
-    reply: String(result?.reply || "Done.").slice(0, 1200),
-    actions: sanitizeActions(result?.actions),
-  };
-}
-
 // ---------- B-roll ----------
 // Stock footage for spoken moments: the model turns each line into search
 // terms, the first fitting clip is fetched and cut down to the moment, and the
@@ -668,10 +641,6 @@ export function registerVibeEdit(app) {
 
   app.post("/api/vibe-edit/voiceover", route(async (req, res, userId) => {
     res.json(await voiceover(userId, req.body));
-  }));
-
-  app.post("/api/vibe-edit/chat", route(async (req, res, userId) => {
-    res.json(await chat(userId, req.body));
   }));
 
   app.post("/api/vibe-edit/motion", route(async (req, res, userId) => {

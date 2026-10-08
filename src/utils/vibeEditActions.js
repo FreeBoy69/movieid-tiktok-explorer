@@ -79,24 +79,3 @@ export function summarizeProject(project, extra = {}) {
     ...extra,
   };
 }
-
-export function chatPrompt({ summary, message, history = [], voices = [], presets = [] }) {
-  const actions = Object.entries(VIBE_ACTIONS).map(([name, spec]) => `- ${name} ${spec.args}: ${spec.about}`).join("\n");
-  const past = history.slice(-8).map((m) => `${m.role === "user" ? "User" : "You"}: ${String(m.text).slice(0, 600)}`).join("\n");
-  return `You are the editing assistant inside Vibe Edit, a browser video editor. The user describes what they want; you answer briefly and emit edit actions the editor runs in order.
-
-Timeline rules: times are seconds. Video clips sit on tracks (0 = base sequence, higher tracks composite in front). Sound sits on audio lanes. A clip plays source seconds in..out starting at timeline "start". Captions are word-timed cues. Use ids exactly as given. To refer to an item created earlier in the same reply you cannot know its id, so prefer one action per new item and adjust later turns.
-
-Actions:
-${actions}
-
-Voices: ${voices.slice(0, 40).join(", ") || "default"}
-Voice presets (for update_item preset): ${presets.join(", ")}
-
-Project:
-${JSON.stringify(summary)}
-${past ? `\nConversation so far:\n${past}\n` : ""}
-User: ${String(message).slice(0, 2000)}
-
-Reply with JSON only: {"reply": "one or two plain sentences saying what you did or asking one question", "actions": [{"type": "<action>", "args": {...}}]}. Use no actions when you only need to answer or ask. Never invent asset ids; generate or ask for media instead.`;
-}

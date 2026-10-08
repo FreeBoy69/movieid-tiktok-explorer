@@ -126,12 +126,11 @@ export interface VoiceoverResult {
 export const synthesizeVoiceover = (body: { voiceId: string; lines: { id: string; text: string; at?: number }[]; direction?: string; language?: string; gap?: number }) =>
   post<VoiceoverResult>("/api/vibe-edit/voiceover", body, "Couldn't voice that script");
 
+/** One edit the editor runs: an action name from VIBE_ACTIONS and its arguments. */
 export interface ChatAction {
   type: string;
   args: Record<string, unknown>;
 }
-export const askAssistant = (body: { project: VibeProject; message: string; history: { role: string; text: string }[]; playhead: number; selection?: string[]; voices: string[] }) =>
-  post<{ reply: string; actions: ChatAction[] }>("/api/vibe-edit/chat", body, "The assistant couldn't answer. Try again.");
 
 export interface RenderJob {
   id: string;

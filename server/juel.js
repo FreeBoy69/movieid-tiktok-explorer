@@ -394,7 +394,6 @@ export const JUEL_EXCLUDED = {
   "POST /api/studio/agents/chats": "the old agent chat: Juel is the agent now",
   "POST /api/tiktok/comments/cache": "worker push endpoint",
   "POST /api/tools/thumbnail": "binary file download",
-  "POST /api/vibe-edit/chat": "the old agent chat: Juel is the agent now",
   "POST /api/youtube/videos/upload": "needs a raw video file in the request body",
   "POST /internal/exec/:id/cancel": "internal worker endpoint",
   "POST /internal/exec/:id/finish": "internal worker endpoint",

@@ -12,6 +12,7 @@ import { deleteProject, getRender, listProjects, loadProject, saveProject, start
 import { getVoices, runActions, setVoices } from "./commands";
 import { JuelPanel, provideJuelContext, type JuelPageTools } from "../JuelPanel";
 import { summarizeProject, VIBE_ACTIONS } from "../../utils/vibeEditActions";
+import { SOUND_PRESETS } from "../../utils/vibeSound.js";
 import { renderOverlayFrames } from "./overlay";
 import { Inspector, PANELS, PanelBody, uploadFiles, type PanelId } from "./Panels";
 import { Preview } from "./Preview";
@@ -430,6 +431,9 @@ const JUEL_EDITS: JuelPageTools = {
   specialist: "editor",
   actions: Object.fromEntries(Object.entries(VIBE_ACTIONS).map(([type, a]) => [type, { args: a.args, about: a.about, risk: PAID_EDITS.has(type) ? "paid" : "change" }])),
 };
+// What the edit actions mean, for the editor specialist (it reads these with the project summary).
+const JUEL_PRESETS = SOUND_PRESETS.map((p) => `${p.id} (${p.character})`);
+const JUEL_TIMELINE_RULES = "Times are seconds. Video clips sit on tracks (0 = base sequence, higher tracks composite in front); sound sits on audio lanes. A clip plays source seconds in..out starting at timeline start. Captions are word-timed cues. Use ids exactly as given; never invent asset ids (generate or ask for media). voicePresets are the values for update_item preset.";
 
 function Editor({ onBack, onOpenEdit, onNew }: { onBack: () => void; onOpenEdit: (id: string) => void; onNew: () => void }) {
   const name = useVibe((s) => s.project.name);
@@ -438,7 +442,7 @@ function Editor({ onBack, onOpenEdit, onNew }: { onBack: () => void; onOpenEdit:
   useEffect(() => {
     const stop = provideJuelContext(() => {
       const project = vibe.get().project;
-      return { surface: "editor", entityId: project.id, label: `Vibe Edit · ${project.name || "untitled"}`, details: summarizeProject(project, { playhead: vibe.get().playhead, selection: vibe.get().selection, voices: getVoices().map((v) => v.name).slice(0, 40) }), clientTools: JUEL_EDITS };
+      return { surface: "editor", entityId: project.id, label: `Vibe Edit · ${project.name || "untitled"}`, details: summarizeProject(project, { playhead: vibe.get().playhead, selection: vibe.get().selection, voices: getVoices().map((v) => v.name).slice(0, 40), voicePresets: JUEL_PRESETS, rules: JUEL_TIMELINE_RULES }), clientTools: JUEL_EDITS };
     });
     const onActions = (event: Event) => {
       const { surface, actions } = (event as CustomEvent<{ surface: string; actions: Array<{ type: string; args: Record<string, unknown> }> }>).detail || {};
