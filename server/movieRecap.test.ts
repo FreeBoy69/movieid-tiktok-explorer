@@ -455,6 +455,26 @@ describe("opening teaser and line stretches", () => {
   });
 });
 
+describe("picture treatment", () => {
+  it("freezes every sixth cut past the opening, never in black and white, and not when switched off", async () => {
+    const { freezeCuts } = await import("./movieRecap.js");
+    const cuts = Array.from({ length: 30 }, (_, i) => ({ start: i * 10, end: i * 10 + 3, duration: 3, ...(i === 12 ? { bw: true } : {}) }));
+    const frozen = freezeCuts(cuts, { pan: true }).map((cut: any, i: number) => (cut.freeze ? i : -1)).filter((i: number) => i >= 0);
+    // 6, then 12 is black and white so 13, then 19, 25.
+    expect(frozen).toEqual([6, 13, 19, 25]);
+    expect(freezeCuts(cuts, { pan: false }).some((cut: any) => cut.freeze)).toBe(false);
+  });
+
+  it("keeps the screen size between 0 and 30%, 10% unless set", async () => {
+    const { zoomPercent } = await import("./movieRecap.js");
+    expect(zoomPercent(undefined)).toBe(10);
+    expect(zoomPercent(45)).toBe(30);
+    expect(zoomPercent(-3)).toBe(0);
+    expect(zoomPercent("12.4")).toBe(12);
+    expect(zoomPercent(null, 0)).toBe(0);
+  });
+});
+
 describe("title card", () => {
   it("reads the film's title off frames with on-screen text in its opening", async () => {
     const { readScreenTitle } = await import("./movieRecap.js");

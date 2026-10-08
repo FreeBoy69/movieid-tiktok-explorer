@@ -1680,3 +1680,8 @@
 .mr-modal .mt-note { margin: 0; color: rgba(244, 241, 232, 0.55); font-size: 12px; }
 .mr-modal .mr-icon-btn { display: grid; place-items: center; width: 30px; height: 30px; border: 0; border-radius: 8px; background: transparent; color: inherit; cursor: pointer; }
 .mr-modal .mr-icon-btn:hover { background: rgba(255, 255, 255, 0.08); }
+
+/* Storyboard: the screen size slider, label and value on one line above it. */
+.mr-zoom { display: grid; gap: 6px; }
+.mr-zoom-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; font-size: 13px; }
+.mr-zoom-head output { color: var(--cs-faint); font-variant-numeric: tabular-nums; font-size: 12.5px; }

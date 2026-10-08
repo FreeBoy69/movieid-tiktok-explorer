@@ -637,8 +637,18 @@ def subs_blur(source):
 
 def cut_filter(transforms, width, height, short, seed, cut=None, luma=None):
     rng = random.Random(seed)
-    # Content ID matched Mutiny's 6-10% zoom easily; the channel standard asks for a much larger picture.
-    zoom = 1.0 + (rng.uniform(0.12, 0.18) if transforms.get("zoom", True) else 0.0)
+    # Screen size: the storyboard's slider sets the zoom (0-30%, 10% by default; recaps from before the
+    # slider use 10% when their zoom switch is on). Each cut varies it by up to 1.5% so the picture isn't
+    # scaled by one constant factor.
+    pct = transforms.get("zoomPct")
+    if not isinstance(pct, (int, float)):
+        pct = 10 if transforms.get("zoom", True) else 0
+    pct = min(30.0, max(0.0, float(pct)))
+    zoom = 1.0 + max(0.0, pct + (rng.uniform(-1.5, 1.5) if pct else 0.0)) / 100
+    # "Freeze and zoom shots" (a switch, on by default): the zoomed window pans across every clip, and the
+    # cuts the plan marks hold their first frame and push in on it.
+    pan = transforms.get("pan", True)
+    freeze = pan and bool((cut or {}).get("freeze"))
     # A cut close in the film to the one before it is mirrored (the plan marks it), on top of the global switch.
     mirror = bool(transforms.get("mirror")) != bool((cut or {}).get("flip"))
     lift = lift_filter(luma)
@@ -661,7 +671,16 @@ def cut_filter(transforms, width, height, short, seed, cut=None, luma=None):
                 f"[a]scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height},gblur=sigma=28,eq=brightness=-0.18[bg];"
                 f"[b]{inner}[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1[v]")
     chain += [f"scale={width}:{height}:force_original_aspect_ratio=increase", f"crop={width}:{height}"]
-    if zoom > 1:
+    if freeze:
+        # One frame held for the whole cut, pushed in from the clip's zoom by a further 10% (rendered at
+        # twice the size first, so zoompan's whole-pixel steps don't shimmer).
+        frames = max(1, int(round(max(0.5, float((cut or {}).get("duration") or 3)) * 30)))
+        chain = [f"trim=end_frame=1,loop=loop=-1:size=1:start=0,setpts=N/30/TB"] + chain
+        chain += [f"scale={width * 2}:{height * 2}",
+                  f"zoompan=z='{max(zoom, 1.0):.3f}+0.10*on/{frames}':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={width}x{height}:fps=30"]
+    elif zoom > 1 and not pan:
+        chain += [f"crop=iw/{zoom:.3f}:ih/{zoom:.3f}", f"scale={width}:{height}"]
+    elif zoom > 1:
         # The zoomed window drifts across the frame over the clip (a slow pan, the standard's "freeze and
         # zoom"), so no frame of the recap lines up with a frame of the film: a static crop fingerprints like
         # the original.

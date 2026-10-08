@@ -4,7 +4,8 @@ import { narrationWpm } from "../../utils/recapSteps";
 export type RecapFormat = "long" | "short";
 export type RecapTone = "dramatic" | "suspense" | "funny" | "calm";
 export type RecapPace = "natural" | "brisk" | "fast";
-export type RecapTransforms = { zoom: boolean; color: boolean; mirror: boolean; speed: boolean };
+/** zoomPct: the screen size (0-30% zoom, 10% unless set); pan: freeze and zoom shots (on unless false). */
+export type RecapTransforms = { zoom: boolean; color: boolean; mirror: boolean; speed: boolean; zoomPct?: number; pan?: boolean };
 export type RecapBeat = { id: string; text: string; from: number; to: number; shots: number[] ; /** The intro line, played over a quick montage of the best shots. */ teaser?: boolean };
 export type RecapScript = {
   title: string;
@@ -218,7 +219,7 @@ async function act(id: string, action: "render" | "retry" | "cancel" | "back", b
   );
   return data.recap;
 }
-export const renderRecap = (id: string, voiceId?: string, captions?: boolean) => act(id, "render", { voiceId, captions });
+export const renderRecap = (id: string, voiceId?: string, captions?: boolean, transforms?: { zoomPct: number; pan: boolean }) => act(id, "render", { voiceId, captions, transforms });
 export const retryRecap = (id: string, voiceId?: string) => act(id, "retry", voiceId ? { voiceId } : undefined);
 export const cancelRecap = (id: string) => act(id, "cancel");
 /** Stops a render and reopens the script and its settings. */

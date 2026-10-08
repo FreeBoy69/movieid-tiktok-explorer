@@ -1239,6 +1239,21 @@ function wordsPerCut(beat, cuts) {
   });
 }
 
+// Editing standard ("freeze and zoom some shots"): every sixth cut holds its first frame and pushes in,
+// past the opening's first cuts, never in black and white, never two in a row.
+export function freezeCuts(cuts, transforms = {}) {
+  if (transforms.pan === false) return cuts;
+  let last = -10;
+  return cuts.map((cut, i) => {
+    if (i < 6 || i - last < 6 || cut.bw) return cut;
+    last = i;
+    return { ...cut, freeze: true };
+  });
+}
+
+/** The screen size (zoom) a recap's footage plays at: 0-30%, 10% unless set. */
+export const zoomPercent = (value, fallback = 10) => (Number.isFinite(Number(value)) && value !== null && value !== "" ? Math.min(30, Math.max(0, Math.round(Number(value)))) : fallback);
+
 // Editing standard: when two cuts in a row sit close together in the film, mirror the second so the
 // pair doesn't read as one continuous stretch (never two mirrored in a row).
 const CLOSE_CUTS = 8;
@@ -1286,7 +1301,7 @@ export function buildRecapPlan(project, analysis, matches = {}) {
     });
     const graphic = (cut) => (analysis.graphicTimes || []).some((t) => t > cut.start - 1.5 && t < cut.end + 1.5);
     formats[format] = {
-      cuts: mirrorCloseCuts(planned.cuts.map(({ start, end, duration }) => ({ start, end, duration, ...(graphic({ start, end }) ? { bw: true } : {}) }))),
+      cuts: freezeCuts(mirrorCloseCuts(planned.cuts.map(({ start, end, duration }) => ({ start, end, duration, ...(graphic({ start, end }) ? { bw: true } : {}) }))), project.options.transforms),
       audioFiles: beats.map((beat) => beat.audio),
       pause: PAUSE,
       captions: captionLines(beats, PAUSE, format === "short" ? { maxWords: 2, maxChars: 14 } : { maxWords: 7, maxChars: 44 }),
@@ -2825,7 +2840,7 @@ export function registerMovieRecap(app) {
         graphics: body.graphics !== false,
         language: clip(body.language, 40),
         captions: body.captions !== false,
-        transforms: { zoom: transforms.zoom !== false, color: transforms.color !== false, mirror: transforms.mirror === true, speed: transforms.speed === true },
+        transforms: { zoom: transforms.zoom !== false, zoomPct: zoomPercent(transforms.zoomPct, transforms.zoom === false ? 0 : 10), pan: transforms.pan !== false, color: transforms.color !== false, mirror: transforms.mirror === true, speed: transforms.speed === true },
       },
       remote: {},
       createdAt: now,
@@ -2985,8 +3000,13 @@ export function registerMovieRecap(app) {
       if (deps.voiceAllowed && !(await deps.voiceAllowed(userId, req.body.voiceId))) throw fail("That voice isn't available. Pick another voice.", 403);
       project.options.voiceId = clip(req.body.voiceId, 200);
     }
-    // Captions can be switched on or off from the storyboard, right before rendering.
+    // Captions, the screen size, and freeze and zoom are set from the storyboard, right before rendering.
     if (typeof req.body?.captions === "boolean") project.options.captions = req.body.captions;
+    const look = req.body?.transforms;
+    if (look && typeof look === "object") {
+      const current = project.options.transforms || {};
+      project.options.transforms = { ...current, ...(look.zoomPct !== undefined ? { zoomPct: zoomPercent(look.zoomPct, current.zoomPct ?? 10) } : {}), ...(typeof look.pan === "boolean" ? { pan: look.pan } : {}) };
+    }
     await save(userId, project, { stage: "voicing", status: "queued", error: "", message: "Queued", progress: 0.75, remote: { ...project.remote, renderStarted: false } });
     start(userId, project.id);
     res.status(202).json({ recap: summary(project) });

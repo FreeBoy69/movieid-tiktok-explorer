@@ -644,7 +644,7 @@ function RecapView({ id, onBack, onError }: { id: string; onBack: () => void; on
         }
       />
       {recap.status === "review" && recap.script ? (
-        <ScriptReview recap={recap} onChange={setRecap} onRender={(voiceId, captions) => act(() => renderRecap(recap.id, voiceId, captions))} onError={onError} />
+        <ScriptReview recap={recap} onChange={setRecap} onRender={(voiceId, captions, look) => act(() => renderRecap(recap.id, voiceId, captions, look))} onError={onError} />
       ) : recap.status === "done" ? (
         <Finished recap={recap} onRerender={() => void act(() => renderRecap(recap.id))} onChange={setRecap} onError={onError} />
       ) : recap.status === "failed" || recap.status === "cancelled" ? (
@@ -923,12 +923,15 @@ function beatShots(beat: RecapBeat, shotEvery: number, total: number, count = 4)
   return Array.from({ length: count }, (_, i) => Math.min(total - 1, Math.round(first + ((last - first) * i) / Math.max(1, count - 1))));
 }
 
-function ScriptReview({ recap, onChange, onRender, onError }: { recap: Recap; onChange: (recap: Recap) => void; onRender: (voiceId: string, captions: boolean) => Promise<void>; onError: (message: string) => void }) {
+function ScriptReview({ recap, onChange, onRender, onError }: { recap: Recap; onChange: (recap: Recap) => void; onRender: (voiceId: string, captions: boolean, look: { zoomPct: number; pan: boolean }) => Promise<void>; onError: (message: string) => void }) {
   const [script, setScript] = useState<RecapScript>(recap.script as RecapScript);
   const [format, setFormat] = useState<RecapFormat>(recap.options.formats[0]);
   const [saveState, setSaveState] = useState<"saved" | "saving" | "dirty">("saved");
   const [voiceId, setVoiceId] = useState(recap.options.voiceId);
   const [captions, setCaptions] = useState(recap.options.captions !== false);
+  // The picture's treatment, set here right before rendering: screen size (zoom) and freeze and zoom shots.
+  const [zoomPct, setZoomPct] = useState(recap.options.transforms.zoomPct ?? (recap.options.transforms.zoom === false ? 0 : 10));
+  const [pan, setPan] = useState(recap.options.transforms.pan !== false);
   const [naming, setNaming] = useState(false);
   const [introBusy, setIntroBusy] = useState(false);
   const hasIntro = Boolean(script.long?.beats.some((beat) => beat.teaser));
@@ -1024,7 +1027,7 @@ function ScriptReview({ recap, onChange, onRender, onError }: { recap: Recap; on
     setRendering(true);
     try {
       if (saveState !== "saved") onChange(await saveScript(recap.id, script));
-      await onRender(voiceId, captions);
+      await onRender(voiceId, captions, { zoomPct, pan });
     } catch (err) {
       onError(err instanceof Error ? err.message : "Couldn't save the script");
     } finally {
@@ -1104,6 +1107,15 @@ function ScriptReview({ recap, onChange, onRender, onError }: { recap: Recap; on
         </div>
         <div className="mr-side-block">
           <Switch on={captions} onChange={setCaptions} label="Captions on the video" />
+          <label className="mr-zoom">
+            <span className="mr-zoom-head">
+              <span>Screen size</span>
+              <output>{zoomPct ? `+${zoomPct}%` : "Off"}</output>
+            </span>
+            <input type="range" className="mr-range" min={0} max={30} step={1} value={zoomPct} onChange={(event) => setZoomPct(Number(event.target.value))} aria-label="Screen size: how far the footage is zoomed in" />
+          </label>
+          <Switch on={pan} onChange={setPan} label="Freeze and zoom shots" />
+          <p className="mt-note">A bigger picture, slow pans, and the odd frozen push-in keep the footage from matching the film frame for frame.</p>
           {recap.options.formats.includes("long") ? (
             <>
               <Switch on={hasIntro} onChange={(on) => { if (!introBusy) void toggleIntro(on); }} label="Intro: a teaser over quick cuts of the best shots" />
@@ -1122,7 +1134,7 @@ function ScriptReview({ recap, onChange, onRender, onError }: { recap: Recap; on
         </div>
         <div className="mr-side-block mr-side-rules">
           <ShieldCheck size={16} aria-hidden="true" />
-          <p>2 to 4 second cuts, film skipped between every cut, the film's audio removed{recap.options.transforms.zoom ? ", zoomed with a slow pan" : ""}{recap.options.transforms.color ? ", color and hue shift" : ""}{recap.options.transforms.mirror ? ", mirrored" : ""}.</p>
+          <p>2 to 4 second cuts, film skipped between every cut, the film's audio removed{zoomPct ? `, ${zoomPct}% larger` : ""}{pan ? ", slow pans and freeze-zooms" : ""}{recap.options.transforms.color ? ", color and hue shift" : ""}{recap.options.transforms.mirror ? ", mirrored" : ""}.</p>
         </div>
         <button type="button" className="mt-primary mr-render" disabled={rendering || beats.some((beat) => !beat.text.trim())} onClick={() => void render()}>
           {rendering ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <Clapperboard size={16} aria-hidden="true" />}
