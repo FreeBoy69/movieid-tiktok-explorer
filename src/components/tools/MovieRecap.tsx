@@ -31,6 +31,7 @@ import {
 import "./MovieRecap.css";
 import { YouTubePublishFields } from "../YouTubePublishForm";
 import { FileDrop } from "../FileDrop";
+import { socialPlatform } from "../SocialPlatforms";
 
 const TONES: Array<{ id: RecapTone; label: string }> = [
   { id: "dramatic", label: "Dramatic" },
@@ -1333,7 +1334,7 @@ function PostPanel({ recap, format, onChange, onError }: { recap: Recap; format:
         title="Post to a channel"
         loading={!channels}
         emptyText="No channels are connected. Connect one from the channel menu at the top."
-        items={(channels || []).map((c) => ({ value: c.id, label: c.title, imageUrl: c.thumbnail || undefined, kind: "channel" as const, platform: c.platform, meta: `${c.platform === "tiktok" ? "TikTok" : c.platform === "youtube" ? "YouTube" : c.platform}${c.handle ? ` · ${c.handle}` : ""}` }))}
+        items={(channels || []).map((c) => ({ value: c.id, label: c.title, imageUrl: c.thumbnail || undefined, kind: "channel" as const, platform: c.platform, meta: `${socialPlatform(c.platform)?.label || c.platform}${c.handle ? ` · ${c.handle}` : ""}` }))}
         onChoose={(item) => void pick(item.value)}
       />
       {open && accountId ? createPortal(

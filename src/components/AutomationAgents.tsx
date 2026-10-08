@@ -90,6 +90,7 @@ import {
 } from "../utils/agentCreateJourney";
 import { announceBackgroundProcess } from "../utils/backgroundProcesses";
 import { toast, useErrorToast } from "../utils/toast";
+import { connectHref, PlatformGrid, PlatformIcon, socialPlatform } from "./SocialPlatforms";
 import { CompilationStudio } from "./CompilationStudio";
 import { openBackgroundProcessCenter } from "./BackgroundProcessCenter";
 import { agentUploadMedia, buildAgentAnalyticsViz, readAgentUploadMetric } from "../utils/agentAnalyticsViz";
@@ -208,16 +209,6 @@ const PRIMARY_TAB_COUNT = 5;
 
 type SetupSectionId = "essentials" | "format" | "sources" | "socials" | "learning" | "comments" | "compilations" | "rights";
 
-const SOCIAL_DESTINATIONS = [
-  { id: "youtube", label: "YouTube", icon: <Youtube className="h-4 w-4" />, iconClass: "bg-[#FF0000]/10 text-[#D60000]" },
-  { id: "tiktok", label: "TikTok", icon: <Music2 className="h-4 w-4" />, iconClass: "bg-[#1A1A1A]/10 text-[#1A1A1A]" },
-  { id: "instagram", label: "Instagram", icon: <Instagram className="h-4 w-4" />, iconClass: "bg-[#E1306C]/12 text-[#C13584]" },
-  { id: "facebook", label: "Facebook", icon: <Facebook className="h-4 w-4" />, iconClass: "bg-[#1877F2]/12 text-[#1877F2]" },
-  { id: "snapchat", label: "Snapchat", icon: <Ghost className="h-4 w-4" />, iconClass: "bg-[#FFFC00]/80 text-[#1A1A1A]" },
-  { id: "pinterest", label: "Pinterest", icon: <Pin className="h-4 w-4" />, iconClass: "bg-[#E60023]/10 text-[#E60023]" },
-  { id: "twitter", label: "X", icon: <Twitter className="h-4 w-4" />, iconClass: "bg-[#1A1A1A]/10 text-[#1A1A1A]" },
-  { id: "linkedin", label: "LinkedIn", icon: <Linkedin className="h-4 w-4" />, iconClass: "bg-[#0A66C2]/10 text-[#0A66C2]" },
-] as const;
 
 /** Maps the legacy setup sub-tab (used by deep links and overview shortcuts) to the section it now lives in. */
 const SETUP_SUBTAB_SECTION: Record<SetupSubTab, SetupSectionId> = {
@@ -3668,7 +3659,13 @@ function SetupPanel({
   const essentialsSummary = "Required setup";
   const socialTargetCount = socialTargets.filter((target) => target?.enabled !== false).length + youtubeTargets.length + 1;
   const socialSummary = `${socialTargetCount} active`;
-  const openedDestination = SOCIAL_DESTINATIONS.find((destination) => destination.id === openDestination) || null;
+  const openedDestination = (openDestination && socialPlatform(openDestination)) || null;
+  const destinationCount = (id: string) => {
+    const connected = accounts.filter((account) => String(account.platform || "youtube").toLowerCase() === id);
+    return id === "youtube"
+      ? connected.filter((account) => account.id === form.youtubeAccountId || youtubeTargets.some((target) => target.accountId === account.id)).length
+      : connected.filter((account) => socialTargets.some((target) => target.platform === id && target.accountId === account.id && target.enabled !== false)).length;
+  };
   const learningSummary = `${form.settings.adaptiveStrategyEnabled !== false ? "Adaptive" : "Fixed"} · ${form.settings.performanceCheckHours || 3}h checks`;
   const learnedHours = Array.isArray(learning?.profile?.bestHours) ? learning.profile.bestHours.filter((row: any) => Number(row?.uploads || 0) > 0).slice(0, 3) : [];
   const learningConfidence = Math.round(Number(learning?.confidence || 0) * 100);
@@ -3937,29 +3934,21 @@ function SetupPanel({
           </SetupSection>
 
           <SetupSection id="socials" icon={<Share2 className="h-4 w-4" />} title="Publish destinations" summary={socialSummary} open={openSections.has("socials")} onToggle={() => toggleSection("socials")} theme={theme}>
-            <div className="agent-social-grid">
-              {SOCIAL_DESTINATIONS.map((destination) => {
-                const connected = accounts.filter((account) => String(account.platform || "youtube").toLowerCase() === destination.id);
-                const activeCount = destination.id === "youtube"
-                  ? connected.filter((account) => account.id === form.youtubeAccountId || youtubeTargets.some((target) => target.accountId === account.id)).length
-                  : connected.filter((account) => socialTargets.some((target) => target.platform === destination.id && target.accountId === account.id && target.enabled !== false)).length;
-                return (
-                  <button key={destination.id} type="button" onClick={() => setOpenDestination(destination.id)} className={cn("agent-social-card agent-social-card-button", activeCount > 0 && "agent-social-card-selected", tokens.surfaceSoft)}>
-                    <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-xl", destination.iconClass)}>
-                      {destination.icon}
-                    </span>
-                    <span className={cn("mt-2 block max-w-full truncate text-xs font-black", tokens.text)}>{destination.label}</span>
-                  </button>
-                );
-              })}
-            </div>
+            <PlatformGrid
+              layout="row"
+              label="Publish destinations"
+              className={tokens.text}
+              onSelect={(id) => setOpenDestination(id)}
+              selected={(id) => destinationCount(id) > 0}
+              note={(id) => (destinationCount(id) ? `${destinationCount(id)} on` : null)}
+            />
             {openedDestination ? createPortal(
               <div className="agent-social-modal-layer">
                 <button type="button" className="agent-social-modal-backdrop" aria-label="Close destination picker" onClick={() => setOpenDestination(null)} />
                 <section className={cn("agent-social-modal", tokens.isDark ? "text-[#F8F5E8]" : "text-[#1A1A1A]")} role="dialog" aria-modal="true" aria-label={`${openedDestination.label} publishing accounts`}>
                   <header className="agent-social-modal-header">
                     <div className="flex min-w-0 items-center gap-3">
-                      <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-xl", openedDestination.iconClass)}>{openedDestination.icon}</span>
+                      <PlatformIcon id={openedDestination.id} />
                       <div className="min-w-0">
                         <h3 className="truncate text-base font-black">{openedDestination.label}</h3>
                         <p className={cn("mt-0.5 text-xs font-semibold", tokens.muted)}>Choose where this agent can publish.</p>
@@ -3978,7 +3967,7 @@ function SetupPanel({
                           : socialTargets.some((target) => target.platform === openedDestination.id && target.accountId === account.id && target.enabled !== false));
                         return (
                           <button key={account.id} type="button" role="switch" aria-checked={active} disabled={isPrimary} onClick={() => openedDestination.id === "youtube" ? toggleYoutubeTarget(account.id) : toggleSocialTarget(openedDestination.id, account.id)} className={cn("agent-social-account", active && "agent-social-account-active", isPrimary && "cursor-default", tokens.text)}>
-                            {account.thumbnailUrl ? <img src={account.thumbnailUrl} alt="" className="h-9 w-9 rounded-full object-cover" referrerPolicy="no-referrer" /> : <span className="grid h-9 w-9 place-items-center rounded-full bg-[#f9dc0b] text-[#1A1A1A]">{openedDestination.icon}</span>}
+                            {account.thumbnailUrl ? <img src={account.thumbnailUrl} alt="" className="h-9 w-9 rounded-full object-cover" referrerPolicy="no-referrer" /> : <span className="grid h-9 w-9 place-items-center rounded-full bg-[#f9dc0b] text-[#1A1A1A]">{openedDestination.icon(16)}</span>}
                             <span className="min-w-0 flex-1 truncate text-left text-sm font-bold">{account.channelTitle || account.channelHandle || openedDestination.label}{isPrimary ? " · primary" : ""}</span>
                             <span className={cn("agent-social-toggle", active && "agent-social-toggle-active")} aria-hidden="true"><span /></span>
                           </button>
@@ -3987,7 +3976,7 @@ function SetupPanel({
                     })()}
                   </div>
                   <footer className="agent-social-modal-footer">
-                    <a href={openedDestination.id === "youtube" ? "/api/auth/google?mode=connect&next=/channels" : openedDestination.id === "tiktok" ? "/api/auth/tiktok?next=/channels" : `/api/auth/social/${openedDestination.id}?next=/channels`} className={cn("inline-flex min-h-10 items-center gap-2 rounded-xl px-3 text-xs font-black transition", tokens.isDark ? "bg-white/8 text-white hover:bg-white/12" : "bg-[#1A1A1A]/6 text-[#1A1A1A] hover:bg-[#1A1A1A]/10")}><Plus className="h-4 w-4" />Add {openedDestination.label}</a>
+                    <a href={connectHref(openedDestination.id)} className={cn("inline-flex min-h-10 items-center gap-2 rounded-xl px-3 text-xs font-black transition", tokens.isDark ? "bg-white/8 text-white hover:bg-white/12" : "bg-[#1A1A1A]/6 text-[#1A1A1A] hover:bg-[#1A1A1A]/10")}><Plus className="h-4 w-4" />Add {openedDestination.label}</a>
                     <button type="button" onClick={() => setOpenDestination(null)} className="inline-flex min-h-10 items-center justify-center rounded-xl bg-[#f9dc0b] px-4 text-xs font-black text-[#1A1A1A] transition hover:bg-[#e8cb00]">Done</button>
                   </footer>
                 </section>

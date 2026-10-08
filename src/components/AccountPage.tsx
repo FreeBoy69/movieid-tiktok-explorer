@@ -7,6 +7,7 @@ import { openLingbasePortal } from "../utils/lingbasePayments";
 import { purchasesAllowed } from "../native/platform";
 import { toast } from "../utils/toast";
 import { DeleteAccountDialog, openBilling, SupportDialog, type BillingOffer } from "./AccountServices";
+import { PlatformGrid, socialPlatform } from "./SocialPlatforms";
 import "./AccountPage.css";
 
 // Account settings: profile, plan and billing, credit usage, connected channels,
@@ -31,17 +32,6 @@ const SECTIONS: Array<{ id: AccountSection; label: string; icon: ReactNode }> = 
   { id: "security", label: "Security", icon: <ShieldCheck size={17} /> },
 ];
 
-const PLATFORMS: Array<{ id: string; label: string; href: string; icon: ReactNode }> = [
-  { id: "youtube", label: "YouTube", href: "/api/auth/google?mode=connect&next=/account/channels", icon: <Youtube size={17} /> },
-  { id: "tiktok", label: "TikTok", href: "/api/auth/tiktok?mode=connect&next=/account/channels", icon: <Music size={17} /> },
-  { id: "instagram", label: "Instagram", href: "/api/auth/social/instagram?next=/account/channels", icon: <Instagram size={17} /> },
-  { id: "facebook", label: "Facebook Page", href: "/api/auth/social/facebook?next=/account/channels", icon: <Facebook size={17} /> },
-  { id: "snapchat", label: "Snapchat", href: "/api/auth/social/snapchat?next=/account/channels", icon: <Ghost size={17} /> },
-  { id: "pinterest", label: "Pinterest", href: "/api/auth/social/pinterest?next=/account/channels", icon: <Pin size={17} /> },
-  { id: "twitter", label: "X", href: "/api/auth/social/twitter?next=/account/channels", icon: <Twitter size={17} /> },
-  { id: "linkedin", label: "LinkedIn", href: "/api/auth/social/linkedin?next=/account/channels", icon: <Linkedin size={17} /> },
-];
-
 const LEDGER_LABEL: Record<string, string> = {
   allowance_reset: "Monthly allowance renewed",
   plan_change: "Plan changed",
@@ -57,7 +47,7 @@ const credits = (tokens: number) => compact.format(tokensToCredits(tokens));
 const day = (value: string | null | undefined) => (value ? new Date(value).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—");
 const money = (cents: number, currency = "USD") => new Intl.NumberFormat("en-US", { style: "currency", currency: currency || "USD", minimumFractionDigits: cents % 100 ? 2 : 0 }).format(cents / 100);
 const featureName = (feature: string) => feature === "other" ? "Other" : feature.replace(/[-_.]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-const platformName = (platform = "youtube") => PLATFORMS.find((item) => item.id === platform.toLowerCase())?.label || platform;
+const platformName = (platform = "youtube") => socialPlatform(platform)?.label || platform;
 
 async function getJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, { cache: "no-store", credentials: "same-origin", ...init });
@@ -418,14 +408,7 @@ function ChannelsSection({ auth, onRefresh }: { auth: AuthSessionPayload; onRefr
         ) : <p className="acp-note">No channels yet. Connect one below to publish.</p>}
       </Panel>
       <Panel title="Connect a channel" description="Facebook connects a Page, and Instagram needs a Business or Creator account.">
-        <div className="acp-connect">
-          {PLATFORMS.map((platform) => (
-            <a key={platform.id} href={platform.href} className="acp-connect-item">
-              {platform.icon}
-              <span>{platform.label}</span>
-            </a>
-          ))}
-        </div>
+        <PlatformGrid connectNext="/account/channels" label="Connect a channel" />
       </Panel>
     </>
   );

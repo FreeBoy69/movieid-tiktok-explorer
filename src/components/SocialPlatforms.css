@@ -1,0 +1,87 @@
+/* Platform tiles: neutral card, brand-tinted icon square. Borders and hovers
+   derive from currentColor so the grid reads on light and dark surfaces. */
+.sp-grid {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+}
+.sp-grid-wrap {
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+}
+.sp-grid-row {
+  display: flex;
+  overflow-x: auto;
+  padding: 2px 2px 8px;
+  scrollbar-width: thin;
+}
+.sp-grid-row .sp-cell {
+  flex: 1 0 96px;
+  min-width: 96px;
+}
+.sp-cell {
+  display: flex;
+  min-width: 0;
+}
+.sp-grid .sp-tile {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 8px;
+  border: 1px solid color-mix(in srgb, currentColor 10%, transparent);
+  border-radius: 16px;
+  background: color-mix(in srgb, currentColor 3%, transparent);
+  color: inherit;
+  font: inherit;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+  transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+}
+.sp-grid .sp-tile:hover {
+  border-color: color-mix(in srgb, currentColor 22%, transparent);
+  box-shadow: 0 8px 20px rgb(0 0 0 / 0.06);
+  transform: translateY(-1px);
+}
+.sp-grid .sp-tile:focus-visible {
+  outline: 2px solid #f9dc0b;
+  outline-offset: 2px;
+}
+.sp-grid .sp-tile[data-on] {
+  border-color: rgb(249 220 11 / 0.75);
+  box-shadow: 0 8px 22px rgb(249 220 11 / 0.14);
+}
+.sp-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--sp-brand) 12%, transparent);
+  color: var(--sp-ink);
+}
+/* Snapchat's yellow needs a solid tile to read. */
+.sp-icon[style*="#FFFC00"] {
+  background: color-mix(in srgb, var(--sp-brand) 85%, transparent);
+}
+.sp-label {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sp-note {
+  margin-top: -4px;
+  font-size: 11px;
+  font-weight: 600;
+  opacity: 0.6;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sp-grid .sp-tile { transition: none; }
+  .sp-grid .sp-tile:hover { transform: none; }
+}

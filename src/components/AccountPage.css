@@ -326,23 +326,6 @@
 .acp-list-main strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 650; }
 .acp-list-main small { color: var(--acp-muted); font-size: 12.5px; }
 .acp-list-actions { display: flex; gap: 6px; flex-shrink: 0; }
-.acp-connect { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; }
-.acp-connect-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 44px;
-  padding: 0 14px;
-  border: 1px solid var(--acp-line);
-  border-radius: 12px;
-  background: var(--acp-raised);
-  color: var(--acp-text);
-  font-weight: 600;
-  text-decoration: none;
-  transition: border-color 0.15s ease;
-}
-.acp-connect-item:hover { border-color: var(--acp-line-strong); }
-.acp-connect-item > svg { color: var(--acp-muted); }
 
 /* ---------- telegram ---------- */
 .acp-steps { margin: 0; padding-left: 20px; display: grid; gap: 6px; color: var(--acp-muted); list-style: decimal; }

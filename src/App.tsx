@@ -31,6 +31,7 @@ import { identifyMovie } from "./services/gemini";
 import { AuthSessionPayload, ConnectedYouTubeAccount, ExtractionState, MovieResult } from "./types";
 import { cn } from "./lib/utils";
 import { PickerDialog } from "./components/SourcePicker";
+import { PlatformGrid, socialPlatform } from "./components/SocialPlatforms";
 import { toast } from "./utils/toast";
 import TikTokExplorer from "./components/TikTokExplorer";
 import { MovieAnalysisTabs, type MainTab as MovieAnalysisTab } from "./components/MovieAnalysisTabs";
@@ -877,8 +878,8 @@ function AccountSwitcherModal({ auth, open, anchor, onClose, onRefresh, darkMode
         label: account.channelTitle,
         imageUrl: account.thumbnailUrl,
         kind: "channel" as const,
-        platform: account.platform === "tiktok" ? "tiktok" : "youtube",
-        meta: account.platform === "tiktok" ? "TikTok" : "YouTube",
+        platform: String(account.platform || "youtube").toLowerCase(),
+        meta: socialPlatform(account.platform || "youtube")?.label || String(account.platform),
       }))}
       onChoose={(item) => {
         const account = accounts.find((entry) => entry.id === item.value);
@@ -900,14 +901,10 @@ function AccountSwitcherModal({ auth, open, anchor, onClose, onRefresh, darkMode
       )}
       footer={
         <>
-          <a href="/api/auth/google?mode=connect&next=/channels"><Youtube className="h-4 w-4" /> Connect a YouTube channel</a>
-          <a href="/api/auth/tiktok?mode=connect&next=/channels"><Music className="h-4 w-4" /> Connect a TikTok account</a>
-          <a href="/api/auth/social/instagram?next=/channels"><Instagram className="h-4 w-4" /> Connect Instagram</a>
-          <a href="/api/auth/social/facebook?next=/channels"><Facebook className="h-4 w-4" /> Connect Facebook Page</a>
-          <a href="/api/auth/social/snapchat?next=/channels"><Ghost className="h-4 w-4" /> Connect Snapchat</a>
-          <a href="/api/auth/social/pinterest?next=/channels"><Pin className="h-4 w-4" /> Connect Pinterest</a>
-          <a href="/api/auth/social/twitter?next=/channels"><Twitter className="h-4 w-4" /> Connect X</a>
-          <a href="/api/auth/social/linkedin?next=/channels"><Linkedin className="h-4 w-4" /> Connect LinkedIn</a>
+          <div className="source-picker-connect">
+            <p>Connect a channel</p>
+            <PlatformGrid connectNext="/channels" label="Connect a channel" />
+          </div>
         </>
       }
     />

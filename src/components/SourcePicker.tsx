@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState, type ClipboardEvent, type ReactNode
 import { createPortal } from "react-dom";
 import { Check, Search, UserRound, Layers3, Link2, Loader2, Tags, X } from "lucide-react";
 import "./SourcePicker.css";
+import { socialPlatform } from "./SocialPlatforms";
 
 export type SourceOption = { value: string; label: string; imageUrl?: string; kind?: "channel" | "collection" | "video"; disabled?: boolean };
 type UrlSubmitResult = void | boolean | Promise<void | boolean>;
@@ -126,6 +127,16 @@ export function SourcePicker({ options, value, onChange, label = "Source", place
 }
 
 // ---------- The one channel/option pop-up ----------
+function PlatformBadge({ id }: { id: string }) {
+  const platform = socialPlatform(id);
+  if (!platform) return null;
+  return (
+    <span className="source-picker-platform" title={platform.label} style={{ ["--pf-brand" as string]: platform.color }} data-light={platform.id === "snapchat" || undefined}>
+      {platform.icon(10)}
+    </span>
+  );
+}
+
 export type PickerItem = SourceOption & { meta?: string; platform?: "youtube" | "tiktok" | string };
 
 /**
@@ -179,7 +190,7 @@ export function PickerDialog({ open, onClose, title, items, value = "", onChoose
           {!loading && filtered.map((item, i) => (
             <div key={item.value} id={`${id}-${i}`} role="option" tabIndex={0} aria-selected={item.value === value} aria-disabled={item.disabled || undefined} className={`source-picker-option${active === i ? " is-active" : ""}${action ? " has-action" : ""}`}
               onPointerMove={() => { if (!item.disabled) setActive(i); }} onClick={() => choose(item)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); choose(item); } }}>
-              <span className="source-picker-avatar"><Picture option={item} />{item.platform ? <span className="source-picker-platform" data-platform={item.platform}>{item.platform === "tiktok" ? "TT" : "YT"}</span> : null}</span>
+              <span className="source-picker-avatar"><Picture option={item} />{item.platform ? <PlatformBadge id={item.platform} /> : null}</span>
               <span className="source-picker-copy"><span className="source-picker-name">{item.label}</span>{item.meta ? <span className="source-picker-meta">{item.meta}</span> : null}</span>
               {busyValue === item.value ? <Loader2 className="source-picker-spin" size={16} /> : item.value === value ? <Check className="source-picker-check" size={17} /> : null}
               {action ? <span className="source-picker-option-action" onClick={(event) => event.stopPropagation()}>{action(item)}</span> : null}

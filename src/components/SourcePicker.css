@@ -74,8 +74,8 @@ html[data-theme="light"] .source-picker-overlay { background: rgb(20 19 17 / 0.2
 /* PickerDialog extras: platform badge, a meta line, a per-item action, and a footer. */
 .source-picker-avatar { position: relative; flex: none; }
 .source-picker-avatar .source-picker-picture { width: 38px; height: 38px; border-radius: 999px; }
-.source-picker-platform { position: absolute; right: -4px; bottom: -3px; display: grid; place-items: center; min-width: 18px; height: 14px; padding: 0 3px; border-radius: 999px; background: #f9dc0b; color: #1a1a1a; font-size: 8px; font-weight: 900; box-shadow: 0 0 0 2px var(--sp-bg); }
-.source-picker-platform[data-platform=tiktok] { background: #1a1a1a; color: #fff; }
+.source-picker-platform { position: absolute; right: -4px; bottom: -3px; display: grid; place-items: center; width: 18px; height: 18px; border-radius: 999px; background: var(--pf-brand, #1a1a1a); color: #fff; box-shadow: 0 0 0 2px var(--sp-bg); }
+.source-picker-platform[data-light] { color: #1a1a1a; }
 .source-picker-copy { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 2px; }
 .source-picker-meta { overflow: hidden; color: var(--sp-muted); font-size: 11.5px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .source-picker-option:focus-visible { outline: 2px solid #b39b00; outline-offset: 1px; }
@@ -89,3 +89,6 @@ html[data-theme="light"] .source-picker-overlay { background: rgb(20 19 17 / 0.2
 .source-picker-footer a:hover, .source-picker-footer button:hover { border-color: #b39b00; }
 .source-picker-list > .source-picker-empty { grid-column: 1 / -1; }
 .source-picker-option[aria-selected=true] .source-picker-meta { color: inherit; opacity: .72; }
+.source-picker-connect { display: grid; width: 100%; gap: 10px; color: var(--sp-text); }
+.source-picker-connect > p { margin: 0; color: var(--sp-muted, inherit); font-size: 12px; font-weight: 700; }
+.source-picker-footer .source-picker-connect a { display: flex; min-height: 0; padding: 12px 8px; border-radius: 16px; background: transparent; font-weight: inherit; }
