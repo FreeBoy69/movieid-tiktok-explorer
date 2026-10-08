@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Composer, SendButton, StudioLayout } from "./StudioLayout";
 import {
   ArrowLeft,
   ArrowUpRight,
@@ -533,7 +534,7 @@ function NewVideoModal({
                         ...shotTemplate.variables.map((item: { name: string; label: string; example: string }) => `${item.label}: ${shot.values[item.name]?.trim() || item.example}`),
                       ].join("\n")
                     : "",
-                  handedOver?.prompt ? `Idea from the Prompt Library (${handedOver.title}):\n${handedOver.prompt}` : "",
+                  handedOver?.prompt ? `${handedOver.title ? `Idea (${handedOver.title})` : "Idea"}:\n${handedOver.prompt}` : "",
                 ]
                   .filter(Boolean)
                   .join("\n\n"),
@@ -761,6 +762,15 @@ function CreateHome({
   const { projects, styles, collections, loading } = useCreatorLibrary(accountId, onError);
   const [pending] = useState(() => takePendingTemplate("create"));
   const [picker, setPicker] = useState(Boolean(pending));
+  // The box's idea goes to the New video picker the same way a library prompt does.
+  const [handoff, setHandoff] = useState<PendingTemplate | null>(pending);
+  const [idea, setIdea] = useState("");
+  const [section, setSection] = useState<"recent" | "shortcuts">("recent");
+  const startFromIdea = () => {
+    const text = idea.trim();
+    setHandoff(text ? { target: "create", title: "", prompt: text, at: Date.now() } : null);
+    setPicker(true);
+  };
   const live = projects.filter((p) => p.status !== "archived");
   const month = new Date();
   const thisMonth = projects.filter((p) => {
@@ -772,103 +782,126 @@ function CreateHome({
     .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
     .slice(0, 4);
   return (
-    <div className="maker-scroll">
-      <div className="maker-page is-wide">
-        <PageHead
-          title="Create Video"
-          text="Start a project, then move from title to script, voice, visuals, and export."
-        />
-        <div className="maker-feature-grid">
-          <article className="maker-feature is-accent">
-            <Clapperboard size={20} />
-            <h2>Create a video</h2>
-            <p>Pick a style or start blank. Every stage saves as you go.</p>
-            <button className="maker-feature-cta" onClick={() => setPicker(true)}>
-              <Plus size={15} />
-              New video
-            </button>
-          </article>
-          <article className="maker-feature is-ink">
-            <Compass size={20} />
-            <h2>Find a niche</h2>
-            <p>Search channels, compare median views, and bookmark what works.</p>
-            <button
-              className="maker-feature-cta"
-              onClick={() => writeDeepLink({ view: "discover" })}
-            >
-              Open Niche Finder
-            </button>
-          </article>
-          <article className="maker-feature">
-            <Layers size={20} />
-            <h2>Your styles</h2>
-            <p>
-              {styles.length
-                ? `${styles.length} saved ${styles.length === 1 ? "style" : "styles"} keep voice, pacing, and length consistent.`
-                : "Save a channel's voice, pacing, and length to reuse on every video."}
-            </p>
-            <button
-              className="maker-feature-cta"
-              onClick={() => writeDeepLink({ view: "styles" })}
-            >
-              Manage styles
-            </button>
-          </article>
-        </div>
-        <div className="maker-stats">
-          {[
-            ["Total videos", live.length, "All active projects", <Film key="a" size={16} />],
-            ["This month", thisMonth, "Projects started", <TrendingUp key="b" size={16} />],
-            ["In progress", inProgress, "Not rendered yet", <Clock key="c" size={16} />],
-          ].map(([label, value, caption, icon]) => (
-            <div className="maker-card maker-stat" key={String(label)}>
-              <div>
-                <span>{label}</span>
-                {icon}
-              </div>
-              <strong>{loading ? "–" : (value as number)}</strong>
-              <small>{caption}</small>
-            </div>
-          ))}
-        </div>
-        <div className="maker-section-title">
-          <h2>Continue where you left off</h2>
-          {live.length > 4 && (
-            <button onClick={() => writeDeepLink({ view: "projects" })}>
-              View all
-              <ArrowUpRight size={14} />
-            </button>
-          )}
-        </div>
-        {loading ? (
-          <div className="maker-loading">
-            <Loader2 className="animate-spin" />
-            Loading projects
-          </div>
-        ) : recent.length ? (
-          <div className="maker-card maker-list">
-            {recent.map((p) => (
-              <ProjectRow key={p.id} project={p} styles={styles} compact />
-            ))}
-          </div>
-        ) : (
-          <Empty
-            title="No projects yet"
-            text="Create your first video project to get started."
+    <div className="maker-scroll maker-in-layout">
+      <StudioLayout
+        title="Create Video"
+        intro="Describe a video and start a project, then move from title to script, voice, visuals, and export."
+        composer={
+          <Composer
+            as="form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              startFromIdea();
+            }}
+            controls={
+              <>
+                <button type="button" className="maker-box-chip" onClick={() => { setHandoff(null); setPicker(true); }}>
+                  <Layers size={14} /> Start from a style or template
+                </button>
+                <span className="maker-box-meta">{loading ? "Loading projects" : `${live.length} ${live.length === 1 ? "video" : "videos"} · ${inProgress} in progress · ${thisMonth} this month`}</span>
+              </>
+            }
+            send={<SendButton type="submit" disabled={!idea.trim()} label="Start a video from this idea" />}
           >
-            <button className="maker-primary" onClick={() => setPicker(true)}>
-              <Plus size={16} />
-              New video
-            </button>
-          </Empty>
+            <textarea
+              value={idea}
+              onChange={(event) => setIdea(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && idea.trim()) {
+                  event.preventDefault();
+                  startFromIdea();
+                }
+              }}
+              rows={2}
+              placeholder="What's the video about? e.g. the rise and fall of a forgotten 1990s gadget, explained in 8 minutes"
+              aria-label="Video idea"
+            />
+          </Composer>
+        }
+        tabsLabel="Create Video sections"
+        tabs={[
+          { value: "recent", label: "Continue where you left off", hint: live.length ? String(live.length) : undefined },
+          { value: "shortcuts", label: "Shortcuts" },
+        ]}
+        tab={section}
+        onTab={(next) => setSection(next as "recent" | "shortcuts")}
+        aside={live.length > 4 ? (
+          <button type="button" className="sl-aside" onClick={() => writeDeepLink({ view: "projects" })}>
+            <strong>View all projects</strong> <ArrowUpRight size={14} />
+          </button>
+        ) : null}
+      >
+        {section === "shortcuts" ? (
+          <div className="maker-feature-grid">
+            <article className="maker-feature is-accent">
+              <Clapperboard size={20} />
+              <h2>Create a video</h2>
+              <p>Pick a style or start blank. Every stage saves as you go.</p>
+              <button className="maker-feature-cta" onClick={() => setPicker(true)}>
+                <Plus size={15} />
+                New video
+              </button>
+            </article>
+            <article className="maker-feature is-ink">
+              <Compass size={20} />
+              <h2>Find a niche</h2>
+              <p>Search channels, compare median views, and bookmark what works.</p>
+              <button
+                className="maker-feature-cta"
+                onClick={() => writeDeepLink({ view: "discover" })}
+              >
+                Open Niche Finder
+              </button>
+            </article>
+            <article className="maker-feature">
+              <Layers size={20} />
+              <h2>Your styles</h2>
+              <p>
+                {styles.length
+                  ? `${styles.length} saved ${styles.length === 1 ? "style" : "styles"} keep voice, pacing, and length consistent.`
+                  : "Save a channel's voice, pacing, and length to reuse on every video."}
+              </p>
+              <button
+                className="maker-feature-cta"
+                onClick={() => writeDeepLink({ view: "styles" })}
+              >
+                Manage styles
+              </button>
+            </article>
+          </div>
+          ) : (
+          <>
+          {loading ? (
+            <div className="maker-loading">
+              <Loader2 className="animate-spin" />
+              Loading projects
+            </div>
+          ) : recent.length ? (
+            <div className="maker-card maker-list">
+              {recent.map((p) => (
+                <ProjectRow key={p.id} project={p} styles={styles} compact />
+              ))}
+            </div>
+          ) : (
+            <Empty
+              title="No projects yet"
+              text="Create your first video project to get started."
+            >
+              <button className="maker-primary" onClick={() => setPicker(true)}>
+                <Plus size={16} />
+                New video
+              </button>
+            </Empty>
+          )}
+            </>
         )}
-      </div>
+      </StudioLayout>
       {picker && (
         <NewVideoModal
           accountId={accountId}
           styles={styles}
           collections={collections}
-          initial={pending}
+          initial={handoff}
           onClose={() => setPicker(false)}
           onError={onError}
         />

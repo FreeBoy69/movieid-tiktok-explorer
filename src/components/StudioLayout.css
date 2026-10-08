@@ -409,3 +409,26 @@
 .as-in-layout .as-controls .as-count, .as-in-layout .as-controls .as-cost, .as-in-layout .as-controls .as-blocked { color: var(--ui-text-muted); font-size: 12.5px; }
 .as-in-layout .as-player-below { margin-top: 18px; }
 .as-in-layout .as-history-below { display: grid; gap: 10px; margin-top: 28px; }
+
+/* Create Video and Create Film start screens. */
+.maker-scroll.maker-in-layout { display: flex; flex-direction: column; padding: 0; }
+.maker-box-chip { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 0 12px; border: 1px solid var(--ui-line); border-radius: 999px; background: transparent; color: var(--ui-text); font-size: 13px; font-weight: 600; }
+.maker-box-chip:hover { background: var(--ui-hover); }
+.maker-box-meta { color: var(--ui-text-muted); font-size: 12.5px; }
+.dr-in-layout { display: grid; gap: 40px; max-width: none; margin: 0; padding: 0; }
+/* Create Video and Create Film style every button and textarea under .maker-workspace;
+   inside the layout the shared box and tabs win. */
+.maker-workspace .sl-box textarea { min-height: 52px; padding: 0 8px 0 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; outline: none; resize: none; font: 400 18px/1.45 var(--font-sans); color: var(--ui-text); }
+.maker-workspace .sl-tabs.ui-tabs > button { flex: none; gap: 7px; min-height: 38px; margin: 0; padding: 0 10px; border: 0; border-radius: 10px; background: transparent; color: var(--ui-text-muted); font-size: 14px; font-weight: 550; box-shadow: none; }
+.maker-workspace .sl-tabs.ui-tabs > button[aria-selected="true"] { background: var(--ui-chip); color: var(--ui-text); font-weight: 600; }
+/* Tabs that follow the box directly (no gallery heading) keep their distance. */
+.sl-box + .sl-tabs-row, .sl-notices + .sl-tabs-row, .sl-box + .sl-gallery-head, .sl-notices + .sl-gallery-head { margin-top: 24px; }
+/* Create Film: the idea section is the box area itself, edge to edge with the column. */
+.dr-in-layout { gap: 8px; }
+.dr-in-layout > .dr-idea { margin: 0; padding: 0; border: 0; background: none; box-shadow: none; }
+.maker-workspace .sl-gallery-head h2 { margin: 0; font-family: var(--font-serif); font-size: 36px; font-weight: 700; line-height: 1; }
+.dr-in-layout > section > .sl-gallery-head { margin-top: 48px; }
+.dr-in-layout > .dr-idea { max-width: none; }
+/* The workspace's general button rule would lay cards out in a row. */
+.maker-workspace .sl-card { display: grid; width: 100%; height: auto; min-height: 0; gap: 8px; margin: 0 0 22px; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; text-align: left; break-inside: avoid; }
+.maker-workspace .sl-card:hover { background: transparent; border: 0; }

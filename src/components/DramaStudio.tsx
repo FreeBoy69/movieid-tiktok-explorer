@@ -1,6 +1,7 @@
 // Create Drama: pick a template, shape the premise, and make a vertical short
 // drama series one episode at a time. Each episode opens in the Create Video
 // editor with the series' cast, voices, and art style already set.
+import { LayoutCard, Masonry, StudioLayout } from "./StudioLayout";
 import { clearPendingTemplate, peekPendingTemplate } from "../utils/promptTemplates";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AlertCircle, Apple, Archive, ArrowLeft, ArrowUpRight, BookOpen, Briefcase, Check, ChevronDown, Clapperboard, Coffee, Download, FolderOpen, GraduationCap, Heart, Hourglass, LayoutGrid, Loader2, Pencil, Play, Plus, Rocket, RotateCcw, Search, Smartphone, Sparkles, X } from "lucide-react";
@@ -162,14 +163,17 @@ function DramaHome({ accountId, format, onError }: { accountId: string; format: 
     </button>
   );
   return (
-    <div className="maker-scroll">
-      <div className="maker-page is-wide dr-page">
-        <PageHead centered title={kind.title} text={kind.tagline} />
-        {format !== "series" && (
+    <div className="maker-scroll maker-in-layout">
+      <StudioLayout
+        title={kind.title}
+        intro={kind.tagline}
+        back={format !== "series" ? (
           <button type="button" className="maker-ghost dr-small fl-back" onClick={() => writeDeepLink({ view: "drama", filmFormat: "hub" })}>
             <ArrowLeft size={14} /> All film formats
           </button>
-        )}
+        ) : null}
+      >
+      <div className="dr-page dr-in-layout">
         {format === "music" && !song ? (
           <section className="dr-idea" aria-labelledby="fl-song-start">
             <div className="maker-section-title dr-idea-heading"><h2 id="fl-song-start">1. Your song</h2>{projectsAction}</div>
@@ -192,26 +196,18 @@ function DramaHome({ accountId, format, onError }: { accountId: string; format: 
           </>
         )}
         {format === "series" && <section aria-labelledby="dr-templates">
-          <div className="maker-section-title">
+          <div className="sl-gallery-head">
             <h2 id="dr-templates">Start from a template</h2>
             <small className="dr-count">{DRAMA_TEMPLATES.length} templates</small>
           </div>
-          <ul className="dr-template-grid">
+          <Masonry>
             {DRAMA_TEMPLATES.map((template) => (
-              <li key={template.id}>
-                <button type="button" className="dr-template" onClick={() => setPicked(template)} aria-label={`${template.name}: ${template.tagline}`}>
-                  <Poster templateId={template.id} />
-                  <span className="dr-template-copy">
-                    <small>{template.genre}</small>
-                    <strong>{template.name}</strong>
-                    <span>{template.tagline}</span>
-                  </span>
-                </button>
-              </li>
+              <LayoutCard key={template.id} title={template.name} sub={template.genre} note={template.tagline} image={dramaTemplateThumb(template.id)} ratio={2 / 3} onClick={() => setPicked(template)} />
             ))}
-          </ul>
+          </Masonry>
         </section>}
       </div>
+      </StudioLayout>
       {picked && <NewSeriesModal accountId={accountId} template={picked} onClose={() => setPicked(null)} onError={onError} />}
       {projectsOpen && (
         <div className="dr-project-drawer-layer" role="presentation">
