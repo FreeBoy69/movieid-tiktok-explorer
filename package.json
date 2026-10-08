@@ -29,16 +29,13 @@
     "@capacitor/share": "^8.0.2",
     "@capacitor/splash-screen": "^8.0.2",
     "@google/genai": "^1.29.0",
-    "@react-three/fiber": "^9.7.0",
     "@stripe/stripe-js": "^9.17.0",
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",
-    "axios": "^1.15.2",
     "clsx": "^2.1.1",
     "cors": "^2.8.6",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
-    "form-data": "^4.0.5",
     "gsap": "^3.15.0",
     "hyperframes": "^0.8.77",
     "lingcode-js": "^1.1.0",
@@ -51,7 +48,6 @@
     "react-dom": "^19.0.0",
     "react-dropzone": "^15.0.0",
     "tailwind-merge": "^3.5.0",
-    "three": "^0.180.0",
     "vite": "^6.2.0"
   },
   "devDependencies": {
@@ -63,14 +59,12 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitest/ui": "^4.1.5",
-    "autoprefixer": "^10.4.21",
     "fast-check": "^4.7.0",
     "happy-dom": "^20.9.0",
     "jsdom": "^27.0.1",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
-    "vite": "^6.2.0",
     "vitest": "^4.1.5"
   }
 }

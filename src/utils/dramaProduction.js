@@ -439,9 +439,8 @@ export function sceneReferences(scene, { cast, sheets, locationSheet, textOnly =
 }
 
 // Rough spend for one clip, in per-second provider rates rather than per-token
-// prices: the router now picks the cheapest provider for the model (see
-// VR_COST_PER_SECOND in openRouterClient.js), and video providers bill by the
-// second of output, not by token. These are the cheapest routes' list prices
+// prices: the router picks the cheapest provider for the model, and video
+// providers bill by the second of output, not by token. These are the cheapest routes' list prices
 // from VideoRouter's comparison table.
 //
 // The previous numbers were the dearest providers' per-token rates (fal), so

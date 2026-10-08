@@ -105,14 +105,6 @@ export function usePopover() {
   return { open, setOpen, ref };
 }
 
-export function IconButton({ label, onClick, children, disabled }: { label: string; onClick: () => void; children: ReactNode; disabled?: boolean }) {
-  return (
-    <button type="button" className="cs-icon" onClick={onClick} aria-label={label} title={label} disabled={disabled}>
-      {children}
-    </button>
-  );
-}
-
 export function Choice({ label, value, options, onChange, empty }: { label: string; value: string; options: Array<{ value: string; label: string }>; onChange: (value: string) => void; empty?: string }) {
   const { open, setOpen, ref } = usePopover();
   const current = options.find((option) => option.value === value);

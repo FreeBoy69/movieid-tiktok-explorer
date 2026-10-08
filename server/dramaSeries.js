@@ -142,7 +142,7 @@ function episodeView(project) {
 
 
 export function registerDramaSeries(app, ctx) {
-  const { route, account, dependencies, fail, copyAssets } = ctx;
+  const { route, account, dependencies, fail } = ctx;
 
   const loadSeries = async (userId, id) => {
     const series = await dependencies.getProject(userId, id);

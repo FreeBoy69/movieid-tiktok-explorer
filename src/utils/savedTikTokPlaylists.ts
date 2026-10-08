@@ -195,18 +195,6 @@ export async function listSavedPlaylistSummaries(): Promise<SavedPlaylistSummary
   return Array.isArray(data.summaries) ? data.summaries : [];
 }
 
-export async function updateSavedPlaylistTags(key: string, tags: string[]): Promise<SavedPlaylistSummary | null> {
-  const k = normalizePlaylistListUrl(key);
-  if (!k) return null;
-  const response = await fetch("/api/saved/tiktok-playlists/tags", {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ key: k, tags }),
-  });
-  const data = await readJson<{ summary: SavedPlaylistSummary | null }>(response);
-  return data.summary || null;
-}
-
 export async function addSavedPlaylistAutoTags(key: string, tags: string[]): Promise<SavedPlaylistSummary | null> {
   const k = normalizePlaylistListUrl(key);
   if (!k || !tags.length) return null;
@@ -259,22 +247,6 @@ export async function scanSavedPlaylistGenres(key: string, batchSize = 4): Promi
     body: JSON.stringify({ key: k, batchSize }),
   });
   const data = await readJson<{ scan: SavedPlaylistGenreScan | null }>(response);
-  return data.scan || null;
-}
-
-export async function getSavedPlaylistMovieScanPending(key: string): Promise<{ pendingComments: SavedPlaylistMovieScan["pendingComments"]; pendingCount: number } | null> {
-  const k = normalizePlaylistListUrl(key);
-  if (!k) return null;
-  const response = await fetch(`/api/saved/tiktok-playlists/movie-scan/pending?key=${encodeURIComponent(k)}`);
-  const data = await readJson<{ pendingComments: SavedPlaylistMovieScan["pendingComments"]; pendingCount: number }>(response);
-  return data;
-}
-
-export async function getSavedPlaylistMovieScan(key: string): Promise<SavedPlaylistMovieScan | null> {
-  const k = normalizePlaylistListUrl(key);
-  if (!k) return null;
-  const response = await fetch(`/api/saved/tiktok-playlists/movie-scan?key=${encodeURIComponent(k)}`);
-  const data = await readJson<{ scan: SavedPlaylistMovieScan | null }>(response);
   return data.scan || null;
 }
 

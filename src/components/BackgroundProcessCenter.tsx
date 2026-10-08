@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { Activity, AudioLines, Bot, Check, ChevronRight, Clock3, Film, Layers3, Loader2, TriangleAlert, X } from "lucide-react";
+import { Activity, AudioLines, Bot, Check, ChevronRight, Clock3, Film, Layers3, TriangleAlert, X } from "lucide-react";
 import { cn } from "../lib/utils";
 import { BACKGROUND_PROCESS_EVENT } from "../utils/backgroundProcesses";
 

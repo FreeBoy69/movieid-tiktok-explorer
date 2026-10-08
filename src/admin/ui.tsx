@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { AlertTriangle, ArrowDownRight, ArrowLeft, ArrowUpRight, Inbox, Loader2, RotateCw, X } from "lucide-react";
+import { AlertTriangle, ArrowDownRight, ArrowLeft, ArrowUpRight, Inbox, Loader2, RotateCw } from "lucide-react";
 import { adminFetch, fmt } from "./api";
 
 export function cx(...parts: Array<string | false | null | undefined>) {
@@ -255,28 +255,6 @@ function useEscape(open: boolean, onClose: () => void) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
-}
-
-export function Drawer({ open, onClose, title, children, footer }: { open: boolean; onClose: () => void; title: ReactNode; children: ReactNode; footer?: ReactNode }) {
-  useEscape(open, onClose);
-  const panel = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (open) panel.current?.focus();
-  }, [open]);
-  if (!open) return null;
-  return createPortal(
-    <div className="adm-overlay" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <div className="adm-drawer" role="dialog" aria-modal="true" ref={panel} tabIndex={-1}>
-        <header className="adm-drawer-head">
-          <div className="adm-drawer-title">{title}</div>
-          <button type="button" className="adm-icon-btn" onClick={onClose} aria-label="Close"><X size={18} /></button>
-        </header>
-        <div className="adm-drawer-body">{children}</div>
-        {footer ? <footer className="adm-drawer-foot">{footer}</footer> : null}
-      </div>
-    </div>,
-    document.querySelector(".adm") || document.body,
-  );
 }
 
 export function Modal({ open, onClose, title, children, actions }: { open: boolean; onClose: () => void; title: string; children: ReactNode; actions: ReactNode }) {

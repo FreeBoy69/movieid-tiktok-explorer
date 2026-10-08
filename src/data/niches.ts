@@ -525,12 +525,6 @@ export const NICHE_DATABASE: NicheEntry[] = [
   },
 ];
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-export const NICHE_CATEGORIES = [
-  ...new Set(NICHE_DATABASE.map((n) => n.category)),
-].sort() as NicheCategory[];
-
 /** Return niches most likely to match a given primary niche string */
 export function findRelatedNiches(primary: string, limit = 5): NicheEntry[] {
   const lower = primary.toLowerCase();
@@ -554,19 +548,7 @@ export function findRelatedNiches(primary: string, limit = 5): NicheEntry[] {
     .map((s) => s.niche);
 }
 
-/** Return all niches in a category */
-export function getNichesByCategory(category: NicheCategory): NicheEntry[] {
-  return NICHE_DATABASE.filter((n) => n.category === category);
-}
-
 /** Return trending niches */
 export function getTrendingNiches(): NicheEntry[] {
   return NICHE_DATABASE.filter((n) => n.trending);
-}
-
-/** Return untapped / low competition niches */
-export function getUntappedNiches(): NicheEntry[] {
-  return NICHE_DATABASE.filter(
-    (n) => n.competition === "Very Low" || n.competition === "Low"
-  );
 }

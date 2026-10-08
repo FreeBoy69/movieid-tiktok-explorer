@@ -1,8 +1,8 @@
 // A quality gate for finished videos, adapted from showtime's `qa` (github.com/FavioVazquez/showtime, MIT):
-// one ffmpeg pass measures loudness, true peak, loudness range, black and frozen stretches, and dead air;
-// caption cues are checked for line length, reading speed, and flashes; the file for the platform's specs.
-// Each finding is PASS, WARN, or FAIL with the time it happens and what to do. A FAIL holds an automated
-// upload; a WARN is shown next to the video.
+// one ffmpeg pass (run by scripts/movie_recap.py) measures loudness, true peak, loudness range, black and
+// frozen stretches, and dead air; caption cues are checked for line length, reading speed, and flashes; the
+// file for the platform's specs. Each finding is PASS, WARN, or FAIL with the time it happens and what to do.
+// A FAIL holds an automated upload; a WARN is shown next to the video.
 //
 // Thresholds follow showtime's references/qa.md and captions_rules.py:
 //   loudness  -14 LUFS integrated: WARN past 1 LU off, FAIL past 3 LU; true peak above -1 dBTP WARNs
@@ -11,7 +11,6 @@
 //   quiet     near silence over 2 s mid-video WARNs; sound still playing on the last frame WARNs
 //   captions  at most 2 lines, 42 characters a line (32 vertical), 20 characters a second for 3+ words,
 //             no cue under 0.4 s
-import { spawn } from "node:child_process";
 
 export const QA_LIMITS = {
   lufs: -14,
@@ -140,51 +139,4 @@ export function judgeVideo({ measurements, info, cues = [], platform = "", expec
 
   const verdict = out.some((f) => f.level === "FAIL") ? "FAIL" : out.some((f) => f.level === "WARN") ? "WARN" : "PASS";
   return { verdict, findings: out, numbers: { duration: round(duration), lufs: m.lufs, truePeak: m.truePeak, lra: m.lra, width: info?.width, height: info?.height, fps: info?.fps } };
-}
-
-function run(program, args, { timeoutMs = 20 * 60 * 1000, signal } = {}) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(program, args, { stdio: ["ignore", "pipe", "pipe"] });
-    let out = "";
-    let err = "";
-    const timer = setTimeout(() => child.kill("SIGKILL"), timeoutMs);
-    const abort = () => child.kill("SIGKILL");
-    signal?.addEventListener("abort", abort, { once: true });
-    child.stdout.on("data", (chunk) => { out += chunk; });
-    child.stderr.on("data", (chunk) => { err += chunk; });
-    child.on("error", (error) => { clearTimeout(timer); reject(error); });
-    child.on("close", (code) => {
-      clearTimeout(timer);
-      signal?.removeEventListener("abort", abort);
-      resolve({ code, out, err });
-    });
-  });
-}
-
-/** Stream facts from ffprobe: codec, size, fps, pixel format, duration, audio. */
-export async function probeVideo(file, { signal } = {}) {
-  const { out } = await run(process.env.FFPROBE_PATH || "ffprobe", ["-v", "error", "-show_entries", "format=duration:stream=codec_type,codec_name,width,height,pix_fmt,avg_frame_rate", "-of", "json", file], { timeoutMs: 120000, signal });
-  const data = JSON.parse(out || "{}");
-  const video = (data.streams || []).find((s) => s.codec_type === "video");
-  const audio = (data.streams || []).find((s) => s.codec_type === "audio");
-  const [n, d] = String(video?.avg_frame_rate || "30/1").split("/").map(Number);
-  return { duration: Number(data.format?.duration) || 0, width: video?.width || 0, height: video?.height || 0, fps: d ? n / d : n, video: video?.codec_name || "", pixFmt: video?.pix_fmt || "", audio: audio?.codec_name || "" };
-}
-
-/** Runs the gate on a finished video. Never throws for a video it can read; returns {verdict, findings, numbers}. */
-export async function checkVideo(file, { cues = [], platform = "", expect = {}, signal } = {}) {
-  const info = await probeVideo(file, { signal });
-  const filters = [];
-  const args = ["-hide_banner", "-nostats", "-i", file];
-  if (info.audio) filters.push("[0:a]ebur128=peak=true,silencedetect=noise=-50dB:d=0.3[a]");
-  filters.push("[0:v]fps=10,scale=320:-2,blackdetect=d=0.1:pix_th=0.08,freezedetect=n=0.002:d=2[v]");
-  args.push("-filter_complex", filters.join(";"), ...(info.audio ? ["-map", "[a]", "-f", "null", "-"] : []), "-map", "[v]", "-f", "null", "-");
-  const { err } = await run(process.env.FFMPEG_PATH || "ffmpeg", args, { signal });
-  const measurements = parseMeasurements(err);
-  if (info.audio) {
-    const tail = await run(process.env.FFMPEG_PATH || "ffmpeg", ["-hide_banner", "-nostats", "-sseof", "-0.15", "-i", file, "-vn", "-af", "astats=measure_perchannel=none", "-f", "null", "-"], { timeoutMs: 120000, signal });
-    const rms = tail.err.match(/RMS level dB:\s*(-?[\d.]+|-inf)/);
-    measurements.tailRms = rms ? (rms[1] === "-inf" ? -120 : Number(rms[1])) : null;
-  }
-  return judgeVideo({ measurements, info, cues, platform, expect });
 }

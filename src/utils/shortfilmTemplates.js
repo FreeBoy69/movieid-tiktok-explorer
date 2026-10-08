@@ -16,16 +16,6 @@ export const SHORTFILM_SOURCE = {
   url: "https://github.com/jnMetaCode/ai-shortfilm-prompts",
 };
 
-// The stickman explainer adapts the MIT-licensed Codex skill in
-// kaomei/stickman-video-director: its five-stage "heartbeat" script structure,
-// character and palette locks, and three-beats-per-clip motion rule.
-export const STICKMAN_SOURCE = {
-  name: "stickman-video-director",
-  author: "kaomei",
-  license: "MIT",
-  url: "https://github.com/kaomei/stickman-video-director",
-};
-
 export const SHORTFILM_TEMPLATES = [
   {
     id: "stickman-director",
@@ -346,10 +336,6 @@ export const findShortfilmTemplate = (id) => SHORTFILM_TEMPLATES.find((template)
 export const shortfilmTemplateThumb = (id) => `/assets/templates/${id}.webp`;
 export const listShortfilmTemplates = () =>
   SHORTFILM_TEMPLATES.map(({ id, name, genre, tagline }) => ({ id, name, genre, tagline, thumbnail: shortfilmTemplateThumb(id) }));
-
-// Drama episode roles by scene position: first scene hooks, last scene is the cliffhanger,
-// the turn lands around 60%, and the scenes between run setup → confrontation → payoff.
-export const DRAMA_BEAT_ROLES = ["hook", "setup", "confrontation", "turn", "payoff", "cliffhanger"];
 export function beatRoleForScene(index, total) {
   const count = Math.max(1, Math.round(Number(total) || 1));
   const i = Math.min(Math.max(0, Math.round(Number(index) || 0)), count - 1);

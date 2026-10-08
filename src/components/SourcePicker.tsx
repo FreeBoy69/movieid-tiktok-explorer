@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState, type ClipboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Check, ChevronDown, Search, UserRound, Layers3, Link2, Loader2, Tags, X } from "lucide-react";
+import { Check, Search, UserRound, Layers3, Link2, Loader2, Tags, X } from "lucide-react";
 import "./SourcePicker.css";
 
 export type SourceOption = { value: string; label: string; imageUrl?: string; kind?: "channel" | "collection" | "video"; disabled?: boolean };

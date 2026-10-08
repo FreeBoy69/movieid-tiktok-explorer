@@ -95,15 +95,6 @@ const STUDIO_TABS: Array<{ id: StudioTab; label: string; icon: typeof Volume2 }>
   { id: "clone", label: "Clone", icon: Mic },
 ];
 
-function initials(name: string) {
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join("") || "V";
-}
-
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();

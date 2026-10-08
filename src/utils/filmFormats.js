@@ -91,8 +91,6 @@ export const FILM_FORMATS = {
     poster: "Original music video cover artwork",
   },
 };
-
-export const FILM_FORMAT_IDS = Object.keys(FILM_FORMATS);
 export const filmFormat = (id) => FILM_FORMATS[id] || FILM_FORMATS.series;
 export const isFilmFormat = (id) => Object.prototype.hasOwnProperty.call(FILM_FORMATS, String(id || ""));
 

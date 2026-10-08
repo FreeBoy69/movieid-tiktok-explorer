@@ -24,7 +24,6 @@ import {
   Heart,
   Layers3,
   LayoutList,
-  Link2,
   ListChecks,
   Loader2,
   Menu,
@@ -48,7 +47,6 @@ import {
   Sparkles,
   Square,
   Table2,
-  Tags,
   TrendingUp,
   Trash2,
   Music2,
@@ -289,12 +287,6 @@ function cleanScheduleTimes(values: unknown): string[] {
 
 function compact(value?: number | string | null): string {
   return new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(Number(value || 0));
-}
-
-function percent(value?: number | string | null): string {
-  const next = Number(value || 0);
-  if (!Number.isFinite(next)) return "0%";
-  return `${next.toFixed(next >= 10 ? 0 : 1)}%`;
 }
 
 function monetizationNumber(row: MonetizationMetricRow | null | undefined, ...keys: string[]): number {
@@ -2940,102 +2932,6 @@ function buildAgentAnalytics(uploads: AutomationUpload[], runs: AutomationRun[])
     momentum,
     recommendation,
   };
-}
-
-function CompilationAgentPanel({
-  agent,
-  form,
-  runningCompilation,
-  saveAgent,
-  saving,
-  selectedId,
-  runCompilation,
-  updateSetting,
-  theme = "light",
-}: {
-  agent: AutomationAgent | null;
-  form: any;
-  runningCompilation: string;
-  saveAgent: (event: FormEvent) => Promise<void>;
-  saving: boolean;
-  selectedId: string;
-  runCompilation: (id: string) => Promise<void>;
-  updateSetting: (key: string, value: unknown) => void;
-  theme?: AgentTheme;
-}) {
-  const busy = runningCompilation === selectedId;
-  const tokens = getAgentTheme(theme);
-  const minMinutes = Number(form.settings.compilationMinMinutes) || 30;
-  const maxMinutes = Number(form.settings.compilationMaxMinutes) || 40;
-  const lengthConflict = minMinutes > maxMinutes;
-  const compilationOn = form.settings.compilationEnabled === true;
-  return (
-    <form id="automation-agent-form" onSubmit={saveAgent} className="space-y-4">
-      <section className={cn("rounded-xl border p-4 md:p-5", tokens.surfaceSoft)}>
-        <SectionTitle theme={theme} title="Create compilation" body="Stitch the agent source into one long-form upload for the connected channel. The agent picks clips by your source priority, downloads them, and keeps stitching until the target length is reached." />
-        <div className="mt-4 grid gap-4 md:grid-cols-2">
-          <ToggleRow
-            title="Enable compilations for this agent"
-            body="When enabled, you can run a compilation manually from this tab. Clips that fail to download are skipped and replaced with the next candidates automatically."
-            checked={compilationOn}
-            onChange={(next) => updateSetting("compilationEnabled", next)}
-          />
-          <Field label="Min length (minutes)">
-            <input type="number" min={1} max={240} value={minMinutes} onChange={(event) => updateSetting("compilationMinMinutes", Number(event.target.value))} className="input bg-white" />
-          </Field>
-          <Field label="Max length (minutes)">
-            <input type="number" min={1} max={300} value={maxMinutes} onChange={(event) => updateSetting("compilationMaxMinutes", Number(event.target.value))} className="input bg-white" />
-          </Field>
-          {lengthConflict ? (
-            <p className="md:col-span-2 rounded-xl border border-[#f9dc0b]/40 bg-[#fff9d6] px-4 py-3 text-sm font-semibold text-[#6a5b00]">
-              Min length is above max length. Saving will raise the max to {minMinutes} minutes.
-            </p>
-          ) : null}
-          <Field label="Max clips">
-            <input type="number" min={1} max={1000} value={form.settings.compilationMaxClips || 300} onChange={(event) => updateSetting("compilationMaxClips", Number(event.target.value))} className="input bg-white" />
-          </Field>
-          <Field label="Format">
-            <select value={form.settings.compilationLayout || "vertical"} onChange={(event) => updateSetting("compilationLayout", event.target.value)} className="input bg-white">
-              <option value="vertical">Vertical 9:16</option>
-              <option value="landscape">Landscape 16:9</option>
-            </select>
-          </Field>
-          <Field label="Compilation title" wide>
-            <input value={form.settings.compilationTitle || ""} onChange={(event) => updateSetting("compilationTitle", event.target.value)} placeholder={`${form.name || "AutoYT"} compilation`} className="input bg-white" />
-          </Field>
-          <Field label="Description" wide>
-            <textarea value={form.settings.compilationDescription || ""} onChange={(event) => updateSetting("compilationDescription", event.target.value)} className="input min-h-24 bg-white py-3 leading-6" />
-          </Field>
-        </div>
-      </section>
-
-      <section className="grid gap-3 md:grid-cols-3">
-        <StepTile theme={theme} icon={<Film className="h-4 w-4" />} label="Select clips" body="Uses the agent source order: highest views, newest first, or oldest first." />
-        <StepTile theme={theme} icon={<Layers3 className="h-4 w-4" />} label="Stitch clips" body="Downloads clips, checks audio, normalizes size, then joins them." />
-        <StepTile theme={theme} icon={<Youtube className="h-4 w-4" />} label="Upload long-form" body="Posts to the connected YouTube channel and target playlist settings." />
-      </section>
-
-      <div className={cn("flex flex-wrap items-center justify-between gap-3 border-t pt-4", tokens.divider)}>
-        <p className={cn("text-xs font-semibold", tokens.subtle)}>
-          {!agent
-            ? "Save the agent first, then run a compilation from this tab."
-            : busy
-              ? "Building the compilation. Downloading and stitching clips can take several minutes — the result appears under Uploads."
-              : "Save settings before leaving the page. Run compilation when you want to test the full workflow."}
-        </p>
-        <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={() => selectedId && void runCompilation(selectedId)} disabled={!agent || busy || saving} className={cn("inline-flex h-10 items-center gap-2 rounded-lg border px-4 text-xs font-bold transition active:scale-[0.98] disabled:opacity-50", tokens.surface, tokens.text, "hover:opacity-90")}>
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-            {busy ? "Building compilation" : "Run compilation"}
-          </button>
-          <button type="submit" disabled={saving} className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#f9dc0b] px-5 text-xs font-bold text-[#1A1A1A] shadow-sm transition hover:bg-[#1A1A1A] hover:text-white disabled:opacity-50">
-            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-            Save agent
-          </button>
-        </div>
-      </div>
-    </form>
-  );
 }
 
 function CreateAgentWizard({
@@ -7092,44 +6988,12 @@ function MiniStat({ label, value, theme = "light" }: { label: string; value: Rea
   );
 }
 
-function StepTile({ icon, label, body, theme = "light" }: { icon: ReactNode; label: string; body: string; theme?: AgentTheme }) {
-  const tokens = getAgentTheme(theme);
-  return (
-    <div className={cn("rounded-xl border p-4", tokens.surface)}>
-      <div className="grid h-8 w-8 place-items-center rounded-lg bg-[#f9dc0b]/12 text-[#f9dc0b]">{icon}</div>
-      <p className={cn("mt-3 text-sm font-bold", tokens.text)}>{label}</p>
-      <p className={cn("mt-1 text-sm leading-6", tokens.muted)}>{body}</p>
-    </div>
-  );
-}
-
 function InfoRow({ label, value, theme = "light" }: { label: string; value: ReactNode; theme?: AgentTheme }) {
   const tokens = getAgentTheme(theme);
   return (
     <div className={cn("rounded-xl border p-3", tokens.surfaceSoft)}>
       <p className={cn("text-[10px] font-black uppercase tracking-[0.16em]", tokens.subtle)}>{label}</p>
       <p className={cn("mt-1 text-sm font-semibold leading-6", tokens.textSoft)}>{value || "Pending"}</p>
-    </div>
-  );
-}
-
-function Evidence({ label, value }: { label: string; value?: string }) {
-  return (
-    <div className="rounded-xl border border-[#1A1A1A]/8 bg-[#FDFCFA] p-4">
-      <div className="flex items-center gap-2 text-[#f9dc0b]">
-        <Layers3 className="h-4 w-4" />
-        <p className="text-xs font-bold text-[#1A1A1A]">{label}</p>
-      </div>
-      <p className="mt-2 text-sm leading-6 text-[#1A1A1A]/55">{value || "No evidence stored yet."}</p>
-    </div>
-  );
-}
-
-function Step({ icon, label, body }: { icon: ReactNode; label: string; body: string }) {
-  return (
-    <div className="flex gap-3">
-      <div className="mt-0.5 text-[#f9dc0b]">{icon}</div>
-      <p className="text-sm leading-6 text-[#1A1A1A]/60"><span className="font-bold text-[#1A1A1A]">{label}:</span> {body}</p>
     </div>
   );
 }

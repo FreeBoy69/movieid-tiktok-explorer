@@ -1,6 +1,5 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
-import fsSync from "node:fs";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import {

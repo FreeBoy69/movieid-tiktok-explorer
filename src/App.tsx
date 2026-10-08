@@ -15,7 +15,6 @@ import {
   Film,
   ExternalLink,
   Loader2,
-  X,
   Youtube,
   PlusCircle,
   CheckCircle2,

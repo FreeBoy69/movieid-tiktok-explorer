@@ -415,5 +415,3 @@ export async function runActions(actions: ChatAction[]): Promise<{ done: string[
   }
   return { done, failed };
 }
-
-export const clipAt = (p: VibeProject, t: number) => p.clips.find((c) => t >= c.start && t < clipEnd(c));

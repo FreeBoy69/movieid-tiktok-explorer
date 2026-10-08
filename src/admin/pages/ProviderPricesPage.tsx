@@ -25,7 +25,6 @@ export function ProviderPricesPage({ admin, navigate }: PageProps) {
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const editable = can(admin, "settings.manage");
-  const rows = prices.data?.models || [];
   const edit = (row?: ModelRow) => setDraft(row ? {
     model: row.model, inputPer1M: String(row.override?.inputPer1M ?? ""),
     outputPer1M: String(row.override?.outputPer1M ?? ""), perCall: String(row.override?.perCall ?? ""),

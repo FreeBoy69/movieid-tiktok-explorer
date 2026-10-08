@@ -103,19 +103,6 @@ export const CAMERA_OPTIONS = [
   o("motion", "reveal", "Reveal", "Moves past an obstruction to reveal the subject.", "camera moves past a foreground obstruction to reveal the subject"),
 ];
 
-// Where the phrasings come from (practitioner guides and cinematography references).
-export const CAMERA_SOURCES = [
-  "https://www.studiobinder.com/blog/ultimate-guide-to-camera-shots/",
-  "https://www.studiobinder.com/blog/types-of-camera-shot-angles-in-film/",
-  "https://cloud.google.com/blog/products/ai-machine-learning/ultimate-prompting-guide-for-veo-3-1",
-  "https://www.atlabs.ai/blog/ultimate-guide-ai-camera-moves-prompts",
-  "https://www.stevenvideo.com/blog/kling-3-cinematic-camera-guide-2026",
-  "https://lzyprompt.com/blog/ai-video-camera-movement-prompts/",
-  "https://myaiforce.com/midjourney-camera-angles/",
-  "https://zsky.ai/blog/ai-camera-angle-prompts",
-  "https://hailuoai.video/pages/knowledge/stable-dutch-angle-ai-video-framing-guide",
-];
-
 const BY_ID = new Map(CAMERA_OPTIONS.map((option) => [option.id, option]));
 export const cameraOption = (id) => BY_ID.get(String(id || "")) || null;
 export const cameraOptions = (group) => CAMERA_OPTIONS.filter((option) => option.group === group);

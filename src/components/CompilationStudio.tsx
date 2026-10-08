@@ -1,5 +1,5 @@
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, ArrowLeft, CheckCircle2, Clock3, Film, Heart, Layers3, Loader2, MessageCircle, Play, RefreshCw, Scissors, Search, Share2, Sparkles, User, Youtube, Zap } from "lucide-react";
+import { AlertCircle, ArrowLeft, Clock3, Film, Heart, Loader2, MessageCircle, Play, RefreshCw, Scissors, Search, Share2, Sparkles, User, Youtube, Zap } from "lucide-react";
 import { AuthSessionPayload, ConnectedYouTubeAccount, MovieResult, YouTubePlaylistSummary } from "../types";
 import { TikTokPlaylist, TikTokVideo, fetchTikTokPlaylist } from "../services/tiktok";
 import { cn } from "../lib/utils";
@@ -1405,20 +1405,6 @@ function StatItem({ icon, label, value }: { icon: ReactNode; label: string; valu
       <div className="text-[#f9dc0b]">{icon}</div>
       <p className="mt-2 text-[10px] font-black uppercase tracking-widest text-[#1A1A1A]/35">{label}</p>
       <p className="mt-1 text-sm font-black text-[#1A1A1A]">{compact(value)}</p>
-    </div>
-  );
-}
-
-function Notice({ title, body, tone = "success" }: { title: string; body: string; tone?: "success" | "error" | "info" }) {
-  const isError = tone === "error";
-  const isInfo = tone === "info";
-  return (
-    <div className={cn("flex gap-3 rounded-2xl border p-4 text-sm shadow-sm", isError ? "border-[#f9dc0b]/35 bg-[#fff9d6] text-[#6a5b00]" : isInfo ? "border-[#f9dc0b]/60 bg-[#f9dc0b]/15 text-[#1A1A1A]" : "border-[#f9dc0b]/35 bg-[#fff9d6] text-[#6a5b00]")}>
-      <div className="mt-0.5 shrink-0">{isError ? <AlertCircle className="h-4 w-4" /> : isInfo ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}</div>
-      <div>
-        <p className="font-black">{title}</p>
-        <p className="mt-1 font-semibold leading-6 opacity-80">{body}</p>
-      </div>
     </div>
   );
 }

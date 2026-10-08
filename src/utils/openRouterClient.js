@@ -220,12 +220,6 @@ async function vrModels(kind, options) {
 // Create Drama always sends character sheets + dialogue audio, so it must use
 // the ref host list — otherwise it lands on fal/seedance-2.5-reference (~$8
 // for a ~17s 720p clip) instead of MachGen/WaveSpeed at a fraction of that.
-export const VR_COST_PER_SECOND = {
-  "seedance-2.5": { "opensand/": 0.1179, "machgen/": 0.19, "atlascloud/": 0.3005, "wavespeed/": 0.36, "fal/": 0.473 },
-  "seedance-2.0": { "opensand/": 0.1179, "atlascloud/": 0.13, "wavespeed/": 0.15, "together/": 0.19, "replicate/": 0.22, "machgen/": 0.26, "fal/": 0.3034 },
-  "seedance-2.0-fast": { "atlascloud/": 0.027, "wavespeed/": 0.05, "machgen/": 0.09, "fal/": 0.2419 },
-  "seedance-2.0-mini": { "opensand/": 0.0104, "atlascloud/": 0.02, "wavespeed/": 0.03, "machgen/": 0.05, "fal/": 0.0721 },
-};
 const VR_PREFERRED = {
   "bytedance/seedance-2.5": ["opensand/", "machgen/", "atlascloud/", "wavespeed/", "together/", "fal/"],
   "bytedance/seedance-2.0-fast": ["atlascloud/", "wavespeed/", "machgen/", "fal/"],

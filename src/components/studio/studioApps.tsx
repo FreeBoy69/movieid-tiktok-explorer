@@ -6,7 +6,6 @@ import {
   Camera,
   Film,
   ImageIcon,
-  LayoutGrid,
   Megaphone,
   Mic,
   Presentation,
@@ -59,4 +58,3 @@ export const STUDIO_CATEGORIES: Array<{ id: string; label: string; icon: ReactNo
   { id: "audio", label: "Audio", icon: i(AudioLines), apps: ["audio", "music"] },
   { id: "agents", label: "Agents & Automation", icon: i(Workflow), apps: ["agents", "design-agent", "workflows"] },
 ];
-export const EXPLORE_ICON = i(LayoutGrid);

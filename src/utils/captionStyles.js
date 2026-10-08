@@ -246,7 +246,6 @@ export const CAPTION_STYLES = [
 ];
 
 export const findCaptionStyle = (id) => CAPTION_STYLES.find((style) => style.id === id) || null;
-export const captionStyleIds = () => CAPTION_STYLES.map((style) => style.id);
 export function normalizeCaptionStyle(value) {
   return findCaptionStyle(String(value || "")) ? String(value) : "none";
 }

@@ -32,7 +32,6 @@ import {
   deleteItems,
   FPS,
   formatTime,
-  formatTimecode,
   isLocked,
   moveItem,
   projectDuration,

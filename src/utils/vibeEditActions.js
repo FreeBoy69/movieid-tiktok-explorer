@@ -28,8 +28,6 @@ export const VIBE_ACTIONS = {
   generate_video: { args: "{prompt, seconds?: 5|10, at?}", about: "Generate a video shot and place it (takes a minute or two)" },
   seek: { args: "{time}", about: "Move the playhead" },
 };
-
-export const VIBE_ACTION_NAMES = Object.keys(VIBE_ACTIONS);
 const MAX_ACTIONS = 24;
 
 const clean = (value, depth = 0) => {

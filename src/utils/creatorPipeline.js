@@ -1,14 +1,4 @@
-export const CREATOR_STAGES = [
-  "brief",
-  "title",
-  "script",
-  "seo",
-  "voiceover",
-  "soundtrack",
-  "visualPlan",
-  "thumbnail",
-  "review",
-];
+
 export const STAGE_DEPENDENCIES = {
   title: [],
   script: ["title"],
@@ -101,12 +91,6 @@ export function descendants(stage) {
   }
   visit(stage);
   return [...found];
-}
-export function invalidateOutputs(outputs, stage) {
-  const next = { ...outputs };
-  for (const key of descendants(stage))
-    if (next[key]) next[key] = { ...next[key], stale: true };
-  return next;
 }
 export function stageInput(project, stage) {
   const settings = project.metadata?.settings || {};

@@ -13,7 +13,6 @@ import {
   ScrollText,
   Layers3,
   Eye,
-  Megaphone,
   Users,
   Youtube,
 } from "lucide-react";

@@ -151,12 +151,6 @@ export interface VibeProject {
   updatedAt: number;
 }
 
-export type VibeSelection =
-  | { kind: "clip"; id: string }
-  | { kind: "audio"; id: string }
-  | { kind: "text"; id: string }
-  | { kind: "cue"; id: string };
-
 export type TrackKind = "video" | "audio" | "text" | "cue";
 export const trackKey = (kind: TrackKind, row = 0) => (kind === "video" ? `v${row}` : kind === "audio" ? `a${row}` : kind);
 export const trackState = (p: VibeProject, key: string): VibeTrackState => p.tracks?.[key] || {};

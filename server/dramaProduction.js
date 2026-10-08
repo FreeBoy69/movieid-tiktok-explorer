@@ -239,7 +239,6 @@ export function registerDramaProduction(app, ctx) {
     if (boardAsset) jobs.push(modelCopy(userId, episode, ["scenes", scene.id, "board"], boardAsset, "storyboard", undefined, parts.aspect));
     for (const job of jobs) job.catch((error) => console.warn(`[drama] 3D reference for ${scene.id} failed: ${error?.message}`));
   }
-  const projectOf = (asset) => decodeURIComponent(String(asset).split("/api/maker/projects/")[1]?.split("/")[0] || "");
 
   function publicUrl(file) {
     const base = String(process.env.APP_URL || process.env.PUBLIC_APP_URL || "");

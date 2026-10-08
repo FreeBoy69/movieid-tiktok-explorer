@@ -19,12 +19,3 @@ export const PRODUCTION_PLAYBOOKS = [
 export function productionProfile(idOrAspect = "youtube-landscape") {
   return PRODUCTION_PROFILES.find((profile) => profile.id === idOrAspect || profile.aspect === idOrAspect) || PRODUCTION_PROFILES[0];
 }
-
-export function productionPlaybook(id = "clean-professional") {
-  return PRODUCTION_PLAYBOOKS.find((playbook) => playbook.id === id) || PRODUCTION_PLAYBOOKS[0];
-}
-
-export function aspectRatioValue(aspect = "16:9") {
-  const [width, height] = String(aspect).split(":").map(Number);
-  return Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0 ? `${width} / ${height}` : "16 / 9";
-}

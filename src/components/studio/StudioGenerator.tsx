@@ -1,13 +1,11 @@
 // One composer + gallery that serves every generator app in Creator Studio.
-import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
   AudioLines,
   Camera,
-  Check,
   ChevronDown,
   Clapperboard,
-  Download,
   Image as ImageIcon,
   Images,
   LayoutTemplate,
@@ -15,14 +13,9 @@ import {
   Mic,
   Music,
   PenLine,
-  RotateCcw,
-  Sparkles,
-  Square,
-  Trash2,
   Type,
   Wand2,
 } from "lucide-react";
-import type { StudioTab } from "../../utils/tiktokRoute";
 import { type GalleryHandlers, StudioGallery } from "./StudioGallery";
 import { TemplateGallery } from "../TemplateGallery";
 import { AudioPlayer } from "../AudioPlayer";
@@ -37,19 +30,16 @@ import {
   Choice,
   Empty,
   type Generation,
-  IconButton,
   IMAGE_TYPES,
   Lightbox,
   MediaSlot,
   ModelPicker,
-  type Output,
   readJson,
   ReferenceTray,
   Segment,
   Tabs,
   Toggle,
   VIDEO_TYPES,
-  elapsed,
   fit,
   timeAgo,
   uploadAsset,

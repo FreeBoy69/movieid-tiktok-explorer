@@ -6,7 +6,6 @@ import {
   Bot,
   Clock3,
   Compass,
-  ExternalLink,
   Flame,
   Loader2,
   PlaySquare,
@@ -15,11 +14,9 @@ import {
   SlidersHorizontal,
   Sparkles,
   TrendingUp,
-  UploadCloud,
   Users,
-  Youtube,
 } from "lucide-react";
-import { AuthSessionPayload, YouTubeChannelDashboard, YouTubeDashboardVideo, YouTubeRadarCompetitor, YouTubeRadarNiche, YouTubeRadarResult, YouTubeRadarVideo } from "../types";
+import { YouTubeRadarCompetitor, YouTubeRadarNiche, YouTubeRadarResult, YouTubeRadarVideo } from "../types";
 import { cn } from "../lib/utils";
 import { useErrorToast } from "../utils/toast";
 import { StandardChannelCard, StandardVideoCard } from "./StandardCards";
@@ -299,139 +296,6 @@ export function YouTubeRadar() {
         </div>
       </main>
     </div>
-  );
-}
-
-function ConnectedChannelPanel({
-  auth,
-  dashboard,
-  loading,
-  error,
-  onRefresh,
-  onAuthRefresh,
-}: {
-  auth: AuthSessionPayload;
-  dashboard: YouTubeChannelDashboard | null;
-  loading: boolean;
-  error: string;
-  onRefresh: () => void;
-  onAuthRefresh: () => Promise<void>;
-}) {
-  const active = auth.activeAccount;
-
-  async function switchAccount(id: string) {
-    const response = await fetch(`/api/youtube/accounts/${encodeURIComponent(id)}/select`, { method: "POST" });
-    if (response.ok) await onAuthRefresh();
-  }
-
-  return (
-    <section className="overflow-hidden rounded-xl border border-[#1A1A1A]/8 bg-white shadow-sm">
-      <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_minmax(280px,330px)]">
-        <div className="p-4 md:p-5">
-          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-            <div className="flex min-w-0 items-center gap-3">
-              {active?.thumbnailUrl ? (
-                <img src={active.thumbnailUrl} alt="" className="h-12 w-12 rounded-xl" referrerPolicy="no-referrer" />
-              ) : (
-                <div className="grid h-12 w-12 place-items-center rounded-xl bg-[#f9dc0b]/10 text-[#f9dc0b]">
-                  <Youtube className="h-5 w-5" />
-                </div>
-              )}
-              <div className="min-w-0">
-                <p className="text-xs font-bold uppercase tracking-widest text-[#f9dc0b]">Connected channel</p>
-                <h2 className="truncate font-serif text-2xl font-bold text-[#1A1A1A]">{active?.channelTitle || "No YouTube channel connected"}</h2>
-                <p className="truncate text-xs font-medium text-[#1A1A1A]/45">{active ? `${active.channelHandle || active.channelId} · ${active.email}` : "Connect Google to unlock channel analytics and account switching."}</p>
-              </div>
-            </div>
-            <div className="grid w-full grid-cols-1 gap-2 min-[430px]:w-auto min-[430px]:grid-cols-2">
-              <a href="/api/auth/google?mode=connect&next=/youtube" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-[#f9dc0b] px-4 py-2 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white">
-                <Youtube className="h-4 w-4" />
-                Add account
-              </a>
-              <button type="button" onClick={onRefresh} className="inline-flex min-h-10 items-center justify-center rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-4 py-2 text-xs font-bold text-[#1A1A1A]/60 transition hover:border-[#1A1A1A]/25 hover:text-[#1A1A1A]">
-                Refresh
-              </button>
-            </div>
-          </div>
-
-          {loading ? (
-            <div className="mt-4 flex items-center gap-2 rounded-lg bg-[#F9F8F6] px-3 py-3 text-sm font-semibold text-[#1A1A1A]/55">
-              <Loader2 className="h-4 w-4 animate-spin text-[#f9dc0b]" />
-              Loading channel analytics
-            </div>
-          ) : error ? (
-            <div className="mt-4 rounded-lg border border-[#f9dc0b]/35 bg-[#fff9d6] px-3 py-3 text-sm font-semibold text-[#443b00]">{error}</div>
-          ) : dashboard ? (
-            <>
-              <div className="mt-4 grid grid-cols-[repeat(auto-fit,minmax(min(100%,9.5rem),1fr))] gap-2">
-                <Metric icon={<Youtube className="h-4 w-4" />} label="Subscribers" value={compactNumber(dashboard.stats.subscriberCount)} />
-                <Metric icon={<PlaySquare className="h-4 w-4" />} label="Videos" value={compactNumber(dashboard.stats.videoCount)} />
-                <Metric icon={<BarChart3 className="h-4 w-4" />} label="Total views" value={compactNumber(dashboard.stats.viewCount)} />
-                <Metric icon={<TrendingUp className="h-4 w-4" />} label="Recent views" value={compactNumber(dashboard.stats.recentViews)} />
-              </div>
-              <div className="mt-4 flex flex-wrap gap-2">
-                <a href={dashboard.account.url || "#"} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-3 text-xs font-bold text-[#1A1A1A]/60 transition hover:text-[#1A1A1A]">
-                  <ExternalLink className="h-3.5 w-3.5" />
-                  Open channel
-                </a>
-                <a href="https://studio.youtube.com/" target="_blank" rel="noreferrer" className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#f9dc0b]/70 bg-[#f9dc0b] px-3 text-xs font-bold text-[#1A1A1A] transition hover:border-[#1A1A1A] hover:bg-[#1A1A1A] hover:text-white">
-                  <UploadCloud className="h-3.5 w-3.5" />
-                  Open YouTube upload
-                </a>
-              </div>
-            </>
-          ) : null}
-        </div>
-
-        <div className="border-t border-[#1A1A1A]/8 bg-[#F9F8F6] p-4 lg:border-l lg:border-t-0">
-          <p className="mb-3 text-xs font-bold uppercase tracking-widest text-[#1A1A1A]/35">Switch account</p>
-          <div className="space-y-2">
-            {auth.accounts.length ? auth.accounts.map((account) => (
-              <button
-                key={account.id}
-                type="button"
-                onClick={() => void switchAccount(account.id)}
-                className={cn(
-                  "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition",
-                  active?.id === account.id ? "bg-[#1A1A1A] text-white" : "bg-white text-[#1A1A1A]/65 hover:bg-[#FDFCFA]",
-                )}
-              >
-                {account.thumbnailUrl ? <img src={account.thumbnailUrl} alt="" className="h-8 w-8 rounded-lg" referrerPolicy="no-referrer" /> : <Youtube className="h-4 w-4" />}
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-xs font-bold">{account.channelTitle}</span>
-                  <span className={cn("block truncate text-[11px]", active?.id === account.id ? "text-white/45" : "text-[#1A1A1A]/35")}>{account.email}</span>
-                </span>
-              </button>
-            )) : (
-              <p className="rounded-lg bg-white px-3 py-3 text-xs font-semibold leading-5 text-[#1A1A1A]/45">No connected channels yet.</p>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {dashboard?.recentVideos?.length ? (
-        <div className="border-t border-[#1A1A1A]/8 p-4 md:p-5">
-          <p className="mb-3 text-xs font-bold uppercase tracking-widest text-[#1A1A1A]/35">Recent uploads</p>
-          <div className="grid gap-3 md:grid-cols-3">
-            {dashboard.recentVideos.slice(0, 3).map((video) => <RecentUpload key={video.id} video={video} />)}
-          </div>
-        </div>
-      ) : null}
-    </section>
-  );
-}
-
-function RecentUpload({ video }: { video: YouTubeDashboardVideo }) {
-  return (
-    <a href={video.url} target="_blank" rel="noreferrer" className="grid grid-cols-[96px_minmax(0,1fr)] gap-3 rounded-lg border border-[#1A1A1A]/8 bg-[#FDFCFA] p-2 transition hover:border-[#1A1A1A]/25">
-      <div className="aspect-video overflow-hidden rounded-md bg-[#1A1A1A]/5">
-        {video.thumbnailUrl ? <img src={video.thumbnailUrl} alt="" className="h-full w-full object-cover" /> : null}
-      </div>
-      <div className="min-w-0">
-        <p className="line-clamp-2 text-xs font-bold leading-snug text-[#1A1A1A]">{video.title}</p>
-        <p className="mt-1 text-[11px] font-semibold text-[#1A1A1A]/42">{compactNumber(video.viewCount)} views · {dateAge(video.publishedAt)}</p>
-      </div>
-    </a>
   );
 }
 

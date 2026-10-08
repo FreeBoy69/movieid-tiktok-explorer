@@ -134,17 +134,6 @@ function BillingOverview({ admin, navigate }: PageProps) {
   );
 }
 
-export function ProfitCell({ economics, priceCents }: { economics: Economics; priceCents: number }) {
-  if (!priceCents) return <span className="adm-list-main is-right"><span className="adm-muted">No charge</span><small>internal unpaid state</small></span>;
-  const loss = economics.profitCents < 0;
-  return (
-    <span className="adm-list-main is-right">
-      <strong className={loss ? "adm-bad-text" : "adm-good-text"}>{loss ? "−" : "+"}{fmt.usd(Math.abs(economics.profitCents) / 100)}</strong>
-      <small>{economics.effectiveMarginPercent === null ? "—" : `${economics.effectiveMarginPercent}% net over cost`}</small>
-    </span>
-  );
-}
-
 const ROUNDING: Array<{ value: BillingSettings["priceRounding"]; label: string }> = [
   { value: "ninety_nine", label: "$12.99" },
   { value: "whole", label: "$13" },

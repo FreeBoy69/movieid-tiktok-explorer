@@ -25,7 +25,3 @@ export function previewPrice(tokens: number, billing: BillingSettings, margin: n
   const paymentFeeCents = priceCents ? Math.ceil(priceCents * rate + fixed) : 0;
   return { costCents, priceCents, paymentFeeCents, profitCents: priceCents - paymentFeeCents - costCents, margin: m };
 }
-
-export function creditsToInternalTokens(credits: number) {
-  return Math.max(0, Math.round(Number(credits) || 0) * 100);
-}

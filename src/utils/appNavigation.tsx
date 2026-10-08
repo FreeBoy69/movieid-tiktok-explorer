@@ -282,9 +282,6 @@ export const TOOL_NAV_GROUPS: NavGroup[] = NAV_GROUPS.map((group) => ({
     .filter((column) => column.entries.length > 0),
 })).filter((group) => group.columns.length > 0);
 
-/** The page a navigation target opens, as the router sees it. */
-export type NavLocation = { view: MainView; studioTab?: StudioTab; toolId?: ToolId };
-
 /** The header group the current page belongs to ("" for Explore). */
 export function currentGroup(view: MainView, studioTab?: StudioTab, toolId?: ToolId) {
   const match = (entry: NavEntry) =>

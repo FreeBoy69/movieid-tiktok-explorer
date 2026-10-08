@@ -243,54 +243,6 @@ export async function generateOpenRouterTalkingAvatar({ imagePath, audioPath, wo
   throw new Error(`Avatar is still processing. Retry to resume job ${jobId}.`);
 }
 
-/** Escape path for ffmpeg concat demuxer. */
-function concatPath(filePath) {
-  return filePath.replace(/'/g, "'\\''");
-}
-
-export async function applyTimelineScenes(sourcePath, scenes, workspace, runFfmpeg, probeDuration) {
-  const list = (Array.isArray(scenes) ? scenes : []).filter((scene) => Number(scene.sourceEnd) > Number(scene.sourceStart));
-  if (list.length <= 1) return sourcePath;
-  const partsDir = path.join(workspace, "timeline-parts");
-  fs.mkdirSync(partsDir, { recursive: true });
-  const partPaths = [];
-  for (let index = 0; index < list.length; index += 1) {
-    const scene = list[index];
-    const start = Math.max(0, Number(scene.sourceStart) || 0);
-    const end = Math.max(start + 0.05, Number(scene.sourceEnd) || start + 0.05);
-    const partPath = path.join(partsDir, `part_${String(index).padStart(3, "0")}.mp4`);
-    await runFfmpeg([
-      "-y",
-      "-ss", String(start),
-      "-to", String(end),
-      "-i", sourcePath,
-      "-c:v", "libx264",
-      "-preset", "veryfast",
-      "-crf", "18",
-      "-c:a", "aac",
-      "-b:a", "192k",
-      "-avoid_negative_ts", "make_zero",
-      "-movflags", "+faststart",
-      partPath,
-    ], 10 * 60 * 1000);
-    partPaths.push(partPath);
-  }
-  const listFile = path.join(workspace, "timeline-concat.txt");
-  fs.writeFileSync(listFile, partPaths.map((part) => `file '${concatPath(part)}'`).join("\n"));
-  const outputPath = path.join(workspace, "timeline-cut.mp4");
-  await runFfmpeg([
-    "-y",
-    "-f", "concat",
-    "-safe", "0",
-    "-i", listFile,
-    "-c", "copy",
-    "-movflags", "+faststart",
-    outputPath,
-  ], 10 * 60 * 1000);
-  if (probeDuration) await probeDuration(outputPath);
-  return outputPath;
-}
-
 /**
  * Overlay generated presenter regions on an uninterrupted source timeline.
  * Source pixels outside each region retain their framing and timing.

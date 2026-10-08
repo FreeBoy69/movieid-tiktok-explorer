@@ -1726,7 +1726,7 @@ export async function fixTextCuts(project, analysis, built, matches, { look, sig
       flagged[format] = bad;
       if (!bad.length || round >= 2) break;
       // Keep the text frames clear from now on, and move each cut on in its line's film.
-      for (const [k, i] of edge.entries()) for (let j = 0; j < 3; j++) if (texty.has(k * 3 + j)) analysis.avoid = [...(analysis.avoid || []), [times[k * 3 + j] - 2, times[k * 3 + j] + 2]];
+      for (const k of edge.keys()) for (let j = 0; j < 3; j++) if (texty.has(k * 3 + j)) analysis.avoid = [...(analysis.avoid || []), [times[k * 3 + j] - 2, times[k * 3 + j] + 2]];
       const next = { ...matches, [format]: { ...(matches[format] || {}) } };
       Object.defineProperty(next, "jevScores", { value: matches.jevScores, enumerable: false });
       const editCuts = current.edit[format].cuts;

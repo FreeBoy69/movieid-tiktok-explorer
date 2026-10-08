@@ -126,11 +126,6 @@ export function splitSceneAtTime(scenes, playheadTime) {
   return normalizeSceneOrder(next);
 }
 
-export function sceneAtTime(scenes, time) {
-  const t = Number(time) || 0;
-  return (Array.isArray(scenes) ? scenes : []).find((scene) => t >= scene.start && t < scene.end) || null;
-}
-
 export function formatTimelineClock(seconds) {
   const total = Math.max(0, Number(seconds) || 0);
   const mins = Math.floor(total / 60);

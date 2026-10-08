@@ -18,8 +18,6 @@ export const OVERLAY_KINDS = {
   hook: { name: "Hook headline", seconds: 2.6, hidden: true, about: "" },
   subscribe: { name: "Subscribe", seconds: 4.4, hidden: true, about: "" },
 };
-/** The kinds a creator or the planner can place over footage. */
-export const PLACEABLE_KINDS = Object.keys(OVERLAY_KINDS).filter((id) => !OVERLAY_KINDS[id].hidden);
 export const OVERLAY_KIND_IDS = Object.keys(OVERLAY_KINDS);
 
 const clip = (value, max) => String(value ?? "").replace(/\s+/g, " ").trim().slice(0, max);

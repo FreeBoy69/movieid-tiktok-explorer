@@ -16,7 +16,7 @@ import { generateVoiceName, humanVoiceName } from "./src/utils/voiceNames.js";
 import { openRouterConfigured, requestOpenRouter, geminiToOpenRouter, transcribeOpenRouter } from "./src/utils/openRouterClient.js";
 import { rerankWithJev, recommendAutomationRecovery } from "./src/utils/jevDecision.js";
 import { addressReply, commentCheckMinutes, reachedCheckedComments, threadIdOf, threadReplyTarget } from "./src/utils/commentThreads.js";
-import { asksForMovieName as policyAsksForMovieName, classifyCommentReply, contentNameReply, sourceTitleSafeForPublicReply, sourceTitleVerifiedForPublicReply, originalCommentText, COMMENT_REPLY_RULES, validateCommentReply } from "./src/utils/commentPolicy.js";
+import { classifyCommentReply, contentNameReply, sourceTitleSafeForPublicReply, sourceTitleVerifiedForPublicReply, originalCommentText, COMMENT_REPLY_RULES, validateCommentReply } from "./src/utils/commentPolicy.js";
 import { preferEnglishAnimeResultTitle, preferredMalDisplayTitle } from "./src/utils/movieTitlePolicy.js";
 import { recoverCompactMovieIdJson } from "./src/utils/movieIdJsonRecovery.js";
 import { movieIdShouldUseQwenFallback, qwenMovieIdNeedsCompactLocalVideo, qwenMovieIdVideoReference } from "./src/utils/movieIdProviderPolicy.js";
@@ -69,7 +69,7 @@ import { configureVibeEdit, registerVibeEdit } from "./server/vibeEdit.js";
 import { JINA_READER, reachDoctor, readWebPage, youtubeCaptions } from "./server/reach.js";
 import { installRemoteMedia, registerRemoteMedia, remoteMediaStatus } from "./server/remoteMedia.js";
 import { registerPromptLibrary } from "./server/promptLibrary.js";
-import { guardUsage, meterUsage, runWithUsageContext, withUsageUser } from "./src/utils/usageMeter.js";
+import { guardUsage, meterUsage, withUsageUser } from "./src/utils/usageMeter.js";
 import { createAdminConsole } from "./server/adminConsole.js";
 import { hostedAudioFile, hostedVoiceProfile, hostedVoiceProfiles, isHostedVoice, storeHostedAudio, synthesizeHostedVoice } from "./server/hostedVoices.js";
 import { inFlightVoiceGeneration, reusableVoiceGeneration } from "./server/voiceboxHistory.js";
@@ -4797,17 +4797,6 @@ function savedPostAnalysisAutoTags(result = {}) {
         result?.tmdb?.releaseDate ? String(result.tmdb.releaseDate).slice(0, 4) : "",
     ], 80);
 }
-function savedPostAnalysisRow(row) {
-    if (!row)
-        return null;
-    return {
-        result: row.result || {},
-        analyzedAt: row.analyzedAt || Date.now(),
-        video: row.video || undefined,
-        playlistKey: row.playlistKey || "",
-        autoTags: row.autoTags || [],
-    };
-}
 async function listSavedPostAnalyses(userId, playlistKey = "") {
     const key = normalizePlaylistListUrl(playlistKey);
     const where = key
@@ -4966,25 +4955,6 @@ function savedGenreScanVideoUrl(video = {}) {
     const handle = String(video.authorHandle || video.uploaderId || "").replace(/^@/, "").trim();
     const id = String(video.id || "").trim();
     return handle && id ? `https://www.tiktok.com/@${handle}/video/${id}` : "";
-}
-async function identifySavedPlaylistGenreVideo(video) {
-    const rawUrl = savedGenreScanVideoUrl(video);
-    if (!rawUrl)
-        throw new Error("Saved clip URL is missing.");
-    const cacheLookup = movieCacheLookupFromUrl(rawUrl);
-    const cached = await getCachedMovieIdentification(cacheLookup).catch(() => null);
-    if (cached)
-        return { result: cached, cached: true };
-    const tempFile = makeLinkAnalysisVideoPath();
-    try {
-        await runTikTokDownloadWithAudioRetry({ ...video, playUrl: rawUrl }, tempFile, { preferYtDlp: true });
-        const downloadedFile = resolveDownloadedOutput(tempFile);
-        const result = await identifyMovieFromVideoFile(downloadedFile, "video/mp4", cacheLookup);
-        return { result, cached: false };
-    }
-    finally {
-        cleanupMatchingDownloadOutputs(tempFile);
-    }
 }
 const SAVED_STORY_GENRE_BUCKETS = [
     "Action",
@@ -6334,9 +6304,6 @@ function performanceScore(views, likes, comments) {
     const l = Number(likes || 0);
     const c = Number(comments || 0);
     return Math.round((v + l * 35 + c * 120) * 100) / 100;
-}
-function sourceStat(video, key) {
-    return Number(video?.stats?.[key] || video?.stats?.[key.replace("Count", "")] || video?.[key] || 0) || 0;
 }
 async function recordAutomationLearningSignal(uploadId) {
     if (!postgresConfigured() || !uploadId)
@@ -12102,9 +12069,6 @@ function rewriteLengthIsOff(report) {
     const maxRatio = Math.max(Math.min(Number(process.env.REWRITE_MAX_LENGTH_RATIO) || 1.08, 1.8), 1);
     return report.lengthRatio < minRatio || report.lengthRatio > maxRatio || !report.wordCountMatches;
 }
-function rewriteQualityScore(report) {
-    return Math.abs(1 - report.lengthRatio) * 1.4 + Math.abs(1 - report.wordCountRatio) * 3 + report.fourGram + report.fiveGram * 1.5 + report.copiedSentences * 2;
-}
 function buildRewriteSystemPrompt(targetCharCount, targetWordCount, mode = "standard", options = {}) {
     const minChars = Math.floor(targetCharCount * (Number(options.minCharRatio) || 0.92));
     const maxChars = Math.ceil(targetCharCount * (Number(options.maxCharRatio) || 1.08));
@@ -13470,55 +13434,6 @@ ${JSON.stringify(context.commentHint || null)}`,
         fullText: localTranscript || "",
     };
     return finalizeMovieIdResult(fileBuffer, mimeType, context, applyTikTokCommentHintToMovieResult(result, context));
-}
-function fallbackFacelessContentIdentity(video = {}, settings = {}, error = null) {
-    const title = String(video.title || "TikTok clip").trim() || "TikTok clip";
-    const genre = String(settings.genreFocus || "Faceless short-form content").trim();
-    const microNiche = String(settings.microNicheGoal || "").trim();
-    const hookPattern = inferHookPatternFromText(title, genre, microNiche);
-    return {
-        title,
-        year: "",
-        mediaType: "faceless-content",
-        genre,
-        confidence: 0.35,
-        summary: title,
-        transcript: {
-            excerpt: "",
-            fullText: "",
-            hooks: [],
-            contentStyle: [],
-            structure: [],
-        },
-        contentNiche: {
-            primary: genre,
-            subNiche: "",
-            microSubNiche: microNiche,
-            hookPattern,
-            contentFormat: "short-form faceless clip",
-            audience: "",
-            rationale: error ? `Fallback metadata analysis used because video analysis failed: ${String(error.message || error).slice(0, 180)}` : "Fallback metadata analysis from source title and agent settings.",
-            opportunities: [],
-            platforms: ["YouTube Shorts", "TikTok", "Instagram Reels"],
-        },
-        facelessAnalysis: {
-            contentCategory: "unknown",
-            commentaryPresence: "unclear",
-            monetization: {
-                rpmTier: "",
-                riskLevel: "",
-                repeatability: "",
-                shortsToLongformPotential: "",
-                sponsorFit: "",
-                recommendations: [],
-            },
-        },
-        evidence: {
-            audio: "",
-            visual: "",
-            reasoning: "Only source metadata was available.",
-        },
-    };
 }
 async function buildTranscriptBackedAutomationFallback(filePath, video = {}, settings = {}, error = null) {
     const localTranscript = await transcribeMediaFileForAnalysis(filePath).catch((transcriptionError) => {
@@ -15278,7 +15193,7 @@ async function runAutomationAgentOnceForUser(userId, agentId, options = {}) {
                 seed: runId,
             });
             settings = normalizeAutomationSettings(applyAutomationDecisionSettings(savedSettings, decisionPolicy));
-            const { account, target: publishTarget } = await selectAutomationPublishAccount(userId, agent, settings);
+            const { account } = await selectAutomationPublishAccount(userId, agent, settings);
             throwIfAutomationCancelled(signal);
             plannedScheduleAt = await resolveAutomationScheduleAt(settings, account, new Date(options.from || Date.now()), {
                 catchUpPublishAt: options.catchUpPublishAt,
@@ -15737,12 +15652,6 @@ WHERE id = ${sqlString(uploadId)};
         console.warn("Automation learning signal capture failed:", error instanceof Error ? error.message : error);
     });
     // Comments are answered by sweepDueAutomationComments on their own, faster cadence.
-}
-function asksForMovieName(text) {
-    return policyAsksForMovieName(text);
-}
-function shouldSkipCommunityComment(text) {
-    return classifyCommentReply(text).action === "skip";
 }
 function sanitizeGeneratedReply(text) {
     return String(text || "")
@@ -20139,9 +20048,6 @@ function defaultOptimizationFromContext(video, growthInsights, uploadRecord, met
         ],
     };
 }
-async function getAutomationUploadForVideo(userId, accountId, videoId) {
-    return getChannelUploadByRef(userId, accountId, videoId);
-}
 async function getTikTokVideoOptimization(userId, account, videoId) {
     const uploadRecord = await getChannelUploadByRef(userId, account.id, videoId).catch(() => null);
     const zernioPostId = resolveZernioPostIdFromUpload(uploadRecord, videoId);
@@ -20951,56 +20857,6 @@ RETURNING json_build_object(
 );
 `);
     return creatorProjectFromRow(JSON.parse(out || "null"));
-}
-function generatedProjectStageOutput(project, stage) {
-    const outputs = project.outputs || {};
-    const title = outputs.title?.ideas?.[0]?.title || outputs.title?.current || project.title;
-    const niche = outputs.publishingPlan?.playlist || project.metadata?.video?.title || "faceless story";
-    if (stage === "title") {
-        return {
-            current: outputs.title?.current || project.title,
-            ideas: [
-                { title: `${title}`.slice(0, 98), score: 91, reason: "Keeps the strongest current hook intact." },
-                { title: `The ${niche} Moment Viewers Cannot Stop Rewatching`.slice(0, 98), score: 87, reason: "Connects the topic to repeat viewing and curiosity." },
-                { title: `Everyone Missed Why This ${niche} Clip Took Off`.slice(0, 98), score: 84, reason: "Frames the upload as an explained insight." },
-            ],
-        };
-    }
-    if (stage === "seo") {
-        return {
-            description: `Watch this ${niche} video built around a clear curiosity hook, fast context, and a payoff viewers can understand quickly.\n\nSubscribe for more focused faceless YouTube stories, recaps, and high-retention content.`,
-            tags: Array.from(new Set([niche, "faceless content", "story explained", "youtube shorts", "viral recap", "high retention"].map((tag) => String(tag).toLowerCase()))),
-            actionCards: ["Match the first description line to the title promise.", "Add this video to a focused series playlist.", "Use the copied style keywords only when they truly match the clip."],
-        };
-    }
-    if (stage === "script") {
-        return {
-            hook: outputs.title?.ideas?.[0]?.title || project.title,
-            structure: ["Open with the exact conflict or reveal.", "Add one sentence of context.", "Escalate the stakes every 5-8 seconds.", "End with the payoff and a reason to watch the next upload."],
-            draft: `Start with the moment that makes the viewer ask what happens next. Explain the context quickly, then build toward the reveal without adding filler.`,
-        };
-    }
-    if (stage === "visualPlan") {
-        return {
-            direction: "Use full-frame 9:16 for Shorts and full-frame 16:9 for long-form. Keep every visual tied to the current script beat.",
-            segments: ["Hook frame", "Context frame", "Escalation frame", "Payoff frame"],
-            animation: "Subtle push-in only when the source frame is sharp enough.",
-        };
-    }
-    if (stage === "thumbnail") {
-        return {
-            direction: "One focal subject, one emotional cue, one readable contrast decision.",
-            prompts: [`${niche} thumbnail, expressive subject, clean contrast, YouTube-safe, no clutter`],
-        };
-    }
-    if (stage === "publishingPlan") {
-        return {
-            playlist: niche,
-            timing: "Publish in a repeatable test window and compare 24h views/hour before scaling.",
-            checklist: ["Title promise is clear", "Description supports search intent", "Tags match niche/sub-niche", "Playlist selected", "Pinned comment prepared"],
-        };
-    }
-    return outputs[stage] || { note: "Stage saved." };
 }
 async function updateCreatorProject(userId, projectId, input = {}) {
     const current = await getCreatorProject(userId, projectId);

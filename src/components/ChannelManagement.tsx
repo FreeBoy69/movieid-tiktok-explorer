@@ -1,4 +1,4 @@
-import { AlertCircle, ArrowLeft, BarChart3, CheckCircle2, ChevronLeft, ChevronRight, Download, ExternalLink, FileText, FileVideo, Film, ImageUp, Loader2, MessageCircle, PlaySquare, RefreshCw, Search, Send, Sparkles, Trash2, Trophy, UploadCloud, Users, Wand2, X, Youtube } from "lucide-react";
+import { AlertCircle, ArrowLeft, BarChart3, CheckCircle2, ChevronLeft, ChevronRight, Download, ExternalLink, FileText, FileVideo, Film, ImageUp, Loader2, MessageCircle, PlaySquare, RefreshCw, Search, Send, Sparkles, Trash2, Trophy, UploadCloud, Wand2, X, Youtube } from "lucide-react";
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AuthSessionPayload, ChannelStyleProfile, ConnectedYouTubeAccount, CreatorProject, FeedInsight, MovieResult, YouTubeCaptionTrack, YouTubeChannelDashboard, YouTubeCommentsResponse, YouTubeDashboardVideo, YouTubePlaylistSummary, YouTubeUploadResult, YouTubeVideoAnalytics, YouTubeVideoOptimization } from "../types";
 import { cn } from "../lib/utils";
@@ -117,11 +117,6 @@ function formatRevenuePeriod(startDate?: string, endDate?: string): string {
   return `${startLabel}–${endLabel}`;
 }
 
-function formatDate(value: string): string {
-  if (!value) return "Not published";
-  return new Intl.DateTimeFormat("en", { month: "short", day: "numeric", year: "numeric" }).format(new Date(value));
-}
-
 function formatDuration(seconds: number): string {
   const n = Math.max(0, Math.round(seconds || 0));
   const h = Math.floor(n / 3600);
@@ -227,11 +222,6 @@ function buildAchievementFeed(dashboard: YouTubeChannelDashboard, growth: YouTub
   const views = viewThresholds.filter((value) => dashboard.stats.viewCount >= value).slice(-4).map((value) => `Milestone Unlocked - ${plainNumber(value)} Views!`);
   const promoted = (growth?.niches || []).filter((niche) => niche.status === "promoted").slice(0, 2).map((niche) => `Niche Promoted - ${niche.microNiche}`);
   return [...subs, ...views, ...promoted].slice(-7).reverse();
-}
-
-function statusLabel(value?: string): string {
-  if (!value) return "Unknown";
-  return value.slice(0, 1).toUpperCase() + value.slice(1);
 }
 
 function videoIdFromUrl(value: string): string {
@@ -2154,7 +2144,6 @@ function FeedDashboard({ dashboard, monetization, monetizationLoading, monetizat
   const otherInsights = persistedInsights.filter((i) => !(i.type === "Research" && i.actionPayload?.competitor));
   const outlierSignals = buildOwnedOutlierSignals(videos);
   const outliers = outlierSignals.slice(0, 3);
-  const topVideo = outliers[0]?.video || videos[0];
   const youtubeCompetitors = growth?.youtubeCompetitors || [];
   const competitorOutliers = youtubeCompetitors
     .flatMap((competitor) => (competitor.recentVideos || []).map((video) => ({ competitor, video })))
@@ -2175,7 +2164,6 @@ function FeedDashboard({ dashboard, monetization, monetizationLoading, monetizat
   const showResearch = activeTab === "All" || activeTab === "Research";
   const showAnalytics = activeTab === "Analytics";
   const showAchievements = activeTab === "Achievements";
-  const showAnalyticsInsightGrid = activeTab === "Analytics" && persistedInsights.some((insight) => insight.type === "Analytics");
   const showAll = activeTab === "All";
   const showYouTubeCompetitorResearch = showResearch && (!isTikTokPlatform || youtubeCompetitors.length > 0);
   const showTikTokSources = showResearch && (isTikTokPlatform || sourceCandidates.length > 0 || candidateVideos.length > 0);
@@ -3028,33 +3016,6 @@ function Mini({ label, value }: { label: string; value: string }) {
   );
 }
 
-function Metric({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
-  return (
-    <div className="rounded-lg border border-[#1A1A1A]/8 bg-[#F9F8F6] px-3 py-2.5">
-      <div className="mb-1.5 flex items-center gap-1.5 text-[#f9dc0b]">
-        {icon}
-        <span className="text-[10px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">{label}</span>
-      </div>
-      <p className="truncate text-base font-bold text-[#1A1A1A]">{value}</p>
-    </div>
-  );
-}
-
-function RecentUpload({ video, onOpenVideo }: { video: YouTubeDashboardVideo; onOpenVideo?: (video: YouTubeDashboardVideo) => void }) {
-  const thumbnailUrl = sharpYouTubeThumbnail(video.thumbnailUrl);
-  return (
-    <button type="button" onClick={() => onOpenVideo?.(video)} className="grid grid-cols-[96px_minmax(0,1fr)] gap-3 rounded-lg border border-[#1A1A1A]/8 bg-[#FDFCFA] p-2 text-left transition hover:border-[#1A1A1A]/25">
-      <div className="aspect-video overflow-hidden rounded-md bg-[#1A1A1A]/5">
-        {thumbnailUrl ? <img src={thumbnailUrl} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" loading="lazy" /> : null}
-      </div>
-      <div className="min-w-0">
-        <p className="line-clamp-2 text-xs font-bold leading-snug text-[#1A1A1A]">{video.title}</p>
-        <p className="mt-1 text-[11px] font-semibold text-[#1A1A1A]/42">{compactNumber(video.viewCount)} views - {dateAge(video.publishedAt)}</p>
-      </div>
-    </button>
-  );
-}
-
 function OptimizeCard({ video, onClick }: { video: YouTubeDashboardVideo; onClick: () => void }) {
   const score = Math.max(58, Math.min(99, Math.round(42 + video.title.length / 2 + (video.viewCount > 1000 ? 10 : 0))));
   const thumbnailUrl = sharpYouTubeThumbnail(video.thumbnailUrl);
@@ -3070,93 +3031,6 @@ function OptimizeCard({ video, onClick }: { video: YouTubeDashboardVideo; onClic
         </div>
       </div>
     </button>
-  );
-}
-
-function VideoOptimizeModal({ video, onClose, isDark = false }: { video: YouTubeDashboardVideo; onClose: () => void; isDark?: boolean }) {
-  const isShort = (video.durationSeconds || 0) <= 180;
-  const tabs = ["Title", ...(isShort ? [] : ["Thumbnail"]), "SEO", "Review", "Preview", "Performance"];
-  const [tab, setTab] = useState(tabs[0]);
-  const titleScoreValue = Math.max(58, Math.min(99, Math.round(42 + video.title.length / 2)));
-  const thumbnailScore = Math.min(99, titleScoreValue + 3);
-
-  return (
-    <div className={cn("fixed inset-0 z-[100] p-4 backdrop-blur-md", isDark ? "bg-black/55" : "bg-[#111827]/35")}>
-      <div className={cn("mx-auto flex max-h-[92vh] max-w-5xl flex-col overflow-hidden rounded-[1.7rem] shadow-2xl", isDark ? "bg-[#151923] text-white" : "bg-white text-[#111827]")}>
-        <div className={cn("flex items-center justify-between border-b px-5 py-4", isDark ? "border-white/10" : "border-[#111827]/8")}>
-          <button type="button" onClick={onClose} className={cn("grid h-9 w-9 place-items-center rounded-full", isDark ? "text-white/45 hover:bg-white/8 hover:text-white" : "text-[#111827]/45 hover:bg-[#F3F4F8] hover:text-[#111827]")}><X className="h-4 w-4" /></button>
-          <h2 className="text-lg font-black">Optimize Video</h2>
-          <button type="button" className={cn("rounded-xl px-4 py-2 text-sm font-black", isDark ? "text-white/45 hover:bg-white/8" : "text-[#111827]/45 hover:bg-[#F3F4F8]")}>Save Changes</button>
-        </div>
-        <div className={cn("flex gap-7 overflow-x-auto border-b px-6", isDark ? "border-white/10" : "border-[#111827]/8")}>
-          {tabs.map((item) => (
-            <button key={item} type="button" onClick={() => setTab(item)} className={cn("shrink-0 border-b-2 py-4 text-sm font-black", tab === item ? isDark ? "border-[#f9dc0b] text-white" : "border-[#f9dc0b] text-[#111827]" : isDark ? "border-transparent text-white/45" : "border-transparent text-[#111827]/45")}>
-              {item}{item === "Title" ? ` ${titleScoreValue}` : item === "Thumbnail" ? ` ${thumbnailScore}` : item === "Review" ? " 85" : ""}
-            </button>
-          ))}
-        </div>
-        <div className="grid min-h-0 flex-1 overflow-y-auto md:grid-cols-[minmax(0,1fr)_320px]">
-          <div className="min-w-0 p-6">
-            {tab === "Title" ? (
-              <div className="space-y-5">
-                <ScorePanel label="Title score" value={titleScoreValue} />
-                <div className="rounded-2xl bg-[#F3F4F8] p-5">
-                  <p className="text-lg font-black">{video.title}</p>
-                  <p className="mt-8 text-xs font-bold text-[#111827]/45">{video.title.length} of 100</p>
-                </div>
-                <SuggestionGrid video={video} />
-              </div>
-            ) : tab === "Thumbnail" ? (
-              <div className="space-y-5">
-                <div className="grid gap-4 md:grid-cols-3">
-                  {["Current", "Nano Banana 2", "High contrast"].map((item, index) => (
-                    <button key={item} type="button" className="rounded-2xl bg-[#F3F4F8] p-3 text-left">
-                      <ThumbPreview video={video} />
-                      <p className="mt-3 text-sm font-black">{item}</p>
-                      <p className="text-xs font-bold text-[#111827]/45">Score {thumbnailScore - index * 4}</p>
-                    </button>
-                  ))}
-                </div>
-                <div className="rounded-3xl bg-[#F3F4F8] p-5">
-                  <textarea placeholder="Describe your thumbnail idea..." className="min-h-24 w-full resize-none bg-transparent text-sm font-semibold outline-none" />
-                  <button className="mt-4 inline-flex h-10 items-center gap-2 rounded-full bg-[#f9dc0b] px-5 text-sm font-black text-[#1A1A1A]"><Wand2 className="h-4 w-4" />Generate with Nano Banana 2</button>
-                </div>
-              </div>
-            ) : tab === "SEO" ? (
-              <div className="space-y-5">
-                <div className="rounded-2xl bg-[#F3F4F8] p-5">
-                  <p className="text-sm font-black">Description</p>
-                  <p className="mt-3 text-sm font-semibold leading-7 text-[#111827]/70">Add a keyword-rich description that names the promise, audience, and related search terms without stuffing.</p>
-                </div>
-                <div>
-                  <p className="mb-3 text-sm font-black">Suggestions</p>
-                  <div className="flex flex-wrap gap-2">{["recap", "story explained", "anime", "movie ending", "viral shorts", "character reveal"].map((tag, index) => <span key={tag} className="rounded-xl bg-[#F3F4F8] px-3 py-2 text-sm font-black text-[#6a5b00]">{70 - index * 3} {tag} +</span>)}</div>
-                </div>
-              </div>
-            ) : tab === "Review" ? (
-              <ReviewPanel video={video} />
-            ) : tab === "Preview" ? (
-              <div className="grid gap-5 md:grid-cols-2">
-                <ThumbPreview video={video} />
-                <div><p className="text-xl font-black">{video.title}</p><p className="mt-2 text-sm font-semibold text-[#111827]/45">{compactNumber(video.viewCount)} views - {dateAge(video.publishedAt)}</p></div>
-              </div>
-            ) : (
-              <div className="grid gap-4 sm:grid-cols-3"><Mini label="Views" value={compactNumber(video.viewCount)} /><Mini label="Likes" value={compactNumber(video.likeCount)} /><Mini label="Comments" value={compactNumber(video.commentCount)} /></div>
-            )}
-          </div>
-          <aside className={cn("border-l p-5", isDark ? "border-white/10" : "border-[#111827]/8")}>
-            <ThumbPreview video={video} />
-            <p className="mt-4 text-sm font-black">{video.title}</p>
-            <p className="mt-1 text-xs font-semibold text-[#111827]/45">{dateAge(video.publishedAt)} - {compactNumber(video.viewCount)} views</p>
-            <div className="mt-5 space-y-3">
-              <FeedbackLine text="Clear title hook" good />
-              <FeedbackLine text={isShort ? "Shorts packaging is separated" : "Thumbnail generation available"} good />
-              <FeedbackLine text="Tags can be improved" />
-            </div>
-          </aside>
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -3278,18 +3152,10 @@ function SeoOptimizationPanel({ video, optimization, loading, publishing, onPubl
   );
 }
 
-function SuggestionGrid({ video }: { video: YouTubeDashboardVideo }) {
-  return <div className="grid gap-4 md:grid-cols-3">{["These Clips Are Going Viral", "The Story Everyone Missed", "This Ending Changed Everything"].map((title) => <div key={title} className="rounded-2xl bg-[#F3F4F8] p-3"><ThumbPreview video={video} /><p className="mt-3 text-sm font-black">{title}</p><p className="mt-1 text-xs font-bold text-[#6a5b00]">Score {Math.round(78 + title.length / 3)}</p></div>)}</div>;
-}
-
 function ReviewPanel({ video }: { video: YouTubeDashboardVideo }) {
   return <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_280px]"><ThumbPreview video={video} /><div className="space-y-3"><ReviewNote title="The Hook" body="The first seconds need a sharp curiosity promise and a clear reason to keep watching." /><ReviewNote title="Pacing" body="Shorts need fast transitions. Long videos need clearer chapters and topic continuity." /><ReviewNote title="Packaging" body="Title and thumbnail should agree on one emotional promise." /></div></div>;
 }
 
 function ReviewNote({ title, body }: { title: string; body: string }) {
   return <div className="rounded-2xl bg-[#F3F4F8] p-4"><p className="font-black">{title}</p><p className="mt-2 text-sm font-semibold leading-6 text-[#111827]/58">{body}</p></div>;
-}
-
-function FeedbackLine({ text, good = false }: { text: string; good?: boolean }) {
-  return <div className="rounded-2xl bg-[#F3F4F8] px-4 py-3 text-sm font-bold text-[#111827]/65"><span className={cn("mr-2 inline-block h-2 w-2 rounded-full", good ? "bg-[#f9dc0b]" : "bg-[#fff1a3]")} />{text}</div>;
 }
