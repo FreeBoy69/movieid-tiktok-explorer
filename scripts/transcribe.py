@@ -19,6 +19,37 @@ def output(obj):
     sys.stdout.flush()
 
 
+WHISPER_PYTHONS = [
+    os.environ.get("WHISPER_PYTHON", ""),
+    "/opt/autoyt/whisper-venv/bin/python",
+    "/opt/autoyt/venv/bin/python",
+]
+
+
+def delegate_to_whisper_python(audio_path):
+    """Re-run this script under an interpreter that has faster-whisper.
+    Returns True when that interpreter produced the JSON result."""
+    import subprocess
+    # A venv's python is a symlink to the system one, so loops are stopped by a flag, not by path.
+    if os.environ.get("AUTOYT_WHISPER_DELEGATED"):
+        return False
+    script = os.path.abspath(__file__)
+    env = {**os.environ, "AUTOYT_WHISPER_DELEGATED": "1"}
+    for python in WHISPER_PYTHONS:
+        if not python or not os.path.isfile(python):
+            continue
+        try:
+            result = subprocess.run([python, script, audio_path], capture_output=True, text=True, timeout=1800, env=env)
+        except Exception:  # noqa: BLE001
+            continue
+        lines = [line for line in result.stdout.strip().splitlines() if line.startswith("{") and line.endswith("}")]
+        if lines and '"faster-whisper module not found' not in lines[-1]:
+            sys.stdout.write(lines[-1] + "\n")
+            sys.stdout.flush()
+            return True
+    return False
+
+
 def transcribe_audio(audio_path):
     # 1. Validate file exists and has non-trivial size
     if not os.path.exists(audio_path):
@@ -33,6 +64,10 @@ def transcribe_audio(audio_path):
     try:
         from faster_whisper import WhisperModel
     except ImportError:
+        # Media workers keep Whisper in its own venv (the VPS worker's system
+        # python has none), so hand the file to the first python that has it.
+        if delegate_to_whisper_python(audio_path):
+            return
         output({"success": False, "error": "faster-whisper module not found. Run: pip install faster-whisper"})
         return
 
