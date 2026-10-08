@@ -35,7 +35,8 @@ export function StudioLayout<T extends string>({
   big?: boolean;
   /** Mode switches that change what the box makes (sit just above it). */
   above?: ReactNode;
-  composer: ReactNode;
+  /** The chat box; a section without one (a library, a form) renders straight into the panel. */
+  composer?: ReactNode;
   notices?: ReactNode;
   heading?: ReactNode;
   aside?: ReactNode;

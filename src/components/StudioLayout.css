@@ -399,3 +399,13 @@
 .cns .sl .cns-dock { padding: 10px; border: 1px solid var(--ui-line-strong); border-radius: 20px; background: var(--ui-input); box-shadow: var(--ui-shadow-soft); }
 .cns .sl .cns-dock:focus-within { border-color: var(--ui-text-faint); box-shadow: var(--ui-shadow-soft), 0 0 0 4px var(--ui-ring); }
 .cns .sl .cns-bar, .cns .sl .cns-bar:focus-within { border: 0; border-radius: 12px; background: transparent; box-shadow: none; }
+
+/* Audio Studio (Text to Speech): the script is the box, settings in its bar. */
+.as-root.as-in-layout { display: flex; flex-direction: column; flex: 1; height: 100%; min-height: 0; padding: 0; overflow: hidden; }
+.as-in-layout .sl-above .as-head-actions { display: flex; align-items: center; gap: 10px; }
+.as-in-layout .as-box textarea.as-script { min-height: 140px; padding: 0; border: 0; background: transparent; box-shadow: none; resize: vertical; }
+.as-in-layout .as-controls { gap: 8px; }
+.as-in-layout .as-controls .as-field { display: inline-flex; min-width: 0; max-width: 260px; }
+.as-in-layout .as-controls .as-count, .as-in-layout .as-controls .as-cost, .as-in-layout .as-controls .as-blocked { color: var(--ui-text-muted); font-size: 12.5px; }
+.as-in-layout .as-player-below { margin-top: 18px; }
+.as-in-layout .as-history-below { display: grid; gap: 10px; margin-top: 28px; }

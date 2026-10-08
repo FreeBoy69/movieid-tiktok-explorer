@@ -3,6 +3,7 @@
 // drafts a chaptered script (server/explainerStudio.js, plan), you edit it and
 // pick a voice, then the film is written chapter by chapter on the narration's
 // timing and rendered (film). Shares Promo Studio's page styles.
+import { StudioLayout } from "../StudioLayout";
 import { type ReactNode, type TextareaHTMLAttributes, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDown,
@@ -97,6 +98,7 @@ const filmMinutes = (seconds: number, chapters: number, clonedLines = 0) => Math
 export function ExplainerStudio({ generations, now, handlers, onCreated, catalog }: { generations: Generation[]; now: number; handlers: GalleryHandlers; onCreated: (item: Generation) => void; catalog: Catalog | null }) {
   const [draft, setDraft] = useState<Draft>(initialDraft);
   const [editing, setEditing] = useState<Editing | null>(null);
+  const [section, setSection] = useState<"films" | "scripts" | "how">("films");
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
   const [voices, setVoices] = useState<VoiceProfile[]>([]);
   const [voicesLoading, setVoicesLoading] = useState(true);
@@ -276,6 +278,8 @@ export function ExplainerStudio({ generations, now, handlers, onCreated, catalog
     onReuse: (item) => (item.settings?.stage === "film" ? openFilm(item) : item.plan ? openPlan(item) : undefined),
   };
 
+  // The tab shown under the box: your films, then drafted scripts, else how it works.
+  const shownSection = section === "films" && shown.length ? "films" : section === "scripts" && plans.length ? "scripts" : section === "how" ? "how" : shown.length ? "films" : plans.length ? "scripts" : "how";
   return (
     <div className="mks prs exs" ref={top}>
       {editing ? (
@@ -297,13 +301,10 @@ export function ExplainerStudio({ generations, now, handlers, onCreated, catalog
           renderer={catalog?.explainer?.renderer !== false}
         />
       ) : (
-        <section className="mks-hero">
-          <h1>
-            Walk people
-            <br />
-            through it
-          </h1>
-          <p className="prs-lede">Paste your site, add screenshots or a screen recording. Opus 5.5 finds the features and drafts the script; you edit it, pick your own cloned voice or a built-in one, and get a narrated walkthrough.</p>
+        <StudioLayout
+          title="Walk people through it"
+          intro="Paste your site, add screenshots or a screen recording. Opus 5.5 finds the features and drafts the script; you edit it, pick your own cloned voice or a built-in one, and get a narrated walkthrough."
+          composer={
           <div className="mks-dock prs-dock">
             <div className="mks-bar">
               <label className="prs-link">
@@ -374,15 +375,21 @@ export function ExplainerStudio({ generations, now, handlers, onCreated, catalog
               </div>
             </div>
           </div>
-          {!hasMaterial && !busy ? <p className="mks-hint">Add a link, screenshots, a recording, or a description</p> : <p className="mks-hint">{template.name}: {template.blurb.toLowerCase()}. You'll review the script before anything is recorded.</p>}
-          {!configured ? <GenerationUnavailable className="mks-notice" /> : null}
-        </section>
-      )}
-
-      <section className="mks-results exs-films" aria-label="Your walkthroughs">
-        {plans.length ? (
-          <>
-            <h2><FileText className="h-4 w-4" />Drafted scripts</h2>
+          }
+          notices={<>
+            {!hasMaterial && !busy ? <p className="mks-hint">Add a link, screenshots, a recording, or a description</p> : <p className="mks-hint">{template.name}: {template.blurb.toLowerCase()}. You'll review the script before anything is recorded.</p>}
+            {!configured ? <GenerationUnavailable className="mks-notice" /> : null}
+          </>}
+          tabsLabel="Explainer sections"
+          tabs={[
+            ...(shown.length ? [{ value: "films" as const, label: "Your walkthroughs", hint: String(shown.length) }] : []),
+            ...(plans.length ? [{ value: "scripts" as const, label: "Drafted scripts", hint: String(plans.length) }] : []),
+            { value: "how" as const, label: "How it works" },
+          ]}
+          tab={shownSection}
+          onTab={(next) => setSection(next as "films" | "scripts" | "how")}
+        >
+        {shownSection === "scripts" ? (
             <ul className="exs-drafts">
               {plans.map((item) => (
                 <li key={item.id} className={editing?.planId === item.id && !editing.baseFile ? "is-open" : undefined}>
@@ -394,24 +401,19 @@ export function ExplainerStudio({ generations, now, handlers, onCreated, catalog
                 </li>
               ))}
             </ul>
-          </>
-        ) : null}
-        {shown.length ? (
-          <>
-            <h2 className={plans.length ? "prs-more" : undefined}><Sparkles className="h-4 w-4" />Your walkthroughs</h2>
-            <StudioGallery items={shown} now={now} handlers={gallery} />
-          </>
-        ) : !plans.length ? (
+        ) : shownSection === "films" ? (
+          <StudioGallery items={shown} now={now} handlers={gallery} />
+        ) : (
           <div className="exs-how">
-            <h2><ListChecks className="h-4 w-4" />How it works</h2>
             <ol>
               <li><strong>Draft</strong><span>Opus 5.5 reads your site and screens, lists the features, and writes a chaptered script with on-screen cues.</span></li>
               <li><strong>Edit</strong><span>Change any line, reorder chapters, pick the screenshots each chapter shows, and choose the voice.</span></li>
               <li><strong>Narrate</strong><span>Your cloned voice (or a built-in one) reads it; every chapter is animated to the narration's exact timing, with captions.</span></li>
             </ol>
           </div>
-        ) : null}
-      </section>
+        )}
+        </StudioLayout>
+      )}
 
       {cloning ? (
         <VoiceCloneSheet
