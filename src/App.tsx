@@ -1,5 +1,4 @@
 import {
-  lazy,
   Suspense,
   useState,
   useCallback,
@@ -61,14 +60,15 @@ import { VideoDownloader } from "./components/VideoDownloader";
 import { DigitalProductMaker } from "./components/DigitalProductMaker";
 import { CreatorStudio } from "./components/CreatorStudio";
 import { BrandLoader } from "./components/BrandLoader";
+import { lazyPage, PageBoundary } from "./utils/lazyPage";
 import { ToolPage } from "./components/tools/ToolPage";
 import { readDeepLink, writeDeepLink, type MainView as View } from "./utils/tiktokRoute";
 import { BackgroundProcessCenter, openBackgroundProcessCenter, type BackgroundProcess } from "./components/BackgroundProcessCenter";
 
 // The admin console ships as its own chunk so users never download it.
-const AdminApp = lazy(() => import("./admin/AdminApp"));
+const AdminApp = lazyPage(() => import("./admin/AdminApp"));
 // Vibe Edit is a full editor; it loads only when opened.
-const VibeEdit = lazy(() => import("./components/vibe/VibeEdit"));
+const VibeEdit = lazyPage(() => import("./components/vibe/VibeEdit"));
 
 const MOVIE_RESULT_TABS: Array<{ id: MovieAnalysisTab; label: string }> = [
   { id: "movie", label: "Movie ID" },
@@ -85,7 +85,7 @@ export default function App() {
   if (publicPath === "/privacy") return <LegalPage type="privacy" />;
   if (publicPath === "/terms") return <LegalPage type="terms" />;
   if (publicPath === "/admin" || publicPath.startsWith("/admin/"))
-    return <Suspense fallback={<BrandLoader label="Loading the admin console" theme="dark" />}><AdminApp /></Suspense>;
+    return <PageBoundary theme="dark"><Suspense fallback={<BrandLoader label="Loading the admin console" theme="dark" />}><AdminApp /></Suspense></PageBoundary>;
 
   return <WorkspaceApp />;
 }
@@ -622,9 +622,11 @@ function WorkspaceApp() {
               </motion.div>
             ) : activeView === "vibe-edit" ? (
               <motion.div key="vibe-edit" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="h-full min-h-0 overflow-hidden">
-                <Suspense fallback={null}>
-                  <VibeEdit theme={channelTheme} projectId={routeLink.view === "vibe-edit" ? routeLink.projectId : undefined} />
-                </Suspense>
+                <PageBoundary theme={channelTheme} resetKey={routeLink.view === "vibe-edit" ? routeLink.projectId || "home" : ""}>
+                  <Suspense fallback={<BrandLoader label="Opening Vibe Edit" theme={channelTheme} />}>
+                    <VibeEdit theme={channelTheme} projectId={routeLink.view === "vibe-edit" ? routeLink.projectId : undefined} />
+                  </Suspense>
+                </PageBoundary>
               </motion.div>
             ) : activeView === "tools" ? (
               <motion.div key="tools-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>

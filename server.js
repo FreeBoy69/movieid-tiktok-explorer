@@ -25607,8 +25607,22 @@ SELECT json_build_object(
         app.use(vite.middlewares);
     }
     else {
-        app.use(express.static(path.join(__dirname, "dist")));
+        // Built files have content hashes in their names, so they can be cached for
+        // a year; the page itself must be re-read so it always names current files.
+        app.use(express.static(path.join(__dirname, "dist"), {
+            setHeaders(res, file) {
+                if (file.includes(`${path.sep}assets${path.sep}`)) res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+                else if (file.endsWith(".html")) res.setHeader("Cache-Control", "no-cache");
+            },
+        }));
+        // A missing built file (an open tab asking for a file from before the last
+        // deploy) is a 404, not the app's page: the page would fail as a script and
+        // leave a blank screen; a 404 lets the app reload itself onto the new files.
+        app.use("/assets", (req, res) => {
+            res.status(404).type("text/plain").send("Not found");
+        });
         app.get("*", (req, res) => {
+            res.setHeader("Cache-Control", "no-cache");
             res.sendFile(distIndexPath);
         });
     }
