@@ -204,7 +204,7 @@ const TABS: Array<{ id: AutomationTab; label: string; icon: ReactNode }> = [
 /** Everyday tabs come first in the agent menu; the rest sit below a divider. */
 const PRIMARY_TAB_COUNT = 5;
 
-type SetupSectionId = "essentials" | "format" | "sources" | "socials" | "learning" | "comments" | "rights";
+type SetupSectionId = "essentials" | "format" | "sources" | "socials" | "learning" | "comments" | "compilations" | "rights";
 
 const SOCIAL_DESTINATIONS = [
   { id: "youtube", label: "YouTube", icon: <Youtube className="h-4 w-4" />, iconClass: "bg-[#FF0000]/10 text-[#D60000]" },
@@ -3705,6 +3705,10 @@ function SetupPanel({
   const learnedHours = Array.isArray(learning?.profile?.bestHours) ? learning.profile.bestHours.filter((row: any) => Number(row?.uploads || 0) > 0).slice(0, 3) : [];
   const learningConfidence = Math.round(Number(learning?.confidence || 0) * 100);
   const commentsSummary = communityOn ? `On · ${form.settings.maxCommentRepliesPerCheck || 5} max` : "Off";
+  const compileOn = form.settings.compilationEnabled === true;
+  const compileSchedule = form.settings.compilationSchedule || { enabled: false, days: ["sun"], time: "18:00" };
+  const compileSummary = !compileOn ? "Off" : compileSchedule.enabled ? `Every ${compileSchedule.days.map((d) => d[0].toUpperCase() + d.slice(1)).join(", ")} at ${compileSchedule.time}` : "On · run by hand";
+  const setCompileSchedule = (patch: Partial<typeof compileSchedule>) => updateSetting("compilationSchedule", { ...compileSchedule, ...patch });
   const navItems: Array<{ id: SetupSectionId; label: string; state: string }> = [
     { id: "essentials", label: "Essentials", state: "Required" },
     ...(!tiktokPublish ? [{ id: "format" as const, label: "Format & playlist", state: postAsShort ? "Shorts" : "Long-form" }] : []),
@@ -4177,6 +4181,61 @@ function SetupPanel({
                   <Field label="Reply instructions" wide>
                     <textarea value={form.settings.commentReplyInstructions} onChange={(e) => updateSetting("commentReplyInstructions", e.target.value)} placeholder="Example: never reveal the ending, keep replies under 20 words" className="input min-h-24 bg-white py-3 leading-6" />
                   </Field>
+                </>
+              ) : null}
+            </div>
+          </SetupSection>
+
+          <SetupSection id="compilations" icon={<Film className="h-4 w-4" />} title="Compilations" summary={compileSummary} open={openSections.has("compilations")} onToggle={() => toggleSection("compilations")} theme={theme}>
+            <div className="grid gap-4 md:grid-cols-2">
+              <ToggleRow
+                title="Build long-form compilations"
+                body="Strings this agent's uploads into one long video and posts it to the same channel."
+                checked={compileOn}
+                onChange={(next) => updateSetting("compilationEnabled", next)}
+              />
+              {compileOn ? (
+                <>
+                  <Field label="Length (minutes)">
+                    <div className="flex items-center gap-2">
+                      <input type="number" min={1} max={240} value={form.settings.compilationMinMinutes ?? 30} onChange={(e) => updateSetting("compilationMinMinutes", Number(e.target.value))} className="input bg-white" aria-label="Shortest length in minutes" />
+                      <span className={cn("text-xs font-bold", tokens.subtle)}>to</span>
+                      <input type="number" min={1} max={300} value={form.settings.compilationMaxMinutes ?? 40} onChange={(e) => updateSetting("compilationMaxMinutes", Number(e.target.value))} className="input bg-white" aria-label="Longest length in minutes" />
+                    </div>
+                  </Field>
+                  <Field label="Layout">
+                    <select value={form.settings.compilationLayout || "vertical"} onChange={(e) => updateSetting("compilationLayout", e.target.value)} className="input bg-white">
+                      <option value="vertical">Vertical (9:16)</option>
+                      <option value="landscape">Landscape (16:9)</option>
+                    </select>
+                  </Field>
+                  <ToggleRow
+                    title="Build them on a schedule"
+                    body="Queues a compilation on the chosen days at this time, in the agent's timezone. A slot missed by more than six hours waits for the next one."
+                    checked={compileSchedule.enabled}
+                    onChange={(next) => setCompileSchedule({ enabled: next })}
+                  />
+                  {compileSchedule.enabled ? (
+                    <Field label="Days and time" wide>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {(["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const).map((day) => {
+                          const on = compileSchedule.days.includes(day);
+                          return (
+                            <button
+                              key={day}
+                              type="button"
+                              aria-pressed={on}
+                              onClick={() => setCompileSchedule({ days: on ? (compileSchedule.days.length > 1 ? compileSchedule.days.filter((d) => d !== day) : compileSchedule.days) : [...compileSchedule.days, day] })}
+                              className={cn("h-9 min-w-11 rounded-xl border px-3 text-xs font-bold capitalize transition", on ? "border-[#f9dc0b] bg-[#f9dc0b] text-[#1A1A1A]" : cn(tokens.surface, tokens.text))}
+                            >
+                              {day}
+                            </button>
+                          );
+                        })}
+                        <input type="time" value={compileSchedule.time} onChange={(e) => e.target.value && setCompileSchedule({ time: e.target.value })} className="input w-32 bg-white" aria-label="Compilation time" />
+                      </div>
+                    </Field>
+                  ) : null}
                 </>
               ) : null}
             </div>

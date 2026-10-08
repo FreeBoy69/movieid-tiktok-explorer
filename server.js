@@ -15,7 +15,7 @@ import { requestDeepSeek } from "./src/utils/deepseekClient.js";
 import { generateVoiceName, humanVoiceName } from "./src/utils/voiceNames.js";
 import { openRouterConfigured, requestOpenRouter, geminiToOpenRouter, transcribeOpenRouter } from "./src/utils/openRouterClient.js";
 import { rerankWithJev, recommendAutomationRecovery } from "./src/utils/jevDecision.js";
-import { addressReply, commentCheckMinutes, reachedCheckedComments, threadIdOf, threadReplyTarget } from "./src/utils/commentThreads.js";
+import { addressReply, commentCheckMinutes, reachedCheckedComments, threadIdOf, threadReplyTarget, topLevelReplyTarget } from "./src/utils/commentThreads.js";
 import { classifyCommentReply, contentNameReply, sourceTitleSafeForPublicReply, sourceTitleVerifiedForPublicReply, originalCommentText, COMMENT_REPLY_RULES, validateCommentReply } from "./src/utils/commentPolicy.js";
 import { preferEnglishAnimeResultTitle, preferredMalDisplayTitle } from "./src/utils/movieTitlePolicy.js";
 import { recoverCompactMovieIdJson } from "./src/utils/movieIdJsonRecovery.js";
@@ -39,7 +39,7 @@ import { canUploadViaZernio, shouldUploadViaZernio } from "./src/utils/publishPr
 import { repairAutomationMetadata } from "./src/utils/automationMetadataPolicy.js";
 import { buildChannelMetadataStyleProfile, metadataStyleSignatureFor } from "./src/utils/channelMetadataStylePolicy.js";
 import { buildAutomationFailureEmail, sendAutomationFailureEmail } from "./src/utils/automationFailureEmail.js";
-import { optionalAutomationCatchUpDate } from "./src/utils/automationSchedulePolicy.js";
+import { dueCompilationSlot, normalizeCompilationSchedule, optionalAutomationCatchUpDate } from "./src/utils/automationSchedulePolicy.js";
 import { COMPILATION_DURATION_TOLERANCE_SECONDS, compilationDurationMeetsTarget, compilationNearTargetToleranceSeconds, compilationRemainingSeconds, compilationTargetSeconds } from "./src/utils/compilationDurationPolicy.js";
 import { VOICEOVER_SILENCE_FILTER, allocateTimedVoiceoverWindows, buildAtempoChain, buildSourceVoiceProfileDescription, buildTimedVoiceoverSegments, chooseVoiceCloneSampleWindow, planVoiceoverTiming, sourceUploadIdFromProfile, splitVoiceoverText, voiceoverWordCount, voiceoverWordCountBounds, voiceoverWordCountMatches } from "./src/utils/voiceoverTimingPolicy.js";
 import { psqlTextFromResults } from "./src/utils/pgTextRows.js";
@@ -5357,6 +5357,8 @@ function normalizeAutomationSettings(input = {}) {
         compilationTitle: String(settings.compilationTitle || "").trim().slice(0, 100),
         compilationDescription: String(settings.compilationDescription || "").trim().slice(0, 5000),
         compilationLayout: ["vertical", "landscape"].includes(String(settings.compilationLayout || "")) ? String(settings.compilationLayout) : "vertical",
+        // Weekly compilations on chosen days at a local time (the scheduler queues them; off by default).
+        compilationSchedule: normalizeCompilationSchedule(settings.compilationSchedule),
         rightsConfirmed: settings.rightsConfirmed === true,
     };
 }
@@ -6863,6 +6865,7 @@ const AGENT_CHAT_SETTINGS_GUIDE = `Editable via "updates.settings" (only include
 - commentReplyInstructions: string
 - compilationEnabled: boolean, compilationMinMinutes: 1-240, compilationMaxMinutes: 1-300, compilationMaxClips: 1-1000
 - compilationTitle/compilationDescription: strings, compilationLayout: "vertical" | "landscape"
+- compilationSchedule: { enabled: boolean, days: ["mon".."sun"], time: "HH:MM" in the agent's timezone } to build compilations automatically
 - includeSideChannels: boolean, sideChannels: array of URLs, sourceTags: array of strings
 - socialTargets: array of {platform, accountId, enabled} for TikTok, Instagram, Facebook, Snapchat, Pinterest, X, or LinkedIn cross-posts
 - publishTargets: legacy array of {accountId, postsPerDay, intervalHours} for secondary YouTube channels
@@ -6872,7 +6875,8 @@ Also editable at the top level of "updates":
 - name: string, status: "active" | "paused"
 - sourceType: "saved_playlist" | "saved_channel" | "saved_tags" | "custom_url"
 - sourceUrl/sourceKey: strings. Change source fields only when the user explicitly names or supplies the new source.`;
-const AGENT_CHAT_EDITABLE_SETTING_KEYS = new Set(Object.keys(normalizeAutomationSettings({})).filter((key) => key !== "rightsConfirmed"));
+// searchDepth is set by the server (AUTOMATION_SOURCE_SCAN_MAX), so chat reads it but never offers to change it.
+const AGENT_CHAT_EDITABLE_SETTING_KEYS = new Set(Object.keys(normalizeAutomationSettings({})).filter((key) => key !== "rightsConfirmed" && key !== "searchDepth"));
 const AGENT_CHAT_NAV_VIEWS = new Set(["movie", "tiktok", "youtube", "niches", "feed", "channels", "compile", "automation", "rewriter", "tts", "discover", "projects", "create", "styles"]);
 const AGENT_CHAT_INTERNAL_TOOLS = new Set([
     ...AGENT_CHAT_NAV_VIEWS,
@@ -7032,7 +7036,7 @@ function normalizeAgentChatAction(action = {}) {
             if (["images", "animate"].includes(payload.mediaAction)) normalizedPayload.mediaAction = payload.mediaAction;
             const style = clampAgentChatText(payload.style || "", 120);
             if (style) normalizedPayload.style = style;
-            if (["brief", "title", "script", "seo", "soundtrack", "visualPlan", "voiceover", "thumbnail", "studio", "review"].includes(payload.stage || payload.projectStage)) normalizedPayload.projectStage = payload.stage || payload.projectStage;
+            if (CREATOR_CHAT_STAGES.includes(payload.stage || payload.projectStage)) normalizedPayload.projectStage = payload.stage || payload.projectStage;
         }
         return { type, label, payload: normalizedPayload };
     }
@@ -7071,8 +7075,6 @@ function inferAgentChatActions(lastUserMessage = "", rawActions = []) {
     let modelChoseTool = false;
     for (const action of Array.isArray(rawActions) ? rawActions : []) {
         const normalized = normalizeAgentChatAction(action);
-        if (!explicitNavigation && radarIntent && normalized?.type === "internal_tool" && normalized.payload?.tool === "youtube")
-            continue;
         if (normalized?.type === "internal_tool")
             modelChoseTool = true;
         add(action);
@@ -7098,7 +7100,7 @@ function inferAgentChatActions(lastUserMessage = "", rawActions = []) {
         [/\brecent uploads?\b|\bupload history\b|\bpublished videos?\b/, makeAction("uploads", "Inspect recent uploads")],
         [/\brun log\b|\brecent runs?\b|\bpipeline (?:errors?|failures?)\b/, makeAction("runs", "Inspect run log")],
         [/\bbackground (?:activity|process(?:es)?|jobs?)\b|\bin progress\b|\bprogress (?:of|on)\b|\beta\b|\bwhat(?:'s| is) running\b/, makeAction("background", "Inspect background activity")],
-        [/\bvoice studio\b|\bvoice clone\b|\bstems?\b|\bsoundtrack\b/, makeAction("voice", "Open Remake")],
+        [/\bvoice studio\b|\bvoice clone\b|\bstems?\b|\bsoundtrack\b/, makeAction("voice", "Inspect Voice Studio")],
         [/\bplaylists?\b/, makeAction("playlists", "Inspect playlists")],
         [/\bcomments?\b|\bcomment repl(?:y|ies)\b|\bcommunity management\b/, makeAction("comments", "Inspect comment automation")],
         [/\b(?:preflight|quality gate|quality check|production check|render check)\b/, makeAction("quality", "Run production preflight")],
@@ -7106,6 +7108,9 @@ function inferAgentChatActions(lastUserMessage = "", rawActions = []) {
     ];
     if (explicitNavigation && radarIntent)
         add({ type: "navigate", label: "Open YouTube Radar", payload: { view: "youtube", query: clampAgentChatText(lastUserMessage, 120) } });
+    // "Who are my competitors", "show outliers": YouTube Radar runs in chat when the model didn't pick a tool.
+    else if (radarIntent && !modelChoseTool)
+        add({ type: "internal_tool", label: "Run YouTube Radar", payload: { tool: "youtube", query: clampAgentChatText(lastUserMessage, 120) } });
     if (!modelChoseTool || explicitNavigation) {
         for (const [pattern, action] of featureMap) {
             if (pattern.test(text))
@@ -7518,7 +7523,7 @@ async function runAgentChatInternalTool(userId, agent, settings, learning, actio
             cards: buildAgentToolCards([
                 { label: "Posts/day", value: String(settings.maxPostsPerDay), tone: "neutral" },
                 { label: "Source order", value: settings.sourcePriority, tone: "neutral" },
-                { label: "Search depth", value: String(settings.searchDepth), tone: "neutral" },
+                { label: "Search depth (server limit)", value: String(settings.searchDepth), tone: "neutral" },
                 { label: "Adaptive strategy", value: settings.adaptiveStrategyEnabled ? "On" : "Off", tone: settings.adaptiveStrategyEnabled ? "good" : "warn" },
             ]),
         };
@@ -7700,7 +7705,40 @@ async function runAgentChatInternalTool(userId, agent, settings, learning, actio
             reauthorizeUrl: monetization.reauthorizeUrl || "",
         };
     }
-    if (tool === "feed" || tool === "channels" || tool === "automation") {
+    // Feed: the growth insights for this agent's channel (the Feed page's cards), not the agent's own uploads.
+    if (tool === "feed") {
+        const accountId = String(agent.youtubeAccountId || "");
+        const insights = accountId ? await listFeedInsights(userId, accountId).catch(() => []) : [];
+        const rows = insights.slice(0, 8).map((item) => ({ Type: item.type || "", Insight: clampAgentChatText(item.title || item.headline || item.summary || "", 90), Detail: clampAgentChatText(item.description || item.body || item.reason || "", 120) }));
+        return {
+            tool,
+            title: "Feed insights",
+            summary: insights.length ? `${insights.length} growth insights for this agent's channel.` : accountId ? "No feed insights yet for this channel. Open Feed once to build them." : "This agent has no publishing channel yet.",
+            html: buildAgentToolHtml("Feed insights", "Growth signals for the channel this agent publishes to.", rows, ["Type", "Insight", "Detail"]),
+            cards: buildAgentToolCards([{ label: "Insights", value: String(insights.length), tone: insights.length ? "good" : "neutral" }]),
+        };
+    }
+    // Channels: every channel and social account connected to AutoYT, and how each one can publish.
+    if (tool === "channels") {
+        const accounts = await listYouTubeAccounts(userId).catch(() => []);
+        const rows = accounts.map((account) => ({
+            Channel: account.channelTitle || account.channelHandle || account.email || "Account",
+            Platform: account.platform || "youtube",
+            Publishing: account.googleConnected ? "Google sign-in" : account.zernioConnected ? "Zernio" : "Not connected",
+            "This agent": account.id === agent.youtubeAccountId ? "Publishes here" : "",
+        }));
+        return {
+            tool,
+            title: "Connected channels",
+            summary: `${accounts.length} connected account${accounts.length === 1 ? "" : "s"}.`,
+            html: buildAgentToolHtml("Connected channels", "Channels and social accounts AutoYT can publish to.", rows, ["Channel", "Platform", "Publishing", "This agent"]),
+            cards: buildAgentToolCards([
+                { label: "Accounts", value: String(accounts.length), tone: accounts.length ? "good" : "warn" },
+                { label: "Google sign-in", value: String(accounts.filter((a) => a.googleConnected).length), tone: "neutral" },
+            ]),
+        };
+    }
+    if (tool === "automation") {
         const [report, uploads, runs] = await Promise.all([
             context.report && typeof context.report === "object"
                 ? Promise.resolve(context.report)
@@ -7716,9 +7754,9 @@ async function runAgentChatInternalTool(userId, agent, settings, learning, actio
         }));
         return {
             tool,
-            title: tool === "feed" ? "Feed insight check" : tool === "channels" ? "Channel snapshot" : tool === "analytics" ? "Analytics snapshot" : "Automation snapshot",
+            title: "Automation snapshot",
             summary: `${uploads.length} uploads and ${runs.length} runs found for ${agent.name}.`,
-            html: buildAgentToolHtml(tool === "feed" ? "Feed insight check" : tool === "channels" ? "Channel snapshot" : tool === "analytics" ? "Analytics snapshot" : "Automation snapshot", "Recent upload state from this agent, shown without leaving chat.", rows, ["Title", "Status", "Views", "Date"]),
+            html: buildAgentToolHtml("Automation snapshot", "Recent upload state from this agent, shown without leaving chat.", rows, ["Title", "Status", "Views", "Date"]),
             cards: buildAgentToolCards([
                 { label: "Uploads", value: String(uploads.length), tone: "neutral" },
                 { label: "Runs", value: String(runs.length), tone: "neutral" },
@@ -7727,19 +7765,56 @@ async function runAgentChatInternalTool(userId, agent, settings, learning, actio
             ]),
         };
     }
-    if (tool === "compile" || tool === "rewriter" || tool === "tts") {
-        const settingsRows = [
-            { Field: "Compilation", Value: settings.compilationEnabled ? "Enabled" : "Disabled" },
-            { Field: "Post as Short", Value: settings.postAsShort === false ? "No" : "Yes" },
-            { Field: "Voice/TTS", Value: settings.voiceProfileId || settings.ttsVoice || "Default" },
-            { Field: "Rewrite tone", Value: settings.rewriteTone || settings.commentReplyTone || "Default" },
+    // Compilation: the agent's real compilation settings, with a button to queue one.
+    if (tool === "compile") {
+        const rows = [
+            { Field: "Compilations", Value: settings.compilationEnabled ? "Enabled" : "Disabled" },
+            { Field: "Length", Value: `${settings.compilationMinMinutes}-${settings.compilationMaxMinutes} minutes` },
+            { Field: "Most clips", Value: String(settings.compilationMaxClips) },
+            { Field: "Layout", Value: settings.compilationLayout || "landscape" },
+            { Field: "Schedule", Value: settings.compilationSchedule?.enabled ? `${settings.compilationSchedule.days.join(", ")} at ${settings.compilationSchedule.time}` : "Manual only" },
+            { Field: "Title", Value: settings.compilationTitle || "Written per compilation" },
         ];
         return {
             tool,
-            title: `${tool === "compile" ? "Compilation" : tool === "rewriter" ? "AI Rewriter" : "Text to Speech"} snapshot`,
-            summary: "This is the current agent-side configuration I can inspect internally. Generation actions can be added next as dedicated tools.",
-            html: buildAgentToolHtml(`${tool === "compile" ? "Compilation" : tool === "rewriter" ? "AI Rewriter" : "Text to Speech"} snapshot`, "Current settings available to this agent.", settingsRows, ["Field", "Value"]),
-            cards: buildAgentToolCards([{ label: "Mode", value: settings.postAsShort === false ? "Long form" : "Shorts", tone: "neutral" }]),
+            title: "Compilation settings",
+            summary: settings.compilationEnabled ? "Compilations are on for this agent. Queue one now or change the settings in chat." : "Compilations are off for this agent. Ask me to turn them on.",
+            html: buildAgentToolHtml("Compilation settings", "How this agent builds long-form compilations from its uploads.", rows, ["Field", "Value"]),
+            cards: buildAgentToolCards([{ label: "Compilations", value: settings.compilationEnabled ? "On" : "Off", tone: settings.compilationEnabled ? "good" : "neutral" }]),
+            actions: settings.compilationEnabled ? [{ type: "run_compilation", label: "Run compilation", payload: {} }] : [],
+        };
+    }
+    // Rewriter: rewrites the text the user gave (after "rewrite:" or in quotes) with the AI Rewriter.
+    if (tool === "rewriter") {
+        const given = String(payload.text || payload.query || "").trim() || (String(lastUserMessage).match(/rewrite[^:]*:\s*([\s\S]{20,})/i)?.[1] || String(lastUserMessage).match(/["“]([^"”]{20,})["”]/)?.[1] || "").trim();
+        if (!given)
+            return { tool, title: "AI Rewriter", summary: "Paste the text to rewrite after \"rewrite:\" and I'll rewrite it here.", html: "", cards: [] };
+        const rewritten = await rewriteScriptText(given.slice(0, 20000)).catch((error) => { throw new Error(`Rewrite failed: ${error instanceof Error ? error.message : error}`); });
+        return {
+            tool,
+            title: "AI Rewriter",
+            summary: clampAgentChatText(rewritten, 4000),
+            html: buildAgentToolHtml("AI Rewriter", "Your text, rewritten.", [{ Original: clampAgentChatText(given, 600), Rewritten: clampAgentChatText(rewritten, 1200) }], ["Original", "Rewritten"]),
+            cards: buildAgentToolCards([{ label: "Words", value: String(String(rewritten).split(/\s+/).filter(Boolean).length), tone: "neutral" }]),
+        };
+    }
+    // Voice: the narration voice this agent re-voices with (its remake settings) and whether that's on.
+    if (tool === "tts") {
+        const remake = settings.remake || {};
+        const rows = [
+            { Field: "Re-voicing", Value: remake.enabled ? "On (every video is re-voiced before it posts)" : "Off" },
+            { Field: "Voice", Value: remake.profileId || "Not chosen" },
+            { Field: "Narration style", Value: remake.narrationStyleId || "Default" },
+            { Field: "Rewrite the script first", Value: remake.rewrite === false ? "No" : "Yes" },
+            { Field: "Keep the original background audio", Value: remake.keepBackground === false ? "No" : `Yes, at ${Math.round((remake.backgroundVolume ?? 0.15) * 100)}%` },
+        ];
+        return {
+            tool,
+            title: "Narration voice",
+            summary: remake.enabled ? `Re-voicing is on${remake.profileId ? " with the chosen voice" : ", but no voice is chosen yet"}.` : "Re-voicing is off for this agent. Set it up on the Voice tab.",
+            html: buildAgentToolHtml("Narration voice", "How this agent narrates (Voice tab).", rows, ["Field", "Value"]),
+            cards: buildAgentToolCards([{ label: "Re-voicing", value: remake.enabled ? "On" : "Off", tone: remake.enabled ? "good" : "neutral" }]),
+            actions: [{ type: "agent_tab", label: "Open the Voice tab", payload: { tab: "voice" } }],
         };
     }
     return null;
@@ -7902,12 +7977,6 @@ function inferAgentChatFallbackUpdates(lastUserMessage, agent, settings) {
         if (scheduleTimes.length)
             settingsPatch.scheduleTimes = [...new Set(scheduleTimes)].slice(0, 12);
     }
-    const searchDepth = agentChatNumber(message, [
-        /\b(?:set|change|increase|decrease|update)\s+(?:the\s+)?search depth\s+(?:to\s+)?(\d{1,4})\b/i,
-        /\b(?:scan|search through|check)\s+(\d{1,4})\s+(?:source\s+)?videos?\b/i,
-    ]);
-    if (searchDepth !== null)
-        settingsPatch.searchDepth = Math.min(Math.max(Math.round(searchDepth), 1), 5000);
     const explorationChannels = agentChatNumber(message, [
         /\b(?:test|sample|explore|rotate (?:through )?)\s+(\d{1,2})\s+(?:source\s+)?channels?\b/i,
         /\bsource exploration channels?\s*(?:to|at|=)?\s*(\d{1,2})\b/i,
@@ -11346,6 +11415,28 @@ function normalizeYouTubeComment(comment) {
         updatedAt: String(snippet.updatedAt || ""),
     };
 }
+/** The platform's own video id for a post made through Zernio (TikTok's, or YouTube's), read from the
+ *  published post's link; "" until it's published. */
+async function zernioPlatformVideoId(account, zernioPostId) {
+    const id = String(zernioPostId || "").trim();
+    if (!id || !account?.zernioApiKey)
+        return "";
+    const response = await fetch(`https://zernio.com/api/v1/posts/${encodeURIComponent(id)}`, { headers: { Authorization: `Bearer ${account.zernioApiKey}` } });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok)
+        return "";
+    const post = data.post || data;
+    const links = [post.platformPostUrl, ...(Array.isArray(post.platforms) ? post.platforms.map((p) => p?.platformPostUrl || p?.url) : [])].map((u) => String(u || ""));
+    for (const link of links) {
+        const tiktok = link.match(/tiktok\.com\/.*\/video\/(\d+)/)?.[1];
+        if (tiktok)
+            return tiktok;
+        const youtube = link.match(/[?&]v=([\w-]{6,})/)?.[1] || link.match(/youtu\.be\/([\w-]{6,})/)?.[1] || link.match(/\/shorts\/([\w-]{6,})/)?.[1];
+        if (youtube)
+            return youtube;
+    }
+    return "";
+}
 function zernioCommentsReady(account) {
     return Boolean(account?.zernioApiKey && account?.zernioAccountId);
 }
@@ -11553,6 +11644,8 @@ async function normalizeYouTubeThread(account, thread, maxRepliesPerThread = 100
 // New comments newest first (stopping at ones the last check saw) plus threads we
 // already replied in, so a viewer answering the channel is never missed.
 async function collectCommentThreads(userId, account, videoId, { lastCheckedAt = "", knownThreadIds = [], maxPages = 3, perPage = 50 } = {}) {
+    // TikTok comes only through Zernio's inbox, which takes the TikTok video id like YouTube's.
+    const tiktok = isTikTokPublishAccount(account);
     const byId = new Map();
     let token = "";
     for (let page = 0; page < maxPages; page++) {
@@ -11566,7 +11659,7 @@ async function collectCommentThreads(userId, account, videoId, { lastCheckedAt =
     // Listings may come from Zernio and reloads from Google, whose ids might differ, so a
     // reloaded thread already in the listing (same author and text) is not added twice.
     const signatures = new Set([...byId.values()].map((thread) => commentSignature(thread.topLevelComment)));
-    const missing = [...new Set(knownThreadIds.map(threadIdOf))].filter((id) => id && !byId.has(id));
+    const missing = tiktok ? [] : [...new Set(knownThreadIds.map(threadIdOf))].filter((id) => id && !byId.has(id));
     for (let i = 0; i < missing.length; i += 50) {
         const threads = await getYouTubeCommentThreadsById(account, missing.slice(i, i + 50)).catch((error) => {
             console.warn("Comment follow-up fetch failed:", error instanceof Error ? error.message : error);
@@ -12496,6 +12589,11 @@ async function speakForStudio({ voiceId, text, signal, direction = "", language 
     const audio = Buffer.from(await response.arrayBuffer());
     return { audio, extension: /mpeg|mp3/i.test(response.headers.get("content-type") || "") ? "mp3" : "wav" };
 }
+/** A Gemini backup for any JSON prompt (no fixed schema), for callers without a schema of their own. */
+const geminiJsonFallback = (prompt) => async () => {
+    const response = await generateGeminiContent({ model: rewriteGeminiTextModel(), contents: [{ role: "user", parts: [{ text: prompt }] }], config: { responseMimeType: "application/json" } });
+    return parseModelJson(response.text, {});
+};
 async function generateTextJson(prompt, geminiFallback, options = {}) {
     let lastError = null;
     const requireUsefulJson = (value, provider) => {
@@ -16104,10 +16202,15 @@ WHERE id = ${sqlString(uploadId)};
         knownThreadIds: Array.isArray(upload.answered) ? upload.answered : [],
     });
     const answered = new Set((Array.isArray(upload.answered) ? upload.answered : []).map(String));
+    const tiktok = isTikTokPublishAccount(account);
+    const ownReplies = tiktok ? JSON.parse(await runPsql(`SELECT COALESCE(json_agg(reply_text), '[]'::json) FROM automation_comment_replies WHERE upload_id = ${sqlString(uploadId)};`) || "[]") : [];
     let verifiedMoviePromise = null;
     const verifiedMovieForPublicNameReply = async () => {
         if (!movieTitle)
             return null;
+        // The YouTube check downloads the YouTube video; a TikTok upload answers with the movie its run identified.
+        if (tiktok)
+            return publicMovie;
         if (!verifiedMoviePromise) {
             verifiedMoviePromise = identifyMovieFromYouTubeVideo(videoId)
                 .then((verification) => {
@@ -16130,7 +16233,7 @@ WHERE id = ${sqlString(uploadId)};
     for (const thread of threads) {
         if (replied >= maxRepliesPerCheck)
             break;
-        const target = threadReplyTarget(thread, account);
+        const target = tiktok ? topLevelReplyTarget(thread, ownReplies) : threadReplyTarget(thread, account);
         if (!target)
             continue;
         const commentId = String(target.comment.id || "");
@@ -16202,16 +16305,18 @@ async function sweepDueAutomationComments() {
         const out = await runPsql(`
 SELECT COALESCE(json_agg(json_build_object(
   'uploadId', id, 'userId', user_id, 'accountId', youtube_account_id, 'videoId', youtube_video_id,
+  'url', youtube_url, 'platformVideoId', platform_video_id,
   'ageHours', age_hours, 'checkedAt', checked_at
 )), '[]'::json)
 FROM (
-  SELECT u.id, u.user_id, u.youtube_account_id, u.youtube_video_id,
+  SELECT u.id, u.user_id, u.youtube_account_id, u.youtube_video_id, u.youtube_url,
+    NULLIF(u.metrics->>'platformVideoId', '') AS platform_video_id,
     EXTRACT(EPOCH FROM (now() - COALESCE(u.schedule_at, u.created_at))) / 3600 AS age_hours,
     NULLIF(u.metrics->>'commentsCheckedAt', '') AS checked_at
   FROM automation_uploads u
   JOIN automation_agents a ON a.id = u.agent_id
   WHERE u.youtube_video_id <> ''
-    AND u.youtube_url NOT ILIKE 'https://zernio.com/posts%'
+    AND (u.youtube_url NOT ILIKE 'https://zernio.com/posts%' OR a.settings->>'communityManagementEnabled' = 'true')
     AND u.created_at > now() - interval '60 days'
     AND COALESCE(u.schedule_at, u.created_at) <= now()
   ORDER BY NULLIF(u.metrics->>'commentsCheckedAt', '') ASC NULLS FIRST, u.created_at DESC
@@ -16229,9 +16334,23 @@ FROM (
         for (const item of due) {
             try {
                 const account = await usableYouTubeAccount(item.userId, item.accountId);
-                if (isTikTokPublishAccount(account))
+                // A post made through Zernio is stored under Zernio's id: its platform video id (TikTok's, or
+                // YouTube's) comes from the published post, once.
+                let videoId = item.videoId;
+                if (/^https:\/\/zernio\.com\/posts/i.test(String(item.url || ""))) {
+                    if (!agentCommentsViaZernio(account))
+                        continue;
+                    videoId = item.platformVideoId || await zernioPlatformVideoId(account, item.videoId);
+                    if (!videoId) {
+                        await runPsql(`UPDATE automation_uploads SET metrics = metrics || ${jsonbLiteral({ commentsCheckedAt: new Date().toISOString(), lastCommentCheck: { at: new Date().toISOString(), skipped: "Not published on the platform yet" } })} WHERE id = ${sqlString(item.uploadId)};`);
+                        continue;
+                    }
+                    if (!item.platformVideoId)
+                        await runPsql(`UPDATE automation_uploads SET metrics = metrics || ${jsonbLiteral({ platformVideoId: videoId })} WHERE id = ${sqlString(item.uploadId)};`);
+                }
+                else if (isTikTokPublishAccount(account))
                     continue;
-                await withUsageUser(item.userId, "automation:comments", () => autoManageYouTubeComments(item.uploadId, account, item.videoId));
+                await withUsageUser(item.userId, "automation:comments", () => autoManageYouTubeComments(item.uploadId, account, videoId));
             }
             catch (error) {
                 console.warn("Automation comment sweep failed:", error instanceof Error ? error.message : error);
@@ -18151,6 +18270,38 @@ async function runDailyCompetitorResearch() {
             }
             console.log(`Daily competitor research refreshed ${competitors.length} channels for ${agent.name || agent.id}.`);
         } catch (error) { console.warn(`Daily competitor research skipped for ${agent.name || agent.id}:`, error instanceof Error ? error.message : error); }
+    }
+}
+/** Queues the compilations whose weekly slot has come (Compile tab schedule), once per slot, the same way the
+ *  Run compilation button does. */
+async function runDueAutomationCompilations() {
+    if (!postgresConfigured())
+        return;
+    const out = await runPsql(`
+SELECT COALESCE(json_agg(json_build_object('id', id, 'userId', user_id, 'settings', settings)), '[]'::json)
+FROM automation_agents
+WHERE status = 'active'
+  AND settings->>'compilationEnabled' = 'true'
+  AND settings->'compilationSchedule'->>'enabled' = 'true';
+`);
+    const agents = JSON.parse(out || "[]");
+    for (const row of agents) {
+        const settings = normalizeAutomationSettings(row.settings || {});
+        if (!settings.rightsConfirmed)
+            continue;
+        const slot = dueCompilationSlot(settings.compilationSchedule, { timeZone: settings.timezone || "Africa/Nairobi" });
+        if (!slot)
+            continue;
+        // The slot is marked first, so a crash mid-queue never queues it twice.
+        await runPsql(`UPDATE automation_agents SET settings = jsonb_set(settings, '{compilationSchedule,lastSlot}', to_jsonb(${sqlString(slot)}::text), true) WHERE id = ${sqlString(row.id)};`);
+        try {
+            const catchUpPublishAt = settings.catchUpMissedSchedules ? await getManualCatchUpPublishAt(row.id) : "";
+            createCompilationJob(row.userId, { catchUpPublishAt }, { agentId: row.id });
+            console.log(`[automation] scheduled compilation queued for agent ${row.id} (${slot})`);
+        }
+        catch (error) {
+            console.warn(`[automation] scheduled compilation for ${row.id} failed: ${error instanceof Error ? error.message : error}`);
+        }
     }
 }
 async function runDueAutomationAgents() {
@@ -21421,6 +21572,7 @@ async function startServer() {
             const runSchedulers = () => {
                 runDailyCompetitorResearch().catch((error) => console.warn("Daily competitor research scheduler failed:", error instanceof Error ? error.message : error));
                 runDueAutomationAgents().catch((error) => console.warn("Automation scheduler failed:", error instanceof Error ? error.message : error));
+                runDueAutomationCompilations().catch((error) => console.warn("Compilation scheduler failed:", error instanceof Error ? error.message : error));
                 captureDueAutomationPerformance().catch((error) => console.warn("Automation performance scheduler failed:", error instanceof Error ? error.message : error));
                 sweepDueAutomationComments().catch((error) => console.warn("Automation comment sweep failed:", error instanceof Error ? error.message : error));
                 deliverPendingAutomationFailureNotifications().catch((error) => console.warn("Automation failure email scheduler failed:", error instanceof Error ? error.message : error));
@@ -21526,7 +21678,7 @@ async function startServer() {
     registerMovieRecap(app);
     registerMiniTools(app, {
         session: getSessionRecord,
-        generateJson: (prompt, options) => generateTextJson(prompt, null, options),
+        generateJson: (prompt, options) => generateTextJson(prompt, geminiJsonFallback(prompt), { allowGeminiFallback: true, ...options }),
         inspectVideo: async (url) => {
             const valid = await validDownloaderUrl(url);
             if (!valid)
@@ -21540,7 +21692,7 @@ async function startServer() {
         session: getSessionRecord,
         transcribe: transcribeMediaFileWithSegments,
         speak: speakForStudio,
-        generateJson: (prompt, options) => generateTextJson(prompt, null, options),
+        generateJson: (prompt, options) => generateTextJson(prompt, geminiJsonFallback(prompt), { allowGeminiFallback: true, ...options }),
         fetchPublic: safePublicFetch,
         voiceAllowed: async (userId, voiceId) => {
             if (isHostedVoice(voiceId))

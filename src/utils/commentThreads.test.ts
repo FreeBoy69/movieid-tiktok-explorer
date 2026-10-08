@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addressReply, commentCheckMinutes, isOwnerComment, reachedCheckedComments, threadIdOf, threadReplyTarget } from "./commentThreads.js";
+import { addressReply, commentCheckMinutes, isOwnerComment, reachedCheckedComments, threadIdOf, threadReplyTarget, topLevelReplyTarget } from "./commentThreads.js";
 
 const account = { channelId: "UCowner", channelTitle: "Recap Hub" };
 const c = (id: string, author: string, text: string, at: string, owner = false) => ({
@@ -63,5 +63,15 @@ describe("comment check cadence", () => {
     expect(reachedCheckedComments(page, "2026-09-23T10:00:00Z")).toBe(true);
     expect(reachedCheckedComments(page, "2026-09-23T07:30:00Z")).toBe(false);
     expect(reachedCheckedComments(page, "")).toBe(false);
+  });
+});
+
+describe("TikTok reply targets", () => {
+  const thread = (topText: string, replies: string[] = []) => ({ topLevelComment: { id: "c1", textOriginal: topText }, replies: replies.map((t, i) => ({ id: `r${i}`, textOriginal: t })) });
+  it("answers a top-level comment", () => {
+    expect(topLevelReplyTarget(thread("what movie is this?"))?.comment.id).toBe("c1");
+  });
+  it("leaves a thread that already holds one of our replies", () => {
+    expect(topLevelReplyTarget(thread("what movie is this?", ["It's Mutiny (2026)"]), ["It's Mutiny (2026)"])).toBeNull();
   });
 });

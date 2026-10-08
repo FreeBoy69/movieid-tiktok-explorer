@@ -553,6 +553,8 @@ export interface AutomationAgentSettings {
   compilationTitle?: string;
   compilationDescription?: string;
   compilationLayout?: "vertical" | "landscape" | string;
+  /** Weekly compilations built automatically on these days at this local time. */
+  compilationSchedule?: { enabled: boolean; days: string[]; time: string; lastSlot?: string };
   rightsConfirmed: boolean;
 }
 

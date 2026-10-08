@@ -76,3 +76,15 @@ export function reachedCheckedComments(threads, lastCheckedAt, slackMs = 60 * 60
   const oldest = Math.min(...threads.map((thread) => time(thread.topLevelComment) || Infinity));
   return Number.isFinite(oldest) && oldest < since - slackMs;
 }
+
+// TikTok (through Zernio) doesn't say which comments are the channel's own, so only top-level comments get
+// answers there, and a thread already holding one of our replies (by its text) is left alone: replying to
+// "viewer replies" could otherwise mean answering ourselves.
+export function topLevelReplyTarget(thread, ownReplyTexts = []) {
+  const top = thread?.topLevelComment;
+  if (!top?.id || thread.canReply === false) return null;
+  const own = new Set(ownReplyTexts.map((t) => String(t || "").trim().toLowerCase()).filter(Boolean));
+  const said = [top, ...(thread.replies || [])].map((c) => text(c).trim().toLowerCase());
+  if (said.some((t) => own.has(t))) return null;
+  return { kind: "comment", comment: top, threadId: top.id, context: [{ author: String(top.authorDisplayName || "Viewer"), owner: false, text: text(top).slice(0, 400) }] };
+}

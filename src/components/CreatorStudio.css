@@ -1518,6 +1518,19 @@
 .cs-launch-failed span {
   color: var(--cs-text);
 }
+/* An agent's proposed generation: what it will make, and nothing runs until it's approved. */
+.cs-proposed { gap: 10px; padding: 12px; border-style: dashed; }
+.cs-proposed-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; font-size: 13px; }
+.cs-proposed-head span { color: var(--cs-muted); font-size: 12px; }
+.cs-proposed .cs-launch-prompt { -webkit-line-clamp: 4; }
+.cs-proposed-actions { display: flex; align-items: center; gap: 8px; }
+.cs-approve,
+.cs-approve-all { display: inline-flex; height: 34px; align-items: center; gap: 6px; padding: 0 14px; border: 0; border-radius: var(--cs-radius-sm); background: var(--cs-accent); color: var(--cs-accent-ink); font-size: 13px; font-weight: 700; cursor: pointer; transition: filter 0.16s ease; }
+.cs-approve:hover:not(:disabled),
+.cs-approve-all:hover:not(:disabled) { filter: brightness(1.06); }
+.cs-approve:disabled,
+.cs-approve-all:disabled { opacity: 0.55; cursor: progress; }
+.cs-approve-all { align-self: flex-start; }
 .cs-launch-prompt {
   display: -webkit-box;
   margin: 0;

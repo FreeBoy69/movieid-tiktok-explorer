@@ -6,7 +6,7 @@ import { type Catalog, Empty, type Generation, Lightbox, readJson, Tabs, timeAgo
 import { useErrorToast } from "../../utils/toast";
 import { VideoPlayer } from "../VideoPlayer";
 
-type Action = { app: string; prompt: string; generationId?: string; error?: string };
+type Action = { app: string; prompt: string; generationId?: string; error?: string; status?: "proposed" | "launched" | "skipped" | "failed"; settings?: { aspectRatio?: string; count?: number; duration?: number } };
 type Message = { role: "user" | "assistant"; content: string; actions?: Action[]; at: string };
 type Chat = { id: string; agent: string; title: string; messages: Message[]; createdAt: string; updatedAt?: string };
 
@@ -72,6 +72,24 @@ export function StudioAgents({ mode, catalog, generations, now, onGenerations }:
       setPendingText("");
     }
   }
+  // Generations cost credits: the agent proposes them and nothing runs until it's approved here.
+  const [approving, setApproving] = useState("");
+  async function decide(messageIndex: number, actionIndex: number | null, skip = false) {
+    if (!chat) return;
+    setApproving(`${messageIndex}:${actionIndex ?? "all"}`);
+    try {
+      const data = await readJson(
+        await fetch(`/api/studio/agents/chats/${encodeURIComponent(chat.id)}/approve`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: messageIndex, ...(actionIndex === null ? {} : { action: actionIndex }), skip }) }),
+        skip ? "Couldn't skip that" : "Couldn't start that",
+      );
+      setChats((current) => current.map((c) => (c.id === data.chat.id ? data.chat : c)));
+      if (!skip) onGenerations();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't start that");
+    } finally {
+      setApproving("");
+    }
+  }
   async function removeChat(id: string) {
     setChats((current) => current.filter((c) => c.id !== id));
     if (id === chatId) setChatId("");
@@ -112,9 +130,18 @@ export function StudioAgents({ mode, catalog, generations, now, onGenerations }:
                   <p>{m.content}</p>
                   {m.actions?.length ? (
                     <div className="cs-launched">
-                      {m.actions.map((action, n) => (
-                        <LaunchedWork key={n} action={action} generation={generations.find((g) => g.id === action.generationId)} onOpen={setLightbox} />
-                      ))}
+                      {m.actions.map((action, n) =>
+                        action.status === "proposed" ? (
+                          <ProposedWork key={n} action={action} busy={approving === `${index}:${n}` || approving === `${index}:all`} onApprove={() => void decide(index, n)} onSkip={() => void decide(index, n, true)} />
+                        ) : action.status === "skipped" ? null : (
+                          <LaunchedWork key={n} action={action} generation={generations.find((g) => g.id === action.generationId)} onOpen={setLightbox} />
+                        ),
+                      )}
+                      {m.actions.filter((a) => a.status === "proposed").length > 1 ? (
+                        <button type="button" className="cs-approve-all" disabled={Boolean(approving)} onClick={() => void decide(index, null)}>
+                          <Check className="h-4 w-4" />Make all {m.actions.filter((a) => a.status === "proposed").length}
+                        </button>
+                      ) : null}
                     </div>
                   ) : null}
                 </div>
@@ -155,6 +182,25 @@ export function StudioAgents({ mode, catalog, generations, now, onGenerations }:
       </form>
       {lightbox ? <Lightbox src={lightbox} onClose={() => setLightbox(null)} /> : null}
     </>
+  );
+}
+
+/** What a proposed generation will make, with Make it / Skip: nothing runs, and nothing is charged, until it's approved. */
+function ProposedWork({ action, busy, onApprove, onSkip }: { action: Action; busy: boolean; onApprove: () => void; onSkip: () => void }) {
+  const s = action.settings || {};
+  const what = action.app === "image" ? `${s.count || 1} image${(s.count || 1) > 1 ? "s" : ""}, ${s.aspectRatio || "16:9"}` : action.app === "video" ? `${s.duration || 5}-second video, ${s.aspectRatio || "16:9"}` : "Music cue";
+  return (
+    <div className="cs-launch cs-proposed">
+      <div className="cs-proposed-head">
+        <strong>{what}</strong>
+        <span>Uses credits</span>
+      </div>
+      <p className="cs-launch-prompt">{action.prompt}</p>
+      <div className="cs-proposed-actions">
+        <button type="button" className="cs-approve" disabled={busy} onClick={onApprove}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}Make it</button>
+        <button type="button" className="cs-ghost" disabled={busy} onClick={onSkip}>Skip</button>
+      </div>
+    </div>
   );
 }
 

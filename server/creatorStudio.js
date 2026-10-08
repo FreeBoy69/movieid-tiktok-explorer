@@ -1817,10 +1817,10 @@ async function agentTurn(userId, chat, message, signal) {
       {
         role: "system",
         content: `You are ${agent.brief}, working inside AutoYT Creator Studio.
-You can launch generations. Each action runs immediately and its result appears in the chat.
+You can propose generations. Each one costs the user credits, so it is shown as a card they approve before it runs; its result then appears in the chat.
 Apps: "image" (prompt, aspectRatio one of 16:9, 9:16, 1:1, 4:5; count 1-4), "video" (prompt, aspectRatio 16:9 or 9:16, duration 5 or 8), "audio" (prompt for an instrumental music cue).
 Reply in JSON only: {"reply":"short conversational message","actions":[{"app":"image","prompt":"detailed generation prompt","aspectRatio":"16:9","count":1}]}
-Launch at most 4 actions per turn, and only when the user wants something made. Ask one clarifying question instead when the request is too vague. Write rich, specific generation prompts.`,
+Propose at most 4 actions per turn, and only when the user wants something made. Ask one clarifying question instead when the request is too vague. Write rich, specific generation prompts.`,
       },
       ...transcript,
       { role: "user", content: message },
@@ -1829,23 +1829,38 @@ Launch at most 4 actions per turn, and only when the user wants something made. 
       if (typeof v?.reply !== "string") throw new Error("No reply");
     },
   });
+  // Generations cost credits, so they're proposals until the user approves them (approveAgentActions).
   const actions = [];
   for (const action of (Array.isArray(value.actions) ? value.actions : []).slice(0, 4)) {
     const app = ["image", "video", "audio"].includes(action?.app) ? action.app : "";
     const prompt = clip(action?.prompt, 2000);
     if (!app || !prompt) continue;
-    try {
-      const item = await enqueue(userId, normalizeRequest({
-        tab: app,
-        prompt,
-        settings: { aspectRatio: clip(action.aspectRatio, 8) || "16:9", count: Number(action.count) || 1, duration: Number(action.duration) || 5, instrumental: true },
-      }));
-      actions.push({ app, prompt, generationId: item.id });
-    } catch (error) {
-      actions.push({ app, prompt, error: publicMessage(error.message) });
-    }
+    const settings = {
+      aspectRatio: clip(action.aspectRatio, 8) || "16:9",
+      count: Math.min(4, Math.max(1, Number(action.count) || 1)),
+      duration: [5, 8].includes(Number(action.duration)) ? Number(action.duration) : 5,
+      instrumental: true,
+    };
+    actions.push({ app, prompt, settings, status: "proposed" });
   }
   return { content: clip(value.reply, 4000) || "Done.", actions };
+}
+
+/** Runs (or skips) the proposed generations on one agent reply: all of them, or the one at `only`. */
+async function approveAgentActions(userId, message, { only = null, skip = false } = {}) {
+  for (const [n, action] of (message.actions || []).entries()) {
+    if (action.status !== "proposed" || (only !== null && n !== only)) continue;
+    if (skip) {
+      action.status = "skipped";
+      continue;
+    }
+    try {
+      const item = await enqueue(userId, normalizeRequest({ tab: action.app, prompt: action.prompt, settings: action.settings || {} }));
+      Object.assign(action, { status: "launched", generationId: item.id });
+    } catch (error) {
+      Object.assign(action, { status: "failed", error: publicMessage(error.message) });
+    }
+  }
 }
 
 // ---------- Link imports ----------
@@ -2206,6 +2221,20 @@ export function registerCreatorStudio(app, express) {
     if (chat.messages.length > 80) chat.messages.splice(0, chat.messages.length - 80);
     chat.updatedAt = new Date().toISOString();
     chats.sort((a, b) => String(b.updatedAt || b.createdAt).localeCompare(String(a.updatedAt || a.createdAt)));
+    await saveDoc(userId, "agent-chats.json", 60);
+    res.json({ chat });
+  }));
+
+  // Approve (or skip) an agent's proposed generations: { message: index of the reply, action?: index, skip?: true }.
+  app.post("/api/studio/agents/chats/:id/approve", route(async (req, res, userId) => {
+    const chats = await doc(userId, "agent-chats.json");
+    const chat = chats.find((c) => c.id === req.params.id);
+    if (!chat) throw fail("That chat is gone.", 404);
+    const message = chat.messages[Number(req.body?.message)];
+    if (!message || message.role !== "assistant") throw fail("That reply isn't in this chat.", 404);
+    const only = Number.isInteger(req.body?.action) ? req.body.action : null;
+    await approveAgentActions(userId, message, { only, skip: req.body?.skip === true });
+    chat.updatedAt = new Date().toISOString();
     await saveDoc(userId, "agent-chats.json", 60);
     res.json({ chat });
   }));
