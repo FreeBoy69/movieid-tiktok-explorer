@@ -109,7 +109,14 @@ export function TextToSpeechStudio({ theme = "light", initialText = "" }: { them
   useErrorToast(error, () => setError(""));
   const [history, setHistory] = useState<Generation[]>([]);
   const [selectedGenerationId, setSelectedGenerationId] = useState("");
-  const [autoplayGenerationId, setAutoplayGenerationId] = useState("");
+  // One player for the whole studio, pinned full width at the bottom: it plays the
+  // newest generation, a history pick, or a voice preview, and stays across tabs.
+  const [nowPlaying, setNowPlaying] = useState<Generation | null>(null);
+  const [nowAutoplay, setNowAutoplay] = useState("");
+  function playInDock(item: Generation) {
+    setNowPlaying(item);
+    setNowAutoplay(item.id);
+  }
   const [voiceNameOverrides, setVoiceNameOverrides] = useState<Record<string, string>>(() => {
     if (typeof window === "undefined") return {};
     try {
@@ -225,7 +232,7 @@ export function TextToSpeechStudio({ theme = "light", initialText = "" }: { them
       };
       setHistory((current) => [item, ...current].slice(0, 12));
       setSelectedGenerationId(item.id);
-      setAutoplayGenerationId(item.id);
+      playInDock(item);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Speech generation failed");
     } finally {
@@ -294,6 +301,7 @@ export function TextToSpeechStudio({ theme = "light", initialText = "" }: { them
       body: JSON.stringify({ name: cleanName }),
     }).catch(() => null);
     setProfiles((current) => current.map((voice) => voice.id === voiceId ? { ...voice, name: cleanName } : voice));
+    setNowPlaying((current) => (current?.id === `preview-${voiceId}` ? { ...current, profileName: cleanName, text: cleanName } : current));
   }
 
   return (
@@ -332,8 +340,7 @@ export function TextToSpeechStudio({ theme = "light", initialText = "" }: { them
           history={history}
           selectedGenerationId={selectedGenerationId}
           setSelectedGenerationId={setSelectedGenerationId}
-          autoplayGenerationId={autoplayGenerationId}
-          clearAutoplayGeneration={() => setAutoplayGenerationId("")}
+          onPlay={playInDock}
         />
       ) : activeTab === "voices" ? (
         <VoicesLibraryTab
@@ -347,6 +354,7 @@ export function TextToSpeechStudio({ theme = "light", initialText = "" }: { them
           onDeleteVoice={deleteVoice}
           onRenameVoice={renameVoice}
           onCreateVoice={() => setActiveTab("clone")}
+          onPreview={playInDock}
         />
       ) : (
         <div className="as-clone">
@@ -361,6 +369,11 @@ export function TextToSpeechStudio({ theme = "light", initialText = "" }: { them
           />
         </div>
       )}
+      {nowPlaying ? (
+        <div className="as-dock" role="region" aria-label="Player">
+          <GenerationPlayer item={nowPlaying} dark={dark} autoplay={nowAutoplay === nowPlaying.id} onAutoplayConsumed={() => setNowAutoplay("")} />
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -382,15 +395,13 @@ function GenerateTab(props: {
   history: Generation[];
   selectedGenerationId: string;
   setSelectedGenerationId: (id: string) => void;
-  autoplayGenerationId: string;
-  clearAutoplayGeneration: () => void;
+  onPlay: (item: Generation) => void;
 }) {
   const { dark, voices, selectedVoiceId } = props;
   const pricing = useStudioPricing();
   const estimatedCredits = fallbackCreditEstimate("speech", pricing, Math.max(1, Math.ceil(props.text.trim().length / 1000)));
   const [rightRailTab, setRightRailTab] = useState<RightRailTab>("settings");
   const [historySearch, setHistorySearch] = useState("");
-  const selectedGeneration = props.history.find((item) => item.id === props.selectedGenerationId) || props.history[0];
   const historyItems = props.history.filter((item) => {
     const query = historySearch.trim().toLowerCase();
     return !query || item.text.toLowerCase().includes(query) || item.profileName.toLowerCase().includes(query);
@@ -413,11 +424,6 @@ function GenerateTab(props: {
           className="as-script"
           maxLength={5000}
         />
-        {selectedGeneration ? (
-          <div className="as-player">
-            <GenerationPlayer item={selectedGeneration} dark={dark} autoplay={props.autoplayGenerationId === selectedGeneration.id} onAutoplayConsumed={props.clearAutoplayGeneration} />
-          </div>
-        ) : null}
         <footer className="as-write-foot">
           <span className="as-count">{words.toLocaleString()} {words === 1 ? "word" : "words"} · {props.text.length.toLocaleString()} / 5,000</span>
           {blockedReason ? <span className="as-blocked" role="status">{blockedReason}</span> : <span className="as-cost" title={CREDIT_ESTIMATE_TITLE}>{creditEstimateLabel(estimatedCredits)}</span>}
@@ -469,7 +475,10 @@ function GenerateTab(props: {
           <div className="as-rail-body">
             <SearchField value={historySearch} onChange={setHistorySearch} placeholder="Search this session" label="Search generation history" size="sm" />
             {historyItems.length ? historyItems.map((item) => (
-              <button key={item.id} type="button" onClick={() => props.setSelectedGenerationId(item.id)} className="as-history" aria-current={props.selectedGenerationId === item.id ? "true" : undefined}>
+              <button key={item.id} type="button" onClick={() => {
+                props.setSelectedGenerationId(item.id);
+                props.onPlay(item);
+              }} className="as-history" aria-current={props.selectedGenerationId === item.id ? "true" : undefined}>
                 <strong>{item.text}</strong>
                 <small>{item.profileName} · {relativeTime(item.createdAt)}</small>
               </button>
@@ -507,7 +516,7 @@ export function GenerationPlayer({ item, autoplay, onAutoplayConsumed }: { item:
     <AudioPlayer
       src={item.audioUrl}
       title={<span title={item.text}>{item.text || "Untitled"}</span>}
-      meta={`${item.profileName} · ${relativeTime(item.createdAt)}`}
+      meta={item.id.startsWith("preview-") ? "Voice preview" : `${item.profileName} · ${relativeTime(item.createdAt)}`}
       label={item.profileName}
       leading={<span className="as-sphere is-sm" style={{ background: voiceSphere(item.profileName) }} aria-hidden />}
       preload="auto"
@@ -558,6 +567,7 @@ function VoicesLibraryTab({
   onDeleteVoice,
   onRenameVoice,
   onCreateVoice,
+  onPreview,
 }: {
   dark: boolean;
   voices: VoiceProfile[];
@@ -569,11 +579,10 @@ function VoicesLibraryTab({
   onDeleteVoice: (id: string) => Promise<void>;
   onRenameVoice: (id: string, name: string) => Promise<void>;
   onCreateVoice: () => void;
+  onPreview: (item: Generation) => void;
 }) {
   const [libraryTab, setLibraryTab] = useState<VoiceLibraryTab>("explore");
   const [query, setQuery] = useState("");
-  const [preview, setPreview] = useState<Generation | null>(null);
-  const [previewAutoplayId, setPreviewAutoplayId] = useState("");
   const [previewLoadingId, setPreviewLoadingId] = useState("");
   const [previewError, setPreviewError] = useState("");
   useErrorToast(previewError, () => setPreviewError(""), { title: "Preview failed" });
@@ -595,8 +604,7 @@ function VoicesLibraryTab({
       return;
     }
     if (previewCache[voice.id]) {
-      setPreview(previewCache[voice.id]);
-      setPreviewAutoplayId(previewCache[voice.id].id);
+      onPreview(previewCache[voice.id]);
       return;
     }
     setPreviewLoadingId(voice.id);
@@ -617,8 +625,7 @@ function VoicesLibraryTab({
         createdAt: new Date().toISOString(),
       };
       setPreviewCache((current) => ({ ...current, [voice.id]: item }));
-      setPreview(item);
-      setPreviewAutoplayId(item.id);
+      onPreview(item);
     } catch (error) {
       setPreviewError(error instanceof Error ? error.message : "Voice preview failed");
     } finally {
@@ -638,7 +645,6 @@ function VoicesLibraryTab({
       if (!cached) return current;
       return { ...current, [voiceId]: { ...cached, profileName: next, text: next } };
     });
-    setPreview((current) => current && current.id === previewCache[voiceId]?.id ? { ...current, profileName: next, text: next } : current);
     setRenamingId("");
   }
 
@@ -661,7 +667,7 @@ function VoicesLibraryTab({
 
       <div className="as-library-scroll">
         {filteredVoices.length ? (
-          <div className="as-grid">
+          <div className="as-list">
             {filteredVoices.map((voice) => {
               const saved = savedSet.has(voice.id);
               const selected = selectedVoiceId === voice.id;
@@ -739,11 +745,6 @@ function VoicesLibraryTab({
           </div>
         )}
       </div>
-      {preview ? (
-        <div className="as-player is-dock">
-          <GenerationPlayer item={preview} dark={dark} autoplay={previewAutoplayId === preview.id} onAutoplayConsumed={() => setPreviewAutoplayId("")} />
-        </div>
-      ) : null}
     </div>
   );
 }

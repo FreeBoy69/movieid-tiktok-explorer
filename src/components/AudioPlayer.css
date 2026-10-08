@@ -26,10 +26,6 @@
   transition: border-color 0.2s, box-shadow 0.2s;
   container: mk-audio / inline-size;
 }
-.mk-audio.is-playing {
-  border-color: color-mix(in srgb, var(--ap-accent) 55%, var(--ap-line));
-  box-shadow: 0 1px 2px rgb(26 26 26 / 0.04), 0 8px 22px -14px rgb(122 102 0 / 0.45);
-}
 .mk-audio audio {
   display: none;
 }

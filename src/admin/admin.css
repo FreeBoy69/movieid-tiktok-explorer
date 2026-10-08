@@ -773,9 +773,6 @@
   background: var(--a-panel);
   color: var(--a-muted);
 }
-.adm-search:focus-within {
-  border-color: var(--a-accent);
-}
 .adm-search input {
   flex: 1;
   min-width: 0;
@@ -808,7 +805,6 @@ textarea.adm-input {
 }
 .adm-input:focus,
 .adm-select:focus {
-  border-color: var(--a-accent);
   outline: 0;
 }
 .adm-input:disabled,
