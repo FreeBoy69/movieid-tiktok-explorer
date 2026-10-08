@@ -7,7 +7,7 @@
 // from the big editors: a magnetic main track (CapCut), skimming (Final Cut),
 // track heights (Premiere, Resolve), color labels (Premiere), and an overview
 // strip for long edits (Resolve).
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import {
   ArrowLeftToLine,
   ArrowRightToLine,
@@ -113,6 +113,25 @@ function usePref<T extends string>(key: string, fallback: T, allowed: readonly T
 }
 
 const labelColor = (id?: string) => CLIP_LABELS.find((l) => l.id === id)?.color;
+
+/** Keep the names of clips that straddle the left edge in view (CapCut,
+ * Premiere). Touches only those clips' labels, never the whole timeline. */
+const pinned = new WeakMap<HTMLElement, Set<HTMLElement>>();
+function pinLabels(canvasEl: HTMLElement, scrollX: number) {
+  const before = pinned.get(canvasEl) || new Set<HTMLElement>();
+  const now = new Set<HTMLElement>();
+  for (const item of canvasEl.querySelectorAll<HTMLElement>(".ve-item[data-x]")) {
+    const x = Number(item.dataset.x);
+    const w = Number(item.dataset.w);
+    if (x >= scrollX || x + w <= scrollX || w < 140) continue;
+    const label = item.querySelector<HTMLElement>(".ve-item-label");
+    if (!label) continue;
+    label.style.paddingLeft = `${Math.min(Math.max(8, w - 96), scrollX - x + 8)}px`;
+    now.add(label);
+  }
+  for (const label of before) if (!now.has(label)) label.style.paddingLeft = "";
+  pinned.set(canvasEl, now);
+}
 
 /** Three bars of rising height: the icon for each track-height preset. */
 function DensityIcon({ level }: { level: number }) {
@@ -295,6 +314,13 @@ function TrackHead({ label, icon, kind, row, project, narrow }: { label: string;
 // scrolls every frame; only these small pieces re-render for that, never the
 // clips and filmstrips.
 
+/** How wide the scrollable edit is: the content plus some runway after it,
+ * a third of the view (never a fixed number of seconds, which at high zoom
+ * meant scrolling through screens of nothing). */
+function editWidth(duration: number, pps: number, viewW: number) {
+  return Math.max(duration * pps + Math.max(160, viewW / 3), viewW);
+}
+
 function RulerHead({ head, pps, active }: { head: number; pps: number; active: boolean }) {
   const playhead = useVibe((s) => s.playhead);
   return <span className={`ve-ph-head${active ? " is-active" : ""}`} style={{ left: head + playhead * pps }} />;
@@ -322,19 +348,19 @@ function SplitButton() {
 
 /** Resolve-style overview of the whole edit: drag to scroll. It reads the
  * scroll position itself and moves its window by style writes. */
-function Overview({ scroller, head, pps, project, duration }: { scroller: React.RefObject<HTMLDivElement | null>; head: number; pps: number; project: VibeProject; duration: number }) {
+function Overview({ scroller, head, pps, project, duration, total }: { scroller: React.RefObject<HTMLDivElement | null>; head: number; pps: number; project: VibeProject; duration: number; total: number }) {
   const playhead = useVibe((s) => s.playhead);
   const windowRef = useRef<HTMLSpanElement>(null);
   const [viewW, setViewW] = useState(0);
-  const total = Math.max(duration + 8, 20) * pps;
   useEffect(() => {
     const el = scroller.current;
     if (!el) return;
     const place = () => {
       const w = windowRef.current;
       if (w) {
-        w.style.left = `${(el.scrollLeft / total) * 100}%`;
-        w.style.width = `${Math.min(100, ((el.clientWidth - head) / total) * 100)}%`;
+        const width = Math.min(100, ((el.clientWidth - head) / total) * 100);
+        w.style.width = `${width}%`;
+        w.style.left = `${Math.min(100 - width, (el.scrollLeft / total) * 100)}%`;
       }
     };
     const resize = () => {
@@ -427,7 +453,8 @@ export function Timeline({ snapping, onToggleSnap, onCollapse }: { snapping: boo
   });
 
   const duration = projectDuration(project);
-  const width = Math.max(duration + 8, 20) * pps;
+  const [viewW, setViewW] = useState(900);
+  const width = editWidth(duration, pps, viewW);
   const videoTracks = Math.max(1, ...project.clips.map((c) => c.track + 1));
   const audioLanes = Math.max(1, ...project.audio.map((c) => c.lane + 1));
   const selected = new Set(selection);
@@ -455,11 +482,40 @@ export function Timeline({ snapping, onToggleSnap, onCollapse }: { snapping: boo
     const el = scroller.current;
     const cv = canvas.current;
     if (!el || !cv) return;
-    const write = () => cv.style.setProperty("--ve-sx", `${el.scrollLeft}px`);
+    let lastX = -1;
+    let frame = 0;
+    const write = () => {
+      frame = 0;
+      const x = el.scrollLeft;
+      if (x === lastX) return;
+      lastX = x;
+      const overlays = cv.querySelector<HTMLElement>(".ve-overlays");
+      if (overlays) overlays.style.clipPath = `inset(0 0 0 ${x + headRef.current}px)`;
+      pinLabels(cv, x);
+    };
+    const onScroll = () => {
+      if (!frame) frame = requestAnimationFrame(write);
+    };
     write();
-    el.addEventListener("scroll", write, { passive: true });
-    return () => el.removeEventListener("scroll", write);
+    el.addEventListener("scroll", onScroll, { passive: true });
+    const ro = new ResizeObserver(() => setViewW(el.clientWidth - headRef.current));
+    ro.observe(el);
+    repin.current = () => {
+      lastX = -1;
+      write();
+    };
+    return () => {
+      cancelAnimationFrame(frame);
+      el.removeEventListener("scroll", onScroll);
+      ro.disconnect();
+    };
   }, []);
+
+  // After any render the clips may have moved: re-pin names and re-clip overlays.
+  const repin = useRef<() => void>(() => undefined);
+  const headRef = useRef(HEAD);
+  headRef.current = HEAD;
+  useLayoutEffect(() => repin.current());
 
   // ⌘/Ctrl + scroll zooms around the pointer.
   useEffect(() => {
@@ -970,7 +1026,9 @@ export function Timeline({ snapping, onToggleSnap, onCollapse }: { snapping: boo
         key={o.id}
         data-item-id={o.id}
         className={`ve-item ve-item-${o.tone}${selected.has(o.id) ? " is-selected" : ""}${o.locked ? " is-locked" : ""}${o.dim ? " is-dim" : ""}${w < 44 ? " is-tiny" : ""}${tint ? " has-label" : ""}`}
-        style={{ left: o.start * pps, width: w > 10 ? w - 2 : w, ["--ve-x" as string]: `${o.start * pps}px`, ["--ve-room" as string]: `${Math.max(8, w - 96)}px`, ...(tint ? { ["--ve-label" as string]: tint } : {}) }}
+        data-x={o.start * pps}
+        data-w={w}
+        style={{ left: o.start * pps, width: w > 10 ? w - 2 : w, ...(tint ? { ["--ve-label" as string]: tint } : {}) }}
         onPointerDown={(e) => onItemDown(e, o.id, o.kind, "move", o.start, o.end, o.inPoint)}
         onContextMenu={(e) => itemMenu(e, o.id)}
         title={o.title || `${o.label} · ${formatTime(o.start, true)}–${formatTime(o.end, true)}`}
@@ -1279,7 +1337,7 @@ export function Timeline({ snapping, onToggleSnap, onCollapse }: { snapping: boo
           </div>
         </div>
       </div>
-      <Overview scroller={scroller} head={HEAD} pps={pps} project={project} duration={duration} />
+      <Overview scroller={scroller} head={HEAD} pps={pps} project={project} duration={duration} total={width} />
       {readout ? (
         <div className="ve-readout" style={{ left: readout.x, top: readout.y }} aria-hidden="true">
           {readout.text}

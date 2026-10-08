@@ -534,7 +534,7 @@
 /* "+" after the last clip: drop more footage on the track. */
 .ve-lane-add { position: absolute; top: 50%; z-index: 2; display: grid; width: 30px; height: 30px; place-items: center; border: 1.5px dashed var(--ve-line-strong) !important; border-radius: 9px; color: var(--ve-muted); transform: translateY(-50%); transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease; }
 .ve-lane-add:hover { border-color: var(--ve-faint) !important; background: var(--ve-raised); color: var(--ve-text); }
-.ve-tl-scroll { position: relative; min-height: 0; flex: 1; overflow: auto; overscroll-behavior: contain; background: linear-gradient(90deg, var(--ve-panel) 0 var(--ve-head), var(--ve-line) var(--ve-head) calc(var(--ve-head) + 1px), var(--ve-bed) calc(var(--ve-head) + 1px)); }
+.ve-tl-scroll { position: relative; min-height: 0; flex: 1; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; background: linear-gradient(90deg, var(--ve-panel) 0 var(--ve-head), var(--ve-line) var(--ve-head) calc(var(--ve-head) + 1px), var(--ve-bed) calc(var(--ve-head) + 1px)); }
 .ve-tl-canvas { position: relative; min-height: 100%; }
 .ve-ruler { position: sticky; top: 0; z-index: 10; height: 34px; border-bottom: 1px solid var(--ve-line); background: var(--ve-panel); cursor: ew-resize; user-select: none; }
 .ve-ruler-ticks { position: absolute; right: 0; bottom: 0; height: 6px; pointer-events: none; }
@@ -696,23 +696,23 @@
 .ve-row-main.is-magnetic .ve-lane { background: color-mix(in srgb, var(--ve-accent) 3.5%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--ve-accent) 10%, transparent) inset; }
 .ve-row-first-audio { border-top: 1px solid var(--ve-line-strong); }
 .ve-overview { flex: none; padding: 6px 10px 8px calc(var(--ve-head) + 0px); border-top: 1px solid var(--ve-line); border-radius: 0 0 var(--ve-radius) var(--ve-radius); background: var(--ve-panel); cursor: pointer; user-select: none; touch-action: none; }
-.ve-overview-track { position: relative; height: 14px; border-radius: 4px; background: var(--ve-sunken); }
+.ve-overview-track { position: relative; height: 14px; overflow: hidden; border-radius: 5px; background: var(--ve-sunken); }
 .ve-ov-clip { position: absolute; min-width: 1px; height: 4px; border-radius: 2px; }
 .ve-ov-video { top: 2px; background: color-mix(in srgb, var(--ve-video) 70%, var(--ve-text)); }
 .ve-ov-audio { top: 8px; background: color-mix(in srgb, var(--ve-voice) 70%, var(--ve-text)); }
 .ve-ov-marker { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--ve-marker); }
 .ve-ov-playhead { position: absolute; top: -2px; bottom: -2px; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--ve-accent); }
-.ve-ov-window { position: absolute; top: -3px; bottom: -3px; border-radius: 5px; background: color-mix(in srgb, var(--ve-text) 7%, transparent); box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--ve-text) 55%, transparent) inset; cursor: grab; transition: box-shadow 0.16s ease; }
+.ve-tl-scroll::-webkit-scrollbar:horizontal { height: 0; }
+.ve-ov-window { position: absolute; top: 0; bottom: 0; max-width: 100%; border-radius: 5px; background: color-mix(in srgb, var(--ve-text) 7%, transparent); box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--ve-text) 55%, transparent) inset; cursor: grab; transition: box-shadow 0.16s ease; }
 .ve-overview:hover .ve-ov-window { box-shadow: 0 0 0 1.5px var(--ve-text) inset; }
 .ve-timeline:has(.ve-overview) .ve-tl-scroll { border-radius: 0; }
 
 /* Lines that span the tracks (playhead, markers, snap guide, box select) live
    in one layer clipped to the track area, so they never cross the headers. */
-.ve-overlays { position: absolute; inset: 0; z-index: 7; pointer-events: none; clip-path: inset(0 0 0 calc(var(--ve-sx, 0px) + var(--ve-head))); }
+.ve-overlays { position: absolute; inset: 0; z-index: 7; pointer-events: none; clip-path: inset(0 0 0 var(--ve-head)); }
 /* Clip names ride along while a long clip is scrolled past (CapCut, Premiere). */
 .ve-item-title { display: inline-flex; min-width: 0; align-items: center; gap: 5px; overflow: hidden; }
-.ve-item-label { padding-left: clamp(8px, calc(var(--ve-sx, 0px) - var(--ve-x, 0px) + 8px), var(--ve-room, 8px)); }
-.ve-item.is-tiny .ve-item-label { padding-left: 3px; }
+.ve-item.is-tiny .ve-item-label { padding-left: 3px !important; }
 
 /* ---------- Timeline: clip polish and color labels ---------- */
 .ve-item { border-radius: 6px; }
