@@ -36,4 +36,4 @@
 - **Popups:** Dialogs for detail views (Prompt Library), bottom sheets on phones.
 
 ## UI/UX Quality & Impeccable Mandate
-- All UI/UX changes follow the global `impeccable` skill: tinted neutrals (no raw `#000` / `#fff` for text surfaces in dark mode), 150–250ms state transitions, visible `:focus-visible` rings in a neutral ink (`--ui-focus` / `--ui-ring`; never yellow: no accent border or glow when an item is clicked or focused), complete loading, empty, and error states, and layouts verified at desktop and 390px phone widths in both themes.
+- All UI/UX changes follow the global `impeccable` skill: tinted neutrals (no raw `#000` / `#fff` for text surfaces in dark mode), 150–250ms state transitions, a neutral keyboard-only `:focus-visible` ring on buttons and cards (`--ui-focus`; never yellow), and no focus styling at all on fields: inputs, textareas, prompt boxes, search bars and open dropdowns keep their resting border while focused or typed in (no border change, ring, outline or hover darkening), complete loading, empty, and error states, and layouts verified at desktop and 390px phone widths in both themes.
