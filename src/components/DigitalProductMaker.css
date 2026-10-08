@@ -169,7 +169,7 @@
   letter-spacing: -0.015em;
 }
 .dpm .dpm-title-wrap input:hover { border-color: var(--dp-line); }
-.dpm .dpm-title-wrap input:focus { background: var(--dp-bg); outline: none; }
+.dpm .dpm-title-wrap input:focus { background: var(--dp-bg); }
 .dpm-top-actions { display: flex; align-items: center; gap: 8px; }
 .dpm-tabs {
   display: flex;

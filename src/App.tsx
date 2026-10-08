@@ -667,7 +667,7 @@ function WorkspaceApp() {
                             value={movieLinkInput}
                             onChange={(event) => setMovieLinkInput(event.target.value)}
                             disabled={movieState.status === "processing"}
-                            className="h-12 min-w-0 rounded-lg border border-transparent bg-[var(--ui-panel)] px-4 text-sm font-medium outline-none transition focus:border-[var(--ui-text)]"
+                            className="h-12 min-w-0 rounded-lg border border-transparent bg-[var(--ui-panel)] px-4 text-sm font-medium outline-none transition"
                             placeholder="Paste TikTok, YouTube, Instagram, Facebook, X, or direct video URL"
                           />
                           <button

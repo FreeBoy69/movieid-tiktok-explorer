@@ -103,8 +103,6 @@
 .ui-btn.is-danger { border-color: transparent; background: var(--ui-danger); color: #fff; }
 .ui-btn.is-danger:hover:not(:disabled) { background: #c23a3a; }
 .ui-btn:disabled { opacity: 0.5; cursor: default; }
-.ui-btn:focus-visible,
-.ui-icon-btn:focus-visible { outline: 2px solid var(--ui-focus); outline-offset: 2px; }
 .ui-icon-btn {
   display: inline-grid;
   width: 32px;
@@ -162,7 +160,6 @@
 }
 .ui-switch input:checked + .ui-switch-track { background: var(--ui-accent); }
 .ui-switch input:checked + .ui-switch-track span { transform: translateX(16px); }
-.ui-switch:has(input:focus-visible) { outline: 2px solid var(--ui-focus); outline-offset: 2px; }
 
 /* ---------- Segmented / Tabs ---------- */
 .ui-seg {
@@ -206,8 +203,6 @@
 .ui-tabs > button small { color: var(--ui-text-muted); font-size: 11px; font-weight: 500; }
 .ui-seg > button:disabled,
 .ui-tabs > button:disabled { opacity: 0.45; cursor: default; }
-.ui-seg > button:focus-visible,
-.ui-tabs > button:focus-visible { outline: 2px solid var(--ui-focus); outline-offset: 1px; }
 .ui-tabs {
   display: flex;
   max-width: 100%;
@@ -337,7 +332,6 @@
   transition: border-color 140ms ease;
 }
 .ui-search-sm { min-height: 34px; padding-left: 10px; }
-.ui-search:focus-within { outline: none; }
 .ui-search input[type="search"] {
   min-width: 0;
   flex: 1;
@@ -433,12 +427,6 @@
 .ui-textarea { min-height: 96px; resize: vertical; }
 .ui-input::placeholder,
 .ui-textarea::placeholder { color: var(--ui-text-faint); }
-.ui-select:focus-visible,
-.ui-select:focus {
-  border-color: var(--ui-focus);
-  box-shadow: 0 0 0 3px var(--ui-ring);
-  outline: none;
-}
 .ui-input:disabled,
 .ui-textarea:disabled,
 .ui-select:disabled { opacity: 0.55; cursor: not-allowed; }
@@ -525,9 +513,6 @@
 .ui-range.is-on-media::-webkit-slider-thumb { border-color: transparent; background: #fff; }
 .ui-range.is-on-media::-moz-range-thumb { border-color: transparent; background: #fff; }
 .ui-range:hover::-webkit-slider-thumb { transform: scale(1.12); }
-.ui-range:focus-visible { outline: none; }
-.ui-range:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px var(--ui-ring), 0 0 0 1px var(--ui-focus); }
-.ui-range:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 3px var(--ui-ring); }
 
 /* ---------- Chips (choices) and badges (labels) ---------- */
 .ui-chip {
@@ -607,8 +592,8 @@
   cursor: pointer;
 }
 .ui-menu-item:hover,
-.ui-menu-item:focus-visible,
 .ui-menu-item.is-active { background: var(--ui-hover); outline: none; }
+.ui-menu-item:focus-visible { background: var(--ui-hover); }
 .ui-menu-item[aria-selected="true"],
 .ui-menu-item[aria-checked="true"],
 .ui-menu-item.is-selected { background: var(--ui-accent-soft); }

@@ -131,12 +131,6 @@
   color: var(--ui-text-faint);
   transition: border-color var(--ui-duration);
 }
-.tg-search:focus-within {
-  outline: none;
-}
-.tg-search input:focus-visible {
-  outline: none;
-}
 .tg-search input {
   flex: 1;
   min-width: 0;

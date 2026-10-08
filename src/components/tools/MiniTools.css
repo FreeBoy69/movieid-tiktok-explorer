@@ -179,9 +179,6 @@
   font: inherit;
   font-size: 14px;
 }
-.mt-input:not(.ui-input):focus {
-  outline: none;
-}
 .mt-input:not(.ui-input)::placeholder {
   color: var(--ui-text-faint);
 }
@@ -412,9 +409,6 @@
   field-sizing: content;
   max-height: 60vh;
   transition: border-color 160ms, box-shadow 160ms;
-}
-.mt-output:focus {
-  outline: none;
 }
 .mt-section {
   display: flex;

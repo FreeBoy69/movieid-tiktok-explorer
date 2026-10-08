@@ -173,9 +173,6 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
-.mk-voice-panel .mk-voice-choose:focus-visible {
-  outline-offset: -2px;
-}
 .mk-voice-text {
   min-width: 0;
   display: flex;
@@ -302,4 +299,4 @@
 .mk-voice-panel.is-sheet .mk-voice-star { opacity: 1; }
 .mk-voice-panel .mk-voice-star:hover { color: var(--vp-text); }
 .mk-voice-panel .mk-voice-star.is-on { color: var(--ui-warning); }
-.mk-voice-panel .mk-voice-star:focus-visible { opacity: 1; outline: 2px solid var(--vp-text); outline-offset: 1px; }
+.mk-voice-panel .mk-voice-star:focus-visible { opacity: 1; }

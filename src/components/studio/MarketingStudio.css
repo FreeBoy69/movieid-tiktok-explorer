@@ -131,7 +131,6 @@
 }
 .mks-bar:focus-within {
   background: var(--glass-input-bg-focus);
-  outline: none;
 }
 .mks-hookline {
   display: flex;
@@ -459,9 +458,6 @@
   background: var(--ui-accent-soft);
   pointer-events: none;
 }
-.mks-tech-row.is-slider:has(input:focus-visible) {
-  outline: 2px solid var(--ui-focus);
-}
 .mks-tech.mks-tech-settings {
   display: grid;
   gap: 4px;
@@ -755,9 +751,6 @@
   box-shadow: var(--ui-shadow-soft);
   color: var(--ui-text-faint);
 }
-.mks-url:focus-within {
-  outline: none;
-}
 .mks-url input {
   flex: 1;
   min-width: 0;
@@ -804,12 +797,6 @@
   resize: none;
   outline: none;
   transition: border-color var(--ui-duration) ease, box-shadow var(--ui-duration) ease;
-}
-.mks-manual input:focus,
-.mks-manual textarea:focus,
-.mks-create input:focus,
-.mks-create textarea:focus {
-  outline: none;
 }
 .cs-refs.mks-uploads {
   flex-wrap: wrap;

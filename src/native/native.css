@@ -71,8 +71,6 @@ html[data-native] .ah-overlay.is-mobile .ah-sheet {
   color: var(--ntb-active);
 }
 .ntb-item:focus-visible {
-  outline: 2px solid var(--ntb-active);
-  outline-offset: -4px;
   border-radius: 12px;
 }
 .ntb-icon {
@@ -211,10 +209,6 @@ html[data-keyboard="open"] .ntb {
 }
 .gv-apple:disabled {
   opacity: 0.7;
-}
-.gv-apple:focus-visible {
-  outline: 2px solid var(--ui-focus);
-  outline-offset: 3px;
 }
 [data-theme="light"] .gv-apple {
   background: #000;

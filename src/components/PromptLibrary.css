@@ -191,17 +191,12 @@
   box-shadow: var(--pl-shadow);
   transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.28s;
 }
-.plib-card-open:hover .plib-cover,
-.plib-card-open:focus-visible .plib-cover {
+.plib-card-open:hover .plib-cover {
   transform: translateY(-3px);
   box-shadow: 0 2px 4px rgb(26 26 26 / 0.06), 0 22px 40px -20px rgb(26 26 26 / 0.42);
 }
-.plib-card-open:focus-visible {
-  outline: none;
-}
 .plib-card-open:focus-visible .plib-cover {
-  outline: 2px solid var(--ui-focus);
-  outline-offset: 3px;
+  transform: translateY(-3px);
 }
 .plib-cover-media {
   width: 100%;
@@ -422,9 +417,6 @@
   -webkit-backdrop-filter: blur(22px) saturate(1.6);
   backdrop-filter: blur(22px) saturate(1.6);
   animation: plib-rise 0.26s cubic-bezier(0.16, 1, 0.3, 1);
-}
-.plib-dialog:focus {
-  outline: none;
 }
 .plib-dialog:has(.plib-composer),
 .plib-dialog:has(.plib-detail:not(.has-media)) {
@@ -650,10 +642,6 @@
   font-weight: 400;
   line-height: 1.5;
   resize: vertical;
-}
-.plib-composer input:focus,
-.plib-composer textarea:focus {
-  outline: none;
 }
 .plib-chips {
   display: flex;

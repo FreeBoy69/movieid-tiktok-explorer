@@ -173,7 +173,6 @@
 }
 :is(.cns, .cns-kit) .cns-bar:focus-within {
   background: var(--glass-input-bg-focus);
-  outline: none;
 }
 :is(.cns, .cns-kit) .cns-looks {
   display: flex;
@@ -671,9 +670,6 @@
   border-radius: var(--ui-radius-control);
   background: var(--ui-input);
   color: var(--ui-text-muted);
-}
-:is(.cns, .cns-kit) .cns-search:focus-within {
-  outline: none;
 }
 :is(.cns, .cns-kit) .cns-search input {
   flex: 1;

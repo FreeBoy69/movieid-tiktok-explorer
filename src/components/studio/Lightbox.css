@@ -46,10 +46,6 @@
   background: rgb(255 255 255 / 0.22);
   color: #fff;
 }
-.cs-lightbox .cs-lightbox-bar .cs-icon:focus-visible {
-  outline: 2px solid #fafaf7;
-  outline-offset: 2px;
-}
 @media (prefers-reduced-motion: reduce) {
   .cs-lightbox { animation: none; }
 }

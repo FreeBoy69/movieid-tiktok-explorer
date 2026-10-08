@@ -57,8 +57,8 @@ export function SourceUsageRow({ source, usage, issue, deepScan, dark = false, o
       <span className={`source-pool-source-status w-[8.5rem] shrink-0 truncate text-xs font-semibold tabular-nums ${secondary}`} title={status}>{status}</span>
       <span className={`source-pool-source-count w-[11rem] shrink-0 truncate text-right text-xs font-semibold tabular-nums ${secondary}`}>{usage ? `${label} · ${usage.remaining.toLocaleString()} left` : label}</span>
       <div className="flex shrink-0 items-center gap-0.5">
-        <a href={source.url} target="_blank" rel="noreferrer" aria-label={`Open ${source.title}`} className="inline-flex h-8 w-8 items-center justify-center rounded-lg hover:bg-[var(--ui-accent)]/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"><ExternalLink className="h-4 w-4" /></a>
-        {!source.primary && onRemove && <button type="button" aria-label={`Remove ${source.title}`} onClick={() => onRemove(source.url)} className="inline-flex h-8 w-8 items-center justify-center rounded-lg hover:bg-[var(--ui-accent)]/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"><Trash2 className="h-4 w-4" /></button>}
+        <a href={source.url} target="_blank" rel="noreferrer" aria-label={`Open ${source.title}`} className="inline-flex h-8 w-8 items-center justify-center rounded-lg hover:bg-[var(--ui-accent)]/20"><ExternalLink className="h-4 w-4" /></a>
+        {!source.primary && onRemove && <button type="button" aria-label={`Remove ${source.title}`} onClick={() => onRemove(source.url)} className="inline-flex h-8 w-8 items-center justify-center rounded-lg hover:bg-[var(--ui-accent)]/20"><Trash2 className="h-4 w-4" /></button>}
       </div>
     </div>
   </div>;
@@ -135,7 +135,7 @@ export function SourcePoolUsage({ agentId, sources, dark, active, revision, tagg
   return <div className={`mt-3 min-w-0 ${dark ? "text-[var(--ui-text)]": "text-[var(--ui-text)]"}`}>
     <div className="flex items-center justify-between gap-3 text-xs">
       <span role="status">{error || (loading && !current ? "Loading usage…" : scanning ? "Full catalog scanning in background" : "Source usage")}</span>
-      {agentId && <button type="button" onClick={() => setRefresh((n) => n + 1)} disabled={loading} aria-label="Refresh source usage" className="inline-flex h-9 w-9 items-center justify-center rounded-lg hover:bg-[var(--ui-accent)]/20 disabled:opacity-40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"><RefreshCw className="h-4 w-4" /></button>}
+      {agentId && <button type="button" onClick={() => setRefresh((n) => n + 1)} disabled={loading} aria-label="Refresh source usage" className="inline-flex h-9 w-9 items-center justify-center rounded-lg hover:bg-[var(--ui-accent)]/20 disabled:opacity-40"><RefreshCw className="h-4 w-4" /></button>}
     </div>
     {visible.map((source) => <SourceUsageRow key={poolSourceIdentity(source.url)} source={source}
       usage={current?.sources.find((row) => row.key === poolSourceIdentity(source.url))}

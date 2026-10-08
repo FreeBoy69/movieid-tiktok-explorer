@@ -681,10 +681,6 @@
   height: 100%;
   object-fit: cover;
 }
-.chs-lightbox :focus-visible {
-  outline: 2px solid var(--ui-focus);
-  outline-offset: 2px;
-}
 
 @media (max-width: 1180px) {
   .chs-detail { grid-template-columns: minmax(0, 1fr); }

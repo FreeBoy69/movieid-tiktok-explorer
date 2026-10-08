@@ -77,13 +77,6 @@
   opacity: 0.38;
   cursor: default;
 }
-.maker-workspace .tl-btn:focus-visible,
-.maker-workspace .tl-play:focus-visible,
-.maker-workspace .tl-clip:focus-visible,
-.maker-workspace .tl-link:focus-visible {
-  outline: 2px solid var(--ui-focus);
-  outline-offset: 1px;
-}
 .tl-rate {
   font-variant-numeric: tabular-nums;
   min-width: 40px !important;

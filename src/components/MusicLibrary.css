@@ -177,9 +177,11 @@
   color: var(--ml-ink);
   cursor: pointer;
 }
-.ml-file:hover,
+.ml-file:hover {
+  border-color: var(--ui-line-strong);
+  background: var(--ui-hover);
+}
 .ml-file:focus-within {
-  border-color: var(--ui-focus);
   background: var(--ui-hover);
 }
 .ml-file span {

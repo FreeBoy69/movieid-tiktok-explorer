@@ -3,7 +3,6 @@
 .juel-trigger svg { color: #f9dc0b; }
 .juel-trigger:hover,
 .juel-trigger.is-on { border-color: color-mix(in srgb, #f9dc0b 55%, transparent); background: color-mix(in srgb, #f9dc0b 12%, var(--ah-tile)); }
-.juel-trigger:focus-visible { outline: 2px solid var(--ui-focus); outline-offset: 2px; }
 @media (max-width: 760px) {
   .juel-trigger span { display: none; }
   .juel-trigger { width: 34px; justify-content: center; padding: 0; }
@@ -19,7 +18,6 @@
 @keyframes juel-in { from { opacity: 0; transform: translateX(16px); } }
 .juel *, .juel *::before, .juel *::after { box-sizing: border-box; }
 .juel button { font: inherit; cursor: pointer; }
-.juel :focus-visible { outline: 2px solid var(--ui-focus); outline-offset: 2px; }
 .juel-head { display: flex; align-items: center; gap: 8px; padding: 12px 12px 12px 18px; border-bottom: 1px solid var(--j-line); }
 .juel-title { display: inline-flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 750; letter-spacing: -0.01em; }
 .juel-title svg { color: var(--j-accent-text); }
@@ -137,8 +135,6 @@
 .juel-history-empty { display: flex; align-items: center; gap: 8px; margin: 8px; color: var(--j-muted); font-size: 13px; }
 
 .juel-composer { position: relative; margin: 0 14px 14px; border: 1px solid var(--j-line); border-radius: 16px; background: var(--j-panel); }
-.juel-composer:focus-within { outline: none; }
-.juel-composer textarea:focus-visible { outline: none; }
 .juel-composer textarea { display: block; width: 100%; max-height: 160px; padding: 12px 88px 12px 14px; border: 0; background: transparent; color: var(--j-text); font: inherit; resize: none; outline: none; }
 .juel-composer textarea::placeholder { color: var(--j-faint); }
 .juel-editing { display: flex; align-items: center; gap: 6px; margin: 0; padding: 7px 12px; border-bottom: 1px solid var(--j-line); color: var(--j-muted); font-size: 12px; }
@@ -158,7 +154,6 @@
 .juel.juel-embedded { position: relative; top: auto; right: auto; bottom: auto; z-index: auto; width: 100%; height: 100%; min-height: 0; flex: 1; border: 0; background: transparent; box-shadow: none; animation: none; }
 /* The "Ask Juel" dock on pages whose full Juel is a tab away. */
 .juel-dock { display: flex; align-items: center; gap: 10px; padding: 6px 6px 6px 14px; border: 1px solid var(--ui-line, rgb(255 255 255 / 0.1)); border-radius: 999px; background: var(--ui-raised, #1b1e22); box-shadow: 0 14px 40px -22px rgb(0 0 0 / 0.55); color: var(--ui-text, #eceae3); }
-.juel-dock:focus-within { outline: none; }
 .juel-dock > svg { flex: none; color: #f9dc0b; }
 .juel-dock input { min-width: 0; height: 34px; flex: 1; border: 0; background: transparent; color: inherit; font: 500 14px/1.4 Inter, system-ui, sans-serif; outline: none; }
 .juel-dock input::placeholder { color: var(--ui-text-muted, #a3a29b); }

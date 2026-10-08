@@ -254,11 +254,13 @@
   transition: background 0.12s;
 }
 .ah .ah-entry:hover,
-.ah .ah-entry:focus-visible,
 .ah-overlay .ah-entry:hover,
 .ah-overlay .ah-entry[aria-selected="true"] {
   background: var(--ah-hover);
   outline: none;
+}
+.ah .ah-entry:focus-visible {
+  background: var(--ah-hover);
 }
 .ah-entry-icon {
   width: 40px;

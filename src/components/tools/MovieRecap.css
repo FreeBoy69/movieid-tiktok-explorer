@@ -854,9 +854,6 @@
   background: var(--cs-surface);
   transition: border-color 160ms var(--cs-ease), box-shadow 160ms var(--cs-ease);
 }
-.mr-beat:focus-within {
-  outline: none;
-}
 .mr-beat-frames {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -899,7 +896,6 @@
 }
 .mr-beat-text:focus {
   background: var(--cs-bg);
-  outline: none;
 }
 .mr-beat-meta {
   display: flex;
@@ -928,9 +924,6 @@
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   text-align: center;
-}
-.mr-clock:focus {
-  outline: none;
 }
 .mr-beat-len {
   font-variant-numeric: tabular-nums;

@@ -385,7 +385,7 @@ export function RewriterEngine({ initialTranscript = "", phases = [], onBack }: 
                   <input
                     value={videoLink}
                     onChange={(event) => setVideoLink(event.target.value)}
-                    className="h-12 min-w-0 rounded-lg border border-transparent bg-[var(--ui-panel)] px-4 text-sm font-medium outline-none focus:border-[var(--ui-text)]"
+                    className="h-12 min-w-0 rounded-lg border border-transparent bg-[var(--ui-panel)] px-4 text-sm font-medium outline-none"
                     placeholder="Paste TikTok, YouTube, or direct video URL"
                   />
                   <button type="submit" disabled={!videoLink.trim()} className="ui-btn is-ink is-lg">
@@ -444,7 +444,7 @@ export function RewriterEngine({ initialTranscript = "", phases = [], onBack }: 
                   <textarea
                     value={editableContent}
                     onChange={(event) => updateCurrentVersionContent(event.target.value)}
-                    className="min-h-0 flex-1 resize-none rounded-lg border border-[var(--ui-line-strong)] bg-[var(--ui-panel)] p-5 text-base font-medium leading-8 text-[var(--ui-text)] outline-none focus:border-[var(--ui-text)]"
+                    className="min-h-0 flex-1 resize-none rounded-lg border border-[var(--ui-line-strong)] bg-[var(--ui-panel)] p-5 text-base font-medium leading-8 text-[var(--ui-text)] outline-none"
                     placeholder="Your rewritten script will appear here."
                   />
                 </div>

@@ -25,7 +25,6 @@
 .source-picker-tab.is-active { background: var(--ui-raised); color: var(--sp-text); box-shadow: 0 1px 2px rgb(0 0 0 / 0.12), 0 0 0 1px var(--ui-line); }
 .source-picker-tabpanel { display: flex; min-height: 0; flex: 1; flex-direction: column; overflow: hidden; }
 .source-picker-search { display: flex; flex: none; align-items: center; gap: 8px; min-height: var(--ui-field-height); margin: 0 16px 4px; padding: 0 12px; border: 1px solid var(--ui-line); border-radius: var(--ui-radius-control); background: var(--ui-input); color: var(--sp-muted); }
-.source-picker-search:focus-within { outline: none; }
 .source-picker-search input { width: 100%; min-width: 0; border: 0; padding: 2px 0; background: transparent; color: var(--sp-text); font: inherit; font-size: 14px; outline: none; box-shadow: none; }
 .source-picker-search input::placeholder { color: var(--sp-muted); }
 .source-picker-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; flex: 1; padding: 8px 16px 14px; overflow-y: auto; min-height: 0; overscroll-behavior: contain; scrollbar-width: thin; }

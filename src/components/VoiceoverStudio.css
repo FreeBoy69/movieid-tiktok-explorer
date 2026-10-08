@@ -30,7 +30,6 @@
 .voice-upload-picker { flex: 1; }
 /* Selects from child panels (subtitle settings) take the canonical .ui-select look. */
 .voice-workspace select:not(.ui-select) { width: 100%; min-height: var(--ui-field-height); padding: 0 36px 0 12px; border: 1px solid var(--ui-line-strong); border-radius: var(--ui-radius-control); background: var(--ui-input) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238e8b84' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 12px center; color: var(--ui-text); font-size: 14px; appearance: none; }
-.voice-workspace select:not(.ui-select):focus-visible { border-color: var(--ui-focus); box-shadow: 0 0 0 3px var(--ui-ring); outline: none; }
 .voice-import { border-color: var(--vs-line); background: var(--vs-panel); height: 42px; width: 42px; }
 .voice-import[aria-expanded=true], .voice-import.is-open { background: var(--ui-hover); border-color: var(--ui-line-strong); color: var(--ui-text); }
 .vs-topbar .voice-import { height: 34px; width: 34px; }
@@ -97,7 +96,6 @@
 .voice-text-button { background: transparent; border: 0; min-height: 30px; padding: 4px 0 4px 8px; color: var(--vs-accent-deep); }
 .voice-script { width: 100%; height: 220px; min-height: 160px; resize: vertical; background: var(--vs-panel-soft); color: var(--vs-ink); padding: 16px; font-size: 14px; line-height: 1.85; border: 1px solid var(--vs-line); border-radius: 12px; caret-color: var(--vs-accent-deep); transition: border-color .18s ease, box-shadow .18s ease; }
 .voice-script::placeholder { color: var(--vs-subtle); }
-.voice-script:focus-visible { outline: none; }
 .voice-script-meta { justify-content: space-between; flex-wrap: wrap; margin: 8px 0 12px; color: var(--vs-muted); font-size: 12px; font-weight: 600; }
 .voice-workspace label:has(input[type=checkbox]) { display: flex; align-items: center; gap: 9px; line-height: 1.6; cursor: pointer; }
 .voice-settings { align-items: flex-end; margin-bottom: 12px; }

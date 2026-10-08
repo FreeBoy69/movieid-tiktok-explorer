@@ -32,7 +32,7 @@
   --ui-accent: #f9dc0b;
   --ui-accent-ink: #15130a;
   --ui-accent-text: #7a6600;
-  --ui-ring: rgb(27 27 24 / 0.07);
+  --ui-ring: transparent;
   --ui-radius: 18px;
   --ui-shadow: 0 18px 44px -20px rgb(40 36 20 / 0.32), 0 2px 6px rgb(40 36 20 / 0.1);
   --ui-shadow-soft: 0 1px 2px rgb(40 36 20 / 0.06);
@@ -52,7 +52,7 @@ html[data-theme="dark"],
   --ui-text-muted: #9b9a93;
   --ui-text-faint: #6d6c66;
   --ui-accent-text: #f9dc0b;
-  --ui-ring: rgb(255 255 255 / 0.07);
+  --ui-ring: transparent;
   --ui-shadow: 0 18px 48px -18px rgb(0 0 0 / 0.7), 0 2px 6px rgb(0 0 0 / 0.35);
   --ui-shadow-soft: 0 1px 2px rgb(0 0 0 / 0.3);
 }
@@ -71,7 +71,7 @@ html[data-theme="dark"],
   --ui-radius-control: 12px;
   --ui-accent-hover: #ffe53a;
   --ui-accent-soft: rgb(249 220 11 / 0.18);
-  --ui-focus: rgb(27 27 24 / 0.45);
+  --ui-focus: transparent;
   --ui-danger: #c53b3b;
   --ui-success: #1e7a47;
   --ui-warning: #a66f00;
@@ -83,7 +83,7 @@ html[data-theme="dark"],
 html[data-theme="dark"],
 [data-theme="dark"] {
   --ui-accent-soft: rgb(249 220 11 / 0.14);
-  --ui-focus: rgb(236 234 227 / 0.5);
+  --ui-focus: transparent;
   --ui-danger: #ff7b6e;
   --ui-success: #7fd8a2;
   --ui-warning: #f2c14e;
@@ -142,17 +142,16 @@ html[data-theme="dark"],
     background: var(--autoyt-scrollbar-corner);
   }
 
-  /* One focus ring and one accent for native controls everywhere; app rules may refine. */
-  :where(:focus-visible) {
-    outline: 2px solid var(--ui-focus);
-    outline-offset: 2px;
+
+
+  /* No focus indicators anywhere: no outline, ring or border change when an element is clicked, tabbed to or typed in. */
+  *:focus,
+  *:focus-visible,
+  *:focus-within {
+    outline: none !important;
   }
 
-  /* Typing never draws a focus ring or border change: fields, prompt boxes and editable text stay as they are. */
-  :where(input:not([type="checkbox"], [type="radio"], [type="range"], [type="button"], [type="submit"]), textarea, select, [contenteditable]):is(:focus, :focus-visible) {
-    outline: none;
-  }
-
+  /* One accent for native controls. */
   :where(input[type="checkbox"], input[type="radio"], input[type="range"], progress) {
     accent-color: var(--ui-accent);
   }
@@ -499,20 +498,8 @@ html[data-theme="dark"] {
   animation: agent-chat-user-message-in 240ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-.agent-chat-history :is(button, input):focus-visible,
-.agent-chat-response-actions button:focus-visible {
-  outline: 2px solid #c0a600;
-  outline-offset: 2px;
-}
 
-.agent-chat-composer button:focus-visible {
-  outline: 2px solid rgb(26 26 26 / 0.32);
-  outline-offset: 2px;
-}
 
-html[data-theme="dark"] .agent-chat-composer button:focus-visible {
-  outline-color: rgb(248 245 232 / 0.36);
-}
 
 @keyframes agent-chat-message-in {
   from { opacity: 0; transform: translateY(6px); filter: blur(2px); }

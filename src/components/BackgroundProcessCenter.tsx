@@ -137,7 +137,7 @@ function ProcessRow({ process, darkMode, now, onOpen, onDismiss }: {
               </p>
             </div>
             {!active ? (
-              <button type="button" onClick={onDismiss} className={cn("grid h-7 w-7 shrink-0 place-items-center rounded-md opacity-60 transition hover:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ui-focus)]", darkMode ? "hover:bg-white/8" : "hover:bg-[#1A1A1A]/6")} aria-label={`Dismiss ${process.title}`}>
+              <button type="button" onClick={onDismiss} className={cn("grid h-7 w-7 shrink-0 place-items-center rounded-md opacity-60 transition hover:opacity-100", darkMode ? "hover:bg-white/8" : "hover:bg-[#1A1A1A]/6")} aria-label={`Dismiss ${process.title}`}>
                 <X className="h-3.5 w-3.5" />
               </button>
             ) : null}
@@ -158,7 +158,7 @@ function ProcessRow({ process, darkMode, now, onOpen, onDismiss }: {
             <Progress className="bpc-row-progress" label="Progress" value={progress === null ? null : Math.max(progress, 3) / 100} showPercent={false} />
           ) : null}
 
-          <button type="button" onClick={onOpen} className={cn("mt-3 inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[11px] font-bold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ui-focus)]", darkMode ? "bg-white/8 text-[#F8F5E8] hover:bg-white/12" : "bg-[#1A1A1A]/6 text-[#1A1A1A] hover:bg-[#1A1A1A]/10")}>
+          <button type="button" onClick={onOpen} className={cn("mt-3 inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[11px] font-bold transition", darkMode ? "bg-white/8 text-[#F8F5E8] hover:bg-white/12" : "bg-[#1A1A1A]/6 text-[#1A1A1A] hover:bg-[#1A1A1A]/10")}>
             Open
             <ChevronRight className="h-3.5 w-3.5" />
           </button>
@@ -296,7 +296,7 @@ export function BackgroundProcessCenter({ darkMode = false, onOpenProcess }: {
             <section aria-labelledby="recent-processes-title">
               <div className="flex items-center justify-between px-5 pb-2 pt-5">
                 <h3 id="recent-processes-title" className={cn("text-xs font-black uppercase", darkMode ? "text-[#F8F5E8]/45" : "text-[#1A1A1A]/45")}>Recent</h3>
-                <button type="button" onClick={clearRecent} className={cn("rounded-md px-2 py-1 text-[11px] font-bold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ui-focus)]", darkMode ? "text-[#F8F5E8]/55 hover:bg-white/8 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/50 hover:bg-[#1A1A1A]/6 hover:text-[#1A1A1A]")}>Clear</button>
+                <button type="button" onClick={clearRecent} className={cn("rounded-md px-2 py-1 text-[11px] font-bold transition", darkMode ? "text-[#F8F5E8]/55 hover:bg-white/8 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/50 hover:bg-[#1A1A1A]/6 hover:text-[#1A1A1A]")}>Clear</button>
               </div>
               <div className={cn("border-y", darkMode ? "border-white/8" : "border-[#1A1A1A]/8")}>
                 {recent.map((process) => <ProcessRow key={process.id} process={process} darkMode={darkMode} now={now} onOpen={() => { onOpenProcess(process); setOpen(false); }} onDismiss={() => dismiss(process.id)} />)}

@@ -186,9 +186,6 @@
 .exs-title input:hover {
   border-bottom-color: var(--ui-line-strong);
 }
-.exs-title input:focus-visible {
-  outline: none;
-}
 .exs-summary {
   max-width: 70ch;
   margin: 6px 0 0;
@@ -265,9 +262,6 @@
 }
 .exs-chapter-title:hover {
   border-bottom-color: var(--ui-line-strong);
-}
-.exs-chapter-title:focus-visible {
-  outline: none;
 }
 .exs-count {
   flex-shrink: 0;
@@ -377,9 +371,6 @@ button.exs-visual:focus-visible .exs-visual-x {
   padding: 8px 4px 8px 12px;
   border-left: 2px solid var(--mks-line);
   transition: border-color 160ms;
-}
-.exs-lines li:focus-within {
-  outline: none;
 }
 .exs-lines textarea {
   display: block;

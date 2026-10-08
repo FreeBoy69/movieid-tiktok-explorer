@@ -144,9 +144,6 @@
   caret-color: var(--ui-accent-text);
   transition: border-color var(--ui-duration) ease, box-shadow var(--ui-duration) ease;
 }
-:where(.maker-workspace) :where(input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="color"]), textarea, select):focus {
-  outline: none;
-}
 :where(.maker-workspace) :where(textarea) {
   resize: vertical;
   line-height: 1.65;
@@ -415,10 +412,6 @@
 .maker-option:has(input:checked) {
   border-color: var(--ui-accent);
   box-shadow: 0 0 0 2px var(--ui-accent);
-}
-.maker-option:has(input:focus-visible) {
-  outline: 2px solid var(--ui-focus);
-  outline-offset: 2px;
 }
 .maker-option > input {
   position: absolute;
@@ -708,9 +701,6 @@
   border: 1px solid var(--mk-line);
   border-radius: 12px;
   box-shadow: var(--mk-shadow);
-}
-.maker-searchbar:focus-within {
-  outline: none;
 }
 .maker-searchbar > svg {
   color: var(--mk-muted);
@@ -3315,10 +3305,6 @@
   font-weight: 450;
   color: var(--mk-muted);
 }
-.maker-source-option:focus-within {
-  outline: 2px solid var(--ui-focus);
-  outline-offset: 2px;
-}
 .maker-segment-empty {
   display: flex;
   align-items: center;
@@ -4342,8 +4328,6 @@
   pointer-events: none;
 }
 .maker-channel-tile-media:focus-visible {
-  outline: 2px solid var(--ui-focus);
-  outline-offset: -2px;
   border-radius: 14px;
 }
 .maker-channel-tile-top {
@@ -4961,11 +4945,6 @@
   opacity: 0.45;
   pointer-events: none;
 }
-.sb-card :focus-visible,
-.sb-actions label:focus-within {
-  outline: 2px solid var(--ui-focus);
-  outline-offset: 2px;
-}
 .sb-none {
   grid-column: 1 / -1;
   padding: 48px 0;
@@ -5054,9 +5033,6 @@
 @keyframes sce-in {
   from { opacity: 0; transform: translateY(10px) scale(0.985); }
 }
-.sce:focus {
-  outline: none;
-}
 .sce-head {
   display: flex;
   align-items: center;
@@ -5135,10 +5111,6 @@
 .sce-icon[data-disabled] {
   opacity: 0.45;
   pointer-events: none;
-}
-.sce-icon:focus-within {
-  outline: 2px solid var(--ui-focus);
-  outline-offset: 2px;
 }
 
 .sce-body {

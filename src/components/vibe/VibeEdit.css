@@ -122,7 +122,7 @@
 .ve-crumb-sep { flex: none; color: var(--ve-faint); font-size: 18px; font-weight: 300; }
 .ve-name-wrap { display: inline-flex; min-width: 0; align-items: center; gap: 4px; color: var(--ve-faint); cursor: text; }
 .ve-root .ve-name { min-width: 0; max-width: 44vw; height: 38px; padding: 0 6px; border: 1px solid transparent; border-radius: 10px; background: transparent; color: var(--ve-text); font-size: 21px; font-weight: 800; letter-spacing: -0.03em; text-overflow: ellipsis; transition: border-color 0.16s ease, background 0.16s ease; }
-.ve-root .ve-name:focus { background: var(--ve-raised); outline: none; }
+.ve-root .ve-name:focus { background: var(--ve-raised); }
 .ve-name-wrap svg { flex: none; transition: color 0.16s ease; }
 .ve-name-wrap:hover svg { color: var(--ve-text); }
 .ve-top-end { display: flex; flex: none; align-items: center; gap: 10px; }
@@ -212,9 +212,6 @@
 .ve-scrub input[type="range"]::-webkit-slider-thumb { width: 16px; height: 16px; margin-top: -6px; appearance: none; border: 2px solid var(--ve-stage); border-radius: 50%; background: #f4f2ec; box-shadow: 0 1px 4px rgb(0 0 0 / 0.5); transition: transform var(--ui-duration) ease; }
 .ve-scrub input[type="range"]::-moz-range-thumb { width: 14px; height: 14px; border: 2px solid var(--ve-stage); border-radius: 50%; background: #f4f2ec; box-shadow: 0 1px 4px rgb(0 0 0 / 0.5); }
 .ve-scrub input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.12); }
-.ve-scrub input[type="range"]:focus-visible { outline: none; }
-.ve-scrub input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px var(--ui-ring), 0 0 0 1px var(--ui-focus); }
-.ve-scrub input[type="range"]:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 3px var(--ui-ring); }
 .ve-scrub input[type="range"]:disabled { cursor: default; opacity: 0.5; }
 .ve-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .ve-viewer-bar { display: grid; height: 56px; flex: none; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; padding: 0 16px; }
@@ -254,7 +251,6 @@
 .ve-actions .ui-btn { flex: 1 1 auto; }
 /* Fields use .ui-input/.ui-textarea/.ui-select. The link row is an input group with the same skin. */
 .ve-inline { width: 100%; min-height: var(--ui-field-height); border: 1px solid var(--ui-line-strong); border-radius: var(--ui-radius-control); background: var(--ui-input); box-shadow: var(--ui-shadow-soft); transition: border-color var(--ui-duration) ease, box-shadow var(--ui-duration) ease; }
-.ve-inline:focus-within { outline: none; }
 .ve-inline input::placeholder,
 .ve-composer textarea::placeholder { color: var(--ve-faint); }
 .ve-field { display: grid; gap: 6px; color: var(--ve-muted); font-size: 12px; }
@@ -296,7 +292,7 @@
 .ve-cue-time:hover { color: var(--ve-accent-text); }
 .ve-cues input { min-width: 0; height: 30px; padding: 0 8px; border: 1px solid transparent; border-radius: 7px; background: transparent; }
 .ve-cues input:hover { border-color: var(--ve-line); }
-.ve-cues input:focus { background: var(--ve-sunken); outline: none; }
+.ve-cues input:focus { background: var(--ve-sunken); }
 
 .ve-text-presets { display: grid; gap: 8px; }
 .ve-text-preset { display: flex; min-height: 64px; align-items: center; justify-content: space-between; gap: 10px; padding: 0 14px; border-radius: 12px; background: linear-gradient(160deg, #2a2f38, #121417); box-shadow: 0 0 0 1px var(--ve-line) inset; text-align: left; transition: box-shadow 0.16s ease, transform 0.16s ease; }
@@ -353,7 +349,6 @@
 .ve-num-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 8px; }
 .ve-num { display: grid; gap: 5px; color: var(--ve-muted); font-size: 11px; font-weight: 600; }
 .ve-num-box { display: flex; align-items: center; height: 32px; padding: 0 8px; border: 1px solid var(--ve-line); border-radius: 8px; background: var(--ve-sunken); transition: border-color 0.16s ease; }
-.ve-num-box:focus-within { outline: none; }
 .ve-num-box input { min-width: 0; flex: 1; border: 0; background: transparent; color: var(--ve-text); font-family: var(--ve-mono); font-size: 12px; font-variant-numeric: tabular-nums; outline: none; }
 .ve-num-box small { color: var(--ve-faint); font-family: var(--ve-mono); font-size: 11px; }
 .ve-slider { display: grid; gap: 6px; color: var(--ve-muted); font-size: 12px; }
@@ -390,7 +385,6 @@
 .ve-msg-steps.is-failed { color: var(--ve-danger); }
 .ve-msg-working { display: inline-flex; align-items: center; gap: 7px; color: var(--ve-accent-text); font-size: 12px; }
 .ve-composer { position: relative; margin: 0 12px 12px; border: 1px solid var(--ve-line-strong); border-radius: 16px; background: var(--ve-raised); transition: border-color 0.16s ease; }
-.ve-composer:focus-within { outline: none; }
 .ve-composer textarea { display: block; width: 100%; max-height: 160px; padding: 11px 46px 11px 13px; border: 0; background: transparent; resize: none; outline: none; line-height: 1.5; }
 .ve-send { position: absolute; right: 8px; bottom: 8px; display: grid; width: 34px; height: 34px; place-items: center; border-radius: 50%; background: var(--ve-ink); color: var(--ve-ink-text); transition: transform 0.16s ease, opacity 0.16s ease; }
 
@@ -420,9 +414,6 @@
 .ve-zoom-range::-webkit-slider-thumb { width: 16px; height: 16px; margin-top: -6px; appearance: none; border: 2px solid var(--ui-panel); border-radius: 50%; background: var(--ui-text); box-shadow: 0 1px 3px rgb(0 0 0 / 0.3); transition: transform var(--ui-duration) ease; }
 .ve-zoom-range::-moz-range-thumb { width: 14px; height: 14px; border: 2px solid var(--ui-panel); border-radius: 50%; background: var(--ui-text); }
 .ve-zoom-range:hover::-webkit-slider-thumb { transform: scale(1.12); }
-.ve-zoom-range:focus-visible { outline: none; }
-.ve-zoom-range:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px var(--ui-ring), 0 0 0 1px var(--ui-focus); }
-.ve-zoom-range:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 3px var(--ui-ring); }
 .ve-zoom-pct { min-width: 46px; padding-right: 2px; color: var(--ve-muted); font-family: var(--ve-mono); font-size: 11.5px; font-variant-numeric: tabular-nums; text-align: right; }
 /* "+" after the last clip: drop more footage on the track. */
 .ve-lane-add { position: absolute; top: 50%; z-index: 2; display: grid; width: 30px; height: 30px; place-items: center; border: 1.5px dashed var(--ve-line-strong); border-radius: 9px; color: var(--ve-muted); transform: translateY(-50%); transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease; }
@@ -497,8 +488,6 @@
 .ve-timecode { height: 28px; margin: 0 -6px; padding: 0 6px; border-radius: 7px; color: inherit; font: inherit; letter-spacing: inherit; cursor: text; transition: background 0.16s ease, color 0.16s ease; }
 .ve-timecode:hover { background: rgb(255 255 255 / 0.08); color: #f9dc0b; }
 .ve-timecode-input { width: 12.5ch; height: 28px; margin: 0 -6px; padding: 0 6px; border: 1px solid rgb(255 255 255 / 0.2); border-radius: 7px; background: rgb(255 255 255 / 0.06); color: #eceae3; font: inherit; outline: none; }
-.ve-timecode-input:focus,
-.ve-timecode-input:focus-visible { outline: none; }
 .ve-timecode-input::placeholder { color: rgb(236 234 227 / 0.45); }
 .ve-marker { position: absolute; bottom: 2px; z-index: 3; display: inline-flex; max-width: 160px; height: 14px; align-items: center; gap: 3px; padding: 0 5px 0 3px; border-radius: 0 4px 4px 0 !important; background: var(--ve-marker); color: var(--ve-marker-ink); font-size: 10px; font-weight: 650; line-height: 1; cursor: grab; transition: filter 0.16s ease; }
 .ve-marker:hover { filter: brightness(1.12); }
@@ -611,7 +600,7 @@
 /* Clip names ride along while a long clip is scrolled past (CapCut, Premiere). */
 .ve-item-title { display: inline-flex; min-width: 0; align-items: center; gap: 5px; overflow: hidden; }
 .ve-item.is-tiny .ve-item-label { padding-left: 3px !important; }
-.ve-item:focus-visible { z-index: 3; outline: 2px solid var(--ui-focus); outline-offset: 1px; }
+.ve-item:focus-visible { z-index: 3; }
 .ve-lane-hint { position: absolute; top: 50%; left: 56px; color: var(--ve-faint); font-size: 12.5px; white-space: nowrap; transform: translateY(-50%); pointer-events: none; }
 
 /* ---------- Timeline: clip polish and color labels ---------- */
@@ -705,7 +694,6 @@ label.ve-auto-pick:hover { background: var(--ve-raised); }
 .ve-auto-action:hover:not(:disabled) { background: var(--ui-hover); }
 .ve-auto-action:hover:not(:disabled) .ve-auto-mark { color: var(--ve-accent-text); }
 .ve-auto-action:disabled { opacity: 0.45; cursor: not-allowed; }
-.ve-auto-action:focus-visible, .ve-auto-pick:focus-within { outline: 2px solid var(--ui-focus); outline-offset: -2px; }
 
 /* Best shots for a recap cut's narration, ranked by Jev */
 .ve-shots { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
@@ -737,7 +725,6 @@ label.ve-auto-pick:hover { background: var(--ve-raised); }
 /* Top-bar Frame chip (AspectPicker chip variant): drops down from the bar, right-aligned. */
 .ve-top-end .cs-pop .cs-chip { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; border: 0; border-radius: 8px; background: transparent; color: var(--ve-muted); font: inherit; font-size: 13px; font-weight: 600; white-space: nowrap; cursor: pointer; }
 .ve-top-end .cs-pop .cs-chip:hover { background: var(--ve-raised); color: var(--ve-text); }
-.ve-top-end .cs-pop .cs-chip:focus-visible { outline: 2px solid var(--ui-focus); outline-offset: 1px; }
 .ve-top-end .cs-pop .cs-chip-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 .ve-top-end .cs-pop .cs-menu { top: calc(100% + 6px); right: 0; bottom: auto; left: auto; --cs-shadow-lift: var(--ui-shadow-lift); }
 @media (max-width: 720px) { .ve-top-end .cs-pop .cs-chip > span:not(.cs-aspect-box) { display: none; } }

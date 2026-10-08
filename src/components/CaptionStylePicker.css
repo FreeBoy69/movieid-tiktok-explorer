@@ -69,10 +69,6 @@
   cursor: default;
   opacity: 0.55;
 }
-.cap-card:focus-visible {
-  outline: 2px solid var(--ui-focus);
-  outline-offset: 2px;
-}
 .cap-tile {
   position: relative;
   display: block;

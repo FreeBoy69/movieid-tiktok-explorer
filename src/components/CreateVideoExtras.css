@@ -69,8 +69,6 @@
 .cvx-winner-thumb i { position: absolute; right: 6px; top: 6px; display: grid; width: 24px; height: 24px; place-items: center; border-radius: 999px; background: var(--mk-accent); color: var(--mk-accent-ink); }
 .cvx-winner:hover .cvx-winner-thumb { box-shadow: 0 0 0 2px var(--mk-line-strong); }
 .cvx-winner.is-on .cvx-winner-thumb { box-shadow: 0 0 0 3px var(--mk-accent); }
-.cvx-winner:focus-visible { outline: none; }
-.cvx-winner:focus-visible .cvx-winner-thumb { box-shadow: 0 0 0 3px var(--ui-focus); }
 .cvx-winner-title { display: -webkit-box; overflow: hidden; font-size: 12.5px; font-weight: 600; line-height: 1.35; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .cvx-winner small { color: var(--mk-muted); font-size: 11.5px; }
 

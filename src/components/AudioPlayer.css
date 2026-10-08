@@ -157,8 +157,6 @@
   cursor: default;
 }
 .mk-audio-wave:has(input:focus-visible) {
-  outline: 2px solid var(--ui-focus);
-  outline-offset: 3px;
   border-radius: 4px;
 }
 .mk-audio-wave:hover .mk-audio-bars:not(.is-played) span {
@@ -221,11 +219,6 @@
   opacity: 0.4;
   cursor: not-allowed;
 }
-.mk-audio .mk-audio-tool:focus-visible,
-.mk-audio .mk-audio-play:focus-visible {
-  outline: 2px solid var(--ui-focus);
-  outline-offset: 2px;
-}
 /* Skip buttons: the circular arrow with the seconds tucked inside it. */
 .mk-audio .mk-audio-skip {
   position: relative;
@@ -263,12 +256,6 @@
   border-radius: 999px;
   background: var(--ap-text);
   border: 2px solid var(--ap-surface);
-}
-.mk-audio-volume:focus-visible {
-  outline: none;
-}
-.mk-audio-volume:focus-visible::-webkit-slider-thumb {
-  box-shadow: 0 0 0 3px var(--ui-ring), 0 0 0 1px var(--ui-focus);
 }
 .mk-audio-head > :first-child:not(.mk-audio-title):not(.mk-audio-meta) {
   flex-shrink: 0;

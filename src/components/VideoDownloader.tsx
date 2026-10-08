@@ -156,7 +156,7 @@ export function VideoDownloader({ theme, fixedMode, heading = "Video downloader"
         <form onSubmit={inspect} className={cn("mt-7 flex gap-2 rounded-xl border p-2", dark ? "border-white/12 bg-[#151916]" : "border-[#1A1A1A]/10 bg-white")}>
           <div className="relative min-w-0 flex-1">
             <Link2 className={cn("pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2", dark ? "text-white/42" : "text-[#1A1A1A]/40")} />
-            <input value={url} onChange={(event) => setUrl(event.target.value)} placeholder="Paste a video URL" aria-label="Video URL" className={cn("h-12 w-full rounded-lg border-0 bg-transparent pl-10 pr-3 text-sm font-semibold outline-none placeholder:font-medium focus-visible:ring-2 focus-visible:ring-[var(--ui-focus)]", dark ? "text-white placeholder:text-white/35" : "text-[#1A1A1A] placeholder:text-[#1A1A1A]/35")} />
+            <input value={url} onChange={(event) => setUrl(event.target.value)} placeholder="Paste a video URL" aria-label="Video URL" className={cn("h-12 w-full rounded-lg border-0 bg-transparent pl-10 pr-3 text-sm font-semibold outline-none placeholder:font-medium", dark ? "text-white placeholder:text-white/35" : "text-[#1A1A1A] placeholder:text-[#1A1A1A]/35")} />
           </div>
           <button type="submit" disabled={!url.trim() || inspecting} className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-lg bg-[#f9dc0b] px-4 text-xs font-black text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white disabled:opacity-45 sm:px-6">
             {inspecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}

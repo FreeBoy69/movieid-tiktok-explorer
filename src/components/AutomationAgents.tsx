@@ -1231,7 +1231,7 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
         <button
           type="button"
           onClick={() => writeDeepLink({ view: "channels" })}
-          className="mt-4 inline-flex h-11 items-center gap-2 rounded-xl bg-[var(--ui-accent)] px-5 text-sm font-black text-[var(--ui-accent-ink)] shadow-sm transition hover:bg-[var(--ui-text)] hover:text-[var(--ui-panel)] active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+          className="mt-4 inline-flex h-11 items-center gap-2 rounded-xl bg-[var(--ui-accent)] px-5 text-sm font-black text-[var(--ui-accent-ink)] shadow-sm transition hover:bg-[var(--ui-text)] hover:text-[var(--ui-panel)] active:scale-[0.98]"
         >
           <Youtube className="h-4 w-4" />
           Open Channel Management
@@ -1829,7 +1829,7 @@ function ExpandedAgentCard({
                 disabled={statusBusy || saving || !!deleting}
                 onClick={() => agent && void onSetStatus(agent.id, agentActive ? "paused" : "active")}
                 className={cn(
-                  "inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full border px-2 text-[9px] font-black uppercase tracking-wider transition active:scale-[0.98] disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2",
+                  "inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full border px-2 text-[9px] font-black uppercase tracking-wider transition active:scale-[0.98] disabled:opacity-60",
                   agentActive
                     ? "border-[var(--ui-accent-text)]/20 bg-[var(--ui-accent)] text-[var(--ui-accent-ink)] hover:bg-[var(--ui-accent-hover)]"
                     : isDark ? "border-[var(--ui-line-strong)] bg-[var(--ui-text)]/10 text-[var(--ui-text)]/70 hover:bg-[var(--ui-text)]/16" : "border-[var(--ui-line)] bg-[var(--ui-text)]/6 text-[var(--ui-text)]/60 hover:bg-[var(--ui-text)]/10",
@@ -1849,7 +1849,7 @@ function ExpandedAgentCard({
               aria-label={navOpen ? "Close agent tools" : "Open agent tools"}
               title="Agent tools"
               className={cn(
-                "grid h-8 w-8 shrink-0 place-items-center rounded-lg border transition active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2",
+                "grid h-8 w-8 shrink-0 place-items-center rounded-lg border transition active:scale-[0.98]",
                 navOpen
                   ? "border-[var(--ui-accent)] bg-[var(--ui-accent)] text-[var(--ui-accent-ink)]"
                   : isDark ? "border-[var(--ui-line-strong)] text-[var(--ui-text)]/70 hover:bg-[var(--ui-text)]/8" : "border-[var(--ui-line-strong)] text-[var(--ui-text)]/60 hover:bg-[var(--ui-panel)]",
@@ -1879,7 +1879,7 @@ function ExpandedAgentCard({
                     setNavOpen(false);
                   }}
                   className={cn(
-                    "flex h-10 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-xs font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-35",
+                    "flex h-10 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-35",
                     index === PRIMARY_TAB_COUNT && (isDark ? "mt-1 border-t border-[var(--ui-line)] pt-1" : "mt-1 border-t border-[var(--ui-line)] pt-1"),
                     active
                       ? "bg-[var(--ui-accent)] text-[var(--ui-accent-ink)]"
@@ -1917,7 +1917,7 @@ function ExpandedAgentCard({
                   setNavOpen(false);
                   onRefreshAgent();
                 }}
-                className={cn("flex h-10 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-xs font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2", isDark ? "text-[var(--ui-text)]/72 hover:bg-[var(--ui-text)]/8 hover:text-[var(--ui-text)]" : "text-[var(--ui-text)]/70 hover:bg-[var(--ui-text)]/5 hover:text-[var(--ui-text)]")}
+                className={cn("flex h-10 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-xs font-semibold transition", isDark ? "text-[var(--ui-text)]/72 hover:bg-[var(--ui-text)]/8 hover:text-[var(--ui-text)]" : "text-[var(--ui-text)]/70 hover:bg-[var(--ui-text)]/5 hover:text-[var(--ui-text)]")}
               >
                 <RefreshCw className="h-4 w-4" />
                 <span>Refresh agent</span>
@@ -1928,7 +1928,7 @@ function ExpandedAgentCard({
                   openBackgroundProcessCenter();
                   setNavOpen(false);
                 }}
-                className={cn("flex h-10 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-xs font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 md:hidden", isDark ? "text-[var(--ui-text)]/72 hover:bg-[var(--ui-text)]/8 hover:text-[var(--ui-text)]" : "text-[var(--ui-text)]/70 hover:bg-[var(--ui-text)]/5 hover:text-[var(--ui-text)]")}
+                className={cn("flex h-10 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-xs font-semibold transition md:hidden", isDark ? "text-[var(--ui-text)]/72 hover:bg-[var(--ui-text)]/8 hover:text-[var(--ui-text)]" : "text-[var(--ui-text)]/70 hover:bg-[var(--ui-text)]/5 hover:text-[var(--ui-text)]")}
               >
                 <Activity className="h-4 w-4" />
                 <span>Background activity</span>
@@ -2358,7 +2358,7 @@ function AgentMonetizationPanel({
           type="button"
           onClick={() => void load(true)}
           disabled={loading || !accountId}
-          className={cn("inline-flex h-9 items-center justify-center gap-2 rounded-lg border px-3 text-xs font-bold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-45", tokens.tabInactive, tokens.divider)}
+          className={cn("inline-flex h-9 items-center justify-center gap-2 rounded-lg border px-3 text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-45", tokens.tabInactive, tokens.divider)}
         >
           <RefreshCw className={cn("h-3.5 w-3.5", loading && "ui-spin")} />
           Refresh revenue
@@ -2526,7 +2526,7 @@ function AnalyticsThumbnailStrip({ rows, theme, onPreview }: { rows: any[]; them
       </div>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
         {visualRows.map((row) => (
-          <button key={row.id} type="button" onClick={() => onPreview(row)} className="group relative aspect-[9/16] min-w-0 overflow-hidden rounded-xl bg-[var(--ui-text)] text-left focus-visible:outline-2 focus-visible:outline-offset-2">
+          <button key={row.id} type="button" onClick={() => onPreview(row)} className="group relative aspect-[9/16] min-w-0 overflow-hidden rounded-xl bg-[var(--ui-text)] text-left">
             <img src={row.thumbnailUrl} alt="" className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03] group-hover:opacity-75" />
             <span className="absolute inset-x-0 bottom-0 bg-[var(--ui-text)]/85 p-2 text-white">
               <span className="line-clamp-2 text-[11px] font-bold leading-4">{row.title}</span>
@@ -3047,7 +3047,7 @@ function CreateAgentWizard({
                   aria-current={isCurrent ? "step" : undefined}
                   onClick={() => goTo(index)}
                   className={cn(
-                    "flex h-11 w-full items-center justify-center gap-2 rounded-lg px-2 text-xs font-bold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-45",
+                    "flex h-11 w-full items-center justify-center gap-2 rounded-lg px-2 text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-45",
                     isCurrent ? (tokens.isDark ? "bg-[var(--ui-text)]/12 text-[var(--ui-text)] ring-1 ring-[#F8F5E8]/15" : tokens.setupTabActive) : tokens.setupTabIdle,
                   )}
                 >
@@ -3226,7 +3226,7 @@ function SetupSection({ id, icon, title, summary, open, onToggle, theme, childre
         aria-expanded={open}
         aria-controls={`setup-${id}-body`}
         onClick={onToggle}
-        className={cn("agent-setup-section-trigger group flex min-h-[76px] w-full items-center gap-3 px-4 py-3.5 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 md:px-5", tokens.isDark ? "hover:bg-[var(--ui-text)]/5" : "hover:bg-white/80")}
+        className={cn("agent-setup-section-trigger group flex min-h-[76px] w-full items-center gap-3 px-4 py-3.5 text-left transition focus-visible:-outline-offset-2 md:px-5", tokens.isDark ? "hover:bg-[var(--ui-text)]/5" : "hover:bg-white/80")}
       >
         <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-xl transition-colors", open ? "bg-[var(--ui-accent)] text-[var(--ui-accent-ink)]" : tokens.isDark ? "bg-[var(--ui-text)]/10 text-[var(--ui-text)]/75 group-hover:bg-[var(--ui-text)]/15" : "bg-[var(--ui-text)]/6 text-[var(--ui-text)]/70 group-hover:bg-[var(--ui-text)]/10")}>{icon}</span>
         <span className="min-w-0 flex-1">
@@ -3735,7 +3735,7 @@ function SetupPanel({
               key={item.id}
               type="button"
               onClick={() => jumpToSection(item.id)}
-              className={cn("agent-setup-index-button group inline-flex min-h-8 items-center gap-1.5 rounded-xl px-2.5 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2", openSections.has(item.id) ? tokens.isDark ? "bg-[var(--ui-text)]/10 shadow-sm" : "bg-[var(--ui-panel)] shadow-sm" : "", tokens.isDark ? "hover:bg-[var(--ui-text)]/10" : "hover:bg-[var(--ui-panel)]")}
+              className={cn("agent-setup-index-button group inline-flex min-h-8 items-center gap-1.5 rounded-xl px-2.5 text-left transition", openSections.has(item.id) ? tokens.isDark ? "bg-[var(--ui-text)]/10 shadow-sm" : "bg-[var(--ui-panel)] shadow-sm" : "", tokens.isDark ? "hover:bg-[var(--ui-text)]/10" : "hover:bg-[var(--ui-panel)]")}
             >
               <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", item.id === "rights" && !rightsConfirmed ? "bg-[#b69300]" : openSections.has(item.id) ? "bg-[var(--ui-accent)]" : tokens.isDark ? "bg-[var(--ui-text)]/30 group-hover:bg-[var(--ui-text)]/60" : "bg-[var(--ui-text)]/20 group-hover:bg-[var(--ui-text)]/45")} aria-hidden="true" />
               <span className={cn("text-[11px] font-black", tokens.text)}>{item.label}</span>
@@ -4272,7 +4272,7 @@ function UploadsPanel({
                   }
                 }}
                 aria-label={`Open upload ${upload.title}`}
-                className={cn("cursor-pointer transition focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2", tokens.isDark ? "hover:bg-[var(--ui-text)]/6" : "hover:bg-[var(--ui-text)]/5")}
+                className={cn("cursor-pointer transition focus-visible:-outline-offset-2", tokens.isDark ? "hover:bg-[var(--ui-text)]/6" : "hover:bg-[var(--ui-text)]/5")}
               >
                 <td className="max-w-[300px] px-4 py-3">
                   <div className="flex items-center gap-3">
@@ -4457,18 +4457,18 @@ function UploadDetail({
             value={correctionTitle}
             onChange={(event) => setCorrectionTitle(event.target.value)}
             placeholder="Correct title, e.g. Classless Hero"
-            className="h-11 rounded-xl border border-[var(--ui-line)] bg-[var(--ui-panel)] px-4 text-sm font-semibold text-[var(--ui-text)] outline-none transition focus:border-[var(--ui-focus)]"
+            className="h-11 rounded-xl border border-[var(--ui-line)] bg-[var(--ui-panel)] px-4 text-sm font-semibold text-[var(--ui-text)] outline-none transition"
           />
           <input
             value={correctionYear}
             onChange={(event) => setCorrectionYear(event.target.value)}
             placeholder="Year"
-            className="h-11 rounded-xl border border-[var(--ui-line)] bg-[var(--ui-panel)] px-4 text-sm font-semibold text-[var(--ui-text)] outline-none transition focus:border-[var(--ui-focus)]"
+            className="h-11 rounded-xl border border-[var(--ui-line)] bg-[var(--ui-panel)] px-4 text-sm font-semibold text-[var(--ui-text)] outline-none transition"
           />
           <select
             value={correctionMediaType}
             onChange={(event) => setCorrectionMediaType(event.target.value)}
-            className="h-11 rounded-xl border border-[var(--ui-line)] bg-[var(--ui-panel)] px-4 text-sm font-semibold text-[var(--ui-text)] outline-none transition focus:border-[var(--ui-focus)]"
+            className="h-11 rounded-xl border border-[var(--ui-line)] bg-[var(--ui-panel)] px-4 text-sm font-semibold text-[var(--ui-text)] outline-none transition"
           >
             <option value="auto">Auto</option>
             <option value="anime">Anime</option>

@@ -2108,7 +2108,7 @@ function CommentsPanel({ comments, loading, canReply, canManage, readOnlyLabel, 
         {canManage ? <div className="rounded-xl border border-[var(--ui-line)] bg-[var(--ui-panel)] p-3">
           <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--ui-text)]/35">Comment as your channel</label>
           <div className="mt-2 flex gap-2">
-            <input value={newCommentText} onChange={(event) => onNewCommentTextChange(event.target.value)} className="h-10 min-w-0 flex-1 rounded-lg border border-[var(--ui-line)] bg-[var(--ui-panel)] px-3 text-sm outline-none transition focus:border-[var(--ui-focus)]/45" placeholder="Add a public comment" />
+            <input value={newCommentText} onChange={(event) => onNewCommentTextChange(event.target.value)} className="h-10 min-w-0 flex-1 rounded-lg border border-[var(--ui-line)] bg-[var(--ui-panel)] px-3 text-sm outline-none transition" placeholder="Add a public comment" />
             <button type="button" onClick={onPostComment} disabled={!newCommentText.trim() || commentActionBusy === "post"} className="ui-btn is-ink">{commentActionBusy === "post" ? <Loader2 className="h-4 w-4 ui-spin" /> : <Send className="h-4 w-4" />}Post</button>
           </div>
         </div> : null}
@@ -2124,7 +2124,7 @@ function CommentsPanel({ comments, loading, canReply, canManage, readOnlyLabel, 
                 {thread.replies.length ? <div className="mt-3 space-y-2 border-l border-[var(--ui-line)] pl-3">{thread.replies.map((reply) => <ManagedCommentBody key={reply.id} comment={reply} compact canManage={canManage} ownChannelId={ownChannelId} busy={commentActionBusy} onUpdate={onUpdateComment} onDelete={onDeleteComment} onModerate={onModerateComment} />)}</div> : null}
                 {canReply && thread.canReply ? (
                   <div className="mt-3 flex gap-2">
-                    <input value={replyText[parent.id] || ""} onChange={(event) => onReplyTextChange(parent.id, event.target.value)} className="h-10 min-w-0 flex-1 rounded-lg border border-[var(--ui-line)] bg-[var(--ui-panel)] px-3 text-sm outline-none transition focus:border-[var(--ui-focus)]/45" placeholder="Reply as your channel" />
+                    <input value={replyText[parent.id] || ""} onChange={(event) => onReplyTextChange(parent.id, event.target.value)} className="h-10 min-w-0 flex-1 rounded-lg border border-[var(--ui-line)] bg-[var(--ui-panel)] px-3 text-sm outline-none transition" placeholder="Reply as your channel" />
                     <button type="button" onClick={() => onReply(parent.id)} disabled={!replyText[parent.id]?.trim() || replyingTo === parent.id} className="ui-btn is-primary">{replyingTo === parent.id ? <Loader2 className="h-4 w-4 ui-spin" /> : <Send className="h-4 w-4" />}Reply</button>
                   </div>
                 ) : <p className="mt-3 rounded-lg bg-[var(--ui-bg)] px-3 py-2 text-xs font-semibold text-[var(--ui-text)]/45">{canReply ? "Replies are disabled for this thread." : (readOnlyLabel || "Reconnect Google to enable replies.")}</p>}
@@ -2144,7 +2144,7 @@ function ManagedCommentBody({ comment, compact = false, canManage, ownChannelId,
   useEffect(() => setText(comment.textOriginal || comment.textDisplay || ""), [comment.id, comment.textDisplay, comment.textOriginal]);
   if (editing) {
     return <div className="rounded-lg bg-[var(--ui-bg)] p-2.5">
-      <textarea value={text} onChange={(event) => setText(event.target.value)} rows={compact ? 2 : 3} className="w-full resize-y rounded-lg border border-[var(--ui-line)] bg-[var(--ui-panel)] px-3 py-2 text-sm outline-none transition focus:border-[var(--ui-focus)]/45" />
+      <textarea value={text} onChange={(event) => setText(event.target.value)} rows={compact ? 2 : 3} className="w-full resize-y rounded-lg border border-[var(--ui-line)] bg-[var(--ui-panel)] px-3 py-2 text-sm outline-none transition" />
       <div className="mt-2 flex justify-end gap-2"><button type="button" onClick={() => { setEditing(false); setText(comment.textOriginal || comment.textDisplay || ""); }} className="h-8 rounded-lg border border-[var(--ui-line)] px-2.5 text-[11px] font-bold text-[var(--ui-text)]/55">Cancel</button><button type="button" onClick={() => { onUpdate(comment.id, text); setEditing(false); }} disabled={!text.trim() || busy === `edit:${comment.id}`} className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[var(--ui-accent)] px-2.5 text-[11px] font-bold text-[var(--ui-accent-ink)] disabled:opacity-45">{busy === `edit:${comment.id}` ? <Loader2 className="h-3.5 w-3.5 ui-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}Save</button></div>
     </div>;
   }
@@ -2525,7 +2525,7 @@ function FeedMonetizationPanel({ data, loading, error, isDark, onRetry, onReauth
               <p className={cn("mt-1 text-xs font-semibold leading-5", mutedClass)}>{error || data?.message || "YouTube did not return monetary analytics for this account."}</p>
             </div>
           </div>
-          {state !== "unsupported" ? <button type="button" onClick={onRetry} className={cn("inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg border px-3 text-xs font-bold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2", dividerClass, isDark ? "hover:bg-white/8" : "hover:bg-[var(--ui-bg)]")}><RefreshCw className="h-3.5 w-3.5" />Try again</button> : null}
+          {state !== "unsupported" ? <button type="button" onClick={onRetry} className={cn("inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg border px-3 text-xs font-bold transition-colors", dividerClass, isDark ? "hover:bg-white/8" : "hover:bg-[var(--ui-bg)]")}><RefreshCw className="h-3.5 w-3.5" />Try again</button> : null}
         </div>
       </section>
     );
@@ -2540,7 +2540,7 @@ function FeedMonetizationPanel({ data, loading, error, isDark, onRetry, onReauth
             <p className="text-sm font-bold">No revenue reported for this period</p>
             <p className={cn("mt-1 text-xs font-semibold leading-5", mutedClass)}>{data?.message || "YouTube has not returned monetized playbacks for this 28-day window yet."}</p>
           </div>
-          <button type="button" onClick={onRetry} className={cn("inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg border px-3 text-xs font-bold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2", dividerClass, isDark ? "hover:bg-white/8" : "hover:bg-[var(--ui-bg)]")}><RefreshCw className="h-3.5 w-3.5" />Refresh data</button>
+          <button type="button" onClick={onRetry} className={cn("inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg border px-3 text-xs font-bold transition-colors", dividerClass, isDark ? "hover:bg-white/8" : "hover:bg-[var(--ui-bg)]")}><RefreshCw className="h-3.5 w-3.5" />Refresh data</button>
         </div>
       </section>
     );
@@ -2885,7 +2885,7 @@ function TrendGraph() {
 function agentInput(isDark: boolean) {
   return cn(
     "h-10 w-full rounded-xl border px-3 text-sm font-semibold outline-none transition",
-    isDark ? "border-white/10 bg-white/[0.04] text-white focus:border-white/30" : "border-[var(--ui-line)] bg-[var(--ui-bg)] text-[var(--ui-text)] focus:border-[var(--ui-line-strong)]",
+    isDark ? "border-white/10 bg-white/[0.04] text-white" : "border-[var(--ui-line)] bg-[var(--ui-bg)] text-[var(--ui-text)]",
   );
 }
 
@@ -3004,7 +3004,7 @@ function ReplyAgentResults({ result, running, isDark, drafts, posting, onDraft, 
                     maxLength={500}
                     rows={2}
                     onChange={(e) => onDraft(item.commentId, { text: e.target.value })}
-                    className={cn("w-full resize-y rounded-lg border px-3 py-2 text-sm font-semibold leading-6 outline-none transition", isDark ? "border-[var(--ui-accent)]/25 bg-[var(--ui-accent)]/[0.07] text-white focus:border-[var(--ui-focus)]/50" : "border-[var(--ui-accent)]/50 bg-[var(--ui-accent-soft)]/60 text-[var(--ui-text)] focus:border-[var(--ui-focus)]")}
+                    className={cn("w-full resize-y rounded-lg border px-3 py-2 text-sm font-semibold leading-6 outline-none transition", isDark ? "border-[var(--ui-accent)]/25 bg-[var(--ui-accent)]/[0.07] text-white" : "border-[var(--ui-accent)]/50 bg-[var(--ui-accent-soft)]/60 text-[var(--ui-text)]")}
                   />
                 ) : (
                   <p className={cn("rounded-lg px-3 py-2 text-sm font-semibold leading-6", isDark ? "bg-[var(--ui-accent)]/[0.08] text-white" : "bg-[var(--ui-accent-soft)]/70 text-[var(--ui-text)]")}>{draft.text}</p>

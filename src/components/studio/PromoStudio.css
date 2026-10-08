@@ -197,12 +197,8 @@
 .prs-style-option:hover .prs-style-thumb {
   transform: scale(1.03);
 }
-.prs-style-option[aria-selected="true"] .prs-style-thumb,
-.prs-style-option:focus-visible .prs-style-thumb {
+.prs-style-option[aria-selected="true"] .prs-style-thumb {
   outline-color: var(--mks-pink);
-}
-.prs-style-option:focus-visible {
-  outline: none;
 }
 .prs-style-option[aria-selected="true"] > span:last-child {
   color: var(--cs-accent-text);
@@ -333,13 +329,6 @@
   transform: scaleX(0);
   transform-origin: left center;
   pointer-events: none;
-}
-.prs-card > button:focus-visible {
-  outline: none;
-}
-.prs-card > button:focus-visible .prs-card-media {
-  outline: 2px solid var(--ui-focus);
-  outline-offset: 3px;
 }
 .prs-card.is-selected .prs-card-media::after {
   content: "";
