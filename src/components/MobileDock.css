@@ -1,0 +1,232 @@
+/* Phone dock (MobileDock.tsx): a warm-paper card with deep bottom corners, icon tabs
+   whose active glyph fills with the accent, and a raised "+" that springs open a
+   half-disc of quick tools. Hidden above 760px except inside the native apps. */
+.mdock-slot {
+  --mdock-fill: var(--ui-accent);
+  --mdock-ink: var(--ui-text);
+  --mdock-faint: var(--ui-text-faint);
+  --mdock-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  position: relative;
+  z-index: 40;
+  display: none;
+  flex: none;
+  padding: 20px 12px calc(10px + env(safe-area-inset-bottom));
+  background: var(--ui-bg);
+}
+@media (max-width: 760px) {
+  .mdock-slot { display: block; }
+}
+.mdock-slot[data-native] { display: block; }
+
+/* ---------- Bar ---------- */
+.mdock {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr 72px 1fr 1fr;
+  align-items: center;
+  width: min(440px, 100%);
+  height: 62px;
+  margin: 0 auto;
+  padding: 0 8px;
+  border: 1px solid var(--ui-line);
+  border-radius: 16px 16px 30px 30px;
+  background: var(--ui-panel);
+  box-shadow: 0 18px 40px -18px rgb(40 36 20 / 0.35), 0 2px 4px rgb(40 36 20 / 0.08);
+  transform-origin: 50% 100%;
+}
+html[data-theme="dark"] .mdock { box-shadow: 0 18px 44px -16px rgb(0 0 0 / 0.75), 0 2px 4px rgb(0 0 0 / 0.4); }
+.mdock[data-tilt="right"] { animation: mdock-tilt-right 520ms var(--mdock-spring); }
+.mdock[data-tilt="left"] { animation: mdock-tilt-left 520ms var(--mdock-spring); }
+@keyframes mdock-tilt-right {
+  30% { transform: rotate(-1.8deg) scaleX(0.95); }
+}
+@keyframes mdock-tilt-left {
+  30% { transform: rotate(1.8deg) scaleX(0.95); }
+}
+
+.mdock .mdock-tab {
+  display: grid;
+  height: 100%;
+  place-items: center;
+  align-content: center;
+  gap: 3px;
+  padding: 0;
+  border: 0;
+  border-radius: 12px !important;
+  background: none;
+  color: var(--mdock-faint);
+  cursor: pointer;
+  transition: color 200ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.mdock .mdock-tab svg { transition: transform 260ms var(--mdock-spring), fill 200ms ease; }
+.mdock .mdock-tab[aria-current="page"] { color: var(--mdock-ink); }
+.mdock .mdock-tab[aria-current="page"] svg { transform: scale(1.1); }
+.mdock .mdock-tab:active svg { transform: scale(0.88); }
+.mdock-label {
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  opacity: 0;
+  transform: translateY(-2px);
+  transition: opacity 200ms ease, transform 200ms ease;
+}
+.mdock-tab[aria-current="page"] .mdock-label { opacity: 1; transform: none; }
+
+/* ---------- Raised "+" ---------- */
+.mdock .mdock-fab {
+  position: absolute;
+  top: -20px;
+  left: 50%;
+  display: grid;
+  width: 56px;
+  height: 56px;
+  place-items: center;
+  margin-left: -28px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px !important;
+  background: linear-gradient(145deg, #ffe53a, var(--ui-accent) 60%, #e9c800);
+  box-shadow: 0 10px 20px -6px rgb(201 170 0 / 0.55), 0 0 0 4px var(--ui-panel);
+  color: var(--ui-accent-ink);
+  cursor: pointer;
+  transition: transform 420ms var(--mdock-spring);
+  -webkit-tap-highlight-color: transparent;
+}
+.mdock-fab svg { transition: transform 360ms var(--mdock-spring); }
+.mdock-fab[data-open] svg { transform: rotate(135deg); }
+.mdock-fab:active { transform: scale(0.82); }
+
+/* ---------- Quick-tool tray: a half disc above the "+" ---------- */
+.mdock-tray {
+  --r: 134px;
+  position: absolute;
+  bottom: calc(10px + env(safe-area-inset-bottom) + 62px - 2px);
+  left: 50%;
+  width: calc(var(--r) * 2);
+  height: var(--r);
+  margin-left: calc(var(--r) * -1);
+  overflow: hidden;
+  border-radius: var(--r) var(--r) 0 0;
+  background: var(--ui-raised);
+  box-shadow: 0 -6px 24px -12px rgb(40 36 20 / 0.3);
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0.2);
+  transform-origin: 50% 100%;
+  transition: transform 300ms ease, opacity 200ms ease;
+}
+.mdock-tray[data-open] {
+  opacity: 1;
+  pointer-events: auto;
+  transform: none;
+  transition: transform 460ms var(--mdock-spring), opacity 140ms ease;
+}
+/* The accent wedge sweeps across the disc as it opens, like a clock hand. */
+.mdock-wedge {
+  position: absolute;
+  inset: 0 0 calc(var(--r) * -1);
+  background: conic-gradient(from -14deg at 50% 50%, var(--ui-accent) 0 26deg, color-mix(in srgb, var(--ui-accent) 45%, var(--ui-raised)) 26deg 44deg, transparent 44deg);
+  opacity: 0;
+  transform: rotate(-110deg);
+}
+.mdock-tray[data-open] .mdock-wedge { animation: mdock-sweep 640ms cubic-bezier(0.3, 0.7, 0.3, 1) both; }
+@keyframes mdock-sweep {
+  0% { opacity: 1; transform: rotate(-110deg); }
+  75% { opacity: 1; }
+  100% { opacity: 0; transform: rotate(80deg); }
+}
+
+.mdock-quick {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mdock-quick li {
+  /* Spread the tools over the arc (162deg..18deg), from left to right. */
+  --a: calc(162deg - (144deg / (var(--n) - 1)) * var(--i));
+  position: absolute;
+  left: calc(50% + cos(var(--a)) * (var(--r) - 62px));
+  bottom: calc(sin(var(--a)) * (var(--r) - 62px) + 2px);
+  translate: -50% 0;
+  opacity: 0;
+  transform: rotate(-70deg) scale(0.6);
+  transform-origin: 50% 100%;
+  transition: opacity 120ms ease, transform 220ms ease;
+}
+.mdock-tray[data-open] .mdock-quick li {
+  opacity: 1;
+  transform: none;
+  transition: opacity 220ms ease calc(160ms + var(--i) * 55ms), transform 520ms var(--mdock-spring) calc(140ms + var(--i) * 55ms);
+}
+.mdock-quick button {
+  display: grid;
+  width: 62px;
+  justify-items: center;
+  gap: 3px;
+  padding: 0;
+  border: 0;
+  border-radius: 12px !important;
+  background: none;
+  color: var(--ui-text);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.mdock-quick-icon {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border-radius: 12px;
+  background: var(--ui-chip);
+  transition: transform 200ms var(--mdock-spring), background-color 160ms ease;
+}
+.mdock-quick button:active .mdock-quick-icon { transform: scale(0.88); }
+.mdock-quick-label {
+  max-width: 62px;
+  overflow: hidden;
+  font-size: 9.5px;
+  font-weight: 650;
+  line-height: 1.15;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- Tools sheet ---------- */
+.mdock-tools .ui-dialog-body { display: grid; gap: 18px; }
+.mdock-tools-group h3 {
+  margin: 0 0 8px;
+  color: var(--ui-text-faint);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.mdock-tools-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.mdock-tools .mdock-tool {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  border: 1px solid var(--ui-line);
+  border-radius: 12px !important;
+  background: var(--ui-panel);
+  color: var(--ui-text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.mdock-tools .mdock-tool[aria-current="page"] { border-color: color-mix(in srgb, var(--ui-accent) 70%, transparent); background: var(--ui-accent-soft); }
+.mdock-tool-icon { display: grid; flex: none; place-items: center; color: var(--ui-text-muted); }
+
+@media (prefers-reduced-motion: reduce) {
+  .mdock[data-tilt] { animation: none; }
+  .mdock-tray, .mdock-tray[data-open], .mdock-quick li, .mdock-tray[data-open] .mdock-quick li, .mdock-fab, .mdock-fab svg { transition: opacity 120ms ease; }
+  .mdock-tray[data-open] .mdock-wedge { animation: none; }
+}

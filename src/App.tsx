@@ -47,6 +47,7 @@ import { BrandLoader } from "./components/BrandLoader";
 import { lazyPage, PageBoundary, PageLoading } from "./utils/lazyPage";
 import { readDeepLink, writeDeepLink, type MainView as View } from "./utils/tiktokRoute";
 import { BackgroundProcessCenter, openBackgroundProcessCenter, type BackgroundProcess } from "./components/BackgroundProcessCenter";
+import { MobileDock } from "./components/MobileDock";
 
 // The admin console ships as its own chunk so users never download it.
 const AdminApp = lazyPage(() => import("./admin/AdminApp"));
@@ -838,6 +839,14 @@ function WorkspaceApp() {
         </div>
       </main>
       </div>
+      {/* Phone dock: sections plus quick tools for this page (hidden on wide screens and in full-screen editors). */}
+      <MobileDock
+        view={activeView}
+        studioTab={routeLink.view === "studio" ? routeLink.studioTab : undefined}
+        toolId={routeLink.view === "tool" ? routeLink.toolId : undefined}
+        onNavigate={handleNavigate}
+        hidden={focusMode}
+      />
       {/* Background activity is per account: signed-out visitors would only poll for 401s. */}
       {!isGuest ? <BackgroundProcessCenter darkMode={isDarkMode} onOpenProcess={openBackgroundProcess} /> : null}
     </div>

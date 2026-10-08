@@ -6,7 +6,6 @@ import {DialogHost} from './components/ui/Dialog';
 import {installUsageNotices} from './components/AccountServices';
 import {installInputModality} from './utils/inputModality';
 import {installNativeShell, nativeAppReady} from './native/bootstrap';
-import {NativeTabBar} from './native/NativeTabBar';
 import {installChunkRecovery} from './utils/lazyPage';
 import './index.css';
 
@@ -25,7 +24,6 @@ createRoot(document.getElementById('root')!).render(
     <App />
     <Toaster />
     <DialogHost />
-    <NativeTabBar />
   </StrictMode>,
 );
 requestAnimationFrame(() => nativeAppReady());
