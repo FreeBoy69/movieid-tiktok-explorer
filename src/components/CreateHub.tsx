@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { ArrowUp, Check, ChevronDown, ChevronRight, Clapperboard, Film, ImageIcon, LayoutGrid, Loader2, Megaphone, Palette, Plus, Sparkles, Video, Wrench, X } from "lucide-react";
-import { ALL_NAV_ENTRIES, type NavEntry, type NavTarget } from "../utils/appNavigation";
+import { ArrowUp, AudioLines, Check, ChevronDown, ChevronRight, Clapperboard, Film, ImageIcon, Images, LayoutGrid, Loader2, Megaphone, Palette, Plus, Sparkles, Video, Wrench, X } from "lucide-react";
+import { ALL_NAV_ENTRIES, NAV_GROUPS, type NavEntry, type NavTarget } from "../utils/appNavigation";
 import { CREATE_TABS, promptWithStyle, templatesFor, type CreateTab, type CreateTemplate } from "../utils/createTemplates";
 import { writePendingTemplate } from "../utils/promptTemplates";
 import { uploadAsset, type Asset, type Catalog } from "./studio/studioShared";
@@ -13,24 +13,36 @@ import "./CreateHub.css";
 // Studio and start generating; a template opens the studio that runs it.
 
 type Mode = "image" | "video";
-type Tab = CreateTab | "tools";
+// Image, Video, and Audio list the studios from those header menus; All tools lists everything.
+type AppTab = "image" | "video" | "audio" | "tools";
+type Tab = CreateTab | AppTab;
 const TAB_ICONS: Record<Tab, ReactNode> = {
   all: <LayoutGrid size={16} />,
+  image: <Images size={16} />,
+  video: <Film size={16} />,
+  audio: <AudioLines size={16} />,
   motion: <Sparkles size={16} />,
   marketing: <Megaphone size={16} />,
   film: <Clapperboard size={16} />,
-  shorts: <Film size={16} />,
+  shorts: <Clapperboard size={16} />,
   styles: <Palette size={16} />,
   cinematic: <Video size={16} />,
   tools: <Wrench size={16} />,
 };
-const TAB_LABELS: Record<Tab, string> = { ...Object.fromEntries(CREATE_TABS.map((t) => [t.id, t.label])), tools: "All tools" } as Record<Tab, string>;
-const TABS: Tab[] = [...CREATE_TABS.map((t) => t.id), "tools"];
+const TAB_LABELS: Record<Tab, string> = { ...Object.fromEntries(CREATE_TABS.map((t) => [t.id, t.label])), image: "Image", video: "Video", audio: "Audio", tools: "All tools" } as Record<Tab, string>;
+const TABS: Tab[] = ["all", "image", "video", "audio", ...CREATE_TABS.map((t) => t.id).filter((id) => id !== "all"), "tools"];
 const MAX_REFERENCES = 4;
 const TAB_KEY = "autoyt-create-tab";
 
-// The full app directory, one card per destination, for the All tools tab.
-const TOOL_ENTRIES: NavEntry[] = ALL_NAV_ENTRIES.filter((entry, index, all) => all.findIndex((e) => e.id === entry.id) === index);
+const unique = (entries: NavEntry[]) => entries.filter((entry, index, all) => all.findIndex((e) => e.id === entry.id) === index);
+const groupEntries = (...ids: string[]) => unique(NAV_GROUPS.filter((group) => ids.includes(group.id)).flatMap((group) => group.columns.flatMap((column) => column.entries)));
+const APP_TABS: Record<AppTab, NavEntry[]> = {
+  image: groupEntries("image", "image-tools"),
+  video: groupEntries("video"),
+  audio: groupEntries("audio"),
+  tools: unique(ALL_NAV_ENTRIES),
+};
+const isAppTab = (tab: Tab): tab is AppTab => tab in APP_TABS;
 
 export function CreateHub({ theme, signedIn, onSignIn, onNavigate }: { theme: "light" | "dark"; signedIn: boolean; onSignIn: () => void; onNavigate: (target: NavTarget) => void }) {
   const [mode, setMode] = useState<Mode>("image");
@@ -138,7 +150,7 @@ export function CreateHub({ theme, signedIn, onSignIn, onNavigate }: { theme: "l
     }
   };
 
-  const items = useMemo(() => (tab === "tools" ? [] : templatesFor(tab)), [tab]);
+  const items = useMemo(() => (isAppTab(tab) ? [] : templatesFor(tab)), [tab]);
 
   return (
     <div className="ch" data-theme={theme}>
@@ -194,9 +206,9 @@ export function CreateHub({ theme, signedIn, onSignIn, onNavigate }: { theme: "l
           </div>
         </div>
 
-        {tab === "tools" ? (
+        {isAppTab(tab) ? (
           <div className="ch-masonry">
-            {TOOL_ENTRIES.map((entry) => (
+            {APP_TABS[tab].map((entry) => (
               <Card key={entry.id} title={entry.label} sub={entry.description} tag={entry.badge} image={`/assets/explore/${entry.id}.webp`} ratio={16 / 10} onClick={() => onNavigate(entry.target)} />
             ))}
           </div>

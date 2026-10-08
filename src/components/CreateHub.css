@@ -236,6 +236,8 @@
   scrollbar-width: none;
 }
 .ch-tabs::-webkit-scrollbar { display: none; }
+/* Eleven tabs scroll sideways; the right edge fades to show there are more. */
+.ch-tabs { padding-right: 40px; mask-image: linear-gradient(90deg, #000 calc(100% - 48px), transparent); }
 .ch-tabs button {
   display: inline-flex;
   flex: none;

@@ -18,7 +18,7 @@ export const CREATE_TABS: Array<{ id: CreateTab; label: string }> = [
   { id: "marketing", label: "Marketing" },
   { id: "film", label: "Film & Drama" },
   { id: "shorts", label: "Shorts" },
-  { id: "styles", label: "Image styles" },
+  { id: "styles", label: "Styles" },
   { id: "cinematic", label: "Cinematic" },
 ];
 
