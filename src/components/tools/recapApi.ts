@@ -132,7 +132,7 @@ export function uploadFilm(file: File, onProgress: (share: number) => void, sign
   });
 }
 
-export type RecapPost = { id: string; format: RecapFormat; accountId: string; channel: string; title: string; privacy: string; status: "uploading" | "posted" | "failed"; url?: string; error?: string; at: number };
+export type RecapPost = { id: string; format: RecapFormat; accountId: string; channel: string; title: string; privacy: string; status: "uploading" | "posted" | "failed"; url?: string; error?: string; at: number; videoId?: string; thumbnail?: { status: "set" | "failed"; error?: string; image?: string } };
 export type PostChannel = { id: string; title: string; handle: string; platform: string; thumbnail: string };
 export type PostDraft = { title: string; description: string; tags: string[] };
 
@@ -219,6 +219,10 @@ async function act(id: string, action: "render" | "retry" | "cancel" | "back", b
   );
   return data.recap;
 }
+export async function setPostThumbnail(id: string, postId: string): Promise<Recap> {
+  return (await json<{ recap: Recap }>(await fetch(`/api/recaps/${encodeURIComponent(id)}/posts/${encodeURIComponent(postId)}/thumbnail`, { method: "POST" }), "Couldn't set the thumbnail")).recap;
+}
+
 export const renderRecap = (id: string, voiceId?: string, captions?: boolean, transforms?: { zoomPct: number; pan: boolean }) => act(id, "render", { voiceId, captions, transforms });
 export const retryRecap = (id: string, voiceId?: string) => act(id, "retry", voiceId ? { voiceId } : undefined);
 export const cancelRecap = (id: string) => act(id, "cancel");

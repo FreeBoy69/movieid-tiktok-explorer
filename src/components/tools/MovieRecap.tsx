@@ -6,7 +6,7 @@ import { type DragEvent, type ReactNode, useCallback, useEffect, useMemo, useRef
 import { createPortal } from "react-dom";
 import {
   AlertCircle, ArrowLeft, ArrowRight, Check, Clapperboard, Download, ExternalLink, Film, Link2, Loader2, Plus,
-  Music, Projector, RotateCcw, Search, ShieldCheck, Sparkles, Square, Trash2, Undo2, Upload, Users, WandSparkles, X, Youtube, PenLine } from "lucide-react";
+  Music, Projector, RotateCcw, Search, ShieldCheck, Sparkles, Square, Trash2, Undo2, Upload, Users, WandSparkles, X, Youtube, PenLine, Image as ImageIcon } from "lucide-react";
 import { toast, useErrorToast } from "../../utils/toast";
 import { isVoiceReady, loadVoiceProfiles, type VoiceProfile } from "../../utils/voiceProfiles";
 import { writeDeepLink } from "../../utils/tiktokRoute";
@@ -23,7 +23,7 @@ import {
   listSources,
   saveSources,
   searchFilmSources,
-  backToStoryboard, cancelRecap, clock, correctNames, rewriteScript, draftPost, followRecapPost, postChannels, postRecap, setIntro, type PostChannel, createRecap, deleteRecap, getRecap, listRecaps, parseClock, renderRecap, retryRecap, saveScript, shotTile, spokenSeconds,
+  backToStoryboard, cancelRecap, clock, correctNames, rewriteScript, setPostThumbnail, draftPost, followRecapPost, postChannels, postRecap, setIntro, type PostChannel, createRecap, deleteRecap, getRecap, listRecaps, parseClock, renderRecap, retryRecap, saveScript, shotTile, spokenSeconds,
   uploadFilm, type Recap, type RecapBeat, type RecapFormat, type RecapPace, type RecapScript, type RecapTone, type RecapTransforms,
 } from "./recapApi";
 import "./MovieRecap.css";
@@ -1257,6 +1257,21 @@ function PostPanel({ recap, format, onChange, onError }: { recap: Recap; format:
   const [privacy, setPrivacy] = useState("private");
   const posts = (recap.posts || []).filter((post) => post.format === format);
   const channel = channels?.find((c) => c.id === accountId);
+  const [thumbing, setThumbing] = useState("");
+  const setThumbnail = async (postId: string) => {
+    setThumbing(postId);
+    try {
+      const next = await setPostThumbnail(recap.id, postId);
+      onChange(next);
+      const result = next.posts?.find((p) => p.id === postId)?.thumbnail;
+      if (result?.status === "set") toast.success("Thumbnail set on YouTube");
+      else onError(result?.error || "Couldn't set the thumbnail");
+    } catch (error) {
+      onError(error instanceof Error ? error.message : "Couldn't set the thumbnail");
+    } finally {
+      setThumbing("");
+    }
+  };
   // A post still uploading (from before the page was opened) is followed too, so its toast still arrives.
   useEffect(() => {
     for (const p of posts) if (p.status === "uploading") followRecapPost(recap.id, p.id, p.channel, toast);
@@ -1311,6 +1326,16 @@ function PostPanel({ recap, format, onChange, onError }: { recap: Recap; format:
               {p.status === "uploading" ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : p.status === "posted" ? <Check size={14} strokeWidth={3} aria-hidden="true" /> : <AlertCircle size={14} aria-hidden="true" />}
               <span>{p.status === "uploading" ? `Posting to ${p.channel || "your channel"} in the background` : p.status === "posted" ? `Posted to ${p.channel || "your channel"} (${p.privacy})` : `Post to ${p.channel || "your channel"} failed: ${p.error || "unknown error"}`}</span>
               {p.url ? <a href={p.url} target="_blank" rel="noreferrer"><ExternalLink size={13} aria-hidden="true" />Open</a> : null}
+              {p.status === "posted" ? (
+                p.thumbnail?.status === "set" ? (
+                  <span className="mr-post-thumb" title="YouTube shows the thumbnail from this page">Thumbnail set</span>
+                ) : (
+                  <button type="button" className="mr-post-thumb-btn" disabled={thumbing === p.id} onClick={() => void setThumbnail(p.id)} title={p.thumbnail?.error || "Use this page's thumbnail on YouTube"}>
+                    {thumbing === p.id ? <Loader2 size={13} className="animate-spin" aria-hidden="true" /> : <ImageIcon size={13} aria-hidden="true" />}
+                    {p.thumbnail?.status === "failed" ? "Retry thumbnail" : "Set thumbnail"}
+                  </button>
+                )
+              ) : null}
             </li>
           ))}
         </ul>

@@ -455,6 +455,40 @@ describe("opening teaser and line stretches", () => {
   });
 });
 
+describe("youtube thumbnail", () => {
+  it("sets a posted recap's thumbnail to the finished page's still", async () => {
+    const os = await import("node:os");
+    const fsp = await import("node:fs/promises");
+    const dir = await fsp.mkdtemp(`${os.tmpdir()}/recap-thumb-`);
+    const previous = process.env.CREATOR_ASSETS_DIR;
+    process.env.CREATOR_ASSETS_DIR = dir;
+    try {
+      const { writeJson, configureMovieRecap, registerMovieRecap } = await import("./movieRecap.js");
+      const id = "rcp_7b0b7e57000000000000abcd";
+      const still = "https://image.tmdb.org/t/p/w1280/still.jpg";
+      await writeJson("u1", id, "project.json", {
+        id, title: "Mutiny", status: "done", source: { kind: "link", url: "https://example.com/film" }, options: { formats: ["long"], transforms: {} },
+        film: { from: "name", checked: 3, tmdbId: 5 }, backdrops: { tmdbId: 5, images: [still] }, poster: "https://image.tmdb.org/t/p/w342/poster.jpg",
+        posts: [{ id: "post_abc", format: "long", accountId: "acc1", channel: "Recaps", status: "posted", url: "https://www.youtube.com/watch?v=abcdEFG1234", at: 1 }],
+      }, { store: false });
+      const calls: unknown[][] = [];
+      configureMovieRecap({ session: async () => ({ user: { id: "u1" } }), setThumbnail: async (...args: unknown[]) => { calls.push(args); return true; } });
+      const routes: Record<string, any> = {};
+      const app = { get: (path: string, h: any) => (routes[`GET ${path}`] = h), post: (path: string, h: any) => (routes[`POST ${path}`] = h), patch: () => {}, delete: () => {}, put: () => {} };
+      registerMovieRecap(app);
+      let body: any = null;
+      const res: any = { status: () => res, json: (b: any) => { body = b; return res; }, setHeader: () => {} };
+      await routes["POST /api/recaps/:id/posts/:postId/thumbnail"]({ params: { id, postId: "post_abc" }, body: {} }, res);
+      expect(calls).toEqual([["u1", "acc1", "abcdEFG1234", still]]);
+      expect(body.recap.posts[0].thumbnail.status).toBe("set");
+      expect(body.recap.posts[0].videoId).toBe("abcdEFG1234");
+    } finally {
+      if (previous === undefined) delete process.env.CREATOR_ASSETS_DIR;
+      else process.env.CREATOR_ASSETS_DIR = previous;
+    }
+  });
+});
+
 describe("picture treatment", () => {
   it("freezes every sixth cut past the opening, never in black and white, and not when switched off", async () => {
     const { freezeCuts } = await import("./movieRecap.js");

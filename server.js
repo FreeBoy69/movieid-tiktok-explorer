@@ -10101,6 +10101,37 @@ async function uploadVideoFromUrl(account, metadata, url, options = {}) {
         throw new Error(data?.error?.message || `YouTube upload failed (${uploadResponse.status})`);
     return { id: String(data.id || ""), url: data.id ? `https://www.youtube.com/watch?v=${data.id}` : "", title: data.snippet?.title || metadata.title, privacyStatus: data.status?.privacyStatus || safePrivacyStatus(metadata.privacyStatus), provider: "youtube" };
 }
+// A video's custom thumbnail from an image URL (YouTube takes JPEG or PNG up to 2 MB, 1280x720 best). Only
+// for channels signed in with Google: a Zernio-only channel can't set one. YouTube also refuses custom
+// thumbnails until the channel is verified, and says so.
+async function setYouTubeThumbnail(account, videoId, imageUrl, options = {}) {
+    if (shouldUploadViaZernio(account))
+        throw new Error("This channel posts through Zernio, which can't set a thumbnail. Set it in YouTube Studio.");
+    requireYouTubeScope(account, "https://www.googleapis.com/auth/youtube.upload", "YouTube thumbnail");
+    const image = await fetch(imageUrl, { signal: options.signal });
+    if (!image.ok)
+        throw new Error("The thumbnail image couldn't be read.");
+    const bytes = Buffer.from(await image.arrayBuffer());
+    if (bytes.length > 2 * 1024 * 1024)
+        throw new Error("The thumbnail is over YouTube's 2 MB limit.");
+    const type = String(image.headers.get("content-type") || "").includes("png") ? "image/png" : "image/jpeg";
+    let current = account;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+        const url = new URL("https://www.googleapis.com/upload/youtube/v3/thumbnails/set");
+        url.searchParams.set("videoId", videoId);
+        url.searchParams.set("uploadType", "media");
+        const response = await fetch(url, { method: "POST", headers: { Authorization: `Bearer ${current.accessToken}`, "Content-Type": type }, body: bytes, signal: options.signal });
+        if (response.ok)
+            return true;
+        const data = await response.json().catch(() => ({}));
+        if (attempt === 0 && isGoogleAuthResponseError(response, data) && current.refreshToken) {
+            current = await refreshGoogleToken(current);
+            continue;
+        }
+        throw new Error(data?.error?.message || `Setting the thumbnail failed (${response.status})`);
+    }
+    return false;
+}
 const AUTOMATION_SOCIAL_PLATFORMS = new Set(["tiktok", "instagram", "facebook", "snapchat", "pinterest", "twitter", "linkedin"]);
 async function publishAutomationSocialTargets(userId, targets, metadata, filePath, options = {}) {
     const selectedTargets = (Array.isArray(targets) ? targets : [])
@@ -21475,6 +21506,7 @@ async function startServer() {
             return generateAutomationMetadata({ movie, sourceVideo: { title: movie.title }, agent: { settings }, metadataStyleProfile, account });
         },
         publishUrl: async (userId, accountId, metadata, url) => uploadVideoFromUrl(await usableYouTubeAccount(userId, accountId), metadata, url),
+        setThumbnail: async (userId, accountId, videoId, imageUrl) => setYouTubeThumbnail(await usableYouTubeAccount(userId, accountId), videoId, imageUrl),
         speak: speakForStudio,
         voiceAllowed: async (userId, voiceId) => {
             if (isHostedVoice(voiceId))

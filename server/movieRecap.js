@@ -2907,6 +2907,43 @@ export function registerMovieRecap(app) {
     res.json({ draft: { title: clip(meta.title, 150), description: String(meta.description || "").slice(0, 4500), tags: (meta.tags || []).slice(0, 15).map((t) => clip(t, 60)) } });
   }));
 
+  /** The image the finished page shows for a format: the film's first still for the long recap, the
+   *  poster (at a size YouTube accepts) for a Short. "" when there is none. */
+  const thumbnailFor = async (userId, project, format) => {
+    if (format === "short") return project.poster ? project.poster.replace("/t/p/w342/", "/t/p/w780/") : "";
+    const { images } = await filmStills(userId, project).catch(() => ({ images: [] }));
+    return images[0] || project.poster?.replace("/t/p/w342/", "/t/p/w780/") || "";
+  };
+  const youtubeId = (post) => post.videoId || String(post.url || "").match(/[?&]v=([\w-]{6,})/)?.[1] || String(post.url || "").match(/youtu\.be\/([\w-]{6,})/)?.[1] || "";
+  /** Sets a posted recap's YouTube thumbnail to the finished page's image; records how it went on the post. */
+  const applyThumbnail = async (userId, projectId, postId) => {
+    const project = await load(userId, projectId);
+    const post = (project.posts || []).find((p) => p.id === postId);
+    if (!post) throw fail("That post isn't on this recap.", 404);
+    const videoId = youtubeId(post);
+    let thumbnail;
+    if (!deps.setThumbnail) thumbnail = { status: "failed", error: "Thumbnails aren't set up on this server." };
+    else if (!videoId) thumbnail = { status: "failed", error: "This post has no YouTube video to set a thumbnail on." };
+    else {
+      const image = await thumbnailFor(userId, project, post.format);
+      if (!image) thumbnail = { status: "failed", error: "This recap has no thumbnail image yet." };
+      else {
+        thumbnail = await deps.setThumbnail(userId, post.accountId, videoId, image)
+          .then(() => ({ status: "set", image }))
+          .catch((error) => ({ status: "failed", error: clip(publicMessage(error instanceof Error ? error.message : String(error)), 300) }));
+      }
+    }
+    const current = await load(userId, projectId);
+    await save(userId, current, { posts: (current.posts || []).map((p) => (p.id === postId ? { ...p, ...(videoId ? { videoId } : {}), thumbnail } : p)) });
+    return current;
+  };
+
+  // Sets the thumbnail on a recap already posted (one posted before thumbnails were set, or a retry).
+  app.post("/api/recaps/:id/posts/:postId/thumbnail", route(async (req, res, userId) => {
+    const project = await applyThumbnail(userId, req.params.id, clip(req.params.postId, 40));
+    res.json({ recap: { ...summary(project), script: project.script || null } });
+  }));
+
   app.post("/api/recaps/:id/post", route(async (req, res, userId) => {
     const project = await load(userId, req.params.id);
     if (!deps.publishUrl) throw fail("Posting isn't set up on this server.", 503);
@@ -2927,7 +2964,9 @@ export function registerMovieRecap(app) {
     void withUsageUser(userId, "tools:movie-recap-post", () => deps.publishUrl(userId, accountId, metadata, url))
       .then(async (result) => {
         const current = await load(userId, project.id);
-        await save(userId, current, { posts: (current.posts || []).map((p) => (p.id === post.id ? { ...p, status: "posted", url: result.url || "", provider: result.provider } : p)) });
+        await save(userId, current, { posts: (current.posts || []).map((p) => (p.id === post.id ? { ...p, status: "posted", url: result.url || "", provider: result.provider, ...(result.provider === "youtube" && result.id ? { videoId: result.id } : {}) } : p)) });
+        // The video gets the thumbnail the finished page shows.
+        if (result.provider === "youtube" && result.id) await applyThumbnail(userId, project.id, post.id).catch((error) => console.warn(`[movie-recap] thumbnail skipped: ${error.message}`));
       })
       .catch(async (error) => {
         console.warn(`[movie-recap] post failed: ${error.message}${error.cause ? ` (${error.cause.message || error.cause})` : ""}`);
