@@ -173,6 +173,7 @@
 }
 :is(.cns, .cns-kit) .cns-bar:focus-within {
   background: var(--glass-input-bg-focus);
+  outline: none;
 }
 :is(.cns, .cns-kit) .cns-looks {
   display: flex;
@@ -246,7 +247,6 @@
   text-overflow: ellipsis;
 }
 :is(.cns, .cns-kit) .cns-chip[aria-expanded="true"] {
-  border-color: var(--ui-line-strong);
   background: var(--ui-hover);
 }
 :is(.cns, .cns-kit) .cns-stepper {
@@ -673,8 +673,7 @@
   color: var(--ui-text-muted);
 }
 :is(.cns, .cns-kit) .cns-search:focus-within {
-  border-color: var(--ui-focus);
-  box-shadow: 0 0 0 3px var(--ui-ring);
+  outline: none;
 }
 :is(.cns, .cns-kit) .cns-search input {
   flex: 1;

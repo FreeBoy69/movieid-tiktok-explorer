@@ -148,6 +148,11 @@ html[data-theme="dark"],
     outline-offset: 2px;
   }
 
+  /* Typing never draws a focus ring or border change: fields, prompt boxes and editable text stay as they are. */
+  :where(input:not([type="checkbox"], [type="radio"], [type="range"], [type="button"], [type="submit"]), textarea, select, [contenteditable]):is(:focus, :focus-visible) {
+    outline: none;
+  }
+
   :where(input[type="checkbox"], input[type="radio"], input[type="range"], progress) {
     accent-color: var(--ui-accent);
   }

@@ -180,8 +180,6 @@
   font-size: 14px;
 }
 .mt-input:not(.ui-input):focus {
-  border-color: var(--ui-focus);
-  box-shadow: 0 0 0 3px var(--ui-ring);
   outline: none;
 }
 .mt-input:not(.ui-input)::placeholder {
@@ -417,8 +415,6 @@
 }
 .mt-output:focus {
   outline: none;
-  border-color: var(--ui-focus);
-  box-shadow: 0 0 0 3px var(--ui-ring);
 }
 .mt-section {
   display: flex;

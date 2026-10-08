@@ -337,7 +337,7 @@
   transition: border-color 140ms ease;
 }
 .ui-search-sm { min-height: 34px; padding-left: 10px; }
-.ui-search:focus-within { border-color: var(--ui-focus); }
+.ui-search:focus-within { outline: none; }
 .ui-search input[type="search"] {
   min-width: 0;
   flex: 1;
@@ -433,14 +433,7 @@
 .ui-textarea { min-height: 96px; resize: vertical; }
 .ui-input::placeholder,
 .ui-textarea::placeholder { color: var(--ui-text-faint); }
-.ui-input:hover:not(:disabled),
-.ui-textarea:hover:not(:disabled),
-.ui-select:hover:not(:disabled) { border-color: color-mix(in srgb, var(--ui-text) 32%, transparent); }
-.ui-input:focus-visible,
-.ui-textarea:focus-visible,
 .ui-select:focus-visible,
-.ui-input:focus,
-.ui-textarea:focus,
 .ui-select:focus {
   border-color: var(--ui-focus);
   box-shadow: 0 0 0 3px var(--ui-ring);
@@ -652,12 +645,10 @@
   text-align: left;
   cursor: pointer;
 }
-.ui-trigger:hover:not(:disabled) { border-color: color-mix(in srgb, var(--ui-text) 32%, transparent); }
 /* Full-width setting row: label on the left, value on the right. */
 .ui-trigger.is-row { justify-content: space-between; }
 .ui-trigger.is-row > :first-child { color: var(--ui-text-muted); font-size: 13px; }
 .ui-trigger.is-row > :nth-child(2) { margin-left: auto; font-weight: 600; }
-.ui-trigger[aria-expanded="true"] { border-color: var(--ui-focus); box-shadow: 0 0 0 3px var(--ui-ring); }
 
 /* ---------- Surfaces ---------- */
 .ui-card { border: 1px solid var(--ui-line); border-radius: var(--ui-radius); background: var(--ui-panel); box-shadow: var(--ui-shadow-soft); }

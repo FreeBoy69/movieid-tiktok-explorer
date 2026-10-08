@@ -70,9 +70,8 @@
    metrics copied exactly. Scoped under .dr-composer so the workspace's general
    input and button styles (focus ring, borders, faded disabled) never apply. */
 .dr-composer { display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid var(--glass-input-line); border-top-color: var(--glass-input-edge); border-radius: 18px; background: var(--glass-input-bg); box-shadow: var(--glass-input-shadow); -webkit-backdrop-filter: blur(22px) saturate(1.6); backdrop-filter: blur(22px) saturate(1.6); transition: background-color 200ms cubic-bezier(0.22, 1, 0.36, 1); }
-.dr-composer:focus-within { background: var(--glass-input-bg-focus); }
-.maker-workspace .dr-composer textarea.dr-composer-input,
-.maker-workspace .dr-composer textarea.dr-composer-input:focus { flex: 1; width: 100%; min-width: 0; min-height: 48px; max-height: 200px; padding: 6px 4px; border: 0; border-radius: 0; outline: none; box-shadow: none; resize: none; field-sizing: content; background: none; color: var(--mk-text); font: inherit; font-size: 15px; line-height: 1.5; }
+.dr-composer:focus-within { background: var(--glass-input-bg-focus); outline: none; }
+.maker-workspace .dr-composer textarea.dr-composer-input { flex: 1; width: 100%; min-width: 0; min-height: 48px; max-height: 200px; padding: 6px 4px; border: 0; border-radius: 0; outline: none; box-shadow: none; resize: none; field-sizing: content; background: none; color: var(--mk-text); font: inherit; font-size: 15px; line-height: 1.5; }
 .maker-workspace .dr-composer textarea.dr-composer-input::placeholder { color: var(--mk-faint); }
 .dr-composer-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .dr-composer-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
@@ -146,7 +145,7 @@
 .dr-concept-places { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
 .dr-concept-places li { padding: 6px 11px; border: 1px solid var(--mk-line); border-radius: 999px; font-size: 12.5px; }
 .dr-concept-refine { display: flex; align-items: flex-end; gap: 8px; margin-top: 20px; padding: 8px 8px 8px 12px; border: 1px solid var(--mk-line); border-radius: 12px; background: var(--mk-bg); }
-.dr-concept-refine:focus-within { border-color: var(--mk-line-strong); }
+.dr-concept-refine:focus-within { outline: none; }
 .maker-workspace .dr-concept-refine textarea { flex: 1; min-width: 0; min-height: 36px; max-height: 120px; padding: 8px 0; border: 0; border-radius: 0; box-shadow: none; outline: none; resize: none; field-sizing: content; background: none; color: var(--mk-text); font: inherit; font-size: 13.5px; }
 .maker-workspace .dr-concept-refine textarea::placeholder { color: var(--mk-faint); }
 @media (prefers-reduced-motion: reduce) { .maker-workspace .dr-genre-card, .dr-genre-card img { transition: none; } .maker-workspace .dr-genre-card:hover { transform: none; } .dr-genre-card:hover img { transform: none; } }
@@ -1607,7 +1606,7 @@
 
 /* The refine box is a composer: the box shows focus, not the bare textarea. */
 .maker-workspace .dr-concept-modal .dr-concept-refine textarea:focus,
-.maker-workspace .dr-concept-modal .dr-concept-refine textarea:focus-visible { border: 0; box-shadow: none; outline: none; }
+.maker-workspace .dr-concept-modal .dr-concept-refine textarea:focus-visible { border: 0; outline: none; }
 /* ---------- Create Film ---------- */
 .fl-back { align-self: center; margin: -8px auto 8px; }
 .fl-formats { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; margin: 8px 0 40px; padding: 0; list-style: none; }
@@ -1683,7 +1682,7 @@
 .fl-time:hover,
 .fl-lyric-text:hover { border-color: var(--mk-line); }
 .fl-time:focus,
-.fl-lyric-text:focus { border-color: var(--mk-line-strong); background: var(--mk-bg); outline: none; }
+.fl-lyric-text:focus { background: var(--mk-bg); outline: none; }
 
 .fl-look { display: grid; gap: 12px; }
 .fl-look h2 { display: inline-flex; align-items: center; gap: 8px; }

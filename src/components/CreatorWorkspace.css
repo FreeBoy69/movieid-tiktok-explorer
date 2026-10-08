@@ -144,13 +144,8 @@
   caret-color: var(--ui-accent-text);
   transition: border-color var(--ui-duration) ease, box-shadow var(--ui-duration) ease;
 }
-:where(.maker-workspace) :where(input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="color"]), textarea, select):hover:not(:disabled) {
-  border-color: color-mix(in srgb, var(--ui-text) 32%, transparent);
-}
 :where(.maker-workspace) :where(input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="color"]), textarea, select):focus {
   outline: none;
-  border-color: var(--ui-focus);
-  box-shadow: 0 0 0 3px var(--ui-ring);
 }
 :where(.maker-workspace) :where(textarea) {
   resize: vertical;
@@ -715,8 +710,7 @@
   box-shadow: var(--mk-shadow);
 }
 .maker-searchbar:focus-within {
-  border-color: var(--ui-focus);
-  box-shadow: 0 0 0 3px var(--ui-ring), var(--mk-shadow);
+  outline: none;
 }
 .maker-searchbar > svg {
   color: var(--mk-muted);

@@ -586,6 +586,7 @@
 }
 .cs-composer:focus-within {
   background: var(--glass-input-bg-focus);
+  outline: none;
 }
 /* The bar floats over the bottom of the results so they scroll behind the
    glass; the canvas pads its end so nothing is hidden under the bar. */
@@ -642,9 +643,6 @@
 }
 .cs-chip {
   max-width: 260px;
-}
-.cs-chip[aria-expanded="true"] {
-  border-color: var(--ui-line-strong);
 }
 .cs-chip-label {
   color: var(--cs-faint);
@@ -2171,8 +2169,7 @@ figure.cs-tile {
   transition: border-color var(--ui-duration) ease, box-shadow var(--ui-duration) ease;
 }
 .cs-gen .cs-textarea:focus {
-  border-color: var(--ui-focus);
-  box-shadow: 0 0 0 3px var(--ui-ring);
+  outline: none;
 }
 /* Settings: a grid of tiles, label above value, like Higgsfield's Model and Quality rows. */
 .cs-gen .cs-controls {
@@ -2210,10 +2207,6 @@ figure.cs-tile {
 .cs-gen .ui-switch.cs-toggle:hover {
   border-color: color-mix(in srgb, var(--ui-text) 32%, transparent);
   background: var(--ui-input);
-}
-.cs-gen .cs-chip[aria-expanded="true"] {
-  border-color: var(--ui-focus);
-  box-shadow: 0 0 0 3px var(--ui-ring);
 }
 .cs-gen .ui-switch.cs-toggle .ui-switch-label {
   font-size: 14px;
@@ -2473,8 +2466,7 @@ figure.cs-tile {
   transition: border-color 160ms, box-shadow 160ms;
 }
 .cs-audio-composer:focus-within {
-  border-color: var(--cs-line-strong);
-  box-shadow: 0 0 0 3px var(--ui-ring);
+  outline: none;
 }
 .cs-audio-composer .cs-prompt-row {
   display: block;

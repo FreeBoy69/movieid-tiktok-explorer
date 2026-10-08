@@ -600,8 +600,7 @@
 }
 .as-input:focus,
 .as-textarea:focus {
-  border-color: var(--ui-focus);
-  box-shadow: 0 0 0 3px var(--ui-ring);
+  outline: none;
 }
 .as-name-row .as-icon {
   width: var(--ui-field-height);
@@ -834,7 +833,7 @@
 /* Generate: the script panel and the settings rail float on the page. */
 .as-root .as-generate { gap: 14px; grid-template-columns: minmax(0, 1fr) 340px; }
 .as-root .as-write { overflow: hidden; border: 1px solid var(--ui-line-strong); border-radius: 22px; background: var(--ui-input); box-shadow: var(--ui-shadow-soft); transition: border-color 0.18s ease, box-shadow 0.18s ease; }
-.as-root .as-write:focus-within { border-color: var(--ui-text-faint); box-shadow: var(--ui-shadow-soft), 0 0 0 4px var(--ui-ring); }
+.as-root .as-write:focus-within { outline: none; }
 .as-root .as-script { padding: 34px 40px; color: var(--ui-text); font-size: 20px; line-height: 1.75; letter-spacing: -0.005em; }
 .as-root .as-script::placeholder { color: var(--ui-text-faint); }
 .as-root .as-player { padding: 6px 24px 14px; border-top: 1px solid var(--ui-line); background: var(--ui-panel); }

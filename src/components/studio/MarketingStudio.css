@@ -131,6 +131,7 @@
 }
 .mks-bar:focus-within {
   background: var(--glass-input-bg-focus);
+  outline: none;
 }
 .mks-hookline {
   display: flex;
@@ -755,8 +756,7 @@
   color: var(--ui-text-faint);
 }
 .mks-url:focus-within {
-  border-color: var(--ui-focus);
-  box-shadow: 0 0 0 3px var(--ui-ring);
+  outline: none;
 }
 .mks-url input {
   flex: 1;
@@ -809,8 +809,7 @@
 .mks-manual textarea:focus,
 .mks-create input:focus,
 .mks-create textarea:focus {
-  border-color: var(--ui-focus);
-  box-shadow: 0 0 0 3px var(--ui-ring);
+  outline: none;
 }
 .cs-refs.mks-uploads {
   flex-wrap: wrap;

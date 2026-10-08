@@ -132,11 +132,10 @@
   transition: border-color var(--ui-duration);
 }
 .tg-search:focus-within {
-  border-color: var(--ui-focus);
-  box-shadow: 0 0 0 3px var(--ui-ring);
+  outline: none;
 }
 .tg-search input:focus-visible {
-  outline: 0;
+  outline: none;
 }
 .tg-search input {
   flex: 1;

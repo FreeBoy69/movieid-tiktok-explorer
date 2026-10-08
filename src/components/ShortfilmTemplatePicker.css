@@ -85,8 +85,6 @@
   font-size: 14px;
 }
 .shortfilm-picker-fields input:focus-visible {
-  border-color: var(--ui-focus);
-  box-shadow: 0 0 0 3px var(--ui-ring);
   outline: none;
 }
 .shortfilm-picker-note {

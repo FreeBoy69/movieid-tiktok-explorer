@@ -88,7 +88,7 @@
 .ve-home-list h2 { margin: 0 0 16px; font-size: 15px; font-weight: 700; }
 .ve-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; }
 .ve-card { position: relative; border-radius: 14px; background: var(--ve-panel); box-shadow: 0 1px 0 var(--ve-line) inset, 0 0 0 1px var(--ve-line); transition: transform 0.2s ease, box-shadow 0.2s ease; }
-.ve-card:hover { transform: translateY(-2px); box-shadow: 0 0 0 1px var(--ve-line-strong), var(--ve-shadow); }
+.ve-card:not(.ve-chat-card, .ve-tabs-card):hover { transform: translateY(-2px); box-shadow: 0 0 0 1px var(--ve-line-strong), var(--ve-shadow); }
 .ve-card.ui-skeleton { height: 240px; border-radius: 14px; }
 .ve-card-open { display: grid; width: 100%; gap: 0; padding: 0; text-align: left; border-radius: 14px; overflow: hidden; }
 .ve-card-cover { display: grid; height: 160px; place-items: center; overflow: hidden; background: var(--ve-sunken); color: var(--ve-faint); }
@@ -122,8 +122,7 @@
 .ve-crumb-sep { flex: none; color: var(--ve-faint); font-size: 18px; font-weight: 300; }
 .ve-name-wrap { display: inline-flex; min-width: 0; align-items: center; gap: 4px; color: var(--ve-faint); cursor: text; }
 .ve-root .ve-name { min-width: 0; max-width: 44vw; height: 38px; padding: 0 6px; border: 1px solid transparent; border-radius: 10px; background: transparent; color: var(--ve-text); font-size: 21px; font-weight: 800; letter-spacing: -0.03em; text-overflow: ellipsis; transition: border-color 0.16s ease, background 0.16s ease; }
-.ve-root .ve-name:hover { border-color: var(--ve-line); }
-.ve-root .ve-name:focus { border-color: var(--ve-line-strong); background: var(--ve-raised); outline: none; }
+.ve-root .ve-name:focus { background: var(--ve-raised); outline: none; }
 .ve-name-wrap svg { flex: none; transition: color 0.16s ease; }
 .ve-name-wrap:hover svg { color: var(--ve-text); }
 .ve-top-end { display: flex; flex: none; align-items: center; gap: 10px; }
@@ -255,7 +254,7 @@
 .ve-actions .ui-btn { flex: 1 1 auto; }
 /* Fields use .ui-input/.ui-textarea/.ui-select. The link row is an input group with the same skin. */
 .ve-inline { width: 100%; min-height: var(--ui-field-height); border: 1px solid var(--ui-line-strong); border-radius: var(--ui-radius-control); background: var(--ui-input); box-shadow: var(--ui-shadow-soft); transition: border-color var(--ui-duration) ease, box-shadow var(--ui-duration) ease; }
-.ve-inline:focus-within { border-color: var(--ui-focus); box-shadow: 0 0 0 3px var(--ui-ring); }
+.ve-inline:focus-within { outline: none; }
 .ve-inline input::placeholder,
 .ve-composer textarea::placeholder { color: var(--ve-faint); }
 .ve-field { display: grid; gap: 6px; color: var(--ve-muted); font-size: 12px; }
@@ -297,7 +296,7 @@
 .ve-cue-time:hover { color: var(--ve-accent-text); }
 .ve-cues input { min-width: 0; height: 30px; padding: 0 8px; border: 1px solid transparent; border-radius: 7px; background: transparent; }
 .ve-cues input:hover { border-color: var(--ve-line); }
-.ve-cues input:focus { border-color: var(--ve-line-strong); background: var(--ve-sunken); outline: none; }
+.ve-cues input:focus { background: var(--ve-sunken); outline: none; }
 
 .ve-text-presets { display: grid; gap: 8px; }
 .ve-text-preset { display: flex; min-height: 64px; align-items: center; justify-content: space-between; gap: 10px; padding: 0 14px; border-radius: 12px; background: linear-gradient(160deg, #2a2f38, #121417); box-shadow: 0 0 0 1px var(--ve-line) inset; text-align: left; transition: box-shadow 0.16s ease, transform 0.16s ease; }
@@ -354,7 +353,7 @@
 .ve-num-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); gap: 8px; }
 .ve-num { display: grid; gap: 5px; color: var(--ve-muted); font-size: 11px; font-weight: 600; }
 .ve-num-box { display: flex; align-items: center; height: 32px; padding: 0 8px; border: 1px solid var(--ve-line); border-radius: 8px; background: var(--ve-sunken); transition: border-color 0.16s ease; }
-.ve-num-box:focus-within { border-color: var(--ve-line-strong); }
+.ve-num-box:focus-within { outline: none; }
 .ve-num-box input { min-width: 0; flex: 1; border: 0; background: transparent; color: var(--ve-text); font-family: var(--ve-mono); font-size: 12px; font-variant-numeric: tabular-nums; outline: none; }
 .ve-num-box small { color: var(--ve-faint); font-family: var(--ve-mono); font-size: 11px; }
 .ve-slider { display: grid; gap: 6px; color: var(--ve-muted); font-size: 12px; }
@@ -391,7 +390,7 @@
 .ve-msg-steps.is-failed { color: var(--ve-danger); }
 .ve-msg-working { display: inline-flex; align-items: center; gap: 7px; color: var(--ve-accent-text); font-size: 12px; }
 .ve-composer { position: relative; margin: 0 12px 12px; border: 1px solid var(--ve-line-strong); border-radius: 16px; background: var(--ve-raised); transition: border-color 0.16s ease; }
-.ve-composer:focus-within { border-color: var(--ve-faint); }
+.ve-composer:focus-within { outline: none; }
 .ve-composer textarea { display: block; width: 100%; max-height: 160px; padding: 11px 46px 11px 13px; border: 0; background: transparent; resize: none; outline: none; line-height: 1.5; }
 .ve-send { position: absolute; right: 8px; bottom: 8px; display: grid; width: 34px; height: 34px; place-items: center; border-radius: 50%; background: var(--ve-ink); color: var(--ve-ink-text); transition: transform 0.16s ease, opacity 0.16s ease; }
 
@@ -499,7 +498,7 @@
 .ve-timecode:hover { background: rgb(255 255 255 / 0.08); color: #f9dc0b; }
 .ve-timecode-input { width: 12.5ch; height: 28px; margin: 0 -6px; padding: 0 6px; border: 1px solid rgb(255 255 255 / 0.2); border-radius: 7px; background: rgb(255 255 255 / 0.06); color: #eceae3; font: inherit; outline: none; }
 .ve-timecode-input:focus,
-.ve-timecode-input:focus-visible { border-color: var(--ui-focus); outline: none; }
+.ve-timecode-input:focus-visible { outline: none; }
 .ve-timecode-input::placeholder { color: rgb(236 234 227 / 0.45); }
 .ve-marker { position: absolute; bottom: 2px; z-index: 3; display: inline-flex; max-width: 160px; height: 14px; align-items: center; gap: 3px; padding: 0 5px 0 3px; border-radius: 0 4px 4px 0 !important; background: var(--ve-marker); color: var(--ve-marker-ink); font-size: 10px; font-weight: 650; line-height: 1; cursor: grab; transition: filter 0.16s ease; }
 .ve-marker:hover { filter: brightness(1.12); }
