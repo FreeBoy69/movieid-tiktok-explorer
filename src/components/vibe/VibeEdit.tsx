@@ -7,7 +7,7 @@ import { Check, ChevronDown, Clapperboard, CloudOff, Download, Film, Loader2, Pl
 import { toast } from "../../utils/toast";
 import { writeDeepLink } from "../../utils/tiktokRoute";
 import { loadVoiceProfiles } from "../../utils/voiceProfiles";
-import { deleteItems, duplicateItems, editPoints, isLocked, emptyProject, formatTime, frameSize, moveItems, normalizeProject, projectDuration, rippleDeleteItems, splitAt, toggleMarker, trimToTime, VIBE_ASPECTS, type VibeAspect } from "../../utils/vibeEdit";
+import { compactTracks, deleteItems, duplicateItems, editPoints, isLocked, emptyProject, formatTime, frameSize, moveItems, normalizeProject, projectDuration, rippleDeleteItems, splitAt, toggleMarker, trimToTime, VIBE_ASPECTS, type VibeAspect } from "../../utils/vibeEdit";
 import { deleteProject, getRender, listProjects, loadProject, saveProject, startRender, stopRender, type ProjectSummary, type RenderJob } from "./api";
 import { ChatPanel } from "./ChatPanel";
 import { setVoices } from "./commands";
@@ -509,8 +509,8 @@ function Editor({ onBack, onOpenEdit, onNew }: { onBack: () => void; onOpenEdit:
         e.preventDefault();
         // The magnetic main track closes gaps; Shift does the opposite of the current mode.
         const close = s.magnetic !== e.shiftKey;
-        if (close) vibe.commit((p) => rippleDeleteItems(p, s.selection));
-        else vibe.commit((p) => deleteItems(p, s.selection.filter((id) => !isLocked(p, id))));
+        if (close) vibe.commit((p) => compactTracks(rippleDeleteItems(p, s.selection)));
+        else vibe.commit((p) => compactTracks(deleteItems(p, s.selection.filter((id) => !isLocked(p, id)))));
       } else if (e.altKey && (e.key === "ArrowLeft" || e.key === "ArrowRight") && s.selection.length) {
         e.preventDefault();
         const delta = (e.key === "ArrowLeft" ? -1 : 1) * (e.shiftKey ? 1 : 1 / 30);

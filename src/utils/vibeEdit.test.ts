@@ -37,6 +37,7 @@ import {
   updateMarker,
   rippleTrim,
   setLabel,
+  compactTracks,
 } from "./vibeEdit";
 import { sanitizeActions, summarizeProject } from "./vibeEditActions.js";
 import { soundFilters } from "./vibeSound.js";
@@ -276,6 +277,17 @@ describe("timeline editing", () => {
     expect(headCut.clips[1].start).toBe(8);
     // Never past the source: v1 is 10 s long.
     expect(rippleTrim(p, a.id, "end", 5).clips[0].out).toBe(10);
+  });
+
+  it("closes up empty tracks and carries their switches along", () => {
+    let p = twoClips();
+    p = moveItem(p, p.clips[1].id, 10, 3);
+    p = setTrackState(p, "v3", { hidden: true });
+    const tight = compactTracks(p);
+    expect(tight.clips.map((c) => c.track)).toEqual([0, 1]);
+    expect(trackState(tight, "v1").hidden).toBe(true);
+    expect(trackState(tight, "v3").hidden).toBeUndefined();
+    expect(compactTracks(tight)).toBe(tight);
   });
 
   it("labels and unlabels items", () => {

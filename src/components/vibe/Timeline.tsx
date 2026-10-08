@@ -42,6 +42,7 @@ import {
   assetById,
   baseGaps,
   CLIP_LABELS,
+  compactTracks,
   clipEnd,
   closeGap,
   deleteItems,
@@ -142,6 +143,7 @@ interface Drag {
   mode: "move" | "trim-start" | "trim-end";
   kind: TrackKind;
   x0: number;
+  y0: number;
   base: VibeProject;
   start: number;
   end: number;
@@ -288,10 +290,111 @@ function TrackHead({ label, icon, kind, row, project, narrow }: { label: string;
   );
 }
 
+// ---------- Pieces that follow the playhead or the scroll on their own ----------
+// The playhead moves every frame during playback and skimming, and the view
+// scrolls every frame; only these small pieces re-render for that, never the
+// clips and filmstrips.
+
+function RulerHead({ head, pps, active }: { head: number; pps: number; active: boolean }) {
+  const playhead = useVibe((s) => s.playhead);
+  return <span className={`ve-ph-head${active ? " is-active" : ""}`} style={{ left: head + playhead * pps }} />;
+}
+
+function PlayheadLine({ head, pps, active }: { head: number; pps: number; active: boolean }) {
+  const playhead = useVibe((s) => s.playhead);
+  return <div className={`ve-playhead${active ? " is-scrubbing" : ""}`} style={{ left: head + playhead * pps }} aria-hidden="true" />;
+}
+
+function underPlayhead(p: VibeProject, t: number, ids?: string[]) {
+  const wanted = ids && new Set(ids);
+  const spans = [...p.clips, ...p.audio].map((c) => [c.id, c.start, clipEnd(c)] as const).concat(p.texts.map((x) => [x.id, x.start, x.end] as const));
+  return spans.some(([id, a, b]) => (!wanted || wanted.has(id)) && t > a + 0.1 && t < b - 0.1);
+}
+
+function SplitButton() {
+  const can = useVibe((s) => underPlayhead(s.project, s.playhead));
+  return (
+    <button type="button" className="ve-tool" onClick={() => vibe.commit((p) => splitAt(p, vibe.get().playhead, vibe.get().selection.length ? vibe.get().selection : undefined))} disabled={!can} aria-label="Split at playhead" title="Split (S)">
+      <Scissors size={16} />
+    </button>
+  );
+}
+
+/** Resolve-style overview of the whole edit: drag to scroll. It reads the
+ * scroll position itself and moves its window by style writes. */
+function Overview({ scroller, head, pps, project, duration }: { scroller: React.RefObject<HTMLDivElement | null>; head: number; pps: number; project: VibeProject; duration: number }) {
+  const playhead = useVibe((s) => s.playhead);
+  const windowRef = useRef<HTMLSpanElement>(null);
+  const [viewW, setViewW] = useState(0);
+  const total = Math.max(duration + 8, 20) * pps;
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el) return;
+    const place = () => {
+      const w = windowRef.current;
+      if (w) {
+        w.style.left = `${(el.scrollLeft / total) * 100}%`;
+        w.style.width = `${Math.min(100, ((el.clientWidth - head) / total) * 100)}%`;
+      }
+    };
+    const resize = () => {
+      setViewW(el.clientWidth - head);
+      place();
+    };
+    resize();
+    el.addEventListener("scroll", place, { passive: true });
+    const ro = new ResizeObserver(resize);
+    ro.observe(el);
+    return () => {
+      el.removeEventListener("scroll", place);
+      ro.disconnect();
+    };
+  }, [scroller, head, total]);
+  if (!(duration > 0 && duration * pps > viewW + 4)) return null;
+  const at = (t: number) => `${((t * pps) / total) * 100}%`;
+  const span = (a: number, b: number) => `${(((b - a) * pps) / total) * 100}%`;
+  return (
+    <div
+      className="ve-overview"
+      onPointerDown={(e) => {
+        const el = scroller.current;
+        if (!el || e.button !== 0) return;
+        e.preventDefault();
+        const strip = e.currentTarget.querySelector(".ve-overview-track")!.getBoundingClientRect();
+        const jump = (clientX: number) => {
+          const f = Math.min(1, Math.max(0, (clientX - strip.left) / strip.width));
+          el.scrollLeft = f * total - (el.clientWidth - head) / 2;
+        };
+        jump(e.clientX);
+        const move = (ev: PointerEvent) => jump(ev.clientX);
+        const up = () => {
+          window.removeEventListener("pointermove", move);
+          window.removeEventListener("pointerup", up);
+        };
+        window.addEventListener("pointermove", move);
+        window.addEventListener("pointerup", up);
+      }}
+      aria-hidden="true"
+    >
+      <div className="ve-overview-track">
+        {project.clips.map((c) => (
+          <span key={c.id} className="ve-ov-clip ve-ov-video" style={{ left: at(c.start), width: span(c.start, clipEnd(c)), ...(labelColor(c.label) ? { background: labelColor(c.label) } : {}) }} />
+        ))}
+        {project.audio.map((c) => (
+          <span key={c.id} className="ve-ov-clip ve-ov-audio" style={{ left: at(c.start), width: span(c.start, clipEnd(c)), ...(labelColor(c.label) ? { background: labelColor(c.label) } : {}) }} />
+        ))}
+        {(project.markers || []).map((m) => (
+          <span key={m.id} className="ve-ov-marker" style={{ left: at(m.time) }} />
+        ))}
+        <span className="ve-ov-playhead" style={{ left: at(playhead) }} />
+        <span className="ve-ov-window" ref={windowRef} />
+      </div>
+    </div>
+  );
+}
+
 export function Timeline({ snapping, onToggleSnap, onCollapse }: { snapping: boolean; onToggleSnap: () => void; onCollapse?: () => void }) {
   const project = useVibe((s) => s.project);
-  const playhead = useVibe((s) => s.playhead);
-  const playing = useVibe((s) => s.playing);
   const selection = useVibe((s) => s.selection);
   const pps = useVibe((s) => s.pxPerSec);
   const canUndo = useVibe((s) => s.past.length > 0);
@@ -313,7 +416,6 @@ export function Timeline({ snapping, onToggleSnap, onCollapse }: { snapping: boo
   const skimming = skimPref === "on";
   const skimFrom = useRef<number | null>(null);
   const magnetic = useVibe((s) => s.magnetic);
-  const [view, setView] = useState({ left: 0, width: 1 });
   const HEAD = useHeadWidth();
   const narrow = HEAD === HEAD_NARROW;
   const [height, setHeight] = useState(() => {
@@ -333,20 +435,45 @@ export function Timeline({ snapping, onToggleSnap, onCollapse }: { snapping: boo
   const markers = project.markers || [];
   const gaps = baseGaps(project);
 
-  // Keep the playhead in view while playing.
+  // Keep the playhead in view while playing, without re-rendering the tracks.
+  useEffect(
+    () =>
+      vibe.subscribe(() => {
+        const el = scroller.current;
+        const { playing, playhead } = vibe.get();
+        if (!el || !playing) return;
+        const x = playhead * pps;
+        if (x > el.scrollLeft + el.clientWidth - HEAD - 40 || x < el.scrollLeft) el.scrollLeft = Math.max(0, x - 40);
+      }),
+    [pps, HEAD],
+  );
+
+  // The scroll position, as a CSS variable written straight to the canvas:
+  // overlays clip to the track area and clip names stay in view, all without
+  // a React render per scroll frame.
   useEffect(() => {
     const el = scroller.current;
-    if (!el || !playing) return;
-    const x = playhead * pps;
-    if (x > el.scrollLeft + el.clientWidth - HEAD - 40 || x < el.scrollLeft) el.scrollLeft = Math.max(0, x - 40);
-  }, [playhead, playing, pps, HEAD]);
+    const cv = canvas.current;
+    if (!el || !cv) return;
+    const write = () => cv.style.setProperty("--ve-sx", `${el.scrollLeft}px`);
+    write();
+    el.addEventListener("scroll", write, { passive: true });
+    return () => el.removeEventListener("scroll", write);
+  }, []);
 
   // ⌘/Ctrl + scroll zooms around the pointer.
   useEffect(() => {
     const el = scroller.current;
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
-      if (!e.ctrlKey && !e.metaKey) return;
+      if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+        // A mouse wheel moves along the edit when there are no more tracks to scroll to.
+        if (el.scrollHeight <= el.clientHeight + 1 && Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+          e.preventDefault();
+          el.scrollLeft += e.deltaY;
+        }
+        return;
+      }
       e.preventDefault();
       const box = el.getBoundingClientRect();
       const x = e.clientX - box.left - HEAD;
@@ -369,11 +496,28 @@ export function Timeline({ snapping, onToggleSnap, onCollapse }: { snapping: boo
     el.scrollLeft = 0;
   }, [HEAD]);
 
+  // Fill the view with the selection (Premiere's zoom to selection).
+  const zoomToSelection = useCallback(() => {
+    const el = scroller.current;
+    const { project: p, selection: sel } = vibe.get();
+    const wanted = new Set(sel);
+    const spans = [...p.clips, ...p.audio].filter((c) => wanted.has(c.id)).map((c) => [c.start, clipEnd(c)]).concat([...p.texts, ...p.captions.cues].filter((t) => wanted.has(t.id)).map((t) => [t.start, t.end]));
+    if (!el || !spans.length) return;
+    const a = Math.min(...spans.map((x) => x[0]));
+    const b = Math.max(...spans.map((x) => x[1]));
+    const next = Math.min(400, Math.max(6, (el.clientWidth - HEAD - 96) / Math.max(0.2, b - a)));
+    vibe.set({ pxPerSec: next });
+    requestAnimationFrame(() => {
+      el.scrollLeft = Math.max(0, a * next - 48);
+    });
+  }, [HEAD]);
+
   // Z fits the edit, End goes to the end, ? opens the shortcut sheet.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement).closest("input, textarea, select, [contenteditable=true]")) return;
-      if (e.key.toLowerCase() === "z" && !e.metaKey && !e.ctrlKey && !e.altKey) fit();
+      if (e.key === "z" && !e.metaKey && !e.ctrlKey && !e.altKey) fit();
+      if (e.key === "Z" && e.shiftKey && !e.metaKey && !e.ctrlKey) zoomToSelection();
       if (e.key === "End") vibe.seek(projectDuration(vibe.get().project));
       if (e.key === "?") setShortcuts((v) => !v);
       if (e.key.toLowerCase() === "n" && !e.metaKey && !e.ctrlKey && !e.altKey) onToggleSnap();
@@ -381,27 +525,7 @@ export function Timeline({ snapping, onToggleSnap, onCollapse }: { snapping: boo
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [fit, onToggleSnap, skimming, setSkimPref]);
-
-  // What part of the edit is in view, for the overview strip.
-  useEffect(() => {
-    const el = scroller.current;
-    if (!el) return;
-    let frame = 0;
-    const read = () => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => setView({ left: el.scrollLeft, width: el.clientWidth - HEAD }));
-    };
-    read();
-    el.addEventListener("scroll", read, { passive: true });
-    const ro = new ResizeObserver(read);
-    ro.observe(el);
-    return () => {
-      cancelAnimationFrame(frame);
-      el.removeEventListener("scroll", read);
-      ro.disconnect();
-    };
-  }, [HEAD]);
+  }, [fit, zoomToSelection, onToggleSnap, skimming, setSkimPref]);
 
   // Skimming: while the pointer is over the tracks the playhead follows it, and
   // it goes back where it was when the pointer leaves (unless you clicked).
@@ -545,13 +669,13 @@ export function Timeline({ snapping, onToggleSnap, onCollapse }: { snapping: boo
     if (nextSelection !== selection) vibe.select(nextSelection);
     if (isLocked(vibe.get().project, id) || !nextSelection.includes(id)) return;
     const group = mode === "move" && nextSelection.length > 1 ? nextSelection : [];
-    drag.current = { id, mode, kind, x0: e.clientX, base: vibe.get().project, start, end, inPoint, moved: false, group, scroll0: scroller.current?.scrollLeft || 0 };
+    drag.current = { id, mode, kind, x0: e.clientX, y0: e.clientY, base: vibe.get().project, start, end, inPoint, moved: false, group, scroll0: scroller.current?.scrollLeft || 0 };
     const baseClip = kind === "video" ? vibe.get().project.clips.find((c) => c.id === id) : undefined;
     const ripples = vibe.get().magnetic && baseClip?.track === 0;
     const move = (ev: PointerEvent) => {
       const d = drag.current;
       if (!d) return;
-      if (!d.moved && Math.abs(ev.clientX - d.x0) < 3) return;
+      if (!d.moved && Math.hypot(ev.clientX - d.x0, ev.clientY - d.y0) < 3) return;
       d.moved = true;
       edgeScroll(ev.clientX);
       const dt = (ev.clientX - d.x0 + ((scroller.current?.scrollLeft || 0) - d.scroll0)) / pps;
@@ -585,10 +709,21 @@ export function Timeline({ snapping, onToggleSnap, onCollapse }: { snapping: boo
           next = moveItems(d.base, d.group, s - d.start);
           text = `${d.group.length} items · ${signed(s - d.start)}`;
         } else {
-          const row = d.kind === "video" || d.kind === "audio" ? rowAt(ev.clientX, ev.clientY, d.kind) : undefined;
+          let row = d.kind === "video" || d.kind === "audio" ? rowAt(ev.clientX, ev.clientY, d.kind) : undefined;
+          // Past the top video track or the last audio lane makes a new one (CapCut).
+          let fresh = false;
+          if (row === undefined && (d.kind === "video" || d.kind === "audio")) {
+            const p = d.base;
+            const top = d.kind === "video" ? Math.max(1, ...p.clips.map((c) => c.track + 1)) : Math.max(1, ...p.audio.map((c) => c.lane + 1));
+            const edge = canvas.current?.querySelector<HTMLElement>(`[data-row-kind="${d.kind}"][data-row-index="${top - 1}"]`)?.getBoundingClientRect();
+            if (edge && (d.kind === "video" ? ev.clientY < edge.top : ev.clientY > edge.bottom)) {
+              row = top;
+              fresh = true;
+            }
+          }
           const targetKey = row !== undefined ? trackKey(d.kind, row) : null;
           next = moveItem(d.base, d.id, s, targetKey && trackState(d.base, targetKey).locked ? undefined : row);
-          text = `${formatTime(s, true)} · ${signed(s - d.start)}`;
+          text = `${formatTime(s, true)} · ${signed(s - d.start)}${fresh ? " · new track" : ""}`;
         }
       } else if (ripples && d.mode === "trim-start") {
         next = rippleTrim(d.base, d.id, "start", dt);
@@ -618,6 +753,9 @@ export function Timeline({ snapping, onToggleSnap, onCollapse }: { snapping: boo
       vibe.commit(next, `drag:${d.id}:${d.x0}`);
     };
     const up = () => {
+      const d = drag.current;
+      // A move can empty a track; close the stack up in the same undo step.
+      if (d?.moved && d.mode === "move") vibe.commit((p) => compactTracks(p), `drag:${d.id}:${d.x0}`);
       drag.current = null;
       setGuide(null);
       setReadout(null);
@@ -734,7 +872,7 @@ export function Timeline({ snapping, onToggleSnap, onCollapse }: { snapping: boo
   // ---------- Commands shared by the toolbar, menus, and keys ----------
   const ripple = () => vibe.commit((p) => rippleDeleteItems(p, vibe.get().selection));
   const remove = (ids = vibe.get().selection) =>
-    vibe.commit((p) => (vibe.get().magnetic ? rippleDeleteItems(p, ids) : deleteItems(p, ids.filter((x) => !isLocked(p, x)))));
+    vibe.commit((p) => compactTracks(vibe.get().magnetic ? rippleDeleteItems(p, ids) : deleteItems(p, ids.filter((x) => !isLocked(p, x)))));
   const duplicate = () => {
     const { project: next, ids } = duplicateItems(vibe.get().project, vibe.get().selection);
     if (!ids.length) return;
@@ -750,8 +888,7 @@ export function Timeline({ snapping, onToggleSnap, onCollapse }: { snapping: boo
     if (!selected.has(id)) vibe.select([id]);
     const key = itemTrack(project, id);
     const locked = Boolean(key && trackState(project, key).locked);
-    const spans = [...project.clips, ...project.audio].filter((c) => sel.includes(c.id)).map((c) => [c.start, clipEnd(c)]);
-    const under = spans.concat(project.texts.filter((t) => sel.includes(t.id)).map((t) => [t.start, t.end])).some(([a, b]) => playhead > a + 0.1 && playhead < b - 0.1);
+    const under = underPlayhead(project, vibe.get().playhead, sel);
     setMenu({
       x: e.clientX,
       y: e.clientY,
@@ -833,15 +970,17 @@ export function Timeline({ snapping, onToggleSnap, onCollapse }: { snapping: boo
         key={o.id}
         data-item-id={o.id}
         className={`ve-item ve-item-${o.tone}${selected.has(o.id) ? " is-selected" : ""}${o.locked ? " is-locked" : ""}${o.dim ? " is-dim" : ""}${w < 44 ? " is-tiny" : ""}${tint ? " has-label" : ""}`}
-        style={{ left: o.start * pps, width: w > 10 ? w - 2 : w, ...(tint ? { ["--ve-label" as string]: tint } : {}) }}
+        style={{ left: o.start * pps, width: w > 10 ? w - 2 : w, ["--ve-x" as string]: `${o.start * pps}px`, ["--ve-room" as string]: `${Math.max(8, w - 96)}px`, ...(tint ? { ["--ve-label" as string]: tint } : {}) }}
         onPointerDown={(e) => onItemDown(e, o.id, o.kind, "move", o.start, o.end, o.inPoint)}
         onContextMenu={(e) => itemMenu(e, o.id)}
         title={o.title || `${o.label} · ${formatTime(o.start, true)}–${formatTime(o.end, true)}`}
       >
         {o.body}
         <span className="ve-item-label">
-          {o.icon}
-          <span className="ve-item-name">{o.label}</span>
+          <span className="ve-item-title">
+            {o.icon}
+            <span className="ve-item-name">{o.label}</span>
+          </span>
           {w > 120 ? <span className="ve-item-dur">{len < 10 ? len.toFixed(1) : Math.round(len)}s</span> : null}
         </span>
         {o.locked ? null : (
@@ -854,7 +993,6 @@ export function Timeline({ snapping, onToggleSnap, onCollapse }: { snapping: boo
     );
   };
 
-  const canSplit = [...project.clips, ...project.audio].some((c) => playhead > c.start + 0.1 && playhead < clipEnd(c) - 0.1) || project.texts.some((t) => playhead > t.start + 0.1 && playhead < t.end - 0.1);
   const st = (key: string) => trackState(project, key);
   const anyUnlocked = selection.some((id) => !isLocked(project, id));
   // 100% is the zoom that fits the whole edit in view.
@@ -862,9 +1000,6 @@ export function Timeline({ snapping, onToggleSnap, onCollapse }: { snapping: boo
   const zoomPct = Math.max(1, Math.round((pps / Math.max(1, fitPps)) * 100));
   const videoH = (DENSITIES.find((d) => d.id === density) || DENSITIES[1]).video;
   const style: CSSProperties = { ...(height ? { height } : {}), ["--ve-head" as string]: `${HEAD}px` };
-  const total = width;
-  // Only worth showing once the edit no longer fits in view.
-  const showOverview = duration > 0 && duration * pps > view.width + 4;
 
   // What the middle of the toolbar reports: the selection, or the edit.
   const selSpans = [
@@ -901,9 +1036,7 @@ export function Timeline({ snapping, onToggleSnap, onCollapse }: { snapping: boo
             <Redo2 size={16} />
           </button>
           <span className="ve-tl-sep" />
-          <button type="button" className="ve-tool" onClick={() => vibe.commit((p) => splitAt(p, playhead, selection.length ? selection : undefined))} disabled={!canSplit} aria-label="Split at playhead" title="Split (S)">
-            <Scissors size={16} />
-          </button>
+          <SplitButton />
           <button type="button" className="ve-tool" onClick={duplicate} disabled={!selection.length} aria-label="Duplicate" title="Duplicate (⌘D)">
             <Copy size={16} />
           </button>
@@ -917,7 +1050,7 @@ export function Timeline({ snapping, onToggleSnap, onCollapse }: { snapping: boo
           >
             <Trash2 size={16} />
           </button>
-          <button type="button" className="ve-tool" onClick={() => vibe.commit((p) => toggleMarker(p, playhead))} aria-label="Add or remove a marker at the playhead" title="Marker (M)">
+          <button type="button" className="ve-tool" onClick={() => vibe.commit((p) => toggleMarker(p, vibe.get().playhead))} aria-label="Add or remove a marker at the playhead" title="Marker (M)">
             <BookmarkPlus size={16} />
           </button>
         </div>
@@ -1025,7 +1158,7 @@ export function Timeline({ snapping, onToggleSnap, onCollapse }: { snapping: boo
               ),
             )}
             <span className="ve-hover-chip" ref={hoverChip} hidden aria-hidden="true" />
-            <span className={`ve-ph-head${scrubbing ? " is-active" : ""}`} style={{ left: HEAD + playhead * pps }} />
+            <RulerHead head={HEAD} pps={pps} active={scrubbing} />
           </div>
 
           <div className="ve-rows" onPointerDown={onLanesDown}>
@@ -1129,8 +1262,9 @@ export function Timeline({ snapping, onToggleSnap, onCollapse }: { snapping: boo
             })}
           </div>
 
+          <div className="ve-overlays" aria-hidden="true">
           {markers.map((m) => (
-            <div key={`line-${m.id}`} className="ve-marker-line" style={{ left: HEAD + m.time * pps }} aria-hidden="true" />
+            <div key={`line-${m.id}`} className="ve-marker-line" style={{ left: HEAD + m.time * pps }} />
           ))}
           <div className="ve-hover-line" ref={hoverLine} hidden aria-hidden="true" />
           {marquee ? (
@@ -1141,48 +1275,11 @@ export function Timeline({ snapping, onToggleSnap, onCollapse }: { snapping: boo
             />
           ) : null}
           {guide !== null ? <div className="ve-snap-guide" style={{ left: HEAD + guide * pps }} aria-hidden="true" /> : null}
-          <div className={`ve-playhead${scrubbing ? " is-scrubbing" : ""}`} style={{ left: HEAD + playhead * pps }} aria-hidden="true" />
-        </div>
-      </div>
-      {showOverview ? (
-        <div
-          className="ve-overview"
-          style={{ ["--ve-head" as string]: `${HEAD}px` }}
-          onPointerDown={(e) => {
-            const el = scroller.current;
-            if (!el || e.button !== 0) return;
-            e.preventDefault();
-            const strip = e.currentTarget.querySelector(".ve-overview-track")!.getBoundingClientRect();
-            const jump = (clientX: number) => {
-              const f = Math.min(1, Math.max(0, (clientX - strip.left) / strip.width));
-              el.scrollLeft = f * total - view.width / 2;
-            };
-            jump(e.clientX);
-            const move = (ev: PointerEvent) => jump(ev.clientX);
-            const up = () => {
-              window.removeEventListener("pointermove", move);
-              window.removeEventListener("pointerup", up);
-            };
-            window.addEventListener("pointermove", move);
-            window.addEventListener("pointerup", up);
-          }}
-          aria-hidden="true"
-        >
-          <div className="ve-overview-track">
-            {project.clips.map((c) => (
-              <span key={c.id} className="ve-ov-clip ve-ov-video" style={{ left: `${((c.start * pps) / total) * 100}%`, width: `${(((clipEnd(c) - c.start) * pps) / total) * 100}%`, ...(labelColor(c.label) ? { background: labelColor(c.label) } : {}) }} />
-            ))}
-            {project.audio.map((c) => (
-              <span key={c.id} className="ve-ov-clip ve-ov-audio" style={{ left: `${((c.start * pps) / total) * 100}%`, width: `${(((clipEnd(c) - c.start) * pps) / total) * 100}%`, ...(labelColor(c.label) ? { background: labelColor(c.label) } : {}) }} />
-            ))}
-            {markers.map((m) => (
-              <span key={m.id} className="ve-ov-marker" style={{ left: `${((m.time * pps) / total) * 100}%` }} />
-            ))}
-            <span className="ve-ov-playhead" style={{ left: `${((playhead * pps) / total) * 100}%` }} />
-            <span className="ve-ov-window" style={{ left: `${(view.left / total) * 100}%`, width: `${Math.min(100, (view.width / total) * 100)}%` }} />
+          <PlayheadLine head={HEAD} pps={pps} active={scrubbing} />
           </div>
         </div>
-      ) : null}
+      </div>
+      <Overview scroller={scroller} head={HEAD} pps={pps} project={project} duration={duration} />
       {readout ? (
         <div className="ve-readout" style={{ left: readout.x, top: readout.y }} aria-hidden="true">
           {readout.text}

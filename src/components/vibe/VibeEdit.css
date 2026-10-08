@@ -534,9 +534,9 @@
 /* "+" after the last clip: drop more footage on the track. */
 .ve-lane-add { position: absolute; top: 50%; z-index: 2; display: grid; width: 30px; height: 30px; place-items: center; border: 1.5px dashed var(--ve-line-strong) !important; border-radius: 9px; color: var(--ve-muted); transform: translateY(-50%); transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease; }
 .ve-lane-add:hover { border-color: var(--ve-faint) !important; background: var(--ve-raised); color: var(--ve-text); }
-.ve-tl-scroll { position: relative; min-height: 0; flex: 1; overflow: auto; overscroll-behavior: contain; background: var(--ve-bed); }
+.ve-tl-scroll { position: relative; min-height: 0; flex: 1; overflow: auto; overscroll-behavior: contain; background: linear-gradient(90deg, var(--ve-panel) 0 var(--ve-head), var(--ve-line) var(--ve-head) calc(var(--ve-head) + 1px), var(--ve-bed) calc(var(--ve-head) + 1px)); }
 .ve-tl-canvas { position: relative; min-height: 100%; }
-.ve-ruler { position: sticky; top: 0; z-index: 6; height: 34px; border-bottom: 1px solid var(--ve-line); background: var(--ve-panel); cursor: ew-resize; user-select: none; }
+.ve-ruler { position: sticky; top: 0; z-index: 10; height: 34px; border-bottom: 1px solid var(--ve-line); background: var(--ve-panel); cursor: ew-resize; user-select: none; }
 .ve-ruler-ticks { position: absolute; right: 0; bottom: 0; height: 6px; pointer-events: none; }
 .ve-ruler-corner { position: sticky; left: 0; z-index: 7; display: flex; width: var(--ve-head); height: 100%; align-items: center; padding: 0 6px; border-right: 1px solid var(--ve-line); background: var(--ve-panel); }
 .ve-tick { position: absolute; top: 0; bottom: 0; padding: 5px 0 0 5px; border-left: 1px solid var(--ve-line-strong); color: var(--ve-muted); font-family: var(--ve-mono); font-size: 10px; font-variant-numeric: tabular-nums; pointer-events: none; }
@@ -547,7 +547,7 @@
 .ve-row-thin { height: 32px; }
 .ve-row-video { height: 64px; }
 .ve-row-audio { height: 52px; }
-.ve-row-head { position: sticky; left: 0; z-index: 5; display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 0 6px 0 12px; border-right: 1px solid var(--ve-line); background: var(--ve-panel); }
+.ve-row-head { position: sticky; left: 0; z-index: 9; display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 0 6px 0 12px; border-right: 1px solid var(--ve-line); background: var(--ve-panel); }
 .ve-row-name { display: flex; min-width: 0; align-items: center; gap: 7px; color: var(--ve-muted); font-size: 11.5px; font-weight: 650; white-space: nowrap; }
 .ve-row-name span { overflow: hidden; text-overflow: ellipsis; }
 .ve-row-head.is-off .ve-row-name { color: var(--ve-faint); text-decoration: line-through; text-decoration-color: var(--ve-faint); }
@@ -595,8 +595,8 @@
 .ve-item:hover:not(.is-selected) .ve-trim::after { background: rgb(255 255 255 / 0.75); }
 .ve-trim-start::after { left: 2px; }
 .ve-trim-end::after { right: 2px; }
-.ve-playhead { position: absolute; top: 0; bottom: 0; z-index: 7; width: 1px; background: var(--ve-accent); pointer-events: none; box-shadow: 0 0 6px color-mix(in srgb, var(--ve-accent) 55%, transparent); }
-.ve-snap-guide { position: absolute; top: 34px; bottom: 0; z-index: 6; width: 0; border-left: 1px dashed #5ec8ff; pointer-events: none; }
+.ve-playhead { position: absolute; top: 0; bottom: 0; z-index: 4; width: 1px; background: var(--ve-accent); pointer-events: none; box-shadow: 0 0 6px color-mix(in srgb, var(--ve-accent) 55%, transparent); }
+.ve-snap-guide { position: absolute; top: 34px; bottom: 0; z-index: 3; width: 0; border-left: 1px dashed #5ec8ff; pointer-events: none; }
 
 /* ---------- Timeline: timecode, markers, hover time ---------- */
 /* The preview's timecode doubles as a go-to-time box. The viewer stays dark in both themes. */
@@ -613,8 +613,8 @@
 .ve-marker span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ve-marker svg { flex: none; }
 .ve-marker-input { position: absolute; bottom: 1px; z-index: 6; width: 150px; height: 20px; padding: 0 6px; border: 1px solid var(--ve-marker); border-radius: 5px; background: var(--ve-sunken); color: var(--ve-text); font-size: 11px; outline: none; }
-.ve-marker-line { position: absolute; top: 34px; bottom: 0; z-index: 4; width: 0; border-left: 1px solid color-mix(in srgb, var(--ve-marker) 45%, transparent); pointer-events: none; }
-.ve-hover-line { position: absolute; top: 0; bottom: 0; z-index: 4; width: 1px; background: color-mix(in srgb, var(--ve-text) 28%, transparent); pointer-events: none; }
+.ve-marker-line { position: absolute; top: 34px; bottom: 0; z-index: 1; width: 0; border-left: 1px solid color-mix(in srgb, var(--ve-marker) 45%, transparent); pointer-events: none; }
+.ve-hover-line { position: absolute; top: 34px; bottom: 0; z-index: 2; width: 1px; background: color-mix(in srgb, var(--ve-text) 28%, transparent); pointer-events: none; }
 .ve-hover-chip { position: absolute; top: 5px; z-index: 4; padding: 1px 6px; border-radius: 5px; background: var(--ve-ink); color: var(--ve-ink-text); font-family: var(--ve-mono); font-size: 10px; font-variant-numeric: tabular-nums; transform: translateX(-50%); pointer-events: none; white-space: nowrap; }
 .ve-hover-line[hidden],
 .ve-hover-chip[hidden] { display: none; }
@@ -625,7 +625,7 @@
 .ve-gap:hover .ve-gap-close,
 .ve-gap-close:focus-visible { opacity: 1; }
 .ve-gap-close:hover { background: var(--ve-panel); }
-.ve-marquee { position: absolute; z-index: 8; border: 1px solid color-mix(in srgb, var(--ve-accent) 75%, transparent); border-radius: 3px; background: color-mix(in srgb, var(--ve-accent) 8%, transparent); pointer-events: none; }
+.ve-marquee { position: absolute; z-index: 5; border: 1px solid color-mix(in srgb, var(--ve-accent) 75%, transparent); border-radius: 3px; background: color-mix(in srgb, var(--ve-accent) 8%, transparent); pointer-events: none; }
 .ve-readout { position: fixed; z-index: 90; padding: 4px 8px; border-radius: 6px; background: var(--ve-ink); color: var(--ve-ink-text); box-shadow: 0 6px 18px -6px rgb(0 0 0 / 0.5); font-family: var(--ve-mono); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; transform: translate(14px, calc(-100% - 10px)); pointer-events: none; }
 
 /* ---------- Timeline: sound envelope (fades and volume) ---------- */
@@ -694,7 +694,7 @@
 .ve-timeline[data-density="large"] .ve-row-thin { height: 36px; }
 .ve-row-main .ve-lane { border-radius: 6px; background: color-mix(in srgb, var(--ve-text) 2.5%, transparent); }
 .ve-row-main.is-magnetic .ve-lane { background: color-mix(in srgb, var(--ve-accent) 3.5%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--ve-accent) 10%, transparent) inset; }
-.ve-row-first-audio { margin-top: 6px; border-top: 1px solid var(--ve-line); }
+.ve-row-first-audio { border-top: 1px solid var(--ve-line-strong); }
 .ve-overview { flex: none; padding: 6px 10px 8px calc(var(--ve-head) + 0px); border-top: 1px solid var(--ve-line); border-radius: 0 0 var(--ve-radius) var(--ve-radius); background: var(--ve-panel); cursor: pointer; user-select: none; touch-action: none; }
 .ve-overview-track { position: relative; height: 14px; border-radius: 4px; background: var(--ve-sunken); }
 .ve-ov-clip { position: absolute; min-width: 1px; height: 4px; border-radius: 2px; }
@@ -705,6 +705,14 @@
 .ve-ov-window { position: absolute; top: -3px; bottom: -3px; border-radius: 5px; background: color-mix(in srgb, var(--ve-text) 7%, transparent); box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--ve-text) 55%, transparent) inset; cursor: grab; transition: box-shadow 0.16s ease; }
 .ve-overview:hover .ve-ov-window { box-shadow: 0 0 0 1.5px var(--ve-text) inset; }
 .ve-timeline:has(.ve-overview) .ve-tl-scroll { border-radius: 0; }
+
+/* Lines that span the tracks (playhead, markers, snap guide, box select) live
+   in one layer clipped to the track area, so they never cross the headers. */
+.ve-overlays { position: absolute; inset: 0; z-index: 7; pointer-events: none; clip-path: inset(0 0 0 calc(var(--ve-sx, 0px) + var(--ve-head))); }
+/* Clip names ride along while a long clip is scrolled past (CapCut, Premiere). */
+.ve-item-title { display: inline-flex; min-width: 0; align-items: center; gap: 5px; overflow: hidden; }
+.ve-item-label { padding-left: clamp(8px, calc(var(--ve-sx, 0px) - var(--ve-x, 0px) + 8px), var(--ve-room, 8px)); }
+.ve-item.is-tiny .ve-item-label { padding-left: 3px; }
 
 /* ---------- Timeline: clip polish and color labels ---------- */
 .ve-item { border-radius: 6px; }

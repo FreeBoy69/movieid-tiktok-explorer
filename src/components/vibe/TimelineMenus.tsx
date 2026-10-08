@@ -149,12 +149,15 @@ const SHORTCUTS: { group: string; keys: [string, string][] }[] = [
     keys: [
       ["⌘ A", "Select everything"],
       ["Drag", "Select clips inside a box"],
+      ["Drag up", "Past the top track: a new video track"],
       ["Shift click", "Add to the selection"],
       ["M", "Add or remove a marker"],
       ["Shift S", "Skimming: the preview follows the pointer"],
       ["N", "Snapping on or off"],
       ["Z", "Fit the edit"],
-      ["⌘ scroll", "Zoom around the pointer"],
+      ["Shift Z", "Zoom to the selection"],
+      ["⌘ scroll", "Zoom around the pointer (⌥ works too)"],
+      ["Scroll", "Move along the edit"],
     ],
   },
 ];

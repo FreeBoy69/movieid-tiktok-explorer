@@ -790,6 +790,32 @@ export function rippleTrim(base: VibeProject, id: string, side: "start" | "end",
   return shiftAfter(next, clipEnd(clip), change);
 }
 
+/** Drop empty video tracks (above the base) and empty audio lanes, closing
+ * the stack up the way CapCut does. Track switches move with their tracks. */
+export function compactTracks(p: VibeProject): VibeProject {
+  const used = (rows: number[]) => [...new Set(rows)].sort((a, b) => a - b);
+  const video = used([0, ...p.clips.map((c) => c.track)]);
+  const audio = used(p.audio.map((c) => c.lane));
+  const vMap = new Map(video.map((t, i) => [t, i]));
+  const aMap = new Map(audio.map((l, i) => [l, i]));
+  const moved = video.some((t, i) => t !== i) || audio.some((l, i) => l !== i);
+  if (!moved) return p;
+  const tracks: Record<string, VibeTrackState> = {};
+  for (const [key, st] of Object.entries(p.tracks || {})) {
+    const m = key.match(/^([va])(\d+)$/);
+    if (!m) tracks[key] = st;
+    else {
+      const next = (m[1] === "v" ? vMap : aMap).get(Number(m[2]));
+      if (next !== undefined) tracks[`${m[1]}${next}`] = st;
+    }
+  }
+  return touch(p, {
+    clips: p.clips.map((c) => (vMap.get(c.track) === c.track ? c : { ...c, track: vMap.get(c.track)! })),
+    audio: p.audio.map((c) => (aMap.get(c.lane) === c.lane ? c : { ...c, lane: aMap.get(c.lane)! })),
+    tracks,
+  });
+}
+
 /** Every cut, item edge, and marker, sorted: where ↑/↓ jump the playhead. */
 export function editPoints(p: VibeProject): number[] {
   const out = new Set<number>([0]);
