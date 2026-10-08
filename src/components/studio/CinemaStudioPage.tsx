@@ -1,6 +1,7 @@
 // Cinema Studio, rebuilt after Higgsfield's: a gallery with one floating
 // prompt bar. Image mode shoots stills through a virtual camera rig; Video mode
 // films shots with the same rig plus a move set and speed ramp.
+import { StudioLayout } from "../StudioLayout";
 import { useEffect, useMemo, useState } from "react";
 import { Camera, Clapperboard, Clock, Crop, Eye, Film, ImageIcon, Loader2, Minus, Move, Palette, Plus, Sparkles, Sun, Volume2, Zap } from "lucide-react";
 import { CINEMA_GENRES, CINEMA_LIGHTING, CINEMA_MOVESETS, CINEMA_PALETTES, CINEMA_SPEED_RAMPS } from "../../utils/cinemaPresets";
@@ -137,24 +138,11 @@ export function CinemaStudioPage({ catalog, generations, now, handlers, onCreate
 
   return (
     <div className="cns">
-      <div className="cns-canvas">
-        {shots.length ? (
-          <>
-            <div className="cs-app-head">
-              <h1>Cinema Studio</h1>
-            </div>
-            <StudioGallery items={shots} now={now} handlers={handlers} />
-          </>
-        ) : (
-          <div className="cns-hero">
-            <h1>Direct anything you imagine</h1>
-            <p>Choose a camera, lens, focal length, and aperture, set the look, then describe the scene. Shoot stills, or film moving shots.</p>
-          </div>
-        )}
-      </div>
-
-      {catalog && !catalog.configured ? <GenerationUnavailable className="cns-notice" /> : null}
-      <div className="cns-dock">
+      <StudioLayout
+        title="Cinema Studio"
+        intro="Choose a camera, lens, focal length, and aperture, set the look, then describe the scene. Shoot stills, or film moving shots."
+        notices={catalog && !catalog.configured ? <GenerationUnavailable className="cns-notice" /> : null}
+        above={
         <Segment
           className="cns-modes"
           label="Mode"
@@ -165,7 +153,9 @@ export function CinemaStudioPage({ catalog, generations, now, handlers, onCreate
             { value: "video", label: "Video", icon: <Clapperboard className="h-4 w-4" /> },
           ]}
         />
-
+        }
+        composer={
+      <div className="cns-dock">
         <div className="cns-bar">
           <div className="cns-looks">
             <LookPicker label="Genre" icon={<Film className="h-3.5 w-3.5" />} value={draft.genre} options={CINEMA_GENRES} kind="genre" onChange={(genre) => patch({ genre })} />
@@ -233,6 +223,14 @@ export function CinemaStudioPage({ catalog, generations, now, handlers, onCreate
           <small title={cost ? CREDIT_ESTIMATE_TITLE : undefined}>{cost || (video ? "Video" : `${count} ${count === 1 ? "still" : "stills"}`)}</small>
         </button>
       </div>
+        }
+        tabsLabel="Cinema sections"
+        tabs={[{ value: "shots", label: "Your shots", hint: shots.length ? String(shots.length) : undefined }]}
+        tab="shots"
+        onTab={() => undefined}
+      >
+        {shots.length ? <StudioGallery items={shots} now={now} handlers={handlers} /> : <p className="sl-empty-note">Your shots appear here. Pick a look, describe the scene, and press Generate.</p>}
+      </StudioLayout>
     </div>
   );
 }

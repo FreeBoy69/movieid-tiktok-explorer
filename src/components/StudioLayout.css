@@ -377,3 +377,25 @@
 .sl-controls > .cs-chips { min-width: 0; }
 .sl-above .cs-app-tabs { margin: 0; padding: 0; }
 .sl-back { margin-bottom: 14px; }
+
+/* ---------- custom studios (Marketing, Promo, Cinema) ----------
+   Their docks become the chat box: in the page flow, full width, and the
+   mode switch sits above the box as a row. */
+.sl .mks-dock,
+.sl :is(.cns, .cns-kit) .cns-dock,
+.cns .sl .cns-dock { position: static; left: auto; bottom: auto; width: 100%; margin: 0; transform: none; }
+.sl .mks-bar,
+.cns .sl .cns-bar { border: 1px solid var(--ui-line-strong); border-radius: 20px; background: var(--ui-input); box-shadow: var(--ui-shadow-soft); -webkit-backdrop-filter: none; backdrop-filter: none; }
+.sl .mks-bar:focus-within,
+.cns .sl .cns-bar:focus-within { border-color: var(--ui-text-faint); box-shadow: var(--ui-shadow-soft), 0 0 0 4px var(--ui-ring); }
+.sl-above .ui-seg.mks-modes,
+.cns .sl-above .ui-seg.cns-modes { display: inline-flex; flex-direction: row; gap: 2px; padding: 3px; border: 1px solid var(--ui-line); border-radius: 999px; background: var(--ui-sunken); box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+.sl-above .ui-seg.mks-modes > button,
+.cns .sl-above .ui-seg.cns-modes > button { flex-direction: row; width: auto; min-height: 32px; gap: 6px; padding: 0 14px; border-radius: 999px; font-size: 13px; }
+.sl .ui-notice.cns-notice { position: static; width: auto; transform: none; }
+.sl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 18px; }
+.sl-empty-note { margin: 24px 0; color: var(--ui-text-muted); text-align: center; }
+/* Cinema: the whole dock (scene bar, camera rig, Generate) is the box. */
+.cns .sl .cns-dock { padding: 10px; border: 1px solid var(--ui-line-strong); border-radius: 20px; background: var(--ui-input); box-shadow: var(--ui-shadow-soft); }
+.cns .sl .cns-dock:focus-within { border-color: var(--ui-text-faint); box-shadow: var(--ui-shadow-soft), 0 0 0 4px var(--ui-ring); }
+.cns .sl .cns-bar, .cns .sl .cns-bar:focus-within { border: 0; border-radius: 12px; background: transparent; box-shadow: none; }

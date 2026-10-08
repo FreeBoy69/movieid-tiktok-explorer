@@ -1,6 +1,7 @@
 // Promo Studio: a link, images, or a brief in; a motion-graphics film out.
 // Opus 5.5 writes the film as code, checks its frames, and it is rendered
 // with a music bed (server/promoStudio.js). Shares Marketing Studio's styles.
+import { StudioLayout } from "../StudioLayout";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, ExternalLink, Film, Link2, Loader2, Music, Palette, Play, RectangleHorizontal, Shapes, SlidersHorizontal, Sparkles, X, Zap } from "lucide-react";
 import { PROMO_ASPECTS, PROMO_DURATIONS, PROMO_SUBJECTS, PROMO_TEMPLATES, findPromoSubject, findPromoTemplate, promoPreview } from "../../utils/promoPresets";
@@ -42,6 +43,7 @@ export function PromoStudio({ generations, now, handlers, onCreated, catalog }: 
   const [revision, setRevision] = useState<Revision | null>(null);
   // The template sheet opens on the grid, or straight onto one template's preview.
   const [modal, setModal] = useState<null | { preview: string }>(null);
+  const [section, setSection] = useState<"films" | "templates" | "styles">("films");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   useErrorToast(error, () => setError(""));
@@ -122,16 +124,13 @@ export function PromoStudio({ generations, now, handlers, onCreated, catalog }: 
     },
   };
 
+  const shownSection = section === "films" && !films.length ? "templates" : section;
   return (
     <div className="mks prs">
-      <section className="mks-hero">
-        <h1>
-          Launch anything
-          <br />
-          in motion
-        </h1>
-        <p className="prs-lede">Paste a link, drop in images, or just describe it. Opus 5.5 writes a motion-graphics film in your brand, checks every frame, and scores it to music.</p>
-
+      <StudioLayout
+        title="Launch anything in motion"
+        intro="Paste a link, drop in images, or just describe it. Opus 5.5 writes a motion-graphics film in your brand, checks every frame, and scores it to music."
+        composer={
         <div className="mks-dock prs-dock">
           <div className="mks-bar">
             {revision ? (
@@ -202,34 +201,36 @@ export function PromoStudio({ generations, now, handlers, onCreated, catalog }: 
             </div>
           </div>
         </div>
-        {missing && !busy ? <p className="mks-hint">{missing}</p> : null}
-        {!configured ? <GenerationUnavailable className="mks-notice" /> : catalog?.promo && !catalog.promo.renderer ? <p className="mks-hint">This server can't render video yet, so films come back as live HTML you can play and revise.</p> : null}
-      </section>
-
-      <section className="mks-results" aria-label={films.length ? "Your films" : "Templates"}>
-        {films.length ? (
-          <>
-            <h2><Sparkles className="h-4 w-4" />Your films</h2>
-            <StudioGallery items={films} now={now} handlers={gallery} />
-          </>
-        ) : null}
-        <h2 className={films.length ? "prs-more" : undefined}><Film className="h-4 w-4" />{films.length ? "More templates" : "Start from a template"}</h2>
-        <div className="mks-strip prs-strip">
-          {PROMO_TEMPLATES.map((item) => (
-            <TemplateCard key={item.id} item={item} selected={draft.template === item.id} onOpen={() => setModal({ preview: item.id })} compact />
-          ))}
-        </div>
-        <h2 className="prs-more"><Palette className="h-4 w-4" />Give it a style</h2>
-        <div className="mks-strip prs-strip prs-style-strip">
-          {PROMO_STYLES.map((item) => (
-            <StyleCard key={item.id} item={item} selected={draft.style === item.id} onPick={() => patch({ style: draft.style === item.id ? "" : item.id })} />
-          ))}
-        </div>
+        }
+        notices={(missing && !busy) || !configured || (catalog?.promo && !catalog.promo.renderer) ? <>
+          {missing && !busy ? <p className="mks-hint">{missing}</p> : null}
+          {!configured ? <GenerationUnavailable className="mks-notice" /> : catalog?.promo && !catalog.promo.renderer ? <p className="mks-hint">This server can't render video yet, so films come back as live HTML you can play and revise.</p> : null}
+        </> : null}
+        tabsLabel="Promo sections"
+        tabs={[...(films.length ? [{ value: "films", label: "Your films", hint: String(films.length) }] : []), { value: "templates", label: "Templates" }, { value: "styles", label: "Styles" }]}
+        tab={shownSection}
+        onTab={(next) => setSection(next as "films" | "templates" | "styles")}
+      >
+        {shownSection === "films" ? (
+          <StudioGallery items={films} now={now} handlers={gallery} />
+        ) : shownSection === "templates" ? (
+          <div className="sl-grid prs-grid">
+            {PROMO_TEMPLATES.map((item) => (
+              <TemplateCard key={item.id} item={item} selected={draft.template === item.id} onOpen={() => setModal({ preview: item.id })} compact />
+            ))}
+          </div>
+        ) : (
+          <div className="sl-grid prs-grid prs-style-strip">
+            {PROMO_STYLES.map((item) => (
+              <StyleCard key={item.id} item={item} selected={draft.style === item.id} onPick={() => patch({ style: draft.style === item.id ? "" : item.id })} />
+            ))}
+          </div>
+        )}
         <p className="prs-credit-note">
           Template previews are the reference films each template was modeled on. Styles are adapted from{" "}
           <a href="https://github.com/Vincentwei1021/mg-styles-15" target="_blank" rel="noreferrer">mg-styles-15</a>, and each is scored in its own genre. Your film is built only from your own material.
         </p>
-      </section>
+      </StudioLayout>
 
       {modal ? <TemplateModal selected={draft.template} initialPreview={modal.preview} onPick={pickTemplate} onClose={() => setModal(null)} /> : null}
     </div>

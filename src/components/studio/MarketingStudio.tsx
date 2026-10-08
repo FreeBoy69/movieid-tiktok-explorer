@@ -1,6 +1,7 @@
 // Marketing Studio, rebuilt after Higgsfield's: one floating control bar with
 // product, presenter, format, hook, and setting; modal pickers with previews;
 // and a technical popover. Generation runs through /api/studio (runAd).
+import { LayoutCard, Masonry, StudioLayout } from "../StudioLayout";
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import {
   AppWindow,
@@ -54,6 +55,7 @@ export function MarketingStudio({ generations, now, handlers, onCreated, configu
   const [avatars, setAvatars] = useState<Avatar[]>([]);
   const [models, setModels] = useState<VideoModel[]>([]);
   const [modal, setModal] = useState<"" | "product" | "avatar" | "format" | "hook" | "setting">("");
+  const [section, setSection] = useState<"ads" | "formats">("ads");
   const [editingHook, setEditingHook] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -121,16 +123,13 @@ export function MarketingStudio({ generations, now, handlers, onCreated, configu
   }
 
   const missing = draft.mode === "product" && !product ? "Add your product" : format.person && !avatar && draft.mode === "product" ? `${format.name} needs a presenter` : "";
+  const shownSection = section === "ads" && ads.length ? "ads" : "formats";
   return (
     <div className="mks">
-      <section className="mks-hero">
-        <h1>
-          Turn any product
-          <br />
-          into a video ad
-        </h1>
-
-        <div className="mks-dock">
+      <StudioLayout
+        title="Turn any product into a video ad"
+        intro="Add your product or app, pick a format and a hook, and generate a ready-to-post ad."
+        above={
           <Segment
             className="mks-modes"
             label="What you're advertising"
@@ -141,7 +140,9 @@ export function MarketingStudio({ generations, now, handlers, onCreated, configu
               { value: "app", label: "App", icon: <AppWindow className="h-4 w-4" /> },
             ]}
           />
-
+        }
+        composer={
+        <div className="mks-dock">
           <div className="mks-bar">
             {hook && draft.mode === "product" ? (
               <div className="mks-hookline">
@@ -206,30 +207,23 @@ export function MarketingStudio({ generations, now, handlers, onCreated, configu
             </div>
           </div>
         </div>
-        {missing && !busy ? <p className="mks-hint">{missing}</p> : null}
-        {!configured ? <GenerationUnavailable className="mks-notice" /> : null}
-      </section>
-
-      <section className="mks-results" aria-label={ads.length ? "Your ads" : "Formats"}>
-        {ads.length ? (
-          <>
-            <h2><Sparkles className="h-4 w-4" />Your ads</h2>
-            <StudioGallery items={ads} now={now} handlers={handlers} />
-          </>
+        }
+        notices={missing && !busy || !configured ? <>{missing && !busy ? <p className="mks-hint">{missing}</p> : null}{!configured ? <GenerationUnavailable className="mks-notice" /> : null}</> : null}
+        tabsLabel="Marketing sections"
+        tabs={[...(ads.length ? [{ value: "ads", label: "Your ads", hint: String(ads.length) }] : []), { value: "formats", label: "Formats" }]}
+        tab={shownSection}
+        onTab={(next) => setSection(next as "ads" | "formats")}
+      >
+        {shownSection === "ads" ? (
+          <StudioGallery items={ads} now={now} handlers={handlers} />
         ) : (
-          <>
-            <h2><Sparkles className="h-4 w-4" />Generate across formats</h2>
-            <div className="mks-strip">
-              {AD_FORMATS.map((item) => (
-                <button key={item.id} type="button" className="mks-strip-card" aria-pressed={draft.format === item.id} onClick={() => patch({ format: item.id })}>
-                  <img src={presetImage("format", item.id)} alt="" loading="lazy" />
-                  <span>{item.name}</span>
-                </button>
-              ))}
-            </div>
-          </>
+          <Masonry>
+            {AD_FORMATS.map((item) => (
+              <LayoutCard key={item.id} title={item.name} sub={item.blurb} image={presetImage("format", item.id)} ratio={9 / 16} selected={draft.format === item.id} onClick={() => patch({ format: item.id })} />
+            ))}
+          </Masonry>
         )}
-      </section>
+      </StudioLayout>
 
       {modal === "product" ? (
         <ProductModal
