@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { BarChart3, Check, Code2, Copy, CreditCard, Facebook, KeyRound, Ghost, Instagram, LifeBuoy, Link2, Linkedin, Loader2, LogOut, Moon, Music, Pin, Send, ShieldCheck, Sun, Trash2, Twitter, UserRound, Users, Youtube } from "lucide-react";
 import type { AuthSessionPayload, ConnectedYouTubeAccount } from "../types";
-import type { AccountSection } from "../utils/tiktokRoute";
+import { writeDeepLink, type AccountSection } from "../utils/tiktokRoute";
 import { tokensToCredits } from "../utils/credits";
 import { openLingbasePortal } from "../utils/lingbasePayments";
 import { purchasesAllowed } from "../native/platform";
@@ -525,6 +525,10 @@ function CodeBlock({ label, code }: { label: string; code: string }) {
   );
 }
 
+function DocsLink({ page, children }: { page: string; children: ReactNode }) {
+  return <a className="acp-link" href={`/docs/${page}`} onClick={(event) => { if (event.metaKey || event.ctrlKey) return; event.preventDefault(); writeDeepLink({ view: "docs", docsPage: page }); }}>{children}</a>;
+}
+
 function DevelopersSection() {
   const list = useLoad<{ tokens: ApiToken[] }>("/api/account/tokens");
   const [name, setName] = useState("");
@@ -594,12 +598,12 @@ function DevelopersSection() {
           </ul>
         ) : <p className="acp-note">No tokens yet.</p>}
       </Panel>
-      <Panel title="Connect an AI agent (MCP)" description={<>AutoYT is an MCP server at <code>{origin}/mcp</code>. Agents get Juel (hand it a task in plain words) and the whole API: find, describe, and call any route, quote credits, and check your balance.</>}>
+      <Panel title="Connect an AI agent (MCP)" description={<>AutoYT is an MCP server at <code>{origin}/mcp</code>. Agents get Juel (hand it a task in plain words) and the whole API: find, describe, and call any route, quote credits, and check your balance. <DocsLink page="mcp">MCP docs</DocsLink></>}>
         <CodeBlock label="Claude Code" code={`claude mcp add --transport http autoyt ${origin}/mcp --header "Authorization: Bearer ${token}"`} />
         <CodeBlock label="Codex (~/.codex/config.toml, with AUTOYT_TOKEN set in your shell)" code={`[mcp_servers.autoyt]\nurl = "${origin}/mcp"\nbearer_token_env_var = "AUTOYT_TOKEN"`} />
         <CodeBlock label="Other MCP clients (JSON config)" code={JSON.stringify({ mcpServers: { autoyt: { type: "http", url: `${origin}/mcp`, headers: { Authorization: `Bearer ${token}` } } } }, null, 2)} />
       </Panel>
-      <Panel title="REST API" description={<>Every route works with the token as a Bearer header. The full list, with what each one does, its risk, and whether it spends credits: <a className="acp-link" href="/api/openapi.json" target="_blank" rel="noreferrer">openapi.json</a>.</>}>
+      <Panel title="REST API" description={<>Every route works with the token as a Bearer header. The full list, with what each one does, its risk, and whether it spends credits, is in the <DocsLink page="api-reference">API reference</DocsLink> (also as <a className="acp-link" href="/api/openapi.json" target="_blank" rel="noreferrer">openapi.json</a>).</>}>
         <CodeBlock label="List your recaps" code={`curl -H "Authorization: Bearer ${token}" ${origin}/api/recaps`} />
         <Rows>
           <Row label="401">The token is missing, wrong, or revoked</Row>

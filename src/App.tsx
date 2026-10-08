@@ -69,6 +69,8 @@ import { BackgroundProcessCenter, openBackgroundProcessCenter, type BackgroundPr
 const AdminApp = lazyPage(() => import("./admin/AdminApp"));
 // Vibe Edit is a full editor; it loads only when opened.
 const VibeEdit = lazyPage(() => import("./components/vibe/VibeEdit"));
+// The docs are public and load only when opened.
+const DocsPage = lazyPage(() => import("./components/docs/DocsPage"));
 
 const MOVIE_RESULT_TABS: Array<{ id: MovieAnalysisTab; label: string }> = [
   { id: "movie", label: "Movie ID" },
@@ -200,6 +202,8 @@ function WorkspaceApp() {
   useEffect(() => {
     const studioTab = routeLink.view === "studio" ? routeLink.studioTab : undefined;
     const toolId = routeLink.view === "tool" ? routeLink.toolId : undefined;
+    // The docs set their own title per page.
+    if (activeView === "docs") return;
     const entry = !auth?.user && activeView !== "tools" ? navEntryFor(activeView, studioTab, toolId) : undefined;
     const page = entry ? toolPageCopy(entry.id) : null;
     let description = document.querySelector('meta[name="description"]');
@@ -548,7 +552,7 @@ function WorkspaceApp() {
   const hasAutomationWorkspaceSidebar = activeView === "automation" && automationDetailOpen;
   // Full-height apps still sit inside the same gutters as Image Studio; the creator workspace and studio pages pad themselves.
   const isInsetEdgeView = !focusMode && !hasAutomationWorkspaceSidebar && ["movie", "downloader", "tiktok", "youtube", "niches", "compile", "tts", "prompts", "automation", "rewriter", "voiceover"].includes(activeView);
-  const isEdgeToEdgeView = ["movie", "downloader", "tool", "tiktok", "youtube", "niches", "compile", "tts", "prompts", "automation", "rewriter", "voiceover", "discover", "projects", "create", "styles", "drama", "products", "studio", "vibe-edit", "account"].includes(activeView) || (activeView === "channels" && channelDetailOpen);
+  const isEdgeToEdgeView = ["movie", "downloader", "tool", "tiktok", "youtube", "niches", "compile", "tts", "prompts", "automation", "rewriter", "voiceover", "discover", "projects", "create", "styles", "drama", "products", "studio", "vibe-edit", "account", "docs"].includes(activeView) || (activeView === "channels" && channelDetailOpen);
 
   return (
     <div ref={workspaceRootRef} className={cn("relative flex h-dvh min-w-0 flex-col overflow-hidden", isDarkMode ? "bg-[var(--ui-bg)] text-white" : "bg-[var(--ui-bg)] text-[var(--ui-text)]")} data-build="compile-audio-20260502">
@@ -599,7 +603,16 @@ function WorkspaceApp() {
       )}>
         <div className={cn("min-w-0", isEdgeToEdgeView ? cn("h-full w-full flex-1 overflow-hidden flex flex-col", isInsetEdgeView && "mx-auto max-w-[1440px]") : "mx-auto", !isEdgeToEdgeView && (["tools", "feed", "channels", "publish", "automation", "compile", "niches", "youtube"].includes(activeView) ? "max-w-[1280px]" : "max-w-[1000px]"))}>
           <AnimatePresence mode="wait">
-            {isGuest && activeView !== "tools" ? (
+            {activeView === "docs" ? (
+              // Public: the docs read the same signed in or not.
+              <motion.div key="docs-view" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="h-full min-h-0 overflow-hidden">
+                <PageBoundary theme={channelTheme} resetKey={routeLink.view === "docs" ? routeLink.docsPage || "home" : ""}>
+                  <Suspense fallback={<BrandLoader label="Opening the docs" theme={channelTheme} />}>
+                    <DocsPage page={routeLink.view === "docs" ? routeLink.docsPage : undefined} signedIn={!isGuest} onSignIn={() => setSignInOpen(true)} />
+                  </Suspense>
+                </PageBoundary>
+              </motion.div>
+            ) : isGuest && activeView !== "tools" ? (
               <GuestToolView key={`${activeView}-${routeLink.view === "studio" ? routeLink.studioTab : routeLink.view === "tool" ? routeLink.toolId : ""}`} view={activeView} studioTab={routeLink.view === "studio" ? routeLink.studioTab : undefined} toolId={routeLink.view === "tool" ? routeLink.toolId : undefined} theme={channelTheme} onBack={() => handleNavigate({ view: "tools" })} onUse={() => setSignInOpen(true)} />
             ) : ["discover", "projects", "create", "styles", "drama"].includes(activeView) ? (
               <CreatorWorkspace key="creator-workspace" route={routeLink} accountId={auth?.activeAccount?.id} theme={channelTheme} />

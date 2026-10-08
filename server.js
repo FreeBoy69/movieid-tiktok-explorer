@@ -25615,6 +25615,7 @@ SELECT json_build_object(
         app.get("/vibe-edit", serveDevIndex);
         app.get("/vibe-edit/:id", serveDevIndex);
         app.get(/^\/(film|drama)(\/.*)?$/, serveDevIndex);
+        app.get(/^\/docs(\/.*)?$/, serveDevIndex);
         app.get("/movie", serveDevIndex);
         app.get("/playlist/:slug", serveDevIndex);
         app.get("/channel/:slug", serveDevIndex);

@@ -29,12 +29,13 @@
  *   /tts                                   -> Text to Speech
  *   /prompts                               -> Prompt Library
  *   /account[/<section>]                   -> Account settings (profile, billing, usage, channels, telegram, developers, security)
+ *   /docs[/<page>]                         -> Docs: guides for every feature, the API, and MCP (public)
  *   /studio/<app>                          -> Creator Studio app (image, video, lipsync, agents, ...)
  *   /tools/<tool>                          -> a mini app from the Tools suite (background-remover, transcriber, ...)
  *   /vibe-edit[/<project>]                 -> Vibe Edit, the chat-driven video editor
  */
 
-export const MAIN_VIEWS = ["tools", "tool", "movie", "downloader", "tiktok", "youtube", "niches", "feed", "channels", "publish", "compile", "automation", "rewriter", "voiceover", "tts", "prompts", "discover", "projects", "create", "styles", "drama", "products", "studio", "vibe-edit", "account"] as const;
+export const MAIN_VIEWS = ["tools", "tool", "movie", "downloader", "tiktok", "youtube", "niches", "feed", "channels", "publish", "compile", "automation", "rewriter", "voiceover", "tts", "prompts", "discover", "projects", "create", "styles", "drama", "products", "studio", "vibe-edit", "account", "docs"] as const;
 export type MainView = (typeof MAIN_VIEWS)[number];
 export const ACCOUNT_SECTIONS = ["profile", "billing", "usage", "channels", "telegram", "developers", "security"] as const;
 export type AccountSection = (typeof ACCOUNT_SECTIONS)[number];
@@ -117,6 +118,8 @@ export interface TikTokDeepLink {
   compileClipId?: string;
   studioTab?: StudioTab;
   toolId?: ToolId;
+  /** Docs: the open page (/docs/<page>); absent is the introduction. */
+  docsPage?: string;
 }
 
 function isMainView(v: string | null | undefined): v is MainView {
@@ -228,6 +231,7 @@ export function readDeepLinkFromLocation(pathname: string, search = ""): TikTokD
     return { view: pathParts[0] as MainView, projectId: pathParts[1] ? decodeURIComponent(pathParts[1]) : undefined, projectStage: pathParts[2] || "brief", sceneId: sceneIndex >= 0 && pathParts[sceneIndex + 1] ? decodeURIComponent(pathParts[sceneIndex + 1]) : undefined, discoveryQuery: params.get("q") || undefined };
   }
 
+  if (pathParts[0] === "docs") return { view: "docs", ...(pathParts[1] && /^[a-z0-9-]{1,60}$/.test(pathParts[1]) ? { docsPage: pathParts[1] } : {}) };
   if (pathParts[0] === "tools") {
     if (isToolId(pathParts[1])) return { view: "tool", toolId: pathParts[1] };
     return { view: "tools" };
@@ -459,6 +463,7 @@ export function buildDeepLinkHref(link: TikTokDeepLink): string {
   if (link.view === "movie") return "/movie";
   if (link.view === "tts") return "/studio/audio";
   if (link.view === "prompts") return "/prompts";
+  if (link.view === "docs") return link.docsPage ? `/docs/${link.docsPage}` : "/docs";
   if (link.view === "account") return link.accountSection && link.accountSection !== "profile" ? `/account/${link.accountSection}` : "/account";
   if (link.view === "studio") return `/studio/${link.studioTab || "apps"}${link.studioGenerationId ? `/generations/${encodeURIComponent(link.studioGenerationId)}` : ""}`;
   if (link.view === "rewriter") return "/rewriter";
