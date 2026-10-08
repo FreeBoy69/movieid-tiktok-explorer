@@ -4,9 +4,10 @@
 // drawn by the browser with the same code the preview uses, so no libass is
 // needed), and returns the argument list.
 import { soundFilters } from "../src/utils/vibeSound.js";
+import { lookFilter, motionFilter, transitionFilter } from "../src/utils/videoLooks.js";
 
 const FPS = 30;
-const SIZES = { "16:9": [1920, 1080], "9:16": [1080, 1920], "1:1": [1080, 1080], "4:5": [1080, 1350] };
+const SIZES = { "16:9": [1920, 1080], "9:16": [1080, 1920], "1:1": [1080, 1080], "4:5": [1080, 1350], "21:9": [2520, 1080] };
 const n = (v) => String(Math.round(Number(v) * 1000) / 1000);
 const len = (c) => Math.max(0.05, c.out - c.in);
 const end = (c) => c.start + len(c);
@@ -84,12 +85,23 @@ export function buildRenderArgs({ project, pathOf, audible = [], overlayList = n
     const zoom = Math.min(2, Math.max(1, Number(clip.zoom) || 1));
     const punch = zoom > 1.001 ? `,scale=${even(W * zoom)}:${even(H * zoom)},crop=${W}:${H}` : "";
     const grade = gradeEq(clip.grade);
-    filters.push(`[${i}:v]fps=${FPS},${scale}${punch},setsar=1${grade ? `,${grade}` : ""},format=yuva420p,setpts=PTS-STARTPTS+${n(clip.start)}/TB[v${i}]`);
+    // A slow camera move, then the clip's entrance, both on the clip's own frames (Create Video's scene effects).
+    const move = motionFilter(clip.motion, { seconds: len(clip), size: [W, H] });
+    const first = !visuals.some((o) => o !== clip && o.track === clip.track && o.start < clip.start - 0.001);
+    const entrance = clip.transition ? transitionFilter(clip.transition, { seconds: len(clip), first, size: [W, H] }) : "";
+    filters.push(`[${i}:v]fps=${FPS},${scale}${punch}${move},setsar=1${grade ? `,${grade}` : ""}${entrance},format=yuva420p,setpts=PTS-STARTPTS+${n(clip.start)}/TB[v${i}]`);
     filters.push(`[${last}][v${i}]overlay=eof_action=pass:enable='between(t,${n(clip.start)},${n(end(clip) - 0.001)})'[o${i}]`);
     last = `o${i}`;
     if (asset.kind === "video" && !clip.muted && !track(project, `v${clip.track}`).muted && (clip.volume ?? 1) > 0 && hasSound.has(asset.id)) {
       audioSources.push({ label: `${i}:a`, start: clip.start, end: end(clip), volume: clip.volume ?? 1, duck: undefined, id: clip.id, preset: clip.preset });
     }
+  }
+
+  // The project's look grades and textures every picture under the titles and captions.
+  const look = project.look ? lookFilter(project.look) : "";
+  if (look) {
+    filters.push(`[${last}]${look}[look]`);
+    last = "look";
   }
 
   if (overlayList) {

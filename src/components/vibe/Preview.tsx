@@ -6,6 +6,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperti
 import { Grid3x3, Maximize2, Minimize2, Pause, Play } from "lucide-react";
 import { assetById, clipEnd, formatTimecode, frameSize, parseTimecode, projectDuration, trackState, updateItem, VIBE_ASPECTS, type VibeProject } from "../../utils/vibeEdit";
 import { gradeFilter } from "../../utils/vibeAutoEdit";
+import { lookCss, motionTransform, transitionStyle } from "../../utils/videoLooks.js";
 import { buildSoundChain } from "../../utils/vibeSound.js";
 import { drawOverlay, textBox } from "./overlay";
 import { gestureKey, useVibe, vibe } from "./store";
@@ -78,7 +79,8 @@ function chainBy<T extends Chainable>(items: T[], lane: (c: T) => number, sameLo
   return chain;
 }
 export function clipChains(project: VibeProject) {
-  return chainBy(project.clips, (c) => c.track, (a, b) => a.fit === b.fit && (a.zoom || 1) === (b.zoom || 1) && JSON.stringify(a.grade || null) === JSON.stringify(b.grade || null));
+  // A camera move or an entrance belongs to its own clip, so those never share a player with the next one.
+  return chainBy(project.clips, (c) => c.track, (a, b) => a.fit === b.fit && (a.zoom || 1) === (b.zoom || 1) && JSON.stringify(a.grade || null) === JSON.stringify(b.grade || null) && !a.motion && !b.motion && !b.transition);
 }
 // Audio chains bridge any gap: one element plays a narration file straight through, silenced between
 // lines, instead of a new element reloading the file (and starting late or not at all) after each pause.
@@ -323,12 +325,22 @@ export function Preview() {
         {groups.map(({ key, current: c, index: i }) => {
           const a = assetById(project, c.assetId);
           if (!a) return null;
+          // The clip's move, its entrance, its grade, and the project's look, as the render will have them.
+          const length = Math.max(0.05, c.out - c.in);
+          const local = Math.min(length, Math.max(0, playhead - c.start));
+          const first = !project.clips.some((o) => o !== c && o.track === c.track && o.start < c.start - 0.001);
+          const entrance = c.transition ? (transitionStyle(c.transition, { local, seconds: length, first }) as { opacity?: number; filter?: string; translate?: string; scale?: string }) : {};
+          const transform = motionTransform(c.motion, local / length, c.zoom);
+          const filters = [c.grade ? gradeFilter(c.grade) : "", project.look ? lookCss(project.look) : "", entrance.filter || ""].filter(Boolean).join(" ");
+          const shown = active(c.start, clipEnd(c)) && !trackState(project, `v${c.track}`).hidden;
           const style = {
             zIndex: 1 + c.track * 100 + i,
-            opacity: active(c.start, clipEnd(c)) && !trackState(project, `v${c.track}`).hidden ? 1 : 0,
+            opacity: shown ? entrance.opacity ?? 1 : 0,
             objectFit: c.fit === "fill" ? ("cover" as const) : ("contain" as const),
-            ...(c.zoom && c.zoom > 1 ? { transform: `scale(${c.zoom})` } : {}),
-            ...(c.grade ? { filter: gradeFilter(c.grade) } : {}),
+            ...(transform ? { transform } : {}),
+            ...(entrance.translate ? { translate: entrance.translate } : {}),
+            ...(entrance.scale ? { scale: entrance.scale } : {}),
+            ...(filters ? { filter: filters } : {}),
           };
           return a.kind === "image" ? (
             <img key={key} className="ve-layer" src={a.url} alt="" style={style} draggable={false} />

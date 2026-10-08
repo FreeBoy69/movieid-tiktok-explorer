@@ -272,7 +272,7 @@ export function StudioGallery({ items, now, handlers, extraAudio = [] }: { items
   const index = viewable.findIndex((tile) => tile.key === open || tile.item.id === open);
   return (
     <>
-      {editing ? <MotionEditor generationId={editing.id} title={editing.title} onClose={() => setEditing(null)} onSaved={announceStudioChange} /> : null}
+      {editing ? <MotionEditor source={{ generationId: editing.id }} title={editing.title} onClose={() => setEditing(null)} onSaved={announceStudioChange} /> : null}
       <div className="cs-masonry">
         {extraAudio.map((clip) => (
           <div key={clip.id} className="cs-tile cs-tile-audio">

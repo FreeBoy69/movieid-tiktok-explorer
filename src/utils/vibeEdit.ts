@@ -4,12 +4,13 @@
 // ducking, text titles, and word-timed captions. Every operation returns a new
 // project so the store can keep an undo history by reference.
 
-export type VibeAspect = "16:9" | "9:16" | "1:1" | "4:5";
+export type VibeAspect = "16:9" | "9:16" | "1:1" | "4:5" | "21:9";
 export const VIBE_ASPECTS: { id: VibeAspect; label: string }[] = [
   { id: "16:9", label: "Landscape" },
   { id: "9:16", label: "Portrait" },
   { id: "1:1", label: "Square" },
   { id: "4:5", label: "Feed" },
+  { id: "21:9", label: "Cinema" },
 ];
 
 export type VibeAssetKind = "video" | "audio" | "image";
@@ -31,6 +32,9 @@ export interface VibeAsset {
   language?: string;
   /** Kept on the media worker ("<project>/<file>"), streamed through a signed link: large recap media. */
   remote?: string;
+  /** A motion graphic (a title, card, or overlay) rendered from HTML: the clip is its video, and this is what
+   *  the motion editor reopens to change it. `edits` is its edits layer (src/utils/videoGraphics.js). */
+  motion?: { html: string; seconds: number; width: number; height: number; edits?: Record<string, unknown>; kind?: string; vars?: Record<string, string> };
 }
 
 /** A picture on a video track. Track 0 is the base sequence; higher tracks
@@ -58,6 +62,10 @@ export interface VibeClip {
   match?: { film?: number; score?: number };
   /** Editor's color label (CLIP_LABELS id), for organizing only. */
   label?: string;
+  /** How the clip comes in (videoLooks.js VIDEO_TRANSITIONS): fade, flash, glitch, or zoom; plays on its own frames. */
+  transition?: string;
+  /** A slow camera move across the clip (videoLooks.js VIDEO_MOTIONS): push, pull, or a pan. */
+  motion?: string;
 }
 
 /** Color correction: contrast and saturation are multipliers (1 = none), brightness an offset (-1..1). */
@@ -151,8 +159,11 @@ export interface VibeProject {
   tracks?: Record<string, VibeTrackState>;
   /** Named points on the ruler (beats, chapter starts): edits snap to them. */
   markers?: VibeMarker[];
-  /** Where the edit came from: a Movie to Recap render can find better shots for its cuts. */
-  source?: { kind: "recap"; recapId: string; format: "long" | "short" };
+  /** One look laid over every picture (videoLooks.js VIDEO_LOOKS): grade, texture, vignette. */
+  look?: string;
+  /** Where the edit came from, which decides its extra tools: a recap finds better shots for its cuts, a Create
+   *  Video project regenerates its scenes, a film episode re-renders its scenes; its export becomes their video. */
+  source?: { kind: "recap"; recapId: string; format: "long" | "short" } | { kind: "create-video"; projectId: string } | { kind: "drama"; episodeId: string; seriesId?: string };
   createdAt: number;
   updatedAt: number;
 }
@@ -368,6 +379,8 @@ export interface ItemPatch {
   grade?: VibeGrade | null;
   note?: string;
   flagged?: boolean;
+  motion?: string | null;
+  transition?: string | null;
 }
 
 function patchTimed<T extends VibeClip | VibeAudioClip>(item: T, patch: ItemPatch, sourceLength?: number): T {
@@ -592,6 +605,8 @@ export function frameSize(aspect: VibeAspect): { w: number; h: number } {
       return { w: 1080, h: 1080 };
     case "4:5":
       return { w: 1080, h: 1350 };
+    case "21:9":
+      return { w: 2520, h: 1080 };
     default:
       return { w: 1080, h: 1920 };
   }
@@ -881,7 +896,7 @@ export function formatTimecode(t: number): string {
 
 /** The Movie to Recap render an edit came from: recorded on the edit, or, for edits made before that,
  *  read off its recap picture track's address (/api/recaps/<id>/media/picture-<format>.mp4). */
-export function recapSource(project: Pick<VibeProject, "source" | "assets">): VibeProject["source"] | null {
+export function recapSource(project: Pick<VibeProject, "source" | "assets">): Extract<NonNullable<VibeProject["source"]>, { kind: "recap" }> | null {
   if (project.source?.kind === "recap") return project.source;
   for (const asset of project.assets || []) {
     const m = String(asset.url || "").match(/\/api\/recaps\/(rcp_[A-Za-z0-9]+)\/media\/picture-(long|short)\.mp4/);

@@ -5,13 +5,14 @@
 
 export const VIBE_ACTIONS = {
   add_text: { args: "{text, start, end, y?: 0..1 (0 top), size?: px at 1080 wide, color?: hex, look?: plain|boxed|outline}", about: "Put a title on screen" },
-  update_item: { args: "{id, start?, in?, out?, volume?: 0..3, muted?, duck?: 0..1|null, fadeIn?, fadeOut?, preset?: voice preset id|null, fit?: fit|fill, text?, color?, size?, y?}", about: "Change any clip, sound, title, or caption by id" },
+  update_item: { args: "{id, start?, in?, out?, volume?: 0..3, muted?, duck?: 0..1|null, fadeIn?, fadeOut?, preset?: voice preset id|null, fit?: fit|fill, motion?: push|pull|pan-left|pan-right|pan-up|pan-down|null, transition?: fade|flash|glitch|zoom|null, text?, color?, size?, y?}", about: "Change any clip, sound, title, or caption by id (motion: a slow camera move; transition: how a clip comes in)" },
   move_item: { args: "{id, start, row?}", about: "Move an item in time (row = video track or audio lane)" },
   delete_items: { args: "{ids: string[]}", about: "Remove items" },
   ripple_delete: { args: "{id}", about: "Remove a base-track clip and close the gap" },
   split_at: { args: "{time, ids?: string[]}", about: "Cut items at a time" },
   place_asset: { args: "{assetId, at?, track?}", about: "Put a media file on the timeline" },
-  set_aspect: { args: "{aspect: 16:9|9:16|1:1|4:5}", about: "Change the frame" },
+  set_aspect: { args: "{aspect: 16:9|9:16|1:1|4:5|21:9}", about: "Change the frame" },
+  set_look: { args: "{look: none|paper|blue-minimal|red-glow|red-grid|deep-black|gradient}", about: "One look (grade, texture, vignette) over every picture" },
   set_background: { args: "{color: hex}", about: "Frame background color" },
   rename: { args: "{name}", about: "Rename the project" },
   caption_look: { args: "{style?: clean|hook|punchy|minimal|highlight|bubble|neon, show?, wordHighlight?, size?, y?}", about: "Restyle captions" },

@@ -278,8 +278,8 @@ function wrap(n){var f=window[n];if(typeof f!=="function"||f.__mg)return;var g=f
 window.__mgApply=apply;
 function hook(){wrap("seek");wrap("__promoSeek");try{var tl=window.__timelines&&window.__timelines.root;if(tl&&tl.eventCallback&&!tl.__mg){tl.__mg=1;tl.eventCallback("onUpdate",function(){apply(tl.time())})}}catch(e){}}
 hook();addEventListener("load",hook);
-var seeks=function(){return typeof window.seek==="function"||typeof window.__promoSeek==="function"||!!(window.__timelines&&window.__timelines.root)};
-var t0=performance.now();(function loop(){apply(seeks()?undefined:(performance.now()-t0)/1000);requestAnimationFrame(loop)})();
+// Each frame: a seek(t) film already applied at its own time; a GSAP film reads its timeline; CSS runs on the clock.
+var t0=performance.now();(function loop(){var tl=window.__timelines&&window.__timelines.root;apply(typeof window.seek==="function"||typeof window.__promoSeek==="function"?undefined:tl&&tl.time?tl.time():(performance.now()-t0)/1000);requestAnimationFrame(loop)})();
 })();`;
 
 /** The document with its edits layer set (or removed when there are no edits). */

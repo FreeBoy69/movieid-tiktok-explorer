@@ -105,3 +105,99 @@ export function transitionFilter(id, { seconds = 0, first = false, size = [1280,
       return "";
   }
 }
+
+// ---------- The same looks, moves, and transitions in Vibe Edit ----------
+// Vibe Edit is the one editor for every video (Create Video and Create Film open it too), so it carries Create
+// Video's looks, scene transitions, and the slow push/pan on stills. The renderer uses the ffmpeg chains above and
+// below; the browser preview uses these CSS approximations of the same thing.
+
+/** How each look reads in the browser preview (the render uses the ffmpeg chain). */
+const LOOK_CSS = {
+  none: "",
+  paper: "sepia(0.22) saturate(0.85) contrast(1.04)",
+  "blue-minimal": "saturate(0.7) contrast(1.05) hue-rotate(-8deg) brightness(0.98)",
+  "red-glow": "saturate(1.15) contrast(1.1) sepia(0.12) hue-rotate(-12deg)",
+  "red-grid": "saturate(1.05) sepia(0.06)",
+  "deep-black": "contrast(1.2) brightness(0.95) saturate(0.88)",
+  gradient: "saturate(0.95) contrast(1.03)",
+};
+export const lookCss = (id) => LOOK_CSS[findLook(id).id] || "";
+
+/** A slow camera move across a clip (Ken Burns): stills come alive without new footage. */
+export const VIDEO_MOTIONS = [
+  { id: "none", name: "Still" },
+  { id: "push", name: "Push in" },
+  { id: "pull", name: "Pull out" },
+  { id: "pan-left", name: "Pan left" },
+  { id: "pan-right", name: "Pan right" },
+  { id: "pan-up", name: "Pan up" },
+  { id: "pan-down", name: "Pan down" },
+];
+const MOVE = 0.12;
+
+/** The ffmpeg tail for a clip's move over `seconds`, on a `size` = [w, h] frame. */
+export function motionFilter(id, { seconds = 1, size = [1920, 1080] } = {}) {
+  const [w, h] = size;
+  const L = Math.max(0.1, Number(seconds) || 1).toFixed(3);
+  const even = (v) => `trunc(${v}/2)*2`;
+  switch (id) {
+    case "push":
+      return `,scale=w='${even(`${w}*(1+${MOVE}*min(t/${L},1))`)}':h='${even(`${h}*(1+${MOVE}*min(t/${L},1))`)}':eval=frame,crop=${w}:${h}`;
+    case "pull":
+      return `,scale=w='${even(`${w}*(1+${MOVE}*(1-min(t/${L},1)))`)}':h='${even(`${h}*(1+${MOVE}*(1-min(t/${L},1)))`)}':eval=frame,crop=${w}:${h}`;
+    case "pan-left":
+    case "pan-right":
+    case "pan-up":
+    case "pan-down": {
+      const big = [2 * Math.round((w * (1 + MOVE)) / 2), 2 * Math.round((h * (1 + MOVE)) / 2)];
+      const p = id === "pan-left" || id === "pan-up" ? `(1-min(t/${L},1))` : `min(t/${L},1)`;
+      const x = id.startsWith("pan-left") || id.startsWith("pan-right") ? `(iw-ow)*${p}` : "(iw-ow)/2";
+      const y = id === "pan-up" || id === "pan-down" ? `(ih-oh)*${p}` : "(ih-oh)/2";
+      return `,scale=${big[0]}:${big[1]},crop=${w}:${h}:x='${x}':y='${y}'`;
+    }
+    default:
+      return "";
+  }
+}
+
+/** The same move as a CSS transform at `progress` (0..1) through the clip, composed with a punch-in `zoom`. */
+export function motionTransform(id, progress, zoom = 1) {
+  const p = Math.min(1, Math.max(0, Number(progress) || 0));
+  const z = Number(zoom) > 1 ? Number(zoom) : 1;
+  switch (id) {
+    case "push":
+      return `scale(${z * (1 + MOVE * p)})`;
+    case "pull":
+      return `scale(${z * (1 + MOVE * (1 - p))})`;
+    case "pan-left":
+      return `translateX(${(MOVE * (p - 0.5) * 100).toFixed(2)}%) scale(${z * (1 + MOVE)})`;
+    case "pan-right":
+      return `translateX(${(MOVE * (0.5 - p) * 100).toFixed(2)}%) scale(${z * (1 + MOVE)})`;
+    case "pan-up":
+      return `translateY(${(MOVE * (p - 0.5) * 100).toFixed(2)}%) scale(${z * (1 + MOVE)})`;
+    case "pan-down":
+      return `translateY(${(MOVE * (0.5 - p) * 100).toFixed(2)}%) scale(${z * (1 + MOVE)})`;
+    default:
+      return z > 1 ? `scale(${z})` : "";
+  }
+}
+
+/** A transition's look in the preview at `local` seconds into a clip `seconds` long (`first` gets no entrance). */
+export function transitionStyle(id, { local = 0, seconds = 1, first = false } = {}) {
+  if (!(seconds > 0.8)) return {};
+  switch (id) {
+    case "fade": {
+      const inA = Math.min(1, local / 0.25);
+      const outA = Math.min(1, (seconds - local) / 0.25);
+      return { opacity: Math.max(0, Math.min(inA, outA)) };
+    }
+    case "flash":
+      return first || local > 0.22 ? {} : { filter: `brightness(${1 + 4 * (1 - local / 0.22)})` };
+    case "glitch":
+      return first || local > 0.14 ? {} : { filter: "contrast(1.6) saturate(2.2) hue-rotate(40deg)", translate: `${local < 0.07 ? -6 : 6}px 0` };
+    case "zoom":
+      return first ? {} : { scale: String(1 + 0.08 * Math.max(0, 1 - local / 0.35)) };
+    default:
+      return {};
+  }
+}

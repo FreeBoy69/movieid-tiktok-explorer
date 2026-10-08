@@ -31,6 +31,7 @@ import type { VoiceProfile } from "../../utils/voiceProfiles";
 import { findBroll, renderMotionTitle, generateMedia, importAudioUrl, searchMusic, synthesizeVoiceover, transcribeFile, voiceAsset, type ChatAction } from "./api";
 import { brollMoments, COLOR_BOOST, gradeClips, punchInCuts, rippleRanges, speechCuts, type SpeechCuts } from "../../utils/vibeAutoEdit";
 import { vibe, withTask } from "./store";
+import { VIDEO_LOOKS } from "../../utils/videoLooks.js";
 
 // The voice list, loaded once by the editor shell.
 let voices: VoiceProfile[] = [];
@@ -285,7 +286,11 @@ export async function addBroll(count = 4): Promise<number> {
 export async function addMotionTitle(kind: string, vars: Record<string, string>, look = "none", at = vibe.get().playhead): Promise<string> {
   const p = project();
   const made = await withTask("Animating the title", () => renderMotionTitle(kind, vars, look, p.aspect));
-  const asset: VibeAsset = { id: vibeId("as"), kind: "video", name: `Motion: ${Object.values(vars)[0] || kind}`, url: made.url, file: made.file, duration: made.seconds, width: made.width, height: made.height, origin: "generated" };
+  const asset: VibeAsset = {
+    id: vibeId("as"), kind: "video", name: `Motion: ${Object.values(vars)[0] || kind}`, url: made.url, file: made.file, duration: made.seconds, width: made.width, height: made.height, origin: "generated",
+    // Kept so the title can be reopened in the motion editor and changed.
+    ...(made.html ? { motion: { html: made.html, seconds: made.seconds, width: made.width, height: made.height, kind: made.kind || kind, vars: made.vars || vars } } : {}),
+  };
   let placed = "";
   commit((q) => {
     // Above every picture track, so it plays over whatever is there.
@@ -364,9 +369,15 @@ export async function runActions(actions: ChatAction[]): Promise<{ done: string[
           break;
         }
         case "set_aspect":
-          if (["16:9", "9:16", "1:1", "4:5"].includes(String(args.aspect))) commit((p) => ({ ...p, aspect: args.aspect as VibeAspect, updatedAt: Date.now() }));
+          if (["16:9", "9:16", "1:1", "4:5", "21:9"].includes(String(args.aspect))) commit((p) => ({ ...p, aspect: args.aspect as VibeAspect, updatedAt: Date.now() }));
           done.push(`Frame set to ${args.aspect}`);
           break;
+        case "set_look": {
+          const look = String(args.look || "none");
+          if (VIDEO_LOOKS.some((l: { id: string }) => l.id === look)) commit((p) => ({ ...p, look: look === "none" ? undefined : look, updatedAt: Date.now() }));
+          done.push(look === "none" ? "Removed the look" : `Look set to ${look}`);
+          break;
+        }
         case "set_background":
           if (/^#[0-9a-f]{6}$/i.test(String(args.color))) commit((p) => ({ ...p, background: String(args.color), updatedAt: Date.now() }));
           done.push("Changed the background");

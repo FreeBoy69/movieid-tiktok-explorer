@@ -225,4 +225,7 @@ export async function findBetterShot(recapId: string, format: "long" | "short", 
 
 /** A HyperFrames motion title: WebM with alpha to preview, ProRes to export. */
 export const renderMotionTitle = (kind: string, vars: Record<string, string>, look: string, aspect: string) =>
-  post<{ url: string; file: string; seconds: number; width: number; height: number }>("/api/vibe-edit/motion", { kind, vars, look, aspect }, "Couldn't animate that title");
+  post<{ url: string; file: string; seconds: number; width: number; height: number; html?: string; kind?: string; vars?: Record<string, string> }>("/api/vibe-edit/motion", { kind, vars, look, aspect }, "Couldn't animate that title");
+/** Films a motion title again with the edits made to it in its player. */
+export const editMotionTitle = (html: string, vars: Record<string, string> | undefined, edits: Record<string, unknown>) =>
+  post<{ url: string; file: string; edits: Record<string, unknown> }>("/api/vibe-edit/motion/edit", { html, vars, edits }, "Couldn't film the edited title");

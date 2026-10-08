@@ -30,7 +30,40 @@ const clean = (edit: Edit): Edit | null => {
   return Object.keys(out).length ? out : null;
 };
 
-export function MotionEditor({ generationId, title, onClose, onSaved }: { generationId: string; title: string; onClose: () => void; onSaved: () => void }) {
+/** What to edit: a studio generation (Promo, Explainer, Vibe Motion), or a document a page holds itself (a Vibe
+ *  Edit motion title) with its own save. */
+export type MotionSource =
+  | { generationId: string }
+  | { document: { html: string; aspect: string; edits?: Edits; vars?: Record<string, string> }; save: (edits: Edits) => Promise<void> };
+
+// A HyperFrames title loads gsap and its fonts beside it; the sandboxed player can't fetch, so both go inline,
+// and the title's words are handed over the way HyperFrames does.
+const inlined = new Map<string, Promise<string>>();
+const fetchText = (url: string) => {
+  if (!inlined.has(url)) inlined.set(url, fetch(url).then((r) => (r.ok ? r.text() : "")).catch(() => ""));
+  return inlined.get(url)!;
+};
+const fetchDataUrl = (url: string) => {
+  if (!inlined.has(url)) inlined.set(url, fetch(url).then((r) => (r.ok ? r.blob() : null)).then((b) => (b ? new Promise<string>((ok) => { const f = new FileReader(); f.onload = () => ok(String(f.result)); f.readAsDataURL(b); }) : "")).catch(() => ""));
+  return inlined.get(url)!;
+};
+async function standalone(html: string, vars: Record<string, string> = {}) {
+  let doc = html;
+  if (doc.includes('<script src="gsap.min.js"></script>')) {
+    const gsap = (await fetchText("/vendor/gsap.min.js")).replace(/<\/script/gi, "<\\/script");
+    doc = doc.replace('<script src="gsap.min.js"></script>', `<script>window.__hyperframes={getVariables:function(){return ${JSON.stringify(vars).replace(/</g, "\\u003c")}}}</script><script>${gsap}</script>`);
+  }
+  for (const name of [...new Set([...doc.matchAll(/url\((?:["']?)fonts\/([^)"']+)/g)].map((m) => m[1]))]) {
+    const data = await fetchDataUrl(`/fonts/captions/${name}`);
+    if (data) doc = doc.split(`fonts/${name}`).join(data);
+  }
+  // Titles are transparent: show them over a dark frame, scaled from their full size to fit the player.
+  const fit = `<style>html,body{margin:0;overflow:hidden;background:#101114}[data-composition-id]{transform-origin:0 0}</style><script>(function(){function fit(){var r=document.querySelector("[data-composition-id]");if(!r)return;var w=+r.getAttribute("data-width")||r.offsetWidth,h=+r.getAttribute("data-height")||r.offsetHeight;r.style.transform="scale("+Math.min(innerWidth/w,innerHeight/h)+")"}addEventListener("resize",fit);addEventListener("load",fit);document.addEventListener("DOMContentLoaded",fit)})()</script>`;
+  return doc.replace(/<head[^>]*>/i, (tag) => tag + fit);
+}
+
+export function MotionEditor({ source, title, onClose, onSaved }: { source: MotionSource; title: string; onClose: () => void; onSaved: () => void }) {
+  const generationId = "generationId" in source ? source.generationId : "";
   const [doc, setDoc] = useState<{ html: string; aspect: string } | null>(null);
   const [error, setError] = useState("");
   const [edits, setEdits] = useState<Edits>({});
@@ -50,12 +83,14 @@ export function MotionEditor({ generationId, title, onClose, onSaved }: { genera
   // The document and its saved edits; the player gets the edits layer and the bridge, never autoplay.
   useEffect(() => {
     let live = true;
-    fetch(`/api/studio/generations/${encodeURIComponent(generationId)}/motion`, { credentials: "same-origin" })
-      .then(async (r) => {
-        const data = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(data.error || "This motion graphic couldn't be opened");
-        return data;
-      })
+    const load = "document" in source
+      ? standalone(source.document.html, source.document.vars).then((html) => ({ html, edits: source.document.edits || {}, aspect: source.document.aspect }))
+      : fetch(`/api/studio/generations/${encodeURIComponent(generationId)}/motion`, { credentials: "same-origin" }).then(async (r) => {
+          const data = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(data.error || "This motion graphic couldn't be opened");
+          return data;
+        });
+    load
       .then((data) => {
         if (!live) return;
         setEdits(data.edits || {});
@@ -66,6 +101,8 @@ export function MotionEditor({ generationId, title, onClose, onSaved }: { genera
     return () => {
       live = false;
     };
+    // The source is fixed for the editor's life.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [generationId]);
 
   const send = useCallback((message: Record<string, unknown>) => frame.current?.contentWindow?.postMessage({ mg: 1, ...message }, "*"), []);
@@ -152,11 +189,14 @@ export function MotionEditor({ generationId, title, onClose, onSaved }: { genera
   const save = async () => {
     setSaving(true);
     try {
-      const response = await fetch(`/api/studio/generations/${encodeURIComponent(generationId)}/motion`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ edits }) });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.error || "The edits didn't save");
+      if ("document" in source) await source.save(edits);
+      else {
+        const response = await fetch(`/api/studio/generations/${encodeURIComponent(generationId)}/motion`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ edits }) });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || "The edits didn't save");
+      }
       setSaved(edits);
-      toast.success(Object.keys(edits).length ? "Edits saved. The new video renders in the background." : "Edits removed.");
+      toast.success("document" in source ? "Edits saved." : Object.keys(edits).length ? "Edits saved. The new video renders in the background." : "Edits removed.");
       onSaved();
       onClose();
     } catch (err) {

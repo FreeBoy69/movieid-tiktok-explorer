@@ -1,7 +1,7 @@
 // The left-panel tools: media library, voice, captions, titles, music, and
 // generation, plus the inspector for whatever is selected.
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { AudioLines, Captions, Film, Flag, Image as ImageIcon, Link2, Loader2, Mic, Music2, Plus, Sparkles, Trash2, Type, Upload, Wand2 } from "lucide-react";
+import { AudioLines, Captions, Film, Flag, Image as ImageIcon, Link2, Loader2, Mic, MousePointer2, Music2, Plus, Sparkles, Trash2, Type, Upload, Wand2 } from "lucide-react";
 import { VoicePicker } from "../VoicePicker";
 import { toast } from "../../utils/toast";
 import {
@@ -22,7 +22,8 @@ import {
   type VibeAsset,
 } from "../../utils/vibeEdit";
 import { SOUND_PRESETS } from "../../utils/vibeSound.js";
-import { findBetterShot, rankShots, type RankedShot, importAudioUrl, importLink, uploadMedia } from "./api";
+import { editMotionTitle, findBetterShot, rankShots, type RankedShot, importAudioUrl, importLink, uploadMedia } from "./api";
+import { MotionEditor } from "../studio/MotionEditor";
 import { addAndPlace, addMotionTitle, generate, generateCaptions, getVoices, placeMusic, readVoicePref, resolveVoice, voiceover, writeVoicePref } from "./commands";
 import { captionStyle, loadCaptionFont, resolveCaptionStyleId } from "./overlay";
 import CaptionStylePicker from "../CaptionStylePicker";
@@ -37,6 +38,7 @@ import { Segmented } from "../ui/controls";
 import "../CreatorStudio.css";
 import { LanguagePicker } from "../LanguagePicker";
 import { COLOR_BOOST } from "../../utils/vibeAutoEdit";
+import { VIDEO_MOTIONS, VIDEO_TRANSITIONS } from "../../utils/videoLooks.js";
 
 export type PanelId = "auto" | "media" | "voice" | "captions" | "text" | "music" | "generate";
 export const PANELS: { id: PanelId; label: string; short?: string; icon: ReactNode }[] = [
@@ -732,6 +734,9 @@ function ProjectProps() {
           <input type="checkbox" className="ui-check" checked={project.captions.show} onChange={(e) => vibe.commit((p) => setCaptionLook(p, { show: e.target.checked }))} />
         </label>
       </Group>
+      <Group title="Look">
+        <LookPicker value={project.look || "none"} onChange={(look) => set({ look: look === "none" ? undefined : look }, "look")} />
+      </Group>
       <Group title="Edit">
         <dl className="ve-stats">
           <div><dt>Length</dt><dd>{formatTimecode(duration)}</dd></div>
@@ -741,6 +746,24 @@ function ProjectProps() {
         </dl>
       </Group>
     </div>
+  );
+}
+
+/** A motion title on the timeline reopens in the player editor: move, resize, reword, recolour, retime. */
+function MotionGraphicEdit({ asset }: { asset: VibeAsset }) {
+  const [open, setOpen] = useState(false);
+  const motion = asset.motion!;
+  const aspect = motion.width && motion.height ? `${motion.width}:${motion.height}` : vibe.get().project.aspect;
+  const save = async (edits: Record<string, unknown>) => {
+    const made = await withTask("Filming the edited title", () => editMotionTitle(motion.html, motion.vars, edits));
+    vibe.commit((p) => ({ ...p, assets: p.assets.map((a) => (a.id === asset.id ? { ...a, url: made.url, file: made.file, motion: { ...motion, edits: made.edits } } : a)), updatedAt: Date.now() }));
+  };
+  return (
+    <Group title="Motion graphic">
+      <p className="ve-hint">Click any part of it in its player to move, resize, reword, or recolour it, or choose when it shows.</p>
+      <button type="button" className="ui-btn is-sm" onClick={() => setOpen(true)}><MousePointer2 size={14} />Edit graphic</button>
+      {open ? <MotionEditor source={{ document: { html: motion.html, aspect, edits: motion.edits as Record<string, never>, vars: motion.vars }, save }} title={asset.name} onClose={() => setOpen(false)} onSaved={() => undefined} /> : null}
+    </Group>
   );
 }
 
@@ -833,6 +856,7 @@ export function Inspector() {
         {clip && recapCut(project, clip.id) != null ? (
           <BetterShot clipId={clip.id} note={clip.note || ""} flagged={Boolean(clip.flagged)} set={set} />
         ) : null}
+        {clip && asset?.motion ? <MotionGraphicEdit asset={asset} /> : null}
         {clip ? (
           <>
           <Group title="Picture">
@@ -848,6 +872,18 @@ export function Inspector() {
               ]}
             />
             <Slider label="Punch-in" value={clip.zoom || 1} display={`${Math.round((clip.zoom || 1) * 100)}%`} min={1} max={1.5} step={0.01} onChange={(v) => set({ zoom: v > 1.004 ? v : null })} />
+            <label className="ve-prop-row">
+              <span>Camera move</span>
+              <select className="ui-select" value={clip.motion || "none"} onChange={(e) => set({ motion: e.target.value === "none" ? null : e.target.value })}>
+                {VIDEO_MOTIONS.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+              </select>
+            </label>
+            <label className="ve-prop-row">
+              <span>Entrance</span>
+              <select className="ui-select" value={clip.transition || "cut"} onChange={(e) => set({ transition: e.target.value === "cut" ? null : e.target.value })}>
+                {VIDEO_TRANSITIONS.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+            </label>
           </Group>
           <Group title="Color">
             <label className="ve-prop-row">

@@ -16,6 +16,7 @@ import { signedMediaUrl } from "./vpsMedia.js";
 import { buildRenderArgs, overlayConcatList, renderDuration } from "./vibeEditRender.js";
 import { hyperframesAvailable, hyperframesKit, renderHyperframesProject } from "./hyperframesRenderer.js";
 import { normalizeOverlay, OVERLAY_FONTS, OVERLAY_KINDS, overlayTemplate } from "../src/utils/videoOverlays.js";
+import { cleanMotionEdits, withMotionEdits } from "../src/utils/videoGraphics.js";
 import { downloadStockClip, generateStockSearchTerms, searchStockVideos, stockCredit, stockFootageCapability } from "./stockFootage.js";
 
 const FILE_NAME = /^(up|gen)-[a-z0-9-]+\.(png|jpg|webp|gif|mp4|mov|webm|mp3|wav|m4a|ogg)$/;
@@ -484,7 +485,7 @@ const MAX_BROLL = 6;
 async function broll(userId, body) {
   const capability = stockFootageCapability();
   if (!capability.available) throw fail(capability.reason, 503);
-  const aspect = ["16:9", "9:16", "1:1", "4:5"].includes(body?.aspect) ? body.aspect : "9:16";
+  const aspect = ["16:9", "9:16", "1:1", "4:5", "21:9"].includes(body?.aspect) ? body.aspect : "9:16";
   const moments = (Array.isArray(body?.moments) ? body.moments : [])
     .map((m) => ({ start: Number(m?.start), end: Number(m?.end), text: String(m?.text || "").slice(0, 400) }))
     .filter((m) => Number.isFinite(m.start) && m.end > m.start && m.text)
@@ -552,27 +553,45 @@ async function broll(userId, body) {
 // an upper track: a transparent WebM the editor previews (Chrome plays its
 // alpha) and a ProRes 4444 copy the export composites. Both are filmed by the
 // media worker.
-const MOTION_SIZES = { "16:9": [1920, 1080], "9:16": [1080, 1920], "1:1": [1080, 1080], "4:5": [1080, 1350] };
+const MOTION_SIZES = { "16:9": [1920, 1080], "9:16": [1080, 1920], "1:1": [1080, 1080], "4:5": [1080, 1350], "21:9": [2520, 1080] };
 async function motionTitle(userId, body) {
   if (!hyperframesAvailable()) throw fail("Motion titles need the render worker, which isn't available right now", 503);
   const overlay = normalizeOverlay({ kind: body?.kind, vars: body?.vars });
   if (!overlay) throw fail("Fill in the title first");
   const [width, height] = MOTION_SIZES[body?.aspect] || MOTION_SIZES["9:16"];
   const look = String(body?.look || "none").slice(0, 30);
-  const files = { ...hyperframesKit(OVERLAY_FONTS), "title.html": overlayTemplate(overlay.kind, { width, height, look }) };
+  const html = overlayTemplate(overlay.kind, { width, height, look });
+  const made = await renderTitleHtml(userId, html, overlay.vars);
+  // The composition and its words come back too, so the clip can be reopened and edited in the player.
+  return { ...made, seconds: OVERLAY_KINDS[overlay.kind].seconds, kind: overlay.kind, vars: overlay.vars, width, height, html };
+}
+
+/** Films a HyperFrames title composition twice: WebM with alpha for the preview, ProRes MOV for the export. */
+async function renderTitleHtml(userId, html, vars) {
+  const files = { ...hyperframesKit(OVERLAY_FONTS), "title.html": html };
   const work = await fs.mkdtemp(path.join(os.tmpdir(), "vibe-motion-"));
   try {
-    const rows = [overlay.vars];
+    const rows = [vars || {}];
     const [webm] = await renderHyperframesProject({ files, composition: "title.html", format: "webm", rows, output: path.join(work, "title-{index}.webm") });
     const [mov] = await renderHyperframesProject({ files, composition: "title.html", format: "mov", rows, output: path.join(work, "title-{index}.mov") });
     if (!webm || !mov) throw fail("The title didn't render. Try again in a minute.", 502);
     const base = newId("gen-motion");
     await writeOwned(userId, `${base}.webm`, await fs.readFile(webm));
     await writeOwned(userId, `${base}.mov`, await fs.readFile(mov));
-    return { url: fileUrl(`${base}.webm`), file: `${base}.mov`, seconds: OVERLAY_KINDS[overlay.kind].seconds, kind: overlay.kind, vars: overlay.vars, width, height };
+    return { url: fileUrl(`${base}.webm`), file: `${base}.mov` };
   } finally {
     await fs.rm(work, { recursive: true, force: true }).catch(() => {});
   }
+}
+
+/** A motion title edited in the player (moved, resized, recoloured, reworded, retimed), filmed again. */
+async function editMotionTitle(userId, body) {
+  if (!hyperframesAvailable()) throw fail("Motion titles need the render worker, which isn't available right now", 503);
+  const html = String(body?.html || "");
+  if (!/data-composition-id=/.test(html) || html.length > 200000) throw fail("That title can't be edited");
+  const vars = body?.vars && typeof body.vars === "object" ? Object.fromEntries(Object.entries(body.vars).slice(0, 30).map(([k, v]) => [String(k).slice(0, 40), String(v ?? "").slice(0, 400)])) : {};
+  const edits = cleanMotionEdits(body?.edits);
+  return { ...(await renderTitleHtml(userId, withMotionEdits(html, edits), vars)), edits };
 }
 
 // ---------- Music import ----------
@@ -645,6 +664,10 @@ export function registerVibeEdit(app) {
 
   app.post("/api/vibe-edit/motion", route(async (req, res, userId) => {
     res.json(await motionTitle(userId, req.body));
+  }));
+
+  app.post("/api/vibe-edit/motion/edit", route(async (req, res, userId) => {
+    res.json(await editMotionTitle(userId, req.body));
   }));
 
   app.post("/api/vibe-edit/broll", route(async (req, res, userId) => {

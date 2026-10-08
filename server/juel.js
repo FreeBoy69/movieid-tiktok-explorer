@@ -302,6 +302,7 @@ export const JUEL_ROUTES = {
   "POST /api/transcribe": ["research", "paid", "Transcribes a video URL using captions or Whisper; may queue and return a job id."],
   "POST /api/vibe-edit/broll": ["editor", "paid", "Finds and trims stock b-roll footage matching spoken lines (moments, aspect, subject)."],
   "POST /api/vibe-edit/import-audio": ["editor", "change", "Imports an audio file from a public URL into the user's Vibe Edit library (url)."],
+  "POST /api/vibe-edit/motion/edit": ["editor", "change", "Films a Vibe Edit motion title again with edits made in its player (html, vars, edits)."],
   "POST /api/vibe-edit/motion": ["editor", "paid", "Renders an animated motion title overlay clip from a title kind, text, aspect, and look."],
   "POST /api/vibe-edit/renders": ["editor", "paid", "Starts exporting a Vibe Edit project timeline to a finished video (project, overlays)."],
   "POST /api/vibe-edit/renders/:id/stop": ["editor", "change", "Stops a running Vibe Edit export (render id)."],
