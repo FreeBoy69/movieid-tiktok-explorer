@@ -20,6 +20,12 @@ import {
   CheckCircle2,
   Music,
   Trash2,
+  Instagram,
+  Facebook,
+  Ghost,
+  Pin,
+  Twitter,
+  Linkedin,
 } from "lucide-react";
 import { identifyMovie } from "./services/gemini";
 import { AuthSessionPayload, ConnectedYouTubeAccount, ExtractionState, MovieResult } from "./types";
@@ -876,6 +882,12 @@ function AccountSwitcherModal({ auth, open, anchor, onClose, onRefresh, darkMode
         <>
           <a href="/api/auth/google?mode=connect&next=/channels"><Youtube className="h-4 w-4" /> Connect a YouTube channel</a>
           <a href="/api/auth/tiktok?mode=connect&next=/channels"><Music className="h-4 w-4" /> Connect a TikTok account</a>
+          <a href="/api/auth/social/instagram?next=/channels"><Instagram className="h-4 w-4" /> Connect Instagram</a>
+          <a href="/api/auth/social/facebook?next=/channels"><Facebook className="h-4 w-4" /> Connect Facebook Page</a>
+          <a href="/api/auth/social/snapchat?next=/channels"><Ghost className="h-4 w-4" /> Connect Snapchat</a>
+          <a href="/api/auth/social/pinterest?next=/channels"><Pin className="h-4 w-4" /> Connect Pinterest</a>
+          <a href="/api/auth/social/twitter?next=/channels"><Twitter className="h-4 w-4" /> Connect X</a>
+          <a href="/api/auth/social/linkedin?next=/channels"><Linkedin className="h-4 w-4" /> Connect LinkedIn</a>
         </>
       }
     />
