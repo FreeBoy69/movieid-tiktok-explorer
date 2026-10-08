@@ -1,5 +1,4 @@
 import React, { FormEvent, useEffect, useRef, useState } from "react";
-import { SendButton, StudioLayout } from "./StudioLayout";
 import {
   BookOpen,
   Check,
@@ -298,11 +297,12 @@ export function TextToSpeechStudio({ theme = "light", initialText = "" }: { them
   }
 
   return (
-    <section className={cn("cs-audio-workspace as-root as-in-layout", dark ? "text-white" : "text-[#1A1A1A]")}>
-      <StudioLayout
-        title="Audio Studio"
-        intro="Turn a script into a natural voice track, build your voice library, or clone your own voice."
-        above={
+    <section className={cn("cs-audio-workspace as-root", dark ? "text-white" : "text-[#1A1A1A]")}>
+      <header className="as-head">
+        <div className="as-title">
+          <span className="as-mark"><Volume2 className="h-5 w-5" aria-hidden /></span>
+          <div><h1>Audio Studio</h1><p>Turn a script into a natural voice track.</p></div>
+        </div>
         <div className="as-head-actions">
           <Tabs
             label="Audio Studio sections"
@@ -315,8 +315,9 @@ export function TextToSpeechStudio({ theme = "light", initialText = "" }: { them
             {loadingVoices ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
           </button>
         </div>
-        }
-      >
+      </header>
+
+
       {activeTab === "generate" ? (
         <GenerateTab
           dark={dark}
@@ -364,7 +365,6 @@ export function TextToSpeechStudio({ theme = "light", initialText = "" }: { them
           />
         </div>
       )}
-      </StudioLayout>
     </section>
   );
 }
@@ -404,8 +404,8 @@ function GenerateTab(props: {
   const hosted = selectedVoiceId.startsWith("openrouter:");
   const blockedReason = !props.online ? "No voices loaded yet. Refresh voices." : !selectedVoiceId ? "Choose a voice first." : !props.text.trim() ? "" : "";
   return (
-    <>
-    <form onSubmit={(event) => void props.generateSpeech(event)} className="sl-box no-stack as-box">
+    <form onSubmit={(event) => void props.generateSpeech(event)} className="as-generate">
+      <section className="as-write">
         <textarea
           value={props.text}
           onChange={(event) => props.setText(event.target.value)}
@@ -417,9 +417,36 @@ function GenerateTab(props: {
           className="as-script"
           maxLength={5000}
         />
-        <div className="sl-bar">
-          <div className="sl-controls as-controls">
-            <span className="as-field">
+        {selectedGeneration ? (
+          <div className="as-player">
+            <GenerationPlayer item={selectedGeneration} dark={dark} autoplay={props.autoplayGenerationId === selectedGeneration.id} onAutoplayConsumed={props.clearAutoplayGeneration} />
+          </div>
+        ) : null}
+        <footer className="as-write-foot">
+          <span className="as-count">{words.toLocaleString()} {words === 1 ? "word" : "words"} · {props.text.length.toLocaleString()} / 5,000</span>
+          {blockedReason ? <span className="as-blocked" role="status">{blockedReason}</span> : <span className="as-cost" title={CREDIT_ESTIMATE_TITLE}>{creditEstimateLabel(estimatedCredits)}</span>}
+          <button type="submit" disabled={props.generating || !props.text.trim() || !props.online} className="as-primary">
+            {props.generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+            {props.generating ? "Generating" : "Generate speech"}
+          </button>
+        </footer>
+      </section>
+
+      <aside className="as-rail" aria-label="Voice settings and history">
+        <Tabs
+          label="Panel"
+          className="as-rail-tabs"
+          value={rightRailTab}
+          onChange={(tab) => setRightRailTab(tab as RightRailTab)}
+          options={[
+            { value: "settings", label: "Settings" },
+            { value: "history", label: `History${props.history.length ? ` · ${props.history.length}` : ""}` },
+          ]}
+        />
+        {rightRailTab === "settings" ? (
+          <div className="as-rail-body">
+            <label className="as-field">
+              <span>Voice</span>
               <VoicePicker
                 voices={voices}
                 value={selectedVoiceId}
@@ -429,34 +456,32 @@ function GenerateTab(props: {
                   if (voice?.defaultEngine) props.setEngine(voice.defaultEngine);
                 }}
               />
-            </span>
-            {hosted ? null : <span className="as-field"><FieldPicker value={props.engine} onChange={props.setEngine} options={VOICE_ENGINES} label="Engine" /></span>}
-            <span className="as-field"><LanguagePicker value={props.language} onChange={props.setLanguage} only={VOICEBOX_LANGUAGES} /></span>
-            <span className="as-count">{words.toLocaleString()} {words === 1 ? "word" : "words"} · {props.text.length.toLocaleString()} / 5,000</span>
-            {blockedReason ? <span className="as-blocked" role="status">{blockedReason}</span> : <span className="as-cost" title={CREDIT_ESTIMATE_TITLE}>{creditEstimateLabel(estimatedCredits)}</span>}
+            </label>
+            {hosted ? null : (
+              <div className="as-field">
+                <span>Engine</span>
+                <FieldPicker value={props.engine} onChange={props.setEngine} options={VOICE_ENGINES} label="Engine" />
+              </div>
+            )}
+            <div className="as-field">
+              <span>Language</span>
+              <LanguagePicker value={props.language} onChange={props.setLanguage} only={VOICEBOX_LANGUAGES} />
+            </div>
+            {!props.online ? <p className="as-note is-warn">The voice service isn't connected. Refresh voices in a moment.</p> : null}
           </div>
-          <SendButton type="submit" disabled={props.generating || !props.text.trim() || !props.online} busy={props.generating} label="Generate speech" />
-        </div>
-    </form>
-    {!props.online ? <p className="as-note is-warn sl-notices">The voice service isn't connected. Refresh voices in a moment.</p> : null}
-    {selectedGeneration ? (
-      <div className="as-player as-player-below">
-        <GenerationPlayer item={selectedGeneration} dark={dark} autoplay={props.autoplayGenerationId === selectedGeneration.id} onAutoplayConsumed={props.clearAutoplayGeneration} />
-      </div>
-    ) : null}
-    {props.history.length ? (
-          <div className="as-history-below">
-            <div className="sl-gallery-head"><h2>History</h2><span className="as-count">{props.history.length}</span></div>
+        ) : (
+          <div className="as-rail-body">
             <SearchField value={historySearch} onChange={setHistorySearch} placeholder="Search this session" label="Search generation history" size="sm" />
             {historyItems.length ? historyItems.map((item) => (
               <button key={item.id} type="button" onClick={() => props.setSelectedGenerationId(item.id)} className="as-history" aria-current={props.selectedGenerationId === item.id ? "true" : undefined}>
                 <strong>{item.text}</strong>
                 <small>{item.profileName} · {relativeTime(item.createdAt)}</small>
               </button>
-            )) : <p className="as-note">Nothing matches that search.</p>}
+            )) : <p className="as-note">No speech generated in this session.</p>}
           </div>
-    ) : null}
-    </>
+        )}
+      </aside>
+    </form>
   );
 }
 

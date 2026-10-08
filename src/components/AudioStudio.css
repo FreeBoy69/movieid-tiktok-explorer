@@ -928,3 +928,59 @@
 .as-head-tabs { border-bottom: 0; }
 .as-rail-tabs { margin: 0 0 4px; }
 @media (max-width: 640px) { .as-head-tabs { flex: 1; } }
+
+/* ---------- Premium pass: the HyperFrames-style finish on the studio layout ----------
+   The same surfaces, title, and rounded tabs as the Create page (--ui-* tokens),
+   with the script and the settings rail as floating rounded panels. */
+.cs-audio-workspace.as-root { padding: 0 16px 16px; background: var(--ui-bg); color: var(--ui-text); }
+.as-root .as-head { align-items: flex-end; gap: 20px; padding: 32px 8px 20px; border-bottom: 0; }
+.as-root .as-title { align-items: flex-end; gap: 14px; }
+.as-root .as-mark { width: 44px; height: 44px; border-radius: 14px; background: var(--ui-accent); color: var(--ui-accent-ink); box-shadow: 0 8px 20px -12px rgb(160 130 0 / 0.7); }
+.as-root .as-title h1 { color: var(--ui-text); font-family: var(--font-serif); font-size: clamp(34px, 3.8vw, 46px); font-weight: 700; line-height: 0.95; letter-spacing: -0.01em; }
+.as-root .as-title p { margin-top: 8px; color: var(--ui-text-muted); font-size: 14.5px; }
+.as-root .as-head-actions { gap: 10px; }
+/* The section tabs and the rail tabs use the Create page's rounded tabs. */
+.as-root .ui-tabs.as-head-tabs,
+.as-root .ui-tabs.as-rail-tabs { gap: 2px; padding: 3px; border: 1px solid var(--ui-line); border-radius: 12px; background: var(--ui-sunken); }
+.as-root .ui-tabs.as-head-tabs > button,
+.as-root .ui-tabs.as-rail-tabs > button { flex: none; min-height: 34px; margin: 0; padding: 0 12px; border: 0; border-radius: 9px; background: transparent; color: var(--ui-text-muted); font-size: 13.5px; font-weight: 550; }
+.as-root .ui-tabs.as-rail-tabs > button { flex: 1; justify-content: center; }
+.as-root .ui-tabs.as-head-tabs > button[aria-selected="true"],
+.as-root .ui-tabs.as-rail-tabs > button[aria-selected="true"] { background: var(--ui-raised); color: var(--ui-text); font-weight: 600; box-shadow: 0 1px 2px rgb(0 0 0 / 0.1), inset 0 0 0 1px var(--ui-line); }
+.as-root .as-icon { width: 42px; height: 42px; border-color: var(--ui-line); border-radius: 999px; background: var(--ui-panel); color: var(--ui-text-muted); box-shadow: var(--ui-shadow-soft); }
+.as-root .as-icon:hover { border-color: var(--ui-line-strong); color: var(--ui-text); }
+
+/* Generate: the script panel and the settings rail float on the page. */
+.as-root .as-generate { gap: 14px; grid-template-columns: minmax(0, 1fr) 340px; }
+.as-root .as-write { overflow: hidden; border: 1px solid var(--ui-line-strong); border-radius: 22px; background: var(--ui-input); box-shadow: var(--ui-shadow-soft); transition: border-color 0.18s ease, box-shadow 0.18s ease; }
+.as-root .as-write:focus-within { border-color: var(--ui-text-faint); box-shadow: var(--ui-shadow-soft), 0 0 0 4px var(--ui-ring); }
+.as-root .as-script { padding: 34px 40px; color: var(--ui-text); font-size: 20px; line-height: 1.75; letter-spacing: -0.005em; }
+.as-root .as-script::placeholder { color: var(--ui-text-faint); }
+.as-root .as-player { padding: 6px 24px 14px; border-top: 1px solid var(--ui-line); background: var(--ui-panel); }
+.as-root .as-write-foot { gap: 16px; padding: 12px 14px 12px 40px; border-top: 1px solid var(--ui-line); background: transparent; }
+.as-root .as-count, .as-root .as-cost { color: var(--ui-text-muted); }
+.as-root .as-primary { height: 46px; padding: 0 24px; border-radius: 999px; background: var(--ui-accent); color: var(--ui-accent-ink); font-size: 14px; font-weight: 700; box-shadow: 0 10px 24px -14px rgb(150 125 0 / 0.9), inset 0 1px 0 rgb(255 255 255 / 0.4); }
+.as-root .as-primary:hover:not(:disabled) { background: #ffe53d; }
+.as-root .as-rail { gap: 18px; padding: 18px; border: 1px solid var(--ui-line); border-left: 1px solid var(--ui-line); border-radius: 22px; background: var(--ui-panel); box-shadow: var(--ui-shadow-soft); }
+.as-root .as-field > span:first-child { color: var(--ui-text-faint); font-size: 11px; letter-spacing: 0.1em; }
+.as-root .as-voice-pick select { height: 50px; border-color: var(--ui-line); border-radius: 14px; background: var(--ui-input); color: var(--ui-text); }
+.as-root .as-history { padding: 12px 14px; border-color: var(--ui-line); border-radius: 14px; background: var(--ui-input); transition: border-color 0.15s ease, transform 0.2s cubic-bezier(0.16, 1, 0.3, 1); }
+.as-root .as-history:hover { border-color: var(--ui-line-strong); transform: translateY(-1px); }
+.as-root .as-history[aria-current="true"] { border-color: var(--ui-accent); background: color-mix(in srgb, var(--ui-accent) 12%, var(--ui-input)); }
+.as-root .as-history small, .as-root .as-note { color: var(--ui-text-muted); }
+.as-root .as-note { border-color: var(--ui-line-strong); border-radius: 14px; }
+
+/* Voices and Clone: rounded cards that lift a little on hover. */
+.as-root .as-library, .as-root .as-clone { margin-top: 2px; }
+.as-root .as-card { border-color: var(--ui-line); border-radius: 20px; background: var(--ui-panel); box-shadow: var(--ui-shadow-soft); transition: border-color 0.18s ease, box-shadow 0.25s ease, transform 0.25s cubic-bezier(0.16, 1, 0.3, 1); }
+.as-root .as-card:hover { border-color: var(--ui-line-strong); box-shadow: var(--ui-shadow); transform: translateY(-2px); }
+.as-root .as-card[aria-current="true"] { border-color: var(--ui-accent); box-shadow: 0 0 0 1px var(--ui-accent), var(--ui-shadow-soft); }
+.as-root .as-card-name { font-family: var(--font-serif); font-size: 22px; letter-spacing: -0.005em; }
+.as-root .as-use { border-radius: 999px; }
+
+@media (max-width: 900px) {
+  .cs-audio-workspace.as-root { padding: 0 12px 12px; }
+  .as-root .as-generate { grid-template-columns: minmax(0, 1fr); }
+  .as-root .as-script { padding: 24px 22px; font-size: 18px; }
+  .as-root .as-write-foot { padding-left: 22px; }
+}
