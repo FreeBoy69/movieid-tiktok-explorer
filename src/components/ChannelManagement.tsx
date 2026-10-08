@@ -1198,23 +1198,23 @@ export function ChannelManagement({
               tone="warn"
               title="YouTube comments and analytics need Google"
               body="Existing videos and titles already work. Connect Google read access only if you want YouTube comments, analytics, and private videos in AutoYT."
-              action={<a href={GOOGLE_READ_CONNECT_URL} className="inline-flex h-9 items-center justify-center rounded-lg bg-[#f9dc0b] px-3 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white">Connect Google (optional)</a>}
+              action={<a href={GOOGLE_READ_CONNECT_URL} className="ui-btn is-primary is-sm">Connect Google (optional)</a>}
             />
           ) : null}
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex max-w-full gap-6 overflow-x-auto overscroll-x-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {!isTikTok && (
-                <button type="button" onClick={() => setWorkspaceTab("videos")} className={cn("border-b-2 pb-2 text-sm font-black", workspaceTab === "videos" ? "border-[#f9dc0b]" : "border-transparent", workspaceTab === "videos" ? isDark ? "text-white" : "text-[#1A1A1A]" : isDark ? "text-white/40" : "text-[#1A1A1A]/40")}>Videos</button>
+                <button type="button" onClick={() => setWorkspaceTab("videos")} className={cn("border-b-2 pb-2 text-sm font-black", workspaceTab === "videos" ? "border-[var(--ui-accent)]" : "border-transparent", workspaceTab === "videos" ? isDark ? "text-white" : "text-[var(--ui-text)]" : isDark ? "text-white/40" : "text-[var(--ui-text)]/40")}>Videos</button>
               )}
-              <button type="button" onClick={() => setWorkspaceTab("shorts")} className={cn("border-b-2 pb-2 text-sm font-black", workspaceTab === "shorts" ? "border-[#f9dc0b]" : "border-transparent", workspaceTab === "shorts" ? isDark ? "text-white" : "text-[#1A1A1A]" : isDark ? "text-white/40" : "text-[#1A1A1A]/40")}>
+              <button type="button" onClick={() => setWorkspaceTab("shorts")} className={cn("border-b-2 pb-2 text-sm font-black", workspaceTab === "shorts" ? "border-[var(--ui-accent)]" : "border-transparent", workspaceTab === "shorts" ? isDark ? "text-white" : "text-[var(--ui-text)]" : isDark ? "text-white/40" : "text-[var(--ui-text)]/40")}>
                 {isTikTok ? "TikTok Videos" : "Shorts"}
               </button>
-              <button type="button" onClick={() => setWorkspaceTab("comments")} className={cn("border-b-2 pb-2 text-sm font-black", workspaceTab === "comments" ? "border-[#f9dc0b]" : "border-transparent", workspaceTab === "comments" ? isDark ? "text-white" : "text-[#1A1A1A]" : isDark ? "text-white/40" : "text-[#1A1A1A]/40")}>
+              <button type="button" onClick={() => setWorkspaceTab("comments")} className={cn("border-b-2 pb-2 text-sm font-black", workspaceTab === "comments" ? "border-[var(--ui-accent)]" : "border-transparent", workspaceTab === "comments" ? isDark ? "text-white" : "text-[var(--ui-text)]" : isDark ? "text-white/40" : "text-[var(--ui-text)]/40")}>
                 {isTikTok ? "Comments" : "Comment Agent"}
               </button>
             </div>
             <div className="flex items-center gap-2">
-              <p className={cn("text-xs font-bold", isDark ? "text-white/45" : "text-[#1A1A1A]/45")}>
+              <p className={cn("text-xs font-bold", isDark ? "text-white/45" : "text-[var(--ui-text)]/45")}>
                 {workspaceTab === "videos"
                   ? `${longVideos.length} long-form videos`
                   : workspaceTab === "shorts"
@@ -1223,7 +1223,7 @@ export function ChannelManagement({
                       : `${shorts.length} shorts`
                     : "Reply assistant"}
               </p>
-              <button type="button" onClick={() => setUploadModalOpen(true)} className="inline-flex min-h-9 items-center justify-center gap-2 rounded-xl bg-[#f9dc0b] px-3 py-2 text-xs font-bold text-[#1A1A1A] shadow-sm transition hover:bg-[#1A1A1A] hover:text-white">
+              <button type="button" onClick={() => setUploadModalOpen(true)} className="ui-btn is-primary is-sm">
                 <UploadCloud className="h-4 w-4" />
                 Upload
               </button>
@@ -1232,10 +1232,10 @@ export function ChannelManagement({
           {workspaceTab !== "comments" ? (
             <div className={cn("grid grid-cols-[repeat(auto-fit,minmax(min(100%,16rem),1fr))] gap-4", workspaceTab === "shorts" ? "lg:grid-cols-4 xl:grid-cols-5" : "xl:grid-cols-3")}>
               {visibleVideos.map((video) => <OptimizeCard key={video.id} video={video} onClick={() => openVideoPage(video)} />)}
-              {!visibleVideos.length ? <p className={cn("rounded-xl border border-dashed p-5 text-sm font-semibold", isDark ? "border-white/10 bg-white/6 text-white/45" : "border-[#1A1A1A]/10 bg-[#F9F8F6] text-[#1A1A1A]/45")}>No {workspaceTab} found for this channel yet.</p> : null}
+              {!visibleVideos.length ? <p className={cn("rounded-xl border border-dashed p-5 text-sm font-semibold", isDark ? "border-white/10 bg-white/6 text-white/45" : "border-[var(--ui-line)] bg-[var(--ui-bg)] text-[var(--ui-text)]/45")}>No {workspaceTab} found for this channel yet.</p> : null}
               <div ref={loadMoreRef} className="col-span-full min-h-1" />
-              {loadingMore ? <p className={cn("col-span-full rounded-xl border p-4 text-center text-sm font-bold", isDark ? "border-white/10 bg-white/6 text-white/55" : "border-[#1A1A1A]/8 bg-white text-[#1A1A1A]/55")}>Loading more videos</p> : null}
-              {!nextPageToken && visibleVideos.length ? <p className={cn("col-span-full py-2 text-center text-xs font-bold", isDark ? "text-white/35" : "text-[#1A1A1A]/35")}>All channel videos loaded.</p> : null}
+              {loadingMore ? <p className={cn("col-span-full rounded-xl border p-4 text-center text-sm font-bold", isDark ? "border-white/10 bg-white/6 text-white/55" : "border-[var(--ui-line)] bg-[var(--ui-panel)] text-[var(--ui-text)]/55")}>Loading more videos</p> : null}
+              {!nextPageToken && visibleVideos.length ? <p className={cn("col-span-full py-2 text-center text-xs font-bold", isDark ? "text-white/35" : "text-[var(--ui-text)]/35")}>All channel videos loaded.</p> : null}
             </div>
           ) : null}
         </section>
@@ -1245,19 +1245,19 @@ export function ChannelManagement({
 
       {!isFeed && workspaceTab === "comments" ? (
       <section className="grid items-start gap-4 xl:grid-cols-[380px_minmax(0,1fr)]">
-        <div className={cn("rounded-2xl border p-4 md:p-5 xl:sticky xl:top-4", isDark ? "border-white/10 bg-[#151923]" : "border-[#1A1A1A]/8 bg-white shadow-sm")}>
+        <div className={cn("rounded-2xl border p-4 md:p-5 xl:sticky xl:top-4", isDark ? "border-white/10 bg-[var(--ui-panel)]" : "border-[var(--ui-line)] bg-[var(--ui-panel)] shadow-sm")}>
           <div className="flex items-start gap-3">
-            <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#f9dc0b] text-[#1A1A1A]">
+            <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[var(--ui-accent)] text-[var(--ui-accent-ink)]">
               <MessageCircle className="h-4 w-4" />
             </div>
             <div className="min-w-0">
-              <p className={cn("text-[11px] font-black uppercase tracking-widest", isDark ? "text-[#f9dc0b]" : "text-[#7a6600]")}>Comment agent</p>
-              <h2 className={cn("mt-0.5 text-lg font-extrabold tracking-tight", isDark ? "text-white" : "text-[#1A1A1A]")}>Answer comments and follow-ups</h2>
-              <p className={cn("mt-1 text-sm leading-6", isDark ? "text-white/55" : "text-[#1A1A1A]/58")}>Finds new comments and viewers replying to you, drafts replies in your voice, and posts the ones you approve.</p>
+              <p className={cn("text-[11px] font-black uppercase tracking-widest", isDark ? "text-[var(--ui-accent-text)]" : "text-[var(--ui-accent-text)]")}>Comment agent</p>
+              <h2 className={cn("mt-0.5 text-lg font-extrabold tracking-tight", isDark ? "text-white" : "text-[var(--ui-text)]")}>Answer comments and follow-ups</h2>
+              <p className={cn("mt-1 text-sm leading-6", isDark ? "text-white/55" : "text-[var(--ui-text)]/58")}>Finds new comments and viewers replying to you, drafts replies in your voice, and posts the ones you approve.</p>
             </div>
           </div>
 
-          <p className={cn("mt-4 flex gap-2 rounded-xl px-3 py-2.5 text-xs font-semibold leading-5", isDark ? "bg-white/[0.05] text-white/60" : "bg-[#F9F8F6] text-[#1A1A1A]/60")}>
+          <p className={cn("mt-4 flex gap-2 rounded-xl px-3 py-2.5 text-xs font-semibold leading-5", isDark ? "bg-white/[0.05] text-white/60" : "bg-[var(--ui-bg)] text-[var(--ui-text)]/60")}>
             <RefreshCw className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             <span>
               Automation uploads are answered on their own: new videos every 5 minutes, slowing as they age.
@@ -1266,13 +1266,13 @@ export function ChannelManagement({
           </p>
 
           {!canReply && active ? (
-            <div className="mt-4 rounded-xl border border-[#f9dc0b]/35 bg-[#fff9d6] p-4 text-sm font-semibold leading-6 text-[#443b00]">
+            <div className="mt-4 rounded-xl border border-[var(--ui-accent)]/35 bg-[var(--ui-accent-soft)] p-4 text-sm font-semibold leading-6 text-[var(--ui-accent-text)]">
               Comment permission is missing. Reconnect Google and approve YouTube comment access to use this agent.
               <a href={GOOGLE_READ_CONNECT_URL} className="ml-2 underline">Reconnect</a>
             </div>
           ) : null}
 
-          <div className={cn("ui-inherit mt-4", isDark ? "text-white" : "text-[#1A1A1A]")}>
+          <div className={cn("ui-inherit mt-4", isDark ? "text-white" : "text-[var(--ui-text)]")}>
             <Segmented
               block
               label="Posting mode"
@@ -1310,8 +1310,8 @@ export function ChannelManagement({
             </AgentField>
           </div>
 
-          <label className={cn("mt-3 flex items-center gap-2 text-sm font-semibold", isDark ? "text-white/65" : "text-[#1A1A1A]/65")}>
-            <input type="checkbox" checked={identifyMovies} onChange={(e) => setIdentifyMovies(e.target.checked)} className="h-4 w-4 accent-[#f9dc0b]" />
+          <label className={cn("mt-3 flex items-center gap-2 text-sm font-semibold", isDark ? "text-white/65" : "text-[var(--ui-text)]/65")}>
+            <input type="checkbox" checked={identifyMovies} onChange={(e) => setIdentifyMovies(e.target.checked)} className="ui-check" />
             Answer "what movie is this?" with Movie ID
           </label>
 
@@ -1319,9 +1319,9 @@ export function ChannelManagement({
             type="button"
             disabled={!active || !canReply || agentRunning}
             onClick={() => void runReplyAgent()}
-            className="mt-4 inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#f9dc0b] px-4 text-sm font-black text-[#1A1A1A] transition hover:brightness-105 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
+            className="ui-btn is-primary mt-4 w-full"
           >
-            {agentRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : dryRun ? <Search className="h-4 w-4" /> : <Send className="h-4 w-4" />}
+            {agentRunning ? <Loader2 className="h-4 w-4 ui-spin" /> : dryRun ? <Search className="h-4 w-4" /> : <Send className="h-4 w-4" />}
             {agentRunning ? "Reading comments…" : dryRun ? "Find comments to answer" : "Find and post replies"}
           </button>
         </div>
@@ -1375,7 +1375,7 @@ export function ChannelManagement({
 function Field({ label, children, wide = false }: { label: string; children: ReactNode; wide?: boolean }) {
   return (
     <label className={cn("space-y-1.5", wide && "sm:col-span-2")}>
-      <span className="text-[11px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">{label}</span>
+      <span className="text-[11px] font-bold uppercase tracking-widest text-[var(--ui-text)]/35">{label}</span>
       {children}
     </label>
   );
@@ -1383,8 +1383,8 @@ function Field({ label, children, wide = false }: { label: string; children: Rea
 
 function InlineStatus({ message }: { message: string }) {
   return (
-    <div className="flex items-center gap-2 rounded-2xl border border-[#f9dc0b]/35 bg-[#f9dc0b]/16 px-4 py-3 text-sm font-bold text-[#1A1A1A]/70">
-      <Loader2 className="h-4 w-4 animate-spin text-[#f9dc0b]" />
+    <div className="flex items-center gap-2 rounded-2xl border border-[var(--ui-accent)]/35 bg-[var(--ui-accent)]/16 px-4 py-3 text-sm font-bold text-[var(--ui-text)]/70">
+      <Loader2 className="h-4 w-4 ui-spin text-[var(--ui-accent-text)]" />
       {message}
     </div>
   );
@@ -1401,13 +1401,13 @@ function InlineError({ message }: { message: string }) {
 // Channel tools read YouTube data, so this connects a YouTube channel.
 function ConnectChannelCard() {
   return (
-    <div className="ui-inherit rounded-2xl border border-dashed border-[#1A1A1A]/12 bg-white text-[#1A1A1A] shadow-sm">
+    <div className="ui-inherit rounded-2xl border border-dashed border-[var(--ui-line-strong)] bg-[var(--ui-panel)] text-[var(--ui-text)] shadow-sm">
       <EmptyState
         icon={<PlatformIcon id="youtube" size={44} />}
         title="Connect a YouTube channel"
         body="Your feed, optimize tabs, and comment agent load once a channel is connected."
       >
-        <a href={connectHref("youtube")} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[#f9dc0b] px-5 text-sm font-black text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white">
+        <a href={connectHref("youtube")} className="ui-btn is-primary">
           Add YouTube channel
         </a>
       </EmptyState>
@@ -1529,53 +1529,53 @@ function PostDetailPage({
   const titleScoreValue = Math.max(58, Math.min(99, Math.round(42 + video.title.length / 2)));
   const thumbnailScore = Math.min(99, titleScoreValue + 3);
   return (
-    <section className={cn("flex h-full min-h-0 flex-col overflow-hidden border shadow-sm", isDark ? "border-white/10 bg-[#151923] text-white" : "border-[#1A1A1A]/8 bg-white text-[#1A1A1A]")}>
-      <div className={cn("flex flex-col gap-3 border-b px-3 py-3 lg:flex-row lg:items-center lg:justify-between", isDark ? "border-white/10 bg-[#151923]" : "border-[#1A1A1A]/8 bg-white")}>
+    <section className={cn("flex h-full min-h-0 flex-col overflow-hidden border shadow-sm", isDark ? "border-white/10 bg-[var(--ui-panel)] text-white" : "border-[var(--ui-line)] bg-[var(--ui-panel)] text-[var(--ui-text)]")}>
+      <div className={cn("flex flex-col gap-3 border-b px-3 py-3 lg:flex-row lg:items-center lg:justify-between", isDark ? "border-white/10 bg-[var(--ui-panel)]" : "border-[var(--ui-line)] bg-[var(--ui-panel)]")}>
         <div className="flex min-w-0 items-center gap-2">
-          <button type="button" onClick={onBack} className={cn("inline-flex min-h-10 shrink-0 items-center gap-2 rounded-xl border px-3 text-xs font-black", isDark ? "border-white/10 text-white/65 hover:bg-white/8" : "border-[#1A1A1A]/10 bg-white text-[#1A1A1A]/60 hover:text-[#1A1A1A]")}>
+          <button type="button" onClick={onBack} className={cn("inline-flex min-h-10 shrink-0 items-center gap-2 rounded-xl border px-3 text-xs font-black", isDark ? "border-white/10 text-white/65 hover:bg-white/8" : "border-[var(--ui-line)] bg-[var(--ui-panel)] text-[var(--ui-text)]/60 hover:text-[var(--ui-text)]")}>
             <ArrowLeft className="h-4 w-4" />
             <span className="hidden sm:inline">Videos</span>
           </button>
           <div className="flex min-w-0 gap-4 overflow-x-auto overscroll-x-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {tabs.map((tab) => (
-              <button key={tab} type="button" onClick={() => onTabChange(tab)} className={cn("shrink-0 border-b-2 px-0.5 py-2 text-sm font-black", activeTab === tab ? "border-[#f9dc0b]" : "border-transparent", activeTab === tab ? isDark ? "text-white" : "text-[#1A1A1A]" : isDark ? "text-white/42" : "text-[#1A1A1A]/42")}>
+              <button key={tab} type="button" onClick={() => onTabChange(tab)} className={cn("shrink-0 border-b-2 px-0.5 py-2 text-sm font-black", activeTab === tab ? "border-[var(--ui-accent)]" : "border-transparent", activeTab === tab ? isDark ? "text-white" : "text-[var(--ui-text)]" : isDark ? "text-white/42" : "text-[var(--ui-text)]/42")}>
                 {tab}{tab === "Title" ? ` ${titleScoreValue}` : tab === "Thumbnail" ? ` ${thumbnailScore}` : tab === "Review" ? " 85" : ""}
               </button>
             ))}
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <button type="button" onClick={onCreateProject} disabled={projectBusy} className={cn("inline-flex min-h-10 items-center gap-2 rounded-xl px-3 text-xs font-black transition disabled:opacity-45", activeProject ? "bg-[#f9dc0b] text-[#1A1A1A]" : "bg-[#f9dc0b] text-[#1A1A1A] hover:bg-[#1A1A1A] hover:text-white")}>
-            {projectBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+          <button type="button" onClick={onCreateProject} disabled={projectBusy} className={cn("inline-flex min-h-10 items-center gap-2 rounded-xl px-3 text-xs font-black transition disabled:opacity-45", activeProject ? "bg-[var(--ui-accent)] text-[var(--ui-accent-ink)]" : "bg-[var(--ui-accent)] text-[var(--ui-accent-ink)] hover:bg-[var(--ui-text)] hover:text-[var(--ui-panel)]")}>
+            {projectBusy ? <Loader2 className="h-4 w-4 ui-spin" /> : <Sparkles className="h-4 w-4" />}
             {activeProject ? "Project saved" : "Save project"}
           </button>
-          <button type="button" onClick={onCheckMovie} disabled={!analytics?.url || checkingMovie} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-[#f9dc0b] px-3 text-xs font-black text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white disabled:opacity-45">
-            {checkingMovie ? <Loader2 className="h-4 w-4 animate-spin" /> : <Film className="h-4 w-4" />}
+          <button type="button" onClick={onCheckMovie} disabled={!analytics?.url || checkingMovie} className="ui-btn is-primary">
+            {checkingMovie ? <Loader2 className="h-4 w-4 ui-spin" /> : <Film className="h-4 w-4" />}
             Movie ID
           </button>
-          <button type="button" onClick={onUpload} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-[#1A1A1A] px-3 text-xs font-black text-white transition hover:bg-[#1A1A1A]">
+          <button type="button" onClick={onUpload} className="ui-btn is-ink">
             <UploadCloud className="h-4 w-4" />
             Upload
           </button>
-          {!isTikTok && canManageYouTube ? <button type="button" onClick={onDeleteVideo} disabled={platformActionBusy === "delete-video"} className={cn("grid h-10 w-10 place-items-center rounded-xl border transition disabled:opacity-45", isDark ? "border-red-400/25 text-red-300 hover:bg-red-400/10" : "border-red-500/20 text-red-600 hover:bg-red-50")} aria-label="Delete video from YouTube" title="Delete video from YouTube">
-            {platformActionBusy === "delete-video" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+          {!isTikTok && canManageYouTube ? <button type="button" onClick={onDeleteVideo} disabled={platformActionBusy === "delete-video"} className={cn("grid h-10 w-10 place-items-center rounded-xl border transition disabled:opacity-45 border-[var(--ui-line)]", isDark ? "border-red-400/25 text-red-300 hover:bg-red-400/10" : "border-red-500/20 text-red-600 hover:bg-red-50")} aria-label="Delete video from YouTube" title="Delete video from YouTube">
+            {platformActionBusy === "delete-video" ? <Loader2 className="h-4 w-4 ui-spin" /> : <Trash2 className="h-4 w-4" />}
           </button> : null}
-          <button type="button" onClick={onRefresh} className={cn("grid h-10 w-10 place-items-center rounded-xl border", isDark ? "border-white/10 text-white/55 hover:text-white" : "border-[#1A1A1A]/10 text-[#1A1A1A]/50 hover:text-[#1A1A1A]")} aria-label="Refresh analytics">
-            {loadingAnalytics ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+          <button type="button" onClick={onRefresh} className={cn("grid h-10 w-10 place-items-center rounded-xl border", isDark ? "border-white/10 text-white/55 hover:text-white" : "border-[var(--ui-line)] text-[var(--ui-text)]/50 hover:text-[var(--ui-text)]")} aria-label="Refresh analytics">
+            {loadingAnalytics ? <Loader2 className="h-4 w-4 ui-spin" /> : <RefreshCw className="h-4 w-4" />}
           </button>
         </div>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className={cn("grid gap-4 border-b p-4 lg:grid-cols-[minmax(130px,190px)_minmax(0,1fr)] lg:items-center", isDark ? "border-white/10 bg-white/5" : "border-[#1A1A1A]/8 bg-[#FDFCFA]")}>
-          <div className={cn("relative mx-auto w-full max-w-[170px] overflow-hidden rounded-2xl bg-[#111827] lg:mx-0", isShort ? "aspect-[9/16] max-h-[260px]" : "aspect-video lg:max-w-[190px]")}>
+        <div className={cn("grid gap-4 border-b p-4 lg:grid-cols-[minmax(130px,190px)_minmax(0,1fr)] lg:items-center", isDark ? "border-white/10 bg-white/5" : "border-[var(--ui-line)] bg-[var(--ui-panel)]")}>
+          <div className={cn("relative mx-auto w-full max-w-[170px] overflow-hidden rounded-2xl bg-[var(--ui-text)] lg:mx-0", isShort ? "aspect-[9/16] max-h-[260px]" : "aspect-video lg:max-w-[190px]")}>
             <VideoThumb video={video} />
             <span className="absolute bottom-3 right-3 rounded-lg bg-black/75 px-2 py-1 text-xs font-black text-white">{formatDuration(video.durationSeconds)}</span>
           </div>
           <div className="min-w-0">
-            <p className="text-xs font-black uppercase tracking-widest text-[#f9dc0b]">{isShort ? "Short" : "Video"} post page</p>
+            <p className="text-xs font-black uppercase tracking-widest text-[var(--ui-accent-text)]">{isShort ? "Short" : "Video"} post page</p>
             <h1 className="mt-2 max-w-4xl text-xl font-black leading-tight md:text-2xl">{displayTitle}</h1>
-            <p className={cn("mt-3 inline-flex rounded-lg px-3 py-1.5 text-xs font-black", isDark ? "bg-white/8 text-white/60" : "bg-[#1A1A1A]/5 text-[#1A1A1A]/55")}>Duration {formatDuration(displayDuration)}</p>
+            <p className={cn("mt-3 inline-flex rounded-lg px-3 py-1.5 text-xs font-black", isDark ? "bg-white/8 text-white/60" : "bg-[var(--ui-text)]/5 text-[var(--ui-text)]/55")}>Duration {formatDuration(displayDuration)}</p>
           </div>
         </div>
 
@@ -1592,14 +1592,14 @@ function PostDetailPage({
           onSelect={onSelectProject}
           isDark={isDark}
         />
-        {!canReadAnalytics ? <Notice className="mb-3" tone="warn" title="Google read access needed" body="Connect Google read access to load existing videos, comments, and YouTube analytics. Publishing keeps working without it." action={<a href={GOOGLE_READ_CONNECT_URL} className="inline-flex h-9 items-center justify-center rounded-lg bg-[#f9dc0b] px-3 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white">Connect Google</a>} /> : null}
-        {!isTikTok && canReadAnalytics && !canReadRevenue ? <Notice className="mb-3" tone="warn" title="Revenue permission needed" body="Reconnect Google once to approve YouTube Analytics monetary access. AutoYT will then show estimated revenue, ad revenue, monetized playbacks, and CPM." action={<a href={GOOGLE_READ_CONNECT_URL} className="inline-flex h-9 items-center justify-center rounded-lg bg-[#f9dc0b] px-3 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white">Reconnect Google</a>} /> : null}
+        {!canReadAnalytics ? <Notice className="mb-3" tone="warn" title="Google read access needed" body="Connect Google read access to load existing videos, comments, and YouTube analytics. Publishing keeps working without it." action={<a href={GOOGLE_READ_CONNECT_URL} className="ui-btn is-primary is-sm">Connect Google</a>} /> : null}
+        {!isTikTok && canReadAnalytics && !canReadRevenue ? <Notice className="mb-3" tone="warn" title="Revenue permission needed" body="Reconnect Google once to approve YouTube Analytics monetary access. AutoYT will then show estimated revenue, ad revenue, monetized playbacks, and CPM." action={<a href={GOOGLE_READ_CONNECT_URL} className="ui-btn is-primary is-sm">Reconnect Google</a>} /> : null}
         {platformActionNotice ? <Notice className="mb-3" tone={platformActionNotice.toLowerCase().includes("could not") ? "error" : "warn"} title="YouTube update" body={platformActionNotice} /> : null}
         {activeTab === "Overview" ? (
           <>
             {metadataNotice ? <Notice className="mb-3" tone={metadataNotice.toLowerCase().includes("could not") ? "error" : "warn"} title="YouTube metadata" body={metadataNotice} /> : null}
             {analytics ? <AnalyticsPanel analytics={analytics} isTikTok={isTikTok} /> : loadingAnalytics ? <InlineStatus message="Loading post analytics" /> : null}
-            {analytics?.url ? <a href={analytics.url} target="_blank" rel="noreferrer" className={cn("mt-4 inline-flex min-h-10 items-center gap-2 rounded-xl border px-4 text-xs font-black", isDark ? "border-white/10 text-white/60 hover:text-white" : "border-[#1A1A1A]/10 text-[#1A1A1A]/60 hover:text-[#1A1A1A]")}>Open on YouTube <ExternalLink className="h-4 w-4" /></a> : null}
+            {analytics?.url ? <a href={analytics.url} target="_blank" rel="noreferrer" className={cn("mt-4 inline-flex min-h-10 items-center gap-2 rounded-xl border px-4 text-xs font-black", isDark ? "border-white/10 text-white/60 hover:text-white" : "border-[var(--ui-line)] text-[var(--ui-text)]/60 hover:text-[var(--ui-text)]")}>Open on YouTube <ExternalLink className="h-4 w-4" /></a> : null}
             {movieCheck ? <MovieIdentityPanel result={movieCheck} /> : null}
           </>
         ) : activeTab === "Title" ? (
@@ -1617,14 +1617,14 @@ function PostDetailPage({
         ) : activeTab === "Review" ? (
           <ReviewPanel video={video} />
         ) : activeTab === "Preview" ? (
-          <div className="grid gap-5 md:grid-cols-[minmax(0,420px)_minmax(0,1fr)]"><ThumbPreview video={video} /><div><p className="text-xl font-black">{video.title}</p><p className={cn("mt-2 text-sm font-semibold", isDark ? "text-white/45" : "text-[#111827]/45")}>{compactNumber(video.viewCount)} views - {dateAge(video.publishedAt)}</p></div></div>
+          <div className="grid gap-5 md:grid-cols-[minmax(0,420px)_minmax(0,1fr)]"><ThumbPreview video={video} /><div><p className="text-xl font-black">{video.title}</p><p className={cn("mt-2 text-sm font-semibold", isDark ? "text-white/45" : "text-[var(--ui-text)]/45")}>{compactNumber(video.viewCount)} views - {dateAge(video.publishedAt)}</p></div></div>
         ) : activeTab === "Publishing Plan" ? (
           <ProjectStagePanel project={activeProject} stage="publishingPlan" fallbackTitle={video.title} onGenerate={() => onGenerateProjectStage("publishingPlan")} busy={projectBusy} />
         ) : activeTab === "Performance" ? (
           analytics ? <AnalyticsPanel analytics={analytics} isTikTok={isTikTok} /> : <InlineStatus message="Loading performance" />
         ) : (
           <>
-            {!isTikTok && !canReply ? <Notice className="mb-3" tone="warn" title="Comments need Google access" body="Connect Google read access and approve YouTube force-ssl to view and reply to comments inside AutoYT." action={<a href={GOOGLE_READ_CONNECT_URL} className="inline-flex h-9 items-center justify-center rounded-lg bg-[#f9dc0b] px-3 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white">Connect Google</a>} /> : null}
+            {!isTikTok && !canReply ? <Notice className="mb-3" tone="warn" title="Comments need Google access" body="Connect Google read access and approve YouTube force-ssl to view and reply to comments inside AutoYT." action={<a href={GOOGLE_READ_CONNECT_URL} className="ui-btn is-primary is-sm">Connect Google</a>} /> : null}
             <CommentsPanel comments={comments} loading={loadingComments} canReply={canReply} canManage={canManageYouTube} readOnlyLabel={isTikTok ? "TikTok comments are read-only in AutoYT." : undefined} ownChannelId={channelId} replyText={replyText} replyingTo={replyingTo} newCommentText={newCommentText} commentActionBusy={commentActionBusy} onReplyTextChange={onReplyTextChange} onReply={onReply} onRefresh={onRefreshComments} onNewCommentTextChange={onNewCommentTextChange} onPostComment={onPostComment} onUpdateComment={onUpdateComment} onDeleteComment={onDeleteComment} onModerateComment={onModerateComment} />
           </>
         )}
@@ -1659,12 +1659,12 @@ function ProjectCommandBar({
 }) {
   const stage = tabToProjectStage(activeTab);
   return (
-    <div className={cn("mb-4 rounded-2xl border p-3", isDark ? "border-white/10 bg-white/5" : "border-[#1A1A1A]/8 bg-[#FDFCFA]")}>
+    <div className={cn("mb-4 rounded-2xl border p-3", isDark ? "border-white/10 bg-white/5" : "border-[var(--ui-line)] bg-[var(--ui-panel)]")}>
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="min-w-0">
-          <p className="text-xs font-black uppercase tracking-widest text-[#f9dc0b]">Creator project</p>
-          <p className={cn("mt-1 truncate text-sm font-black", isDark ? "text-white" : "text-[#1A1A1A]")}>{project?.title || "Save this video as a reusable project to keep title, SEO, script, visuals, thumbnail, and publishing notes together."}</p>
-          <p className={cn("mt-1 text-xs font-semibold", isDark ? "text-white/45" : "text-[#1A1A1A]/45")}>{styles.length ? `${styles.length} copied styles available` : "Copy a competitor style from Feed Research to guide future projects."}</p>
+          <p className="text-xs font-black uppercase tracking-widest text-[var(--ui-accent-text)]">Creator project</p>
+          <p className={cn("mt-1 truncate text-sm font-black", isDark ? "text-white" : "text-[var(--ui-text)]")}>{project?.title || "Save this video as a reusable project to keep title, SEO, script, visuals, thumbnail, and publishing notes together."}</p>
+          <p className={cn("mt-1 text-xs font-semibold", isDark ? "text-white/45" : "text-[var(--ui-text)]/45")}>{styles.length ? `${styles.length} copied styles available` : "Copy a competitor style from Feed Research to guide future projects."}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {projects.length > 1 ? (
@@ -1684,17 +1684,17 @@ function ProjectCommandBar({
             />
           ) : null}
           {stage ? (
-            <button type="button" onClick={() => onGenerate(stage)} disabled={!project || busy} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-[#f9dc0b] px-3 text-xs font-black text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white disabled:opacity-45">
-              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
+            <button type="button" onClick={() => onGenerate(stage)} disabled={!project || busy} className="ui-btn is-primary">
+              {busy ? <Loader2 className="h-4 w-4 ui-spin" /> : <Wand2 className="h-4 w-4" />}
               Generate tab
             </button>
           ) : null}
-          <button type="button" onClick={onArchive} disabled={!project || busy} className={cn("inline-flex min-h-10 items-center gap-2 rounded-xl border px-3 text-xs font-black transition disabled:opacity-45", isDark ? "border-white/10 text-white/60 hover:text-white" : "border-[#1A1A1A]/10 bg-white text-[#1A1A1A]/55 hover:text-[#1A1A1A]")}>
+          <button type="button" onClick={onArchive} disabled={!project || busy} className={cn("inline-flex min-h-10 items-center gap-2 rounded-xl border px-3 text-xs font-black transition disabled:opacity-45", isDark ? "border-white/10 text-white/60 hover:text-white" : "border-[var(--ui-line)] bg-[var(--ui-panel)] text-[var(--ui-text)]/55 hover:text-[var(--ui-text)]")}>
             Archive
           </button>
         </div>
       </div>
-      {notice ? <p className={cn("mt-3 rounded-xl px-3 py-2 text-xs font-bold", notice.toLowerCase().includes("could not") ? "bg-[#fff9d6] text-[#6a5b00]" : "bg-[#fff9d6] text-[#6a5b00]")}>{notice}</p> : null}
+      {notice ? <p className={cn("mt-3 rounded-xl px-3 py-2 text-xs font-bold", notice.toLowerCase().includes("could not") ? "bg-[var(--ui-accent-soft)] text-[var(--ui-accent-text)]" : "bg-[var(--ui-accent-soft)] text-[var(--ui-accent-text)]")}>{notice}</p> : null}
     </div>
   );
 }
@@ -1712,31 +1712,31 @@ function tabToProjectStage(tab: string): string {
 function ProjectStagePanel({ project, stage, fallbackTitle, onGenerate, busy }: { project: CreatorProject | null; stage: string; fallbackTitle: string; onGenerate: () => void; busy: boolean }) {
   const output = project?.outputs?.[stage];
   return (
-    <div className="space-y-4 text-[#111827]">
+    <div className="space-y-4 text-[var(--ui-text)]">
       {!project ? (
         <Notice tone="warn" title="Save a creator project first" body="Project tabs persist only after this video is saved as a creator project." />
       ) : null}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-[#F3F4F8] p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-[var(--ui-bg)] p-4">
         <div>
-          <p className="text-xs font-black uppercase tracking-widest text-[#f9dc0b]">{stage.replace(/([A-Z])/g, " $1").trim()}</p>
+          <p className="text-xs font-black uppercase tracking-widest text-[var(--ui-accent-text)]">{stage.replace(/([A-Z])/g, " $1").trim()}</p>
           <h3 className="mt-1 text-lg font-black">{project?.title || fallbackTitle}</h3>
         </div>
-        <button type="button" onClick={onGenerate} disabled={!project || busy} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-[#f9dc0b] px-4 text-xs font-black text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white disabled:opacity-45">
-          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
+        <button type="button" onClick={onGenerate} disabled={!project || busy} className="ui-btn is-primary">
+          {busy ? <Loader2 className="h-4 w-4 ui-spin" /> : <Wand2 className="h-4 w-4" />}
           Generate
         </button>
       </div>
       {output ? (
         <div className="grid gap-4 md:grid-cols-2">
           {Object.entries(output).map(([key, value]) => (
-            <div key={key} className="rounded-2xl bg-[#F3F4F8] p-4">
-              <p className="text-xs font-black uppercase tracking-widest text-[#111827]/40">{key.replace(/([A-Z])/g, " $1")}</p>
+            <div key={key} className="rounded-2xl bg-[var(--ui-bg)] p-4">
+              <p className="text-xs font-black uppercase tracking-widest text-[var(--ui-text)]/40">{key.replace(/([A-Z])/g, " $1")}</p>
               <ProjectValue value={value} />
             </div>
           ))}
         </div>
       ) : (
-        <p className="rounded-2xl border border-dashed border-[#1A1A1A]/12 bg-[#F9F8F6] p-5 text-sm font-semibold text-[#111827]/55">No saved output for this tab yet.</p>
+        <p className="rounded-2xl border border-dashed border-[var(--ui-line-strong)] bg-[var(--ui-bg)] p-5 text-sm font-semibold text-[var(--ui-text)]/55">No saved output for this tab yet.</p>
       )}
     </div>
   );
@@ -1744,12 +1744,12 @@ function ProjectStagePanel({ project, stage, fallbackTitle, onGenerate, busy }: 
 
 function ProjectValue({ value }: { value: any }) {
   if (Array.isArray(value)) {
-    return <div className="mt-3 space-y-2">{value.map((item, index) => <p key={index} className="rounded-xl bg-white px-3 py-2 text-sm font-bold leading-6 text-[#111827]/68">{typeof item === "string" ? item : JSON.stringify(item)}</p>)}</div>;
+    return <div className="mt-3 space-y-2">{value.map((item, index) => <p key={index} className="rounded-xl bg-[var(--ui-panel)] px-3 py-2 text-sm font-bold leading-6 text-[var(--ui-text)]/68">{typeof item === "string" ? item : JSON.stringify(item)}</p>)}</div>;
   }
   if (value && typeof value === "object") {
-    return <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap rounded-xl bg-white p-3 text-xs font-semibold leading-5 text-[#111827]/65">{JSON.stringify(value, null, 2)}</pre>;
+    return <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap rounded-xl bg-[var(--ui-panel)] p-3 text-xs font-semibold leading-5 text-[var(--ui-text)]/65">{JSON.stringify(value, null, 2)}</pre>;
   }
-  return <p className="mt-3 whitespace-pre-wrap text-sm font-semibold leading-7 text-[#111827]/65">{String(value || "")}</p>;
+  return <p className="mt-3 whitespace-pre-wrap text-sm font-semibold leading-7 text-[var(--ui-text)]/65">{String(value || "")}</p>;
 }
 
 function UploadModal({
@@ -1822,7 +1822,7 @@ function UploadModal({
         <>
           <button type="button" className="ui-btn" onClick={onClose}>Cancel</button>
           <button type="submit" form={formId} className="ui-btn is-primary" disabled={!canUpload || !file || !title.trim() || uploading}>
-            {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
+            {uploading ? <Loader2 className="h-4 w-4 ui-spin" /> : <UploadCloud className="h-4 w-4" />}
             {uploading ? "Uploading" : "Upload"}
           </button>
         </>
@@ -1872,7 +1872,7 @@ function UploadModal({
               onRefresh: onRefreshPlaylists,
             }}
           />
-          {uploadResult ? <div className="mt-4 rounded-xl border border-[#f9dc0b]/35 bg-[#fff9d6] p-4 text-sm text-[#2d2700]"><div className="flex items-center gap-2 font-bold"><CheckCircle2 className="h-4 w-4" /> Uploaded successfully</div><a href={uploadResult.url} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1.5 text-xs font-bold text-[#6a5b00] underline">Open on YouTube <ExternalLink className="h-3.5 w-3.5" /></a></div> : null}
+          {uploadResult ? <div className="mt-4 rounded-xl border border-[var(--ui-accent)]/35 bg-[var(--ui-accent-soft)] p-4 text-sm text-[var(--ui-accent-text)]"><div className="flex items-center gap-2 font-bold"><CheckCircle2 className="h-4 w-4" /> Uploaded successfully</div><a href={uploadResult.url} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1.5 text-xs font-bold text-[var(--ui-accent-text)] underline">Open on YouTube <ExternalLink className="h-3.5 w-3.5" /></a></div> : null}
       </form>
     </Dialog>
   );
@@ -1890,10 +1890,10 @@ function ThumbnailManagementPanel({ video, canManage, busy, notice, onUpload }: 
   const [file, setFile] = useState<File | null>(null);
   useEffect(() => setFile(null), [video.id]);
   return <div className="grid gap-4 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)]">
-    <div className="overflow-hidden rounded-xl border border-[#1A1A1A]/8 bg-[#F9F8F6] p-3"><ThumbPreview video={video} /><p className="mt-3 text-xs font-bold text-[#1A1A1A]/55">Current YouTube thumbnail</p></div>
-    <div className="rounded-xl border border-[#1A1A1A]/8 bg-white p-4">
-      <div className="flex items-center gap-2"><ImageUp className="h-4 w-4 text-[#f9dc0b]" /><h3 className="text-sm font-bold text-[#1A1A1A]">Replace thumbnail</h3></div>
-      <p className="mt-1 text-xs leading-5 text-[#1A1A1A]/50">Upload a JPEG or PNG, up to 2MB. YouTube replaces the live thumbnail immediately.</p>
+    <div className="overflow-hidden rounded-xl border border-[var(--ui-line)] bg-[var(--ui-bg)] p-3"><ThumbPreview video={video} /><p className="mt-3 text-xs font-bold text-[var(--ui-text)]/55">Current YouTube thumbnail</p></div>
+    <div className="rounded-xl border border-[var(--ui-line)] bg-[var(--ui-panel)] p-4">
+      <div className="flex items-center gap-2"><ImageUp className="h-4 w-4 text-[var(--ui-accent-text)]" /><h3 className="text-sm font-bold text-[var(--ui-text)]">Replace thumbnail</h3></div>
+      <p className="mt-1 text-xs leading-5 text-[var(--ui-text)]/50">Upload a JPEG or PNG, up to 2MB. YouTube replaces the live thumbnail immediately.</p>
       {canManage ? <>
         <div className="ui-inherit mt-4">
           <FileDrop
@@ -1908,9 +1908,9 @@ function ThumbnailManagementPanel({ video, canManage, busy, notice, onUpload }: 
             onClear={() => setFile(null)}
           />
         </div>
-        <button type="button" onClick={() => file && onUpload(file)} disabled={!file || busy} className="mt-3 inline-flex h-10 items-center gap-2 rounded-lg bg-[#f9dc0b] px-3 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white disabled:opacity-45">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}{busy ? "Publishing thumbnail" : "Publish thumbnail"}</button>
-      </> : <Notice className="mt-4" tone="warn" title="Direct Google access needed" body="Reconnect this channel with Google to upload a custom YouTube thumbnail." action={<a href={GOOGLE_READ_CONNECT_URL} className="inline-flex h-9 items-center justify-center rounded-lg bg-[#f9dc0b] px-3 text-xs font-bold text-[#1A1A1A]">Reconnect Google</a>} />}
-      {notice ? <p className="mt-3 text-xs font-semibold leading-5 text-[#6a5b00]">{notice}</p> : null}
+        <button type="button" onClick={() => file && onUpload(file)} disabled={!file || busy} className="ui-btn is-primary mt-3">{busy ? <Loader2 className="h-4 w-4 ui-spin" /> : <UploadCloud className="h-4 w-4" />}{busy ? "Publishing thumbnail" : "Publish thumbnail"}</button>
+      </> : <Notice className="mt-4" tone="warn" title="Direct Google access needed" body="Reconnect this channel with Google to upload a custom YouTube thumbnail." action={<a href={GOOGLE_READ_CONNECT_URL} className="ui-btn is-primary is-sm">Reconnect Google</a>} />}
+      {notice ? <p className="mt-3 text-xs font-semibold leading-5 text-[var(--ui-accent-text)]">{notice}</p> : null}
     </div>
   </div>;
 }
@@ -1977,18 +1977,18 @@ function CaptionTracksPanel({ videoId, accountId, canManage, isDark }: { videoId
       await loadCaptions();
     } catch (err) { setError(err instanceof Error ? err.message : "Could not delete caption track"); } finally { setBusy(""); }
   }
-  if (!canManage) return <Notice tone="warn" title="Direct Google access needed" body="Reconnect this channel with Google to manage YouTube caption tracks." action={<a href={GOOGLE_READ_CONNECT_URL} className="inline-flex h-9 items-center justify-center rounded-lg bg-[#f9dc0b] px-3 text-xs font-bold text-[#1A1A1A]">Reconnect Google</a>} />;
-  return <div className={cn("overflow-hidden rounded-xl border", isDark ? "border-white/10 bg-[#151923]" : "border-[#1A1A1A]/8 bg-white")}>
-    <div className={cn("flex flex-wrap items-center justify-between gap-3 border-b p-4", isDark ? "border-white/10" : "border-[#1A1A1A]/8")}><div><div className="flex items-center gap-2"><FileText className="h-4 w-4 text-[#f9dc0b]" /><h3 className="text-sm font-bold">Caption tracks</h3></div><p className={cn("mt-1 text-xs", isDark ? "text-white/45" : "text-[#1A1A1A]/45")}>Upload, publish, download, or retire caption files for this video.</p></div><button type="button" onClick={() => void loadCaptions()} className={cn("grid h-9 w-9 place-items-center rounded-lg border", isDark ? "border-white/10 text-white/60" : "border-[#1A1A1A]/10 text-[#1A1A1A]/55")} aria-label="Refresh caption tracks">{busy === "load" ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}</button></div>
-    <div className={cn("space-y-3 p-4", isDark ? "text-white" : "text-[#1A1A1A]")}>
-      <div className={cn("grid gap-2 rounded-xl border p-3 md:grid-cols-[minmax(0,1fr)_130px_120px_auto]", isDark ? "border-white/10 bg-white/5" : "border-[#1A1A1A]/8 bg-[#FDFCFA]")}>
-        <label className="flex h-10 min-w-0 cursor-pointer items-center gap-2 rounded-lg border border-dashed border-[#1A1A1A]/15 bg-white px-3 text-xs font-bold text-[#1A1A1A]/60"><UploadCloud className="h-4 w-4 text-[#f9dc0b]" /><span className="truncate">{file ? file.name : "Choose .srt, .vtt, .sbv, or .ttml"}</span><input type="file" accept=".srt,.vtt,.sbv,.ttml,text/vtt,text/plain,application/x-subrip,application/ttml+xml" className="sr-only" onChange={(event) => setFile(event.target.files?.[0] || null)} /></label>
-        <input value={language} onChange={(event) => setLanguage(event.target.value)} className="h-10 rounded-lg border border-[#1A1A1A]/10 bg-white px-3 text-sm text-[#1A1A1A] outline-none" placeholder="en" aria-label="Caption language" />
-        <input value={name} onChange={(event) => setName(event.target.value)} className="h-10 rounded-lg border border-[#1A1A1A]/10 bg-white px-3 text-sm text-[#1A1A1A] outline-none" placeholder="Track name" aria-label="Caption track name" />
-        <button type="button" onClick={() => void uploadCaption()} disabled={!file || busy === "upload"} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#f9dc0b] px-3 text-xs font-bold text-[#1A1A1A] disabled:opacity-45">{busy === "upload" ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}Upload</button>
-        <label className="flex items-center gap-2 text-xs font-semibold md:col-span-4"><input type="checkbox" checked={isDraft} onChange={(event) => setIsDraft(event.target.checked)} className="h-4 w-4 accent-[#f9dc0b]" />Keep this new track as a draft</label>
+  if (!canManage) return <Notice tone="warn" title="Direct Google access needed" body="Reconnect this channel with Google to manage YouTube caption tracks." action={<a href={GOOGLE_READ_CONNECT_URL} className="ui-btn is-primary is-sm">Reconnect Google</a>} />;
+  return <div className={cn("overflow-hidden rounded-xl border", isDark ? "border-white/10 bg-[var(--ui-panel)]" : "border-[var(--ui-line)] bg-[var(--ui-panel)]")}>
+    <div className={cn("flex flex-wrap items-center justify-between gap-3 border-b p-4", isDark ? "border-white/10" : "border-[var(--ui-line)]")}><div><div className="flex items-center gap-2"><FileText className="h-4 w-4 text-[var(--ui-accent-text)]" /><h3 className="text-sm font-bold">Caption tracks</h3></div><p className={cn("mt-1 text-xs", isDark ? "text-white/45" : "text-[var(--ui-text)]/45")}>Upload, publish, download, or retire caption files for this video.</p></div><button type="button" onClick={() => void loadCaptions()} className={cn("grid h-9 w-9 place-items-center rounded-lg border", isDark ? "border-white/10 text-white/60" : "border-[var(--ui-line)] text-[var(--ui-text)]/55")} aria-label="Refresh caption tracks">{busy === "load" ? <Loader2 className="h-4 w-4 ui-spin" /> : <RefreshCw className="h-4 w-4" />}</button></div>
+    <div className={cn("space-y-3 p-4", isDark ? "text-white" : "text-[var(--ui-text)]")}>
+      <div className={cn("grid gap-2 rounded-xl border p-3 md:grid-cols-[minmax(0,1fr)_130px_120px_auto]", isDark ? "border-white/10 bg-white/5" : "border-[var(--ui-line)] bg-[var(--ui-panel)]")}>
+        <label className="flex h-10 min-w-0 cursor-pointer items-center gap-2 rounded-lg border border-dashed border-[var(--ui-line-strong)] bg-[var(--ui-panel)] px-3 text-xs font-bold text-[var(--ui-text)]/60"><UploadCloud className="h-4 w-4 text-[var(--ui-accent-text)]" /><span className="truncate">{file ? file.name : "Choose .srt, .vtt, .sbv, or .ttml"}</span><input type="file" accept=".srt,.vtt,.sbv,.ttml,text/vtt,text/plain,application/x-subrip,application/ttml+xml" className="sr-only" onChange={(event) => setFile(event.target.files?.[0] || null)} /></label>
+        <input value={language} onChange={(event) => setLanguage(event.target.value)} className="h-10 rounded-lg border border-[var(--ui-line)] bg-[var(--ui-panel)] px-3 text-sm text-[var(--ui-text)] outline-none" placeholder="en" aria-label="Caption language" />
+        <input value={name} onChange={(event) => setName(event.target.value)} className="h-10 rounded-lg border border-[var(--ui-line)] bg-[var(--ui-panel)] px-3 text-sm text-[var(--ui-text)] outline-none" placeholder="Track name" aria-label="Caption track name" />
+        <button type="button" onClick={() => void uploadCaption()} disabled={!file || busy === "upload"} className="ui-btn is-primary">{busy === "upload" ? <Loader2 className="h-4 w-4 ui-spin" /> : <UploadCloud className="h-4 w-4" />}Upload</button>
+        <label className="flex items-center gap-2 text-xs font-semibold md:col-span-4"><input type="checkbox" checked={isDraft} onChange={(event) => setIsDraft(event.target.checked)} className="ui-check" />Keep this new track as a draft</label>
       </div>
-      {captions.length ? <div className="space-y-2">{captions.map((caption) => { const edit = captionEdits[caption.id] || { name: caption.name, language: caption.language || "en", isDraft: caption.isDraft }; const replacement = replacementFiles[caption.id]; return <div key={caption.id} className={cn("grid gap-2 rounded-xl border p-3 md:grid-cols-[minmax(0,1fr)_110px_auto_auto]", isDark ? "border-white/10 bg-white/5" : "border-[#1A1A1A]/8 bg-white")}><div className="min-w-0"><input value={edit.name} onChange={(event) => setCaptionEdits((current) => ({ ...current, [caption.id]: { ...edit, name: event.target.value } }))} className={cn("h-9 w-full rounded-lg border px-3 text-sm font-bold outline-none", isDark ? "border-white/10 bg-[#151923] text-white" : "border-[#1A1A1A]/10 bg-[#FDFCFA] text-[#1A1A1A]")} placeholder="Caption track name" /><p className={cn("mt-1 text-[11px] font-semibold", isDark ? "text-white/40" : "text-[#1A1A1A]/42")}>{caption.status || "processing"}{caption.failureReason ? ` · ${caption.failureReason}` : ""}{caption.isAutoSynced ? " · auto-synced" : ""}</p></div><input value={edit.language} onChange={(event) => setCaptionEdits((current) => ({ ...current, [caption.id]: { ...edit, language: event.target.value } }))} className={cn("h-9 rounded-lg border px-3 text-sm outline-none", isDark ? "border-white/10 bg-[#151923] text-white" : "border-[#1A1A1A]/10 bg-[#FDFCFA] text-[#1A1A1A]")} aria-label="Caption language" /><div className="flex items-center gap-2"><label className="flex items-center gap-1.5 text-[11px] font-bold"><input type="checkbox" checked={edit.isDraft} onChange={(event) => setCaptionEdits((current) => ({ ...current, [caption.id]: { ...edit, isDraft: event.target.checked } }))} className="h-3.5 w-3.5 accent-[#f9dc0b]" />Draft</label><button type="button" onClick={() => void saveCaption(caption)} disabled={busy === `save:${caption.id}`} className="h-9 rounded-lg border border-[#1A1A1A]/10 px-2.5 text-[11px] font-bold disabled:opacity-45">{busy === `save:${caption.id}` ? "Saving" : "Save"}</button></div><div className="flex items-center justify-end gap-1"><label className={cn("grid h-9 w-9 cursor-pointer place-items-center rounded-lg border", isDark ? "border-white/10 text-white/65" : "border-[#1A1A1A]/10 text-[#1A1A1A]/55")} title={replacement ? `Replace with ${replacement.name}` : "Replace caption file"}><FileText className="h-4 w-4" /><input type="file" accept=".srt,.vtt,.sbv,.ttml,text/vtt,text/plain,application/x-subrip,application/ttml+xml" className="sr-only" onChange={(event) => setReplacementFiles((current) => ({ ...current, [caption.id]: event.target.files?.[0] || null }))} /></label><a href={`/api/youtube/videos/${encodeURIComponent(videoId)}/captions/${encodeURIComponent(caption.id)}/download?accountId=${encodeURIComponent(accountId)}&format=srt`} className={cn("grid h-9 w-9 place-items-center rounded-lg border", isDark ? "border-white/10 text-white/65" : "border-[#1A1A1A]/10 text-[#1A1A1A]/55")} title="Download SRT"><Download className="h-4 w-4" /></a><button type="button" onClick={() => void deleteCaption(caption)} disabled={busy === `delete:${caption.id}`} className="grid h-9 w-9 place-items-center rounded-lg border border-red-500/20 text-red-600 disabled:opacity-45" aria-label="Delete caption track">{busy === `delete:${caption.id}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}</button></div></div>; })}</div> : busy !== "load" ? <p className={cn("rounded-lg px-3 py-4 text-sm font-semibold", isDark ? "bg-white/5 text-white/45" : "bg-[#F9F8F6] text-[#1A1A1A]/45")}>No caption tracks are attached to this video.</p> : null}
+      {captions.length ? <div className="space-y-2">{captions.map((caption) => { const edit = captionEdits[caption.id] || { name: caption.name, language: caption.language || "en", isDraft: caption.isDraft }; const replacement = replacementFiles[caption.id]; return <div key={caption.id} className={cn("grid gap-2 rounded-xl border p-3 md:grid-cols-[minmax(0,1fr)_110px_auto_auto]", isDark ? "border-white/10 bg-white/5" : "border-[var(--ui-line)] bg-[var(--ui-panel)]")}><div className="min-w-0"><input value={edit.name} onChange={(event) => setCaptionEdits((current) => ({ ...current, [caption.id]: { ...edit, name: event.target.value } }))} className={cn("h-9 w-full rounded-lg border px-3 text-sm font-bold outline-none", isDark ? "border-white/10 bg-[var(--ui-panel)] text-white" : "border-[var(--ui-line)] bg-[var(--ui-panel)] text-[var(--ui-text)]")} placeholder="Caption track name" /><p className={cn("mt-1 text-[11px] font-semibold", isDark ? "text-white/40" : "text-[var(--ui-text)]/42")}>{caption.status || "processing"}{caption.failureReason ? ` · ${caption.failureReason}` : ""}{caption.isAutoSynced ? " · auto-synced" : ""}</p></div><input value={edit.language} onChange={(event) => setCaptionEdits((current) => ({ ...current, [caption.id]: { ...edit, language: event.target.value } }))} className={cn("h-9 rounded-lg border px-3 text-sm outline-none", isDark ? "border-white/10 bg-[var(--ui-panel)] text-white" : "border-[var(--ui-line)] bg-[var(--ui-panel)] text-[var(--ui-text)]")} aria-label="Caption language" /><div className="flex items-center gap-2"><label className="flex items-center gap-1.5 text-[11px] font-bold"><input type="checkbox" checked={edit.isDraft} onChange={(event) => setCaptionEdits((current) => ({ ...current, [caption.id]: { ...edit, isDraft: event.target.checked } }))} className="ui-check" />Draft</label><button type="button" onClick={() => void saveCaption(caption)} disabled={busy === `save:${caption.id}`} className="h-9 rounded-lg border border-[var(--ui-line)] px-2.5 text-[11px] font-bold disabled:opacity-45">{busy === `save:${caption.id}` ? "Saving" : "Save"}</button></div><div className="flex items-center justify-end gap-1"><label className={cn("grid h-9 w-9 cursor-pointer place-items-center rounded-lg border", isDark ? "border-white/10 text-white/65" : "border-[var(--ui-line)] text-[var(--ui-text)]/55")} title={replacement ? `Replace with ${replacement.name}` : "Replace caption file"}><FileText className="h-4 w-4" /><input type="file" accept=".srt,.vtt,.sbv,.ttml,text/vtt,text/plain,application/x-subrip,application/ttml+xml" className="sr-only" onChange={(event) => setReplacementFiles((current) => ({ ...current, [caption.id]: event.target.files?.[0] || null }))} /></label><a href={`/api/youtube/videos/${encodeURIComponent(videoId)}/captions/${encodeURIComponent(caption.id)}/download?accountId=${encodeURIComponent(accountId)}&format=srt`} className={cn("grid h-9 w-9 place-items-center rounded-lg border", isDark ? "border-white/10 text-white/65" : "border-[var(--ui-line)] text-[var(--ui-text)]/55")} title="Download SRT"><Download className="h-4 w-4" /></a><button type="button" onClick={() => void deleteCaption(caption)} disabled={busy === `delete:${caption.id}`} className="grid h-9 w-9 place-items-center rounded-lg border border-red-500/20 text-red-600 disabled:opacity-45" aria-label="Delete caption track">{busy === `delete:${caption.id}` ? <Loader2 className="h-4 w-4 ui-spin" /> : <Trash2 className="h-4 w-4" />}</button></div></div>; })}</div> : busy !== "load" ? <p className={cn("rounded-lg px-3 py-4 text-sm font-semibold", isDark ? "bg-white/5 text-white/45" : "bg-[var(--ui-bg)] text-[var(--ui-text)]/45")}>No caption tracks are attached to this video.</p> : null}
     </div>
   </div>;
 }
@@ -2000,10 +2000,10 @@ function AnalyticsPanel({ analytics, isTikTok = false }: { analytics: YouTubeVid
   const revenueWarning = typeof monetization?.warning === "string" ? monetization.warning : "";
   const warnings = (analytics.analytics?.warnings || []).filter(Boolean);
   return (
-    <div className="overflow-hidden rounded-xl border border-[#1A1A1A]/8 bg-[#F9F8F6]">
-      <div className="flex gap-3 border-b border-[#1A1A1A]/8 bg-white p-3">
-        <div className="h-16 w-24 overflow-hidden rounded-lg bg-[#1A1A1A]/5">{analytics.thumbnailUrl ? <img src={analytics.thumbnailUrl} alt="" className="h-full w-full object-cover" /> : null}</div>
-        <div className="min-w-0 flex-1"><p className="line-clamp-2 text-sm font-bold text-[#1A1A1A]">{analytics.title}</p><a href={analytics.url} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-xs font-bold text-[#f9dc0b]">Open post <ExternalLink className="h-3 w-3" /></a></div>
+    <div className="overflow-hidden rounded-xl border border-[var(--ui-line)] bg-[var(--ui-bg)]">
+      <div className="flex gap-3 border-b border-[var(--ui-line)] bg-[var(--ui-panel)] p-3">
+        <div className="h-16 w-24 overflow-hidden rounded-lg bg-[var(--ui-text)]/5">{analytics.thumbnailUrl ? <img src={analytics.thumbnailUrl} alt="" className="h-full w-full object-cover" /> : null}</div>
+        <div className="min-w-0 flex-1"><p className="line-clamp-2 text-sm font-bold text-[var(--ui-text)]">{analytics.title}</p><a href={analytics.url} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-xs font-bold text-[var(--ui-accent-text)]">Open post <ExternalLink className="h-3 w-3" /></a></div>
       </div>
       <div className={cn("grid gap-2 p-3", isTikTok ? "grid-cols-3" : "grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6")}>
         <Stat label="Views" value={compactNumber(Number(totals.views ?? analytics.publicStats?.viewCount ?? 0))} />
@@ -2020,13 +2020,13 @@ function AnalyticsPanel({ analytics, isTikTok = false }: { analytics: YouTubeVid
           </>
         ) : null}
       </div>
-      {!isTikTok ? <div className="grid gap-px border-t border-[#1A1A1A]/8 bg-[#1A1A1A]/8 lg:grid-cols-2">
+      {!isTikTok ? <div className="grid gap-px border-t border-[var(--ui-line)] bg-[var(--ui-text)]/8 lg:grid-cols-2">
         <AnalyticsBreakdown title="Traffic sources" rows={analytics.analytics?.trafficSources || []} labelKey="insightTrafficSourceType" />
         <AnalyticsBreakdown title="Audience devices" rows={analytics.analytics?.devices || []} labelKey="deviceType" />
         <AnalyticsBreakdown title="Top countries" rows={analytics.analytics?.countries || []} labelKey="country" />
-        <div className="bg-white p-3">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">Monetization</p>
-          {revenueWarning ? <p className="mt-2 text-xs font-semibold leading-5 text-[#6a5b00]">{revenueWarning}</p> : <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+        <div className="bg-[var(--ui-panel)] p-3">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-[var(--ui-text)]/35">Monetization</p>
+          {revenueWarning ? <p className="mt-2 text-xs font-semibold leading-5 text-[var(--ui-accent-text)]">{revenueWarning}</p> : <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
             <Stat label="Est. revenue" value={formatCurrency(monetization?.estimatedRevenue)} />
             <Stat label="Ad revenue" value={formatCurrency(monetization?.estimatedAdRevenue)} />
             <Stat label="Monetized plays" value={compactNumber(Number(monetization?.monetizedPlaybacks || 0))} />
@@ -2036,8 +2036,8 @@ function AnalyticsPanel({ analytics, isTikTok = false }: { analytics: YouTubeVid
           </div>}
         </div>
       </div> : null}
-      {warning ? <p className="border-t border-[#1A1A1A]/8 px-3 py-2 text-xs font-semibold leading-5 text-[#6a5b00]">{warning}</p> : null}
-      {warnings.length ? <p className="border-t border-[#1A1A1A]/8 px-3 py-2 text-[11px] font-semibold leading-5 text-[#1A1A1A]/42">Some optional breakdowns could not load: {warnings.slice(0, 2).join(" · ")}</p> : null}
+      {warning ? <p className="border-t border-[var(--ui-line)] px-3 py-2 text-xs font-semibold leading-5 text-[var(--ui-accent-text)]">{warning}</p> : null}
+      {warnings.length ? <p className="border-t border-[var(--ui-line)] px-3 py-2 text-[11px] font-semibold leading-5 text-[var(--ui-text)]/42">Some optional breakdowns could not load: {warnings.slice(0, 2).join(" · ")}</p> : null}
     </div>
   );
 }
@@ -2050,28 +2050,28 @@ function formatCurrency(value: number | string | null | undefined): string {
 
 function AnalyticsBreakdown({ title, rows, labelKey }: { title: string; rows: Array<Record<string, number | string>>; labelKey: string }) {
   const totalViews = Math.max(1, rows.reduce((sum, row) => sum + Number(row.views || 0), 0));
-  return <div className="bg-white p-3">
-    <p className="text-[10px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">{title}</p>
+  return <div className="bg-[var(--ui-panel)] p-3">
+    <p className="text-[10px] font-bold uppercase tracking-widest text-[var(--ui-text)]/35">{title}</p>
     {rows.length ? <div className="mt-3 space-y-2.5">{rows.slice(0, 5).map((row, index) => {
       const label = String(row[labelKey] || "Unknown").replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
       const views = Number(row.views || 0);
       return <div key={`${label}-${index}`}>
-        <div className="flex items-center justify-between gap-3 text-xs"><span className="truncate font-semibold text-[#1A1A1A]/65">{label}</span><span className="shrink-0 font-bold text-[#1A1A1A]">{compactNumber(views)}</span></div>
-        <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-[#1A1A1A]/7"><div className="h-full rounded-full bg-[#f9dc0b]" style={{ width: `${Math.max(3, Math.round((views / totalViews) * 100))}%` }} /></div>
+        <div className="flex items-center justify-between gap-3 text-xs"><span className="truncate font-semibold text-[var(--ui-text)]/65">{label}</span><span className="shrink-0 font-bold text-[var(--ui-text)]">{compactNumber(views)}</span></div>
+        <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-[var(--ui-text)]/7"><div className="h-full rounded-full bg-[var(--ui-accent)]" style={{ width: `${Math.max(3, Math.round((views / totalViews) * 100))}%` }} /></div>
       </div>;
-    })}</div> : <p className="mt-2 text-xs font-semibold leading-5 text-[#1A1A1A]/42">No reportable data in this date range.</p>}
+    })}</div> : <p className="mt-2 text-xs font-semibold leading-5 text-[var(--ui-text)]/42">No reportable data in this date range.</p>}
   </div>;
 }
 
 function MovieIdentityPanel({ result }: { result: MovieResult }) {
   return (
-    <div className="mt-4 overflow-hidden rounded-xl border border-[#1A1A1A]/8 bg-white">
-      <div className="flex flex-col gap-4 border-b border-[#1A1A1A]/8 bg-[#FDFCFA] p-4 md:flex-row md:items-start">
-        <div className="h-28 w-20 shrink-0 overflow-hidden rounded-lg bg-[#1A1A1A]/5">{result.posterUrl ? <img src={result.posterUrl} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" /> : <Film className="m-auto mt-9 h-8 w-8 text-[#f9dc0b]/35" />}</div>
+    <div className="mt-4 overflow-hidden rounded-xl border border-[var(--ui-line)] bg-[var(--ui-panel)]">
+      <div className="flex flex-col gap-4 border-b border-[var(--ui-line)] bg-[var(--ui-panel)] p-4 md:flex-row md:items-start">
+        <div className="h-28 w-20 shrink-0 overflow-hidden rounded-lg bg-[var(--ui-text)]/5">{result.posterUrl ? <img src={result.posterUrl} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" /> : <Film className="m-auto mt-9 h-8 w-8 text-[var(--ui-accent-text)]/35" />}</div>
         <div className="min-w-0 flex-1">
-          <p className="text-[11px] font-bold uppercase tracking-widest text-[#f9dc0b]">Detected movie</p>
-          <h3 className="mt-1 font-serif text-2xl font-bold text-[#1A1A1A]">{result.title || "Unknown title"} {result.year ? <span className="text-[#1A1A1A]/45">({result.year})</span> : null}</h3>
-          <p className="mt-2 text-sm leading-6 text-[#1A1A1A]/62">{result.summary || result.tmdb?.overview || result.mal?.synopsis || "Movie ID returned a title match without a summary."}</p>
+          <p className="text-[11px] font-bold uppercase tracking-widest text-[var(--ui-accent-text)]">Detected movie</p>
+          <h3 className="mt-1 font-serif text-2xl font-bold text-[var(--ui-text)]">{result.title || "Unknown title"} {result.year ? <span className="text-[var(--ui-text)]/45">({result.year})</span> : null}</h3>
+          <p className="mt-2 text-sm leading-6 text-[var(--ui-text)]/62">{result.summary || result.tmdb?.overview || result.mal?.synopsis || "Movie ID returned a title match without a summary."}</p>
         </div>
       </div>
     </div>
@@ -2099,39 +2099,39 @@ function CommentsPanel({ comments, loading, canReply, canManage, readOnlyLabel, 
   onModerateComment: (id: string, status: "heldForReview" | "published" | "rejected") => void;
 }) {
   return (
-    <div className="overflow-hidden rounded-xl border border-[#1A1A1A]/8 bg-white">
-      <div className="flex items-center justify-between border-b border-[#1A1A1A]/8 bg-[#FDFCFA] px-3 py-3">
-        <div className="flex items-center gap-2"><MessageCircle className="h-4 w-4 text-[#f9dc0b]" /><p className="text-sm font-bold text-[#1A1A1A]">Recent comments</p></div>
-        <button type="button" onClick={onRefresh} className="grid h-8 w-8 place-items-center rounded-lg border border-[#1A1A1A]/10 text-[#1A1A1A]/50 transition hover:text-[#1A1A1A]" aria-label="Refresh comments">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}</button>
+    <div className="overflow-hidden rounded-xl border border-[var(--ui-line)] bg-[var(--ui-panel)]">
+      <div className="flex items-center justify-between border-b border-[var(--ui-line)] bg-[var(--ui-panel)] px-3 py-3">
+        <div className="flex items-center gap-2"><MessageCircle className="h-4 w-4 text-[var(--ui-accent-text)]" /><p className="text-sm font-bold text-[var(--ui-text)]">Recent comments</p></div>
+        <button type="button" onClick={onRefresh} className="ui-icon-btn is-bordered" aria-label="Refresh comments">{loading ? <Loader2 className="h-4 w-4 ui-spin" /> : <RefreshCw className="h-4 w-4" />}</button>
       </div>
-      <div className="max-h-[620px] space-y-2 overflow-y-auto bg-[#F9F8F6] p-3">
-        {canManage ? <div className="rounded-xl border border-[#1A1A1A]/8 bg-white p-3">
-          <label className="text-[10px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">Comment as your channel</label>
+      <div className="max-h-[620px] space-y-2 overflow-y-auto bg-[var(--ui-bg)] p-3">
+        {canManage ? <div className="rounded-xl border border-[var(--ui-line)] bg-[var(--ui-panel)] p-3">
+          <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--ui-text)]/35">Comment as your channel</label>
           <div className="mt-2 flex gap-2">
-            <input value={newCommentText} onChange={(event) => onNewCommentTextChange(event.target.value)} className="h-10 min-w-0 flex-1 rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-3 text-sm outline-none transition focus:border-[#f9dc0b]/45" placeholder="Add a public comment" />
-            <button type="button" onClick={onPostComment} disabled={!newCommentText.trim() || commentActionBusy === "post"} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#1A1A1A] px-3 text-xs font-bold text-white transition hover:bg-[#f9dc0b] hover:text-[#1A1A1A] disabled:opacity-45">{commentActionBusy === "post" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}Post</button>
+            <input value={newCommentText} onChange={(event) => onNewCommentTextChange(event.target.value)} className="h-10 min-w-0 flex-1 rounded-lg border border-[var(--ui-line)] bg-[var(--ui-panel)] px-3 text-sm outline-none transition focus:border-[var(--ui-accent)]/45" placeholder="Add a public comment" />
+            <button type="button" onClick={onPostComment} disabled={!newCommentText.trim() || commentActionBusy === "post"} className="ui-btn is-ink">{commentActionBusy === "post" ? <Loader2 className="h-4 w-4 ui-spin" /> : <Send className="h-4 w-4" />}Post</button>
           </div>
         </div> : null}
         {loading && !comments ? (
-          <p className="rounded-lg bg-white px-3 py-4 text-sm font-semibold text-[#1A1A1A]/45">Loading comments</p>
+          <p className="rounded-lg bg-[var(--ui-panel)] px-3 py-4 text-sm font-semibold text-[var(--ui-text)]/45">Loading comments</p>
         ) : comments?.comments?.length ? (
           comments.comments.map((thread) => {
             const parent = thread.topLevelComment;
             return (
-              <div key={thread.threadId} className="rounded-xl border border-[#1A1A1A]/8 bg-white p-3">
+              <div key={thread.threadId} className="rounded-xl border border-[var(--ui-line)] bg-[var(--ui-panel)] p-3">
                 <ManagedCommentBody comment={parent} canManage={canManage} ownChannelId={ownChannelId} busy={commentActionBusy} onUpdate={onUpdateComment} onDelete={onDeleteComment} onModerate={onModerateComment} />
-                {thread.totalReplyCount ? <p className="mt-3 text-[10px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">{thread.repliesLoaded ?? thread.replies.length} of {thread.totalReplyCount} replies loaded{thread.nextRepliesPageToken ? " (more available)" : ""}</p> : null}
-                {thread.replies.length ? <div className="mt-3 space-y-2 border-l border-[#1A1A1A]/10 pl-3">{thread.replies.map((reply) => <ManagedCommentBody key={reply.id} comment={reply} compact canManage={canManage} ownChannelId={ownChannelId} busy={commentActionBusy} onUpdate={onUpdateComment} onDelete={onDeleteComment} onModerate={onModerateComment} />)}</div> : null}
+                {thread.totalReplyCount ? <p className="mt-3 text-[10px] font-bold uppercase tracking-widest text-[var(--ui-text)]/35">{thread.repliesLoaded ?? thread.replies.length} of {thread.totalReplyCount} replies loaded{thread.nextRepliesPageToken ? " (more available)" : ""}</p> : null}
+                {thread.replies.length ? <div className="mt-3 space-y-2 border-l border-[var(--ui-line)] pl-3">{thread.replies.map((reply) => <ManagedCommentBody key={reply.id} comment={reply} compact canManage={canManage} ownChannelId={ownChannelId} busy={commentActionBusy} onUpdate={onUpdateComment} onDelete={onDeleteComment} onModerate={onModerateComment} />)}</div> : null}
                 {canReply && thread.canReply ? (
                   <div className="mt-3 flex gap-2">
-                    <input value={replyText[parent.id] || ""} onChange={(event) => onReplyTextChange(parent.id, event.target.value)} className="h-10 min-w-0 flex-1 rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-3 text-sm outline-none transition focus:border-[#f9dc0b]/45" placeholder="Reply as your channel" />
-                    <button type="button" onClick={() => onReply(parent.id)} disabled={!replyText[parent.id]?.trim() || replyingTo === parent.id} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#f9dc0b] px-3 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white disabled:opacity-45">{replyingTo === parent.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}Reply</button>
+                    <input value={replyText[parent.id] || ""} onChange={(event) => onReplyTextChange(parent.id, event.target.value)} className="h-10 min-w-0 flex-1 rounded-lg border border-[var(--ui-line)] bg-[var(--ui-panel)] px-3 text-sm outline-none transition focus:border-[var(--ui-accent)]/45" placeholder="Reply as your channel" />
+                    <button type="button" onClick={() => onReply(parent.id)} disabled={!replyText[parent.id]?.trim() || replyingTo === parent.id} className="ui-btn is-primary">{replyingTo === parent.id ? <Loader2 className="h-4 w-4 ui-spin" /> : <Send className="h-4 w-4" />}Reply</button>
                   </div>
-                ) : <p className="mt-3 rounded-lg bg-[#F9F8F6] px-3 py-2 text-xs font-semibold text-[#1A1A1A]/45">{canReply ? "Replies are disabled for this thread." : (readOnlyLabel || "Reconnect Google to enable replies.")}</p>}
+                ) : <p className="mt-3 rounded-lg bg-[var(--ui-bg)] px-3 py-2 text-xs font-semibold text-[var(--ui-text)]/45">{canReply ? "Replies are disabled for this thread." : (readOnlyLabel || "Reconnect Google to enable replies.")}</p>}
               </div>
             );
           })
-        ) : <p className="rounded-lg bg-white px-3 py-4 text-sm font-semibold text-[#1A1A1A]/45">No recent comments returned for this video.</p>}
+        ) : <p className="rounded-lg bg-[var(--ui-panel)] px-3 py-4 text-sm font-semibold text-[var(--ui-text)]/45">No recent comments returned for this video.</p>}
       </div>
     </div>
   );
@@ -2143,22 +2143,22 @@ function ManagedCommentBody({ comment, compact = false, canManage, ownChannelId,
   const isOwn = Boolean(ownChannelId && comment.authorChannelId && ownChannelId === comment.authorChannelId);
   useEffect(() => setText(comment.textOriginal || comment.textDisplay || ""), [comment.id, comment.textDisplay, comment.textOriginal]);
   if (editing) {
-    return <div className="rounded-lg bg-[#F9F8F6] p-2.5">
-      <textarea value={text} onChange={(event) => setText(event.target.value)} rows={compact ? 2 : 3} className="w-full resize-y rounded-lg border border-[#1A1A1A]/10 bg-white px-3 py-2 text-sm outline-none transition focus:border-[#f9dc0b]/45" />
-      <div className="mt-2 flex justify-end gap-2"><button type="button" onClick={() => { setEditing(false); setText(comment.textOriginal || comment.textDisplay || ""); }} className="h-8 rounded-lg border border-[#1A1A1A]/10 px-2.5 text-[11px] font-bold text-[#1A1A1A]/55">Cancel</button><button type="button" onClick={() => { onUpdate(comment.id, text); setEditing(false); }} disabled={!text.trim() || busy === `edit:${comment.id}`} className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[#f9dc0b] px-2.5 text-[11px] font-bold text-[#1A1A1A] disabled:opacity-45">{busy === `edit:${comment.id}` ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}Save</button></div>
+    return <div className="rounded-lg bg-[var(--ui-bg)] p-2.5">
+      <textarea value={text} onChange={(event) => setText(event.target.value)} rows={compact ? 2 : 3} className="w-full resize-y rounded-lg border border-[var(--ui-line)] bg-[var(--ui-panel)] px-3 py-2 text-sm outline-none transition focus:border-[var(--ui-accent)]/45" />
+      <div className="mt-2 flex justify-end gap-2"><button type="button" onClick={() => { setEditing(false); setText(comment.textOriginal || comment.textDisplay || ""); }} className="h-8 rounded-lg border border-[var(--ui-line)] px-2.5 text-[11px] font-bold text-[var(--ui-text)]/55">Cancel</button><button type="button" onClick={() => { onUpdate(comment.id, text); setEditing(false); }} disabled={!text.trim() || busy === `edit:${comment.id}`} className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[var(--ui-accent)] px-2.5 text-[11px] font-bold text-[var(--ui-accent-ink)] disabled:opacity-45">{busy === `edit:${comment.id}` ? <Loader2 className="h-3.5 w-3.5 ui-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}Save</button></div>
     </div>;
   }
   return (
     <div className="flex gap-3">
-      {comment.authorProfileImageUrl ? <img src={comment.authorProfileImageUrl} alt="" className={cn("rounded-full object-cover", compact ? "h-7 w-7" : "h-9 w-9")} referrerPolicy="no-referrer" /> : <div className={cn("grid rounded-full bg-[#f9dc0b]/10 text-[#f9dc0b]", compact ? "h-7 w-7" : "h-9 w-9")}><MessageCircle className="m-auto h-3.5 w-3.5" /></div>}
-      <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="truncate text-xs font-bold text-[#1A1A1A]">{comment.authorDisplayName || "YouTube user"}</p><p className="text-[11px] font-semibold text-[#1A1A1A]/35">{comment.likeCount ? `${compactNumber(comment.likeCount)} likes` : ""}</p>{comment.moderationStatus ? <p className="text-[10px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">{comment.moderationStatus}</p> : null}</div><p className={cn("mt-1 whitespace-pre-wrap text-sm leading-6 text-[#1A1A1A]/70", compact && "text-xs leading-5")}>{comment.textDisplay}</p>
-      {canManage ? <div className="mt-2 flex flex-wrap gap-1.5">{isOwn ? <><button type="button" onClick={() => setEditing(true)} className="h-7 rounded-md border border-[#1A1A1A]/10 px-2 text-[10px] font-bold text-[#1A1A1A]/55">Edit</button><button type="button" onClick={() => onDelete(comment.id)} disabled={busy === `delete:${comment.id}`} className="inline-flex h-7 items-center gap-1 rounded-md border border-red-500/20 px-2 text-[10px] font-bold text-red-600 disabled:opacity-45">{busy === `delete:${comment.id}` ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}Delete</button></> : <><button type="button" onClick={() => onModerate(comment.id, "heldForReview")} disabled={busy === `hold:${comment.id}`} className="h-7 rounded-md border border-[#1A1A1A]/10 px-2 text-[10px] font-bold text-[#1A1A1A]/55 disabled:opacity-45">Hold</button><button type="button" onClick={() => onModerate(comment.id, "published")} disabled={busy === `publish:${comment.id}`} className="h-7 rounded-md border border-[#1A1A1A]/10 px-2 text-[10px] font-bold text-[#1A1A1A]/55 disabled:opacity-45">Approve</button><button type="button" onClick={() => onModerate(comment.id, "rejected")} disabled={busy === `remove:${comment.id}`} className="h-7 rounded-md border border-red-500/20 px-2 text-[10px] font-bold text-red-600 disabled:opacity-45">Remove</button></>}</div> : null}</div>
+      {comment.authorProfileImageUrl ? <img src={comment.authorProfileImageUrl} alt="" className={cn("rounded-full object-cover", compact ? "h-7 w-7" : "h-9 w-9")} referrerPolicy="no-referrer" /> : <div className={cn("grid rounded-full bg-[var(--ui-accent)]/10 text-[var(--ui-accent-text)]", compact ? "h-7 w-7" : "h-9 w-9")}><MessageCircle className="m-auto h-3.5 w-3.5" /></div>}
+      <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="truncate text-xs font-bold text-[var(--ui-text)]">{comment.authorDisplayName || "YouTube user"}</p><p className="text-[11px] font-semibold text-[var(--ui-text)]/35">{comment.likeCount ? `${compactNumber(comment.likeCount)} likes` : ""}</p>{comment.moderationStatus ? <p className="text-[10px] font-bold uppercase tracking-widest text-[var(--ui-text)]/35">{comment.moderationStatus}</p> : null}</div><p className={cn("mt-1 whitespace-pre-wrap text-sm leading-6 text-[var(--ui-text)]/70", compact && "text-xs leading-5")}>{comment.textDisplay}</p>
+      {canManage ? <div className="mt-2 flex flex-wrap gap-1.5">{isOwn ? <><button type="button" onClick={() => setEditing(true)} className="h-7 rounded-md border border-[var(--ui-line)] px-2 text-[10px] font-bold text-[var(--ui-text)]/55">Edit</button><button type="button" onClick={() => onDelete(comment.id)} disabled={busy === `delete:${comment.id}`} className="inline-flex h-7 items-center gap-1 rounded-md border border-red-500/20 px-2 text-[10px] font-bold text-red-600 disabled:opacity-45">{busy === `delete:${comment.id}` ? <Loader2 className="h-3 w-3 ui-spin" /> : <Trash2 className="h-3 w-3" />}Delete</button></> : <><button type="button" onClick={() => onModerate(comment.id, "heldForReview")} disabled={busy === `hold:${comment.id}`} className="h-7 rounded-md border border-[var(--ui-line)] px-2 text-[10px] font-bold text-[var(--ui-text)]/55 disabled:opacity-45">Hold</button><button type="button" onClick={() => onModerate(comment.id, "published")} disabled={busy === `publish:${comment.id}`} className="h-7 rounded-md border border-[var(--ui-line)] px-2 text-[10px] font-bold text-[var(--ui-text)]/55 disabled:opacity-45">Approve</button><button type="button" onClick={() => onModerate(comment.id, "rejected")} disabled={busy === `remove:${comment.id}`} className="h-7 rounded-md border border-red-500/20 px-2 text-[10px] font-bold text-red-600 disabled:opacity-45">Remove</button></>}</div> : null}</div>
     </div>
   );
 }
 
 function Stat({ label, value }: { label: string; value: string }) {
-  return <div className="rounded-lg bg-white px-3 py-2"><p className="text-[10px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">{label}</p><p className="mt-1 truncate text-sm font-bold text-[#1A1A1A]">{value}</p></div>;
+  return <div className="rounded-lg bg-[var(--ui-panel)] px-3 py-2"><p className="text-[10px] font-bold uppercase tracking-widest text-[var(--ui-text)]/35">{label}</p><p className="mt-1 truncate text-sm font-bold text-[var(--ui-text)]">{value}</p></div>;
 }
 
 function FeedDashboard({ dashboard, monetization, monetizationLoading, monetizationError, onRetryMonetization, onReauthorizeMonetization, onOpenVideo, onCopyStyle, onPublishTags, styleBusy, metadataBusy, metadataNotice, isDark }: { dashboard: YouTubeChannelDashboard; monetization: YouTubeMonetizationResponse | null; monetizationLoading: boolean; monetizationError: string; onRetryMonetization: () => void; onReauthorizeMonetization: (reauthorizeUrl?: string) => void; onOpenVideo: (video: YouTubeDashboardVideo) => void; onCopyStyle: (competitor: any) => void; onPublishTags: (video: YouTubeDashboardVideo, tags: string[]) => void; styleBusy: string; metadataBusy: string; metadataNotice: string; isDark: boolean }) {
@@ -2200,7 +2200,7 @@ function FeedDashboard({ dashboard, monetization, monetizationLoading, monetizat
     : "Learning insights will appear after agent checks";
 
   return (
-    <div className={cn("mx-auto max-w-3xl space-y-6 pb-12", isDark ? "text-white" : "text-[#111827]")}>
+    <div className={cn("mx-auto max-w-3xl space-y-6 pb-12", isDark ? "text-white" : "text-[var(--ui-text)]")}>
       <div className="grid grid-cols-2 gap-2 sm:gap-4 md:grid-cols-2">
         <FeedStat label={isTikTokPlatform ? "Followers" : "Subscribers"} value={compactNumber(dashboard.stats.subscriberCount)} hint={`${compactNumber(Math.max(0, dashboard.stats.subscriberCount - 50))} target`} isDark={isDark} />
         <FeedStat label="Views" value={compactNumber(dashboard.stats.viewCount)} hint={`${compactNumber(dashboard.stats.recentViews)} recent`} isDark={isDark} />
@@ -2217,15 +2217,15 @@ function FeedDashboard({ dashboard, monetization, monetizationLoading, monetizat
         />
       ) : null}
 
-      <div className={cn("rounded-2xl px-5 py-4 text-sm font-black", isDark ? "bg-[#4a4100] text-white" : "bg-[#fff6bf] text-[#1A1A1A]")}>
+      <div className={cn("rounded-2xl px-5 py-4 text-sm font-black", isDark ? "bg-[var(--ui-accent-soft)] text-white" : "bg-[var(--ui-accent-soft)] text-[var(--ui-text)]")}>
         <div className="flex flex-wrap items-center justify-center gap-3 text-center">
-          <span className="inline-flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-[#f9dc0b]" />Learning map</span>
+          <span className="inline-flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-[var(--ui-accent)]" />Learning map</span>
           {growth ? (
-            <span className={cn("font-bold", isDark ? "text-white/72" : "text-[#1A1A1A]/72")}>
+            <span className={cn("font-bold", isDark ? "text-white/72" : "text-[var(--ui-text)]/72")}>
               {growthSignalSummary}
             </span>
           ) : (
-            <span className={cn("font-bold", isDark ? "text-white/72" : "text-[#1A1A1A]/72")}>Learning insights will appear after agent checks</span>
+            <span className={cn("font-bold", isDark ? "text-white/72" : "text-[var(--ui-text)]/72")}>Learning insights will appear after agent checks</span>
           )}
         </div>
       </div>
@@ -2238,7 +2238,7 @@ function FeedDashboard({ dashboard, monetization, monetizationLoading, monetizat
           { label: "Analytics", icon: BarChart3 },
           { label: "Achievements", icon: Trophy },
         ].map(({ label, icon: Icon }) => (
-          <button key={label} onClick={() => setActiveTab(label as typeof activeTab)} className={cn("inline-flex min-h-10 items-center gap-2 rounded-full px-4 py-2 text-sm font-black transition", activeTab === label ? "bg-[#f9dc0b] text-[#1A1A1A]" : isDark ? "bg-white/8 text-white/85 hover:bg-white/12" : "bg-white text-[#1A1A1A]/75 shadow-sm hover:text-[#1A1A1A]")}>
+          <button key={label} onClick={() => setActiveTab(label as typeof activeTab)} className={cn("inline-flex min-h-10 items-center gap-2 rounded-full px-4 py-2 text-sm font-black transition", activeTab === label ? "bg-[var(--ui-accent)] text-[var(--ui-accent-ink)]" : isDark ? "bg-white/8 text-white/85 hover:bg-white/12" : "bg-[var(--ui-panel)] text-[var(--ui-text)]/75 shadow-sm hover:text-[var(--ui-text)]")}>
             <Icon className="h-4 w-4" />
             {label}
           </button>
@@ -2289,18 +2289,18 @@ function FeedDashboard({ dashboard, monetization, monetizationLoading, monetizat
       ) : null}
 
       {growth && showOptimization ? (
-        <section className={cn("rounded-2xl p-5 shadow-sm", isDark ? "bg-[#151923]" : "bg-white")}>
+        <section className={cn("rounded-2xl p-5 shadow-sm", isDark ? "bg-[var(--ui-panel)]" : "bg-[var(--ui-panel)]")}>
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-xs font-black uppercase tracking-widest text-[#f9dc0b]">Monetization playbook</p>
+              <p className="text-xs font-black uppercase tracking-widest text-[var(--ui-accent-text)]">Monetization playbook</p>
               <h2 className="mt-1 text-xl font-black">{growth.playbook.bestNiche || "Find a repeatable winner"}</h2>
-              <p className={cn("mt-2 text-sm font-semibold leading-6", isDark ? "text-white/55" : "text-[#1A1A1A]/55")}>{growth.playbook.monetizationFocus}</p>
+              <p className={cn("mt-2 text-sm font-semibold leading-6", isDark ? "text-white/55" : "text-[var(--ui-text)]/55")}>{growth.playbook.monetizationFocus}</p>
             </div>
-            <BarChart3 className="h-5 w-5 shrink-0 text-[#f9dc0b]" />
+            <BarChart3 className="h-5 w-5 shrink-0 text-[var(--ui-accent-text)]" />
           </div>
           <div className="mt-4 grid gap-2">
             {growth.playbook.actions.slice(0, 4).map((action) => (
-              <p key={action} className={cn("rounded-xl px-3 py-2 text-sm font-bold leading-6", isDark ? "bg-white/7 text-white/78" : "bg-[#F4F5F8] text-[#1A1A1A]/72")}>{action}</p>
+              <p key={action} className={cn("rounded-xl px-3 py-2 text-sm font-bold leading-6", isDark ? "bg-white/7 text-white/78" : "bg-[var(--ui-bg)] text-[var(--ui-text)]/72")}>{action}</p>
             ))}
           </div>
         </section>
@@ -2341,7 +2341,7 @@ function FeedDashboard({ dashboard, monetization, monetizationLoading, monetizat
         </FeedSection>
       ) : showYouTubeCompetitorResearch ? (
         <FeedSection title="YouTube Competitor Channels" meta="direct YouTube search" isDark={isDark}>
-          <div className={cn("rounded-2xl border border-dashed p-5 text-sm font-semibold leading-6", isDark ? "border-white/10 bg-[#151923] text-white/55" : "border-[#1A1A1A]/10 bg-white text-[#1A1A1A]/55")}>
+          <div className={cn("rounded-2xl border border-dashed p-5 text-sm font-semibold leading-6", isDark ? "border-white/10 bg-[var(--ui-panel)] text-white/55" : "border-[var(--ui-line)] bg-[var(--ui-panel)] text-[var(--ui-text)]/55")}>
             No YouTube competitor channels returned yet. AutoYT searches YouTube from this channel's niche, titles, and learned micro-niches; results appear here once YouTube returns matching same-niche channels.
           </div>
         </FeedSection>
@@ -2361,13 +2361,13 @@ function FeedDashboard({ dashboard, monetization, monetizationLoading, monetizat
         </FeedSection>
       ) : null}
 
-      {showAnalytics ? <div className={cn("rounded-2xl p-5 shadow-sm", isDark ? "bg-[#151923]" : "bg-white")}>
+      {showAnalytics ? <div className={cn("rounded-2xl p-5 shadow-sm", isDark ? "bg-[var(--ui-panel)]" : "bg-[var(--ui-panel)]")}>
         <div className="flex items-center justify-between">
           <div>
             <p className="text-sm font-black">Trending Keyword</p>
-            <p className={cn("mt-1 text-xs font-bold", isDark ? "text-white/45" : "text-[#1A1A1A]/42")}>story video · {compactNumber(Math.max(1, dashboard.stats.recentViews))} VPH</p>
+            <p className={cn("mt-1 text-xs font-bold", isDark ? "text-white/45" : "text-[var(--ui-text)]/42")}>story video · {compactNumber(Math.max(1, dashboard.stats.recentViews))} VPH</p>
           </div>
-          <BarChart3 className="h-5 w-5 text-[#f9dc0b]" />
+          <BarChart3 className="h-5 w-5 text-[var(--ui-accent-text)]" />
         </div>
         <TrendGraph />
       </div> : null}
@@ -2421,7 +2421,7 @@ function FeedDashboard({ dashboard, monetization, monetizationLoading, monetizat
       {activeTab === "Analytics" && !outlierSignals.length ? (
         <>
           <FeedInsightCard icon={<Trophy className="h-4 w-4" />} title={achievements[0] || "No urgent analytics alerts"} meta="latest channel signal" isDark={isDark} />
-          <div className={cn("py-10 text-center text-lg font-black", isDark ? "text-white/55" : "text-[#1A1A1A]/45")}>
+          <div className={cn("py-10 text-center text-lg font-black", isDark ? "text-white/55" : "text-[var(--ui-text)]/45")}>
             <CheckCircle2 className="mx-auto mb-3 h-6 w-6" />
             You're all caught up!
           </div>
@@ -2437,17 +2437,17 @@ function FeedDashboard({ dashboard, monetization, monetizationLoading, monetizat
         </FeedSection>
       ) : null}
 
-      {showAnalytics ? <div className={cn("rounded-2xl p-5 shadow-sm", isDark ? "bg-[#151923]" : "bg-white")}>
+      {showAnalytics ? <div className={cn("rounded-2xl p-5 shadow-sm", isDark ? "bg-[var(--ui-panel)]" : "bg-[var(--ui-panel)]")}>
         <div className="flex items-center gap-3">
-          <MessageCircle className="h-5 w-5 text-[#f9dc0b]" />
+          <MessageCircle className="h-5 w-5 text-[var(--ui-accent-text)]" />
           <div>
             <p className="text-sm font-black">Unanswered Comments</p>
-            <p className={cn("text-xs font-bold", isDark ? "text-white/45" : "text-[#1A1A1A]/42")}>Recent comments worth replying to</p>
+            <p className={cn("text-xs font-bold", isDark ? "text-white/45" : "text-[var(--ui-text)]/42")}>Recent comments worth replying to</p>
           </div>
         </div>
-        <div className={cn("mt-4 grid gap-3 rounded-2xl p-4", isDark ? "bg-white/6" : "bg-[#F4F5F8]")}>
+        <div className={cn("mt-4 grid gap-3 rounded-2xl p-4", isDark ? "bg-white/6" : "bg-[var(--ui-bg)]")}>
           <p className="text-sm font-semibold">Run the comment agent to answer high-context comments with concise, useful replies.</p>
-          <button className="h-10 rounded-xl bg-[#f9dc0b] px-4 text-sm font-black text-[#1A1A1A]">Open comment agent</button>
+          <button className="ui-btn is-primary">Open comment agent</button>
         </div>
       </div> : null}
     </div>
@@ -2461,10 +2461,10 @@ function FeedMonetizationPanel({ data, loading, error, isDark, onRetry, onReauth
   const revenueChange = data?.changes?.estimatedRevenue;
   const period = formatRevenuePeriod(data?.period?.current?.startDate, data?.period?.current?.endDate);
   const shellClass = isDark
-    ? "border-white/10 bg-[#151923] text-white shadow-[0_12px_32px_rgba(0,0,0,0.18)]"
-    : "border-[#1A1A1A]/10 bg-white text-[#1A1A1A] shadow-[0_12px_32px_rgba(26,26,26,0.06)]";
-  const mutedClass = isDark ? "text-white/70" : "text-[#1A1A1A]/65";
-  const dividerClass = isDark ? "border-white/10" : "border-[#1A1A1A]/10";
+    ? "border-white/10 bg-[var(--ui-panel)] text-white shadow-[0_12px_32px_rgba(0,0,0,0.18)]"
+    : "border-[var(--ui-line)] bg-[var(--ui-panel)] text-[var(--ui-text)] shadow-[0_12px_32px_rgba(26,26,26,0.06)]";
+  const mutedClass = isDark ? "text-white/70" : "text-[var(--ui-text)]/65";
+  const dividerClass = isDark ? "border-white/10" : "border-[var(--ui-line)]";
 
   const header = (
     <div className="flex flex-wrap items-start justify-between gap-3 px-4 py-3.5 sm:px-5">
@@ -2477,17 +2477,17 @@ function FeedMonetizationPanel({ data, loading, error, isDark, onRetry, onReauth
           {revenueChange > 0 ? "+" : ""}{revenueChange.toFixed(1)}% vs previous period
         </p>
       ) : loading && data ? (
-        <p className={cn("inline-flex items-center gap-1.5 text-xs font-semibold", mutedClass)}><Loader2 className="h-3.5 w-3.5 animate-spin" />Refreshing</p>
+        <p className={cn("inline-flex items-center gap-1.5 text-xs font-semibold", mutedClass)}><Loader2 className="h-3.5 w-3.5 ui-spin" />Refreshing</p>
       ) : null}
     </div>
   );
 
   if ((loading && !data) || (!data && !error)) {
     return (
-      <section aria-labelledby="feed-revenue-title" aria-live="polite" aria-busy="true" className={cn("overflow-hidden rounded-2xl border", shellClass)}>
+      <section aria-labelledby="feed-revenue-title" aria-live="polite" aria-busy="true" className={cn("overflow-hidden rounded-2xl border border-[var(--ui-line)]", shellClass)}>
         {header}
         <div className={cn("flex items-center gap-3 border-t px-4 py-5 sm:px-5", dividerClass)}>
-          <Loader2 className="h-4 w-4 animate-spin text-[#b89f00]" />
+          <Loader2 className="h-4 w-4 ui-spin text-[var(--ui-accent-text)]" />
           <p className={cn("text-sm font-semibold", mutedClass)}>Loading private revenue data</p>
         </div>
       </section>
@@ -2497,14 +2497,14 @@ function FeedMonetizationPanel({ data, loading, error, isDark, onRetry, onReauth
   const needsAuthorization = state === "missing_scope" || state === "not_connected" || data?.reauthorizationRequired;
   if (needsAuthorization) {
     return (
-      <section aria-labelledby="feed-revenue-title" className={cn("overflow-hidden rounded-2xl border", shellClass)}>
+      <section aria-labelledby="feed-revenue-title" className={cn("overflow-hidden rounded-2xl border border-[var(--ui-line)]", shellClass)}>
         {header}
         <div className={cn("flex flex-col gap-4 border-t px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5", dividerClass)}>
           <div className="max-w-xl">
             <p className="text-sm font-bold">Revenue permission is required</p>
             <p className={cn("mt-1 text-xs font-semibold leading-5", mutedClass)}>{data?.message || "Reauthorize Google once to let AutoYT read this channel’s private monetary analytics."}</p>
           </div>
-          <button type="button" onClick={() => onReauthorize(data?.reauthorizeUrl)} className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg bg-[#f9dc0b] px-4 text-xs font-black text-[#1A1A1A] transition-colors hover:bg-[#1A1A1A] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#f9dc0b]">
+          <button type="button" onClick={() => onReauthorize(data?.reauthorizeUrl)} className="ui-btn is-primary shrink-0">
             <RefreshCw className="h-3.5 w-3.5" />
             {state === "not_connected" ? "Connect Google" : "Reauthorize Google"}
           </button>
@@ -2515,7 +2515,7 @@ function FeedMonetizationPanel({ data, loading, error, isDark, onRetry, onReauth
 
   if (error || state === "error" || state === "unsupported") {
     return (
-      <section aria-labelledby="feed-revenue-title" role="alert" className={cn("overflow-hidden rounded-2xl border", shellClass)}>
+      <section aria-labelledby="feed-revenue-title" role="alert" className={cn("overflow-hidden rounded-2xl border border-[var(--ui-line)]", shellClass)}>
         {header}
         <div className={cn("flex flex-col gap-4 border-t px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5", dividerClass)}>
           <div className="flex max-w-xl items-start gap-3">
@@ -2525,7 +2525,7 @@ function FeedMonetizationPanel({ data, loading, error, isDark, onRetry, onReauth
               <p className={cn("mt-1 text-xs font-semibold leading-5", mutedClass)}>{error || data?.message || "YouTube did not return monetary analytics for this account."}</p>
             </div>
           </div>
-          {state !== "unsupported" ? <button type="button" onClick={onRetry} className={cn("inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg border px-3 text-xs font-bold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#f9dc0b]", dividerClass, isDark ? "hover:bg-white/8" : "hover:bg-[#F9F8F6]")}><RefreshCw className="h-3.5 w-3.5" />Try again</button> : null}
+          {state !== "unsupported" ? <button type="button" onClick={onRetry} className={cn("inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg border px-3 text-xs font-bold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2", dividerClass, isDark ? "hover:bg-white/8" : "hover:bg-[var(--ui-bg)]")}><RefreshCw className="h-3.5 w-3.5" />Try again</button> : null}
         </div>
       </section>
     );
@@ -2533,21 +2533,21 @@ function FeedMonetizationPanel({ data, loading, error, isDark, onRetry, onReauth
 
   if (state === "no_data") {
     return (
-      <section aria-labelledby="feed-revenue-title" className={cn("overflow-hidden rounded-2xl border", shellClass)}>
+      <section aria-labelledby="feed-revenue-title" className={cn("overflow-hidden rounded-2xl border border-[var(--ui-line)]", shellClass)}>
         {header}
         <div className={cn("flex flex-col gap-4 border-t px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5", dividerClass)}>
           <div>
             <p className="text-sm font-bold">No revenue reported for this period</p>
             <p className={cn("mt-1 text-xs font-semibold leading-5", mutedClass)}>{data?.message || "YouTube has not returned monetized playbacks for this 28-day window yet."}</p>
           </div>
-          <button type="button" onClick={onRetry} className={cn("inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg border px-3 text-xs font-bold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#f9dc0b]", dividerClass, isDark ? "hover:bg-white/8" : "hover:bg-[#F9F8F6]")}><RefreshCw className="h-3.5 w-3.5" />Refresh data</button>
+          <button type="button" onClick={onRetry} className={cn("inline-flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg border px-3 text-xs font-bold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2", dividerClass, isDark ? "hover:bg-white/8" : "hover:bg-[var(--ui-bg)]")}><RefreshCw className="h-3.5 w-3.5" />Refresh data</button>
         </div>
       </section>
     );
   }
 
   return (
-    <section aria-labelledby="feed-revenue-title" className={cn("overflow-hidden rounded-2xl border", shellClass)}>
+    <section aria-labelledby="feed-revenue-title" className={cn("overflow-hidden rounded-2xl border border-[var(--ui-line)]", shellClass)}>
       {header}
       <dl className={cn("grid grid-cols-2 border-t md:grid-cols-4", dividerClass)}>
         <div className={cn("border-b px-4 py-4 md:border-b-0 sm:px-5", dividerClass)}><dt className={cn("text-[11px] font-bold", mutedClass)}>Estimated revenue</dt><dd className="mt-1.5 text-xl font-black tracking-[-0.025em] tabular-nums">{formatRevenueCurrency(totals.estimatedRevenue, currency)}</dd></div>
@@ -2556,8 +2556,8 @@ function FeedMonetizationPanel({ data, loading, error, isDark, onRetry, onReauth
         <div className={cn("border-l px-4 py-4 sm:px-5", dividerClass)}><dt className={cn("text-[11px] font-bold", mutedClass)}>Revenue per 1K views</dt><dd className="mt-1.5 text-xl font-black tracking-[-0.025em] tabular-nums">{formatRevenueCurrency(totals.revenuePerThousandViews, currency)}</dd></div>
       </dl>
       <div className={cn("flex flex-wrap items-center justify-between gap-x-5 gap-y-1 border-t px-4 py-3 text-xs font-semibold sm:px-5", dividerClass, mutedClass)}>
-        <p>Playback CPM <strong className={cn("font-black", isDark ? "text-white" : "text-[#1A1A1A]")}>{formatRevenueCurrency(totals.playbackBasedCpm, currency)}</strong></p>
-        <p><strong className={cn("font-black tabular-nums", isDark ? "text-white" : "text-[#1A1A1A]")}>{plainNumber(totals.adImpressions)}</strong> ad impressions</p>
+        <p>Playback CPM <strong className={cn("font-black", isDark ? "text-white" : "text-[var(--ui-text)]")}>{formatRevenueCurrency(totals.playbackBasedCpm, currency)}</strong></p>
+        <p><strong className={cn("font-black tabular-nums", isDark ? "text-white" : "text-[var(--ui-text)]")}>{plainNumber(totals.adImpressions)}</strong> ad impressions</p>
       </div>
     </section>
   );
@@ -2565,13 +2565,13 @@ function FeedMonetizationPanel({ data, loading, error, isDark, onRetry, onReauth
 
 function FeedStat({ label, value, hint, isDark }: { label: string; value: string; hint: string; isDark: boolean }) {
   return (
-    <div className={cn("rounded-2xl p-3 text-center shadow-sm sm:rounded-3xl sm:p-6", isDark ? "bg-[#151923]" : "bg-white")}>
-      <p className={cn("text-xs font-black uppercase tracking-widest", isDark ? "text-white/42" : "text-[#1A1A1A]/38")}>{label}</p>
+    <div className={cn("rounded-2xl p-3 text-center shadow-sm sm:rounded-3xl sm:p-6", isDark ? "bg-[var(--ui-panel)]" : "bg-[var(--ui-panel)]")}>
+      <p className={cn("text-xs font-black uppercase tracking-widest", isDark ? "text-white/42" : "text-[var(--ui-text)]/38")}>{label}</p>
       <p className="mt-1 text-2xl font-black tracking-tight sm:mt-2 sm:text-5xl">{value}</p>
-      <div className={cn("mt-3 h-1.5 rounded-full sm:mt-5 sm:h-2", isDark ? "bg-white/8" : "bg-[#EDF0F5]")}>
-        <div className="h-full w-[72%] rounded-full bg-[#f9dc0b]" />
+      <div className={cn("mt-3 h-1.5 rounded-full sm:mt-5 sm:h-2", isDark ? "bg-white/8" : "bg-[var(--ui-bg)]")}>
+        <div className="h-full w-[72%] rounded-full bg-[var(--ui-accent)]" />
       </div>
-      <p className={cn("mt-1 text-[10px] font-bold sm:mt-2 sm:text-xs", isDark ? "text-white/35" : "text-[#1A1A1A]/35")}>{hint}</p>
+      <p className={cn("mt-1 text-[10px] font-bold sm:mt-2 sm:text-xs", isDark ? "text-white/35" : "text-[var(--ui-text)]/35")}>{hint}</p>
     </div>
   );
 }
@@ -2580,7 +2580,7 @@ function FeedSection({ title, meta, children, isDark }: { title: string; meta: s
   return (
     <section>
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-xl font-black">{title} <span className={cn("text-sm font-bold", isDark ? "text-white/35" : "text-[#1A1A1A]/35")}>· {meta}</span></h2>
+        <h2 className="text-xl font-black">{title} <span className={cn("text-sm font-bold", isDark ? "text-white/35" : "text-[var(--ui-text)]/35")}>· {meta}</span></h2>
       </div>
       {children}
     </section>
@@ -2589,11 +2589,11 @@ function FeedSection({ title, meta, children, isDark }: { title: string; meta: s
 
 function FeedInsightCard({ icon, title, meta, isDark }: { icon: ReactNode; title: string; meta: string; isDark: boolean }) {
   return (
-    <div className={cn("flex min-h-24 items-center gap-4 rounded-2xl p-5 shadow-sm", isDark ? "bg-[#151923] text-white" : "bg-white text-[#111827]")}>
-      <div className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-[#f9dc0b]/12 text-[#f9dc0b]">{icon}</div>
+    <div className={cn("flex min-h-24 items-center gap-4 rounded-2xl p-5 shadow-sm", isDark ? "bg-[var(--ui-panel)] text-white" : "bg-[var(--ui-panel)] text-[var(--ui-text)]")}>
+      <div className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-[var(--ui-accent)]/12 text-[var(--ui-accent-text)]">{icon}</div>
       <div>
         <p className="text-lg font-black leading-6">{title}</p>
-        <p className={cn("mt-1 text-sm font-semibold", isDark ? "text-white/48" : "text-[#1A1A1A]/45")}>{meta}</p>
+        <p className={cn("mt-1 text-sm font-semibold", isDark ? "text-white/48" : "text-[var(--ui-text)]/45")}>{meta}</p>
       </div>
     </div>
   );
@@ -2625,27 +2625,27 @@ function PersistedInsightCard({ insight, videos, onOpenVideo, onCopyStyle, style
   }
   if (insight.type === "Research" && competitor) {
     return (
-      <div className={cn("flex flex-col rounded-2xl p-4 text-center shadow-sm transition hover:-translate-y-0.5", isDark ? "bg-[#151923] text-white" : "bg-white text-[#111827]")}>
-        <div className="mx-auto h-16 w-16 shrink-0 overflow-hidden rounded-2xl bg-[#111827]">
-          {competitor.thumbnailUrl ? <img src={competitor.thumbnailUrl} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" loading="lazy" /> : <Youtube className="m-auto mt-5 h-6 w-6 text-[#f9dc0b]" />}
+      <div className={cn("flex flex-col rounded-2xl p-4 text-center shadow-sm transition hover:-translate-y-0.5", isDark ? "bg-[var(--ui-panel)] text-white" : "bg-[var(--ui-panel)] text-[var(--ui-text)]")}>
+        <div className="mx-auto h-16 w-16 shrink-0 overflow-hidden rounded-2xl bg-[var(--ui-text)]">
+          {competitor.thumbnailUrl ? <img src={competitor.thumbnailUrl} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" loading="lazy" /> : <Youtube className="m-auto mt-5 h-6 w-6 text-[var(--ui-accent-text)]" />}
         </div>
         <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
-          <span className="rounded-full bg-[#f9dc0b]/10 px-2.5 py-1 text-[10px] font-black text-[#f9dc0b]">{insight.type}</span>
-          <span className={cn("text-[10px] font-bold", isDark ? "text-white/45" : "text-[#1A1A1A]/45")}>{insight.priority ? `${Math.round(insight.priority)} priority` : "live signal"}</span>
+          <span className="rounded-full bg-[var(--ui-accent)]/10 px-2.5 py-1 text-[10px] font-black text-[var(--ui-accent-text)]">{insight.type}</span>
+          <span className={cn("text-[10px] font-bold", isDark ? "text-white/45" : "text-[var(--ui-text)]/45")}>{insight.priority ? `${Math.round(insight.priority)} priority` : "live signal"}</span>
         </div>
         <p className="mt-2 text-sm font-black line-clamp-1" title={insight.title}>{insight.title}</p>
-        <p className={cn("mt-1 flex-1 text-[11px] font-semibold leading-5 text-left line-clamp-3", isDark ? "text-white/55" : "text-[#1A1A1A]/55")} title={insight.body}>{insight.body}</p>
+        <p className={cn("mt-1 flex-1 text-[11px] font-semibold leading-5 text-left line-clamp-3", isDark ? "text-white/55" : "text-[var(--ui-text)]/55")} title={insight.body}>{insight.body}</p>
         <div className="mt-4 grid grid-cols-2 gap-2">
           {video ? (
-            <button type="button" onClick={() => onOpenVideo(video)} className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-full bg-[#f9dc0b] text-[11px] font-black text-[#1A1A1A] hover:bg-[#1A1A1A] hover:text-white">
+            <button type="button" onClick={() => onOpenVideo(video)} className="ui-btn is-primary is-sm w-full">
               <PlaySquare className="h-3 w-3 shrink-0" />
               <span className="truncate">{insight.actionLabel || "Open"}</span>
             </button>
           ) : (
-            <a href={competitor.url || "#"} target="_blank" rel="noreferrer" className="inline-flex h-9 w-full items-center justify-center rounded-full bg-[#f9dc0b] text-[11px] font-black text-[#1A1A1A] hover:bg-[#1A1A1A] hover:text-white">Track</a>
+            <a href={competitor.url || "#"} target="_blank" rel="noreferrer" className="ui-btn is-primary is-sm w-full">Track</a>
           )}
-          <button type="button" onClick={() => onCopyStyle(competitor)} disabled={busy} className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-full bg-[#f9dc0b] text-[11px] font-black text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white disabled:opacity-45">
-            {busy ? <Loader2 className="h-3 w-3 shrink-0 animate-spin" /> : <Wand2 className="h-3 w-3 shrink-0" />}
+          <button type="button" onClick={() => onCopyStyle(competitor)} disabled={busy} className="ui-btn is-primary is-sm w-full">
+            {busy ? <Loader2 className="h-3 w-3 shrink-0 ui-spin" /> : <Wand2 className="h-3 w-3 shrink-0" />}
             <span className="truncate">Copy</span>
           </button>
         </div>
@@ -2653,26 +2653,26 @@ function PersistedInsightCard({ insight, videos, onOpenVideo, onCopyStyle, style
     );
   }
   return (
-    <div className={cn("col-span-full rounded-2xl p-4 shadow-sm", isDark ? "bg-[#151923] text-white" : "bg-white text-[#111827]")}>
+    <div className={cn("col-span-full rounded-2xl p-4 shadow-sm", isDark ? "bg-[var(--ui-panel)] text-white" : "bg-[var(--ui-panel)] text-[var(--ui-text)]")}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-full bg-[#f9dc0b]/10 px-2.5 py-1 text-[11px] font-black text-[#f9dc0b]">{insight.type}</span>
-            <span className={cn("text-[11px] font-bold", isDark ? "text-white/38" : "text-[#1A1A1A]/38")}>{insight.priority ? `${Math.round(insight.priority)} priority` : "live signal"}</span>
+            <span className="rounded-full bg-[var(--ui-accent)]/10 px-2.5 py-1 text-[11px] font-black text-[var(--ui-accent-text)]">{insight.type}</span>
+            <span className={cn("text-[11px] font-bold", isDark ? "text-white/38" : "text-[var(--ui-text)]/38")}>{insight.priority ? `${Math.round(insight.priority)} priority` : "live signal"}</span>
           </div>
           <p className="mt-2 text-base font-black leading-6">{insight.title}</p>
-          <p className={cn("mt-1 text-sm font-semibold leading-6", isDark ? "text-white/55" : "text-[#1A1A1A]/55")}>{insight.body}</p>
+          <p className={cn("mt-1 text-sm font-semibold leading-6", isDark ? "text-white/55" : "text-[var(--ui-text)]/55")}>{insight.body}</p>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
           {video ? (
-            <button type="button" onClick={() => onOpenVideo(video)} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-[#f9dc0b] px-3 text-xs font-black text-[#1A1A1A]">
+            <button type="button" onClick={() => onOpenVideo(video)} className="ui-btn is-primary">
               <PlaySquare className="h-4 w-4" />
               {insight.actionLabel || "Open"}
             </button>
           ) : null}
           {competitor ? (
-            <button type="button" onClick={() => onCopyStyle(competitor)} disabled={busy} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-[#f9dc0b] px-3 text-xs font-black text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white disabled:opacity-45">
-              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
+            <button type="button" onClick={() => onCopyStyle(competitor)} disabled={busy} className="ui-btn is-primary">
+              {busy ? <Loader2 className="h-4 w-4 ui-spin" /> : <Wand2 className="h-4 w-4" />}
               Copy style
             </button>
           ) : null}
@@ -2692,7 +2692,7 @@ function AnalyticsOutlierVideoCard({ signal, onOpen, isDark }: { signal: ReturnT
       meta={`${compactNumber(video.viewCount)} views / ${signal.hint || `${compactNumber(signal.viewsPerHour)} views/hour`}`}
       imageUrl={thumbnailUrl}
       badge={signal.badge}
-      topRight={<span className="rounded-full bg-[#f9dc0b] px-2.5 py-1 text-xs font-black text-[#1A1A1A]">Analytics</span>}
+      topRight={<span className="rounded-full bg-[var(--ui-accent)] px-2.5 py-1 text-xs font-black text-[var(--ui-accent-ink)]">Analytics</span>}
       onOpen={onOpen}
       theme={isDark ? "dark" : "light"}
     />
@@ -2701,8 +2701,8 @@ function AnalyticsOutlierVideoCard({ signal, onOpen, isDark }: { signal: ReturnT
 
 function TagScoreChip({ tag }: { tag: { label: string; score: number } }) {
   return (
-    <span className="inline-flex items-center overflow-hidden rounded-xl bg-[#f9dc0b]/10 text-xs font-black text-[#f9dc0b]">
-      <span className="bg-[#fff1a3] px-2.5 py-2 text-[#1A1A1A]">{tag.score}</span>
+    <span className="inline-flex items-center overflow-hidden rounded-xl bg-[var(--ui-accent)]/10 text-xs font-black text-[var(--ui-accent-text)]">
+      <span className="bg-[var(--ui-accent-soft)] px-2.5 py-2 text-[var(--ui-text)]">{tag.score}</span>
       <span className="px-2.5 py-2">{tag.label}</span>
     </span>
   );
@@ -2714,10 +2714,10 @@ function OptimizationTagCard({ video, tags, onOpen, onPublishTags, publishing, i
   const visibleTags = expanded ? tags : tags.slice(0, 5);
   const publishableTags = uniqueTags(visibleTags.map((tag) => tag.label));
   return (
-    <div className={cn("rounded-2xl p-4 shadow-sm", isDark ? "bg-[#151923] text-white" : "bg-white text-[#111827]")}>
+    <div className={cn("rounded-2xl p-4 shadow-sm", isDark ? "bg-[var(--ui-panel)] text-white" : "bg-[var(--ui-panel)] text-[var(--ui-text)]")}>
       <div className="grid gap-4 sm:grid-cols-[160px_1fr]">
-        <button type="button" onClick={onOpen} className="group relative aspect-video overflow-hidden rounded-xl bg-[#111827]">
-          {thumbnailUrl ? <img src={thumbnailUrl} alt="" className="h-full w-full object-cover transition duration-300 group-hover:scale-105" referrerPolicy="no-referrer" loading="lazy" /> : <PlaySquare className="m-auto mt-10 h-8 w-8 text-[#f9dc0b]" />}
+        <button type="button" onClick={onOpen} className="group relative aspect-video overflow-hidden rounded-xl bg-[var(--ui-text)]">
+          {thumbnailUrl ? <img src={thumbnailUrl} alt="" className="h-full w-full object-cover transition duration-300 group-hover:scale-105" referrerPolicy="no-referrer" loading="lazy" /> : <PlaySquare className="m-auto mt-10 h-8 w-8 text-[var(--ui-accent-text)]" />}
         </button>
         <div className="min-w-0">
           <p className="line-clamp-2 text-base font-black">{video.title}</p>
@@ -2725,9 +2725,9 @@ function OptimizationTagCard({ video, tags, onOpen, onPublishTags, publishing, i
             {visibleTags.map((tag) => <TagScoreChip key={`${video.id}-${tag.label}`} tag={tag} />)}
           </div>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <button type="button" onClick={() => tags.length > 5 ? setExpanded((value) => !value) : onOpen()} className={cn("h-10 rounded-full text-sm font-black", isDark ? "bg-white/8 text-white hover:bg-white/12" : "bg-[#F4F5F8] text-[#1A1A1A] hover:bg-[#E8ECF3]")}>{expanded ? "Show fewer" : "Show more"}</button>
-            <button type="button" onClick={() => onPublishTags(publishableTags)} disabled={publishing || !publishableTags.length} className="inline-flex h-10 items-center justify-center gap-2 rounded-full bg-[#f9dc0b] text-sm font-black text-[#1A1A1A] hover:bg-[#1A1A1A] hover:text-white disabled:opacity-50">
-              {publishing ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            <button type="button" onClick={() => tags.length > 5 ? setExpanded((value) => !value) : onOpen()} className={cn("h-10 rounded-full text-sm font-black", isDark ? "bg-white/8 text-white hover:bg-white/12" : "bg-[var(--ui-bg)] text-[var(--ui-text)] hover:bg-[var(--ui-bg)]")}>{expanded ? "Show fewer" : "Show more"}</button>
+            <button type="button" onClick={() => onPublishTags(publishableTags)} disabled={publishing || !publishableTags.length} className="ui-btn is-primary">
+              {publishing ? <Loader2 className="h-4 w-4 ui-spin" /> : null}
               Publish tags
             </button>
           </div>
@@ -2752,8 +2752,8 @@ function SuggestedCompetitorCard({ competitor, onCopyStyle, busy, isDark }: { co
         { label: "VPH", value: compactNumber(competitor.bestViewsPerHour) },
       ]}
       topRight={
-        <button type="button" onClick={onCopyStyle} disabled={busy} className="grid h-8 w-8 place-items-center rounded-lg bg-[#f9dc0b] text-[#1A1A1A] transition hover:opacity-85 active:scale-[0.96] disabled:opacity-45" title="Copy channel style" aria-label={`Copy ${competitor.title} channel style`}>
-          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
+        <button type="button" onClick={onCopyStyle} disabled={busy} className="grid h-8 w-8 place-items-center rounded-lg bg-[var(--ui-accent)] text-[var(--ui-accent-ink)] transition hover:opacity-85 active:scale-[0.96] disabled:opacity-45" title="Copy channel style" aria-label={`Copy ${competitor.title} channel style`}>
+          {busy ? <Loader2 className="h-3.5 w-3.5 ui-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
         </button>
       }
     />
@@ -2786,11 +2786,11 @@ function HorizontalCarousel({ children, isDark }: { children: ReactNode; isDark:
   };
   return (
     <div className="relative group">
-      <button onClick={() => scroll("left")} className={cn("absolute left-0 top-1/2 z-10 -translate-y-1/2 -translate-x-3 h-9 w-9 grid place-items-center rounded-full border shadow-md opacity-0 transition-opacity group-hover:opacity-100", isDark ? "bg-[#151923] border-white/10 text-white hover:bg-white/10" : "bg-white border-[#1A1A1A]/10 text-[#1A1A1A] hover:bg-[#F4F5F8]")} aria-label="Scroll left"><ChevronLeft className="h-4 w-4" /></button>
+      <button onClick={() => scroll("left")} className={cn("absolute left-0 top-1/2 z-10 -translate-y-1/2 -translate-x-3 h-9 w-9 grid place-items-center rounded-full border shadow-md opacity-0 transition-opacity group-hover:opacity-100", isDark ? "bg-[var(--ui-panel)] border-white/10 text-white hover:bg-white/10" : "bg-[var(--ui-panel)] border-[var(--ui-line)] text-[var(--ui-text)] hover:bg-[var(--ui-bg)]")} aria-label="Scroll left"><ChevronLeft className="h-4 w-4" /></button>
       <div ref={scrollRef} className="flex gap-4 overflow-x-auto snap-x snap-mandatory pb-4 pt-1 px-1 -mx-1" style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}>
         {children}
       </div>
-      <button onClick={() => scroll("right")} className={cn("absolute right-0 top-1/2 z-10 -translate-y-1/2 translate-x-3 h-9 w-9 grid place-items-center rounded-full border shadow-md opacity-0 transition-opacity group-hover:opacity-100", isDark ? "bg-[#151923] border-white/10 text-white hover:bg-white/10" : "bg-white border-[#1A1A1A]/10 text-[#1A1A1A] hover:bg-[#F4F5F8]")} aria-label="Scroll right"><ChevronRight className="h-4 w-4" /></button>
+      <button onClick={() => scroll("right")} className={cn("absolute right-0 top-1/2 z-10 -translate-y-1/2 translate-x-3 h-9 w-9 grid place-items-center rounded-full border shadow-md opacity-0 transition-opacity group-hover:opacity-100", isDark ? "bg-[var(--ui-panel)] border-white/10 text-white hover:bg-white/10" : "bg-[var(--ui-panel)] border-[var(--ui-line)] text-[var(--ui-text)] hover:bg-[var(--ui-bg)]")} aria-label="Scroll right"><ChevronRight className="h-4 w-4" /></button>
     </div>
   );
 }
@@ -2859,9 +2859,9 @@ function CompetitorVideoCard({ video }: { video: NonNullable<YouTubeChannelDashb
 
 function AchievementTile({ label, value, isDark }: { label: string; value: string; isDark: boolean }) {
   return (
-    <div className={cn("rounded-2xl p-4 shadow-sm", isDark ? "bg-[#151923]" : "bg-white")}>
-      <CheckCircle2 className="h-5 w-5 text-[#f9dc0b]" />
-      <p className={cn("mt-3 text-xs font-black uppercase tracking-widest", isDark ? "text-white/38" : "text-[#1A1A1A]/35")}>{label}</p>
+    <div className={cn("rounded-2xl p-4 shadow-sm", isDark ? "bg-[var(--ui-panel)]" : "bg-[var(--ui-panel)]")}>
+      <CheckCircle2 className="h-5 w-5 text-[var(--ui-accent-text)]" />
+      <p className={cn("mt-3 text-xs font-black uppercase tracking-widest", isDark ? "text-white/38" : "text-[var(--ui-text)]/35")}>{label}</p>
       <p className="mt-1 text-lg font-black">{value}</p>
     </div>
   );
@@ -2885,14 +2885,14 @@ function TrendGraph() {
 function agentInput(isDark: boolean) {
   return cn(
     "h-10 w-full rounded-xl border px-3 text-sm font-semibold outline-none transition",
-    isDark ? "border-white/10 bg-white/[0.04] text-white focus:border-white/30" : "border-[#1A1A1A]/10 bg-[#F9F8F6] text-[#1A1A1A] focus:border-[#1A1A1A]/30",
+    isDark ? "border-white/10 bg-white/[0.04] text-white focus:border-white/30" : "border-[var(--ui-line)] bg-[var(--ui-bg)] text-[var(--ui-text)] focus:border-[var(--ui-line-strong)]",
   );
 }
 
 function AgentField({ label, wide, isDark, children }: { label: string; wide?: boolean; isDark: boolean; children: ReactNode }) {
   return (
     <label className={cn("grid gap-1.5", wide && "col-span-2")}>
-      <span className={cn("text-[11px] font-bold uppercase tracking-widest", isDark ? "text-white/40" : "text-[#1A1A1A]/45")}>{label}</span>
+      <span className={cn("text-[11px] font-bold uppercase tracking-widest", isDark ? "text-white/40" : "text-[var(--ui-text)]/45")}>{label}</span>
       {children}
     </label>
   );
@@ -2908,14 +2908,14 @@ const REPLY_TYPE_LABEL: Record<string, string> = {
 type ReplyDraft = { text: string; include: boolean; status?: "posting" | "posted" | "failed"; error?: string };
 
 function ReplyAgentResults({ result, running, isDark, drafts, posting, onDraft, onPost }: { result: any; running: boolean; isDark: boolean; drafts: Record<string, ReplyDraft>; posting: boolean; onDraft: (id: string, patch: Partial<ReplyDraft>) => void; onPost: () => void }) {
-  const card = isDark ? "border-white/10 bg-[#151923]" : "border-[#1A1A1A]/8 bg-white shadow-sm";
-  const muted = isDark ? "text-white/55" : "text-[#1A1A1A]/55";
-  const ink = isDark ? "text-white" : "text-[#1A1A1A]";
+  const card = isDark ? "border-white/10 bg-[var(--ui-panel)]" : "border-[var(--ui-line)] bg-[var(--ui-panel)] shadow-sm";
+  const muted = isDark ? "text-white/55" : "text-[var(--ui-text)]/55";
+  const ink = isDark ? "text-white" : "text-[var(--ui-text)]";
   if (!result) {
     return (
-      <div className={cn("grid min-h-[360px] place-items-center rounded-2xl border border-dashed p-8 text-center", isDark ? "border-white/12" : "border-[#1A1A1A]/12")}>
+      <div className={cn("grid min-h-[360px] place-items-center rounded-2xl border border-dashed p-8 text-center", isDark ? "border-white/12" : "border-[var(--ui-line-strong)]")}>
         <div className="max-w-sm">
-          {running ? <Loader2 className={cn("mx-auto h-6 w-6 animate-spin", muted)} /> : <MessageCircle className={cn("mx-auto h-6 w-6", muted)} />}
+          {running ? <Loader2 className={cn("mx-auto h-6 w-6 ui-spin", muted)} /> : <MessageCircle className={cn("mx-auto h-6 w-6", muted)} />}
           <p className={cn("mt-3 text-base font-bold", ink)}>{running ? "Reading your comments" : "Nothing scanned yet"}</p>
           <p className={cn("mt-1 text-sm leading-6", muted)}>
             {running ? "Checking new comments and the threads you already replied in." : "Run the agent to see every comment and follow-up worth answering, with a drafted reply for each."}
@@ -2933,10 +2933,10 @@ function ReplyAgentResults({ result, running, isDark, drafts, posting, onDraft, 
     (result.skipped || []).reduce((counts: Record<string, number>, item: any) => ({ ...counts, [item.reason || "Skipped"]: (counts[item.reason || "Skipped"] || 0) + 1 }), {}),
   ).sort((a: any, b: any) => b[1] - a[1]);
   return (
-    <div className={cn("overflow-hidden rounded-2xl border", card)}>
-      <div className={cn("flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-center sm:justify-between", isDark ? "border-white/10" : "border-[#1A1A1A]/8")}>
+    <div className={cn("overflow-hidden rounded-2xl border border-[var(--ui-line)]", card)}>
+      <div className={cn("flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-center sm:justify-between", isDark ? "border-white/10" : "border-[var(--ui-line)]")}>
         <div>
-          <p className={cn("text-[11px] font-black uppercase tracking-widest", isDark ? "text-[#f9dc0b]" : "text-[#7a6600]")}>{result.dryRun ? "Drafts to review" : "Posted"}</p>
+          <p className={cn("text-[11px] font-black uppercase tracking-widest", isDark ? "text-[var(--ui-accent-text)]" : "text-[var(--ui-accent-text)]")}>{result.dryRun ? "Drafts to review" : "Posted"}</p>
           <h3 className={cn("mt-0.5 text-lg font-extrabold", ink)}>
             {items.length} {items.length === 1 ? "reply" : "replies"} {result.dryRun ? "ready" : "sent"}
           </h3>
@@ -2948,7 +2948,7 @@ function ReplyAgentResults({ result, running, isDark, drafts, posting, onDraft, 
             ["follow-up", "follow-ups", followUps],
             ["skipped", "skipped", result.skipped?.length || 0],
           ] as const).map(([one, many, value]) => (
-            <span key={many} className={cn("rounded-lg px-2.5 py-1.5 text-xs font-bold", isDark ? "bg-white/[0.06] text-white/70" : "bg-[#F2F0EB] text-[#1A1A1A]/70")}>
+            <span key={many} className={cn("rounded-lg px-2.5 py-1.5 text-xs font-bold", isDark ? "bg-white/[0.06] text-white/70" : "bg-[var(--ui-bg)] text-[var(--ui-text)]/70")}>
               <span className={ink}>{compactNumber(Number(value))}</span> {Number(value) === 1 ? one : many}
             </span>
           ))}
@@ -2956,42 +2956,42 @@ function ReplyAgentResults({ result, running, isDark, drafts, posting, onDraft, 
       </div>
 
       {result.dryRun && selectable.length ? (
-        <div className={cn("flex items-center justify-between gap-3 border-b px-4 py-2.5", isDark ? "border-white/10 bg-white/[0.02]" : "border-[#1A1A1A]/8 bg-[#FDFCFA]")}>
+        <div className={cn("flex items-center justify-between gap-3 border-b px-4 py-2.5", isDark ? "border-white/10 bg-white/[0.02]" : "border-[var(--ui-line)] bg-[var(--ui-panel)]")}>
           <label className={cn("flex items-center gap-2 text-sm font-semibold", muted)}>
             <input
               type="checkbox"
-              className="h-4 w-4 accent-[#f9dc0b]"
+              className="ui-check"
               checked={selected.length === selectable.length}
               onChange={(e) => selectable.forEach((item) => onDraft(item.commentId, { include: e.target.checked }))}
             />
             {selected.length} of {selectable.length} selected
           </label>
-          <button type="button" disabled={posting || !selected.length} onClick={onPost} className="inline-flex h-9 items-center gap-2 rounded-xl bg-[#f9dc0b] px-4 text-sm font-black text-[#1A1A1A] transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-50">
-            {posting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+          <button type="button" disabled={posting || !selected.length} onClick={onPost} className="ui-btn is-primary is-sm">
+            {posting ? <Loader2 className="h-4 w-4 ui-spin" /> : <Send className="h-4 w-4" />}
             Post {selected.length || ""} {selected.length === 1 ? "reply" : "replies"}
           </button>
         </div>
       ) : null}
 
-      <div className={cn("max-h-[70vh] space-y-3 overflow-y-auto p-3", isDark ? "bg-black/10" : "bg-[#F9F8F6]")}>
+      <div className={cn("max-h-[70vh] space-y-3 overflow-y-auto p-3", isDark ? "bg-black/10" : "bg-[var(--ui-bg)]")}>
         {items.length ? items.map((item) => {
           const draft: ReplyDraft = drafts[item.commentId] || { text: item.replyText, include: true };
           const posted = draft.status === "posted";
           const thread: any[] = item.kind === "follow_up" && Array.isArray(item.context) ? item.context.slice(-3) : [{ author: item.author, owner: false, text: item.comment }];
           return (
-            <article key={item.commentId} className={cn("rounded-xl border p-3.5 transition", isDark ? "border-white/10 bg-[#151923]" : "border-[#1A1A1A]/8 bg-white", !draft.include && !posted && "opacity-55")}>
+            <article key={item.commentId} className={cn("rounded-xl border p-3.5 transition", isDark ? "border-white/10 bg-[var(--ui-panel)]" : "border-[var(--ui-line)] bg-[var(--ui-panel)]", !draft.include && !posted && "opacity-55")}>
               <div className="flex items-center gap-2">
                 {result.dryRun && !posted ? (
-                  <input type="checkbox" aria-label="Include this reply" className="h-4 w-4 shrink-0 accent-[#f9dc0b]" checked={draft.include} onChange={(e) => onDraft(item.commentId, { include: e.target.checked })} />
+                  <input type="checkbox" aria-label="Include this reply" className="ui-check shrink-0" checked={draft.include} onChange={(e) => onDraft(item.commentId, { include: e.target.checked })} />
                 ) : null}
                 <p className={cn("min-w-0 flex-1 truncate text-xs font-bold", muted)}>{item.videoTitle}</p>
-                {item.kind === "follow_up" ? <span className="shrink-0 rounded-md bg-[#f9dc0b] px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-[#1A1A1A]">Follow-up</span> : null}
-                <span className={cn("shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wider", isDark ? "bg-white/[0.08] text-white/60" : "bg-[#F2F0EB] text-[#1A1A1A]/60")}>{REPLY_TYPE_LABEL[item.replyType] || "Reply"}</span>
+                {item.kind === "follow_up" ? <span className="shrink-0 rounded-md bg-[var(--ui-accent)] px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-[var(--ui-accent-ink)]">Follow-up</span> : null}
+                <span className={cn("shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wider", isDark ? "bg-white/[0.08] text-white/60" : "bg-[var(--ui-bg)] text-[var(--ui-text)]/60")}>{REPLY_TYPE_LABEL[item.replyType] || "Reply"}</span>
               </div>
               <div className="mt-2.5 space-y-1.5">
                 {thread.map((message, index) => (
-                  <p key={index} className={cn("rounded-lg px-3 py-2 text-sm leading-6", message.owner ? (isDark ? "ml-6 bg-white/[0.06] text-white/70" : "ml-6 bg-[#F2F0EB] text-[#1A1A1A]/70") : isDark ? "bg-white/[0.03] text-white/85" : "bg-[#FDFCFA] text-[#1A1A1A]/85")}>
-                    <span className={cn("mr-1.5 font-bold", message.owner ? (isDark ? "text-[#f9dc0b]" : "text-[#7a6600]") : ink)}>{message.owner ? "You" : message.author}</span>
+                  <p key={index} className={cn("rounded-lg px-3 py-2 text-sm leading-6", message.owner ? (isDark ? "ml-6 bg-white/[0.06] text-white/70" : "ml-6 bg-[var(--ui-bg)] text-[var(--ui-text)]/70") : isDark ? "bg-white/[0.03] text-white/85" : "bg-[var(--ui-panel)] text-[var(--ui-text)]/85")}>
+                    <span className={cn("mr-1.5 font-bold", message.owner ? (isDark ? "text-[var(--ui-accent-text)]" : "text-[var(--ui-accent-text)]") : ink)}>{message.owner ? "You" : message.author}</span>
                     {message.text}
                   </p>
                 ))}
@@ -3004,22 +3004,22 @@ function ReplyAgentResults({ result, running, isDark, drafts, posting, onDraft, 
                     maxLength={500}
                     rows={2}
                     onChange={(e) => onDraft(item.commentId, { text: e.target.value })}
-                    className={cn("w-full resize-y rounded-lg border px-3 py-2 text-sm font-semibold leading-6 outline-none transition", isDark ? "border-[#f9dc0b]/25 bg-[#f9dc0b]/[0.07] text-white focus:border-[#f9dc0b]/50" : "border-[#f9dc0b]/50 bg-[#fdf5c2]/60 text-[#1A1A1A] focus:border-[#c9ae00]")}
+                    className={cn("w-full resize-y rounded-lg border px-3 py-2 text-sm font-semibold leading-6 outline-none transition", isDark ? "border-[var(--ui-accent)]/25 bg-[var(--ui-accent)]/[0.07] text-white focus:border-[var(--ui-accent)]/50" : "border-[var(--ui-accent)]/50 bg-[var(--ui-accent-soft)]/60 text-[var(--ui-text)] focus:border-[var(--ui-accent-text)]")}
                   />
                 ) : (
-                  <p className={cn("rounded-lg px-3 py-2 text-sm font-semibold leading-6", isDark ? "bg-[#f9dc0b]/[0.08] text-white" : "bg-[#fdf5c2]/70 text-[#1A1A1A]")}>{draft.text}</p>
+                  <p className={cn("rounded-lg px-3 py-2 text-sm font-semibold leading-6", isDark ? "bg-[var(--ui-accent)]/[0.08] text-white" : "bg-[var(--ui-accent-soft)]/70 text-[var(--ui-text)]")}>{draft.text}</p>
                 )}
-                {draft.status === "posting" ? <p className={cn("mt-1.5 flex items-center gap-1.5 text-xs font-bold", muted)}><Loader2 className="h-3.5 w-3.5 animate-spin" /> Posting</p> : null}
+                {draft.status === "posting" ? <p className={cn("mt-1.5 flex items-center gap-1.5 text-xs font-bold", muted)}><Loader2 className="h-3.5 w-3.5 ui-spin" /> Posting</p> : null}
                 {posted ? <p className="mt-1.5 flex items-center gap-1.5 text-xs font-bold text-emerald-500"><CheckCircle2 className="h-3.5 w-3.5" /> Posted</p> : null}
                 {draft.status === "failed" ? <p className="mt-1.5 flex items-center gap-1.5 text-xs font-bold text-red-500"><AlertCircle className="h-3.5 w-3.5" /> {draft.error || "Could not post"}</p> : null}
               </div>
             </article>
           );
         }) : (
-          <p className={cn("rounded-xl p-5 text-sm font-semibold", isDark ? "bg-white/[0.03] text-white/50" : "bg-white text-[#1A1A1A]/50")}>Nothing needs an answer right now. New comments and follow-ups will show up here on the next run.</p>
+          <p className={cn("rounded-xl p-5 text-sm font-semibold", isDark ? "bg-white/[0.03] text-white/50" : "bg-[var(--ui-panel)] text-[var(--ui-text)]/50")}>Nothing needs an answer right now. New comments and follow-ups will show up here on the next run.</p>
         )}
         {skipReasons.length ? (
-          <details className={cn("rounded-xl px-3.5 py-2.5 text-sm", isDark ? "bg-white/[0.03] text-white/55" : "bg-white text-[#1A1A1A]/55")}>
+          <details className={cn("rounded-xl px-3.5 py-2.5 text-sm", isDark ? "bg-white/[0.03] text-white/55" : "bg-[var(--ui-panel)] text-[var(--ui-text)]/55")}>
             <summary className="cursor-pointer font-bold">{result.skipped.length} skipped</summary>
             <ul className="mt-2 space-y-1">
               {skipReasons.map(([reason, count]: any) => (
@@ -3035,9 +3035,9 @@ function ReplyAgentResults({ result, running, isDark, drafts, posting, onDraft, 
 
 function Mini({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg bg-[#F9F8F6] px-3 py-2">
-      <p className="text-[10px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">{label}</p>
-      <p className="mt-0.5 text-sm font-black text-[#1A1A1A]">{value}</p>
+    <div className="rounded-lg bg-[var(--ui-bg)] px-3 py-2">
+      <p className="text-[10px] font-bold uppercase tracking-widest text-[var(--ui-text)]/35">{label}</p>
+      <p className="mt-0.5 text-sm font-black text-[var(--ui-text)]">{value}</p>
     </div>
   );
 }
@@ -3047,11 +3047,11 @@ function OptimizeCard({ video, onClick }: { video: YouTubeDashboardVideo; onClic
   const thumbnailUrl = sharpYouTubeThumbnail(video.thumbnailUrl);
   return (
     <button type="button" onClick={onClick} className="group text-left">
-      <div className="relative aspect-[9/16] overflow-hidden rounded-2xl bg-[#111827]">
-        {thumbnailUrl ? <img src={thumbnailUrl} alt="" className="h-full w-full object-cover transition duration-300 group-hover:scale-105" referrerPolicy="no-referrer" loading="lazy" /> : <div className="grid h-full w-full place-items-center bg-[#f9dc0b]/10 text-[#f9dc0b]"><PlaySquare className="h-8 w-8" /></div>}
+      <div className="relative aspect-[9/16] overflow-hidden rounded-2xl bg-[var(--ui-text)]">
+        {thumbnailUrl ? <img src={thumbnailUrl} alt="" className="h-full w-full object-cover transition duration-300 group-hover:scale-105" referrerPolicy="no-referrer" loading="lazy" /> : <div className="grid h-full w-full place-items-center bg-[var(--ui-accent)]/10 text-[var(--ui-accent-text)]"><PlaySquare className="h-8 w-8" /></div>}
         <span className="absolute right-3 top-3 rounded-lg bg-black/75 px-2 py-1 text-[11px] font-black text-white">{formatDuration(video.durationSeconds)}</span>
         <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black via-black/65 to-transparent p-3 text-white">
-          <span className="rounded-lg bg-white px-2 py-1 text-xs font-black text-[#6a5b00]">Title {score}</span>
+          <span className="rounded-lg bg-[var(--ui-panel)] px-2 py-1 text-xs font-black text-[var(--ui-accent-text)]">Title {score}</span>
           <p className="mt-3 line-clamp-2 text-sm font-black">{video.title}</p>
           <p className="mt-1 text-xs font-semibold text-white/60">{compactNumber(video.viewCount)} views - {dateAge(video.publishedAt)}</p>
         </div>
@@ -3062,16 +3062,16 @@ function OptimizeCard({ video, onClick }: { video: YouTubeDashboardVideo; onClic
 
 function ThumbPreview({ video }: { video: YouTubeDashboardVideo }) {
   const thumbnailUrl = sharpYouTubeThumbnail(video.thumbnailUrl);
-  return <div className="aspect-video overflow-hidden rounded-2xl bg-[#111827]/5">{thumbnailUrl ? <img src={thumbnailUrl} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" loading="lazy" /> : <div className="grid h-full place-items-center"><PlaySquare className="h-8 w-8 text-[#111827]/25" /></div>}</div>;
+  return <div className="aspect-video overflow-hidden rounded-2xl bg-[var(--ui-text)]/5">{thumbnailUrl ? <img src={thumbnailUrl} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" loading="lazy" /> : <div className="grid h-full place-items-center"><PlaySquare className="h-8 w-8 text-[var(--ui-text)]/25" /></div>}</div>;
 }
 
 function VideoThumb({ video }: { video: YouTubeDashboardVideo }) {
   const thumbnailUrl = sharpYouTubeThumbnail(video.thumbnailUrl);
-  return thumbnailUrl ? <img src={thumbnailUrl} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" loading="lazy" /> : <div className="grid h-full place-items-center bg-[#f9dc0b]/10"><PlaySquare className="h-8 w-8 text-[#f9dc0b]" /></div>;
+  return thumbnailUrl ? <img src={thumbnailUrl} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" loading="lazy" /> : <div className="grid h-full place-items-center bg-[var(--ui-accent)]/10"><PlaySquare className="h-8 w-8 text-[var(--ui-accent-text)]" /></div>;
 }
 
 function ScorePanel({ label, value }: { label: string; value: number }) {
-  return <div className="rounded-2xl bg-[#F3F4F8] p-4"><div className="flex items-center justify-between"><p className="text-sm font-black">{label}</p><span className="rounded-xl bg-[#fff1a3] px-3 py-1 text-sm font-black text-[#6a5b00]">{value}</span></div><div className="mt-4 h-2 rounded-full bg-white"><div className="h-full rounded-full bg-[#f9dc0b]" style={{ width: `${value}%` }} /></div></div>;
+  return <div className="rounded-2xl bg-[var(--ui-bg)] p-4"><div className="flex items-center justify-between"><p className="text-sm font-black">{label}</p><span className="rounded-xl bg-[var(--ui-accent-soft)] px-3 py-1 text-sm font-black text-[var(--ui-accent-text)]">{value}</span></div><div className="mt-4 h-2 rounded-full bg-[var(--ui-panel)]"><div className="h-full rounded-full bg-[var(--ui-accent)]" style={{ width: `${value}%` }} /></div></div>;
 }
 
 function TitleOptimizationPanel({ video, optimization, loading, fallbackScore, publishing, onPublishTitle }: { video: YouTubeDashboardVideo; optimization: YouTubeVideoOptimization | null; loading: boolean; fallbackScore: number; publishing: boolean; onPublishTitle: (title: string) => void }) {
@@ -3083,28 +3083,28 @@ function TitleOptimizationPanel({ video, optimization, loading, fallbackScore, p
     setSelectedTitle(ideas[0]?.title || video.title);
   }, [video.id, optimization?.generatedAt]);
   return (
-    <div className="space-y-5 text-[#111827]">
+    <div className="space-y-5 text-[var(--ui-text)]">
       {loading ? <InlineStatus message="Loading viral title suggestions" /> : null}
       <ScorePanel label="Title score" value={optimization?.titleScore || fallbackScore} />
-      <div className="rounded-2xl bg-[#F3F4F8] p-5">
-        <p className="text-xs font-black uppercase tracking-widest text-[#111827]/42">Current title</p>
+      <div className="rounded-2xl bg-[var(--ui-bg)] p-5">
+        <p className="text-xs font-black uppercase tracking-widest text-[var(--ui-text)]/42">Current title</p>
         <p className="mt-3 text-lg font-black">{optimization?.current?.title || video.title}</p>
-        <p className="mt-6 text-xs font-bold text-[#111827]/45">{(optimization?.current?.title || video.title).length} of 100</p>
+        <p className="mt-6 text-xs font-bold text-[var(--ui-text)]/45">{(optimization?.current?.title || video.title).length} of 100</p>
       </div>
       <div className="grid gap-4 md:grid-cols-3">
         {ideas.slice(0, 3).map((idea) => (
-          <button type="button" key={idea.title} onClick={() => setSelectedTitle(idea.title)} className={cn("rounded-2xl border p-3 text-left transition", selectedTitle === idea.title ? "border-[#f9dc0b] bg-[#fff9d6]" : "border-transparent bg-[#F3F4F8] hover:border-[#f9dc0b]/35")}>
+          <button type="button" key={idea.title} onClick={() => setSelectedTitle(idea.title)} className={cn("rounded-2xl border p-3 text-left transition", selectedTitle === idea.title ? "border-[var(--ui-accent)] bg-[var(--ui-accent-soft)]" : "border-transparent bg-[var(--ui-bg)] hover:border-[var(--ui-accent)]/35")}>
             <ThumbPreview video={video} />
             <p className="mt-3 text-sm font-black leading-6">{idea.title}</p>
-            <p className="mt-2 text-xs font-bold text-[#6a5b00]">Score {Math.round(Number(idea.score || 0)) || 78}</p>
-            <p className="mt-2 text-xs font-semibold leading-5 text-[#111827]/55">{idea.reason}</p>
+            <p className="mt-2 text-xs font-bold text-[var(--ui-accent-text)]">Score {Math.round(Number(idea.score || 0)) || 78}</p>
+            <p className="mt-2 text-xs font-semibold leading-5 text-[var(--ui-text)]/55">{idea.reason}</p>
           </button>
         ))}
       </div>
-      <div className="flex flex-col gap-3 rounded-2xl bg-[#F3F4F8] p-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 rounded-2xl bg-[var(--ui-bg)] p-4 sm:flex-row sm:items-center sm:justify-between">
         <p className="min-w-0 text-sm font-black leading-6">{selectedTitle}</p>
-        <button type="button" onClick={() => onPublishTitle(selectedTitle)} disabled={publishing || !selectedTitle.trim()} className="inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-xl bg-[#f9dc0b] px-4 text-xs font-black text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white disabled:opacity-45">
-          {publishing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+        <button type="button" onClick={() => onPublishTitle(selectedTitle)} disabled={publishing || !selectedTitle.trim()} className="ui-btn is-primary shrink-0">
+          {publishing ? <Loader2 className="h-4 w-4 ui-spin" /> : <Send className="h-4 w-4" />}
           Publish title
         </button>
       </div>
@@ -3130,47 +3130,47 @@ function SeoOptimizationPanel({ video, optimization, loading, publishing, onPubl
   const visibleTags = expanded ? tagScores : tagScores.slice(0, 8);
   const publishableTags = uniqueTags(visibleTags.map((tag) => tag.label));
   return (
-    <div className="space-y-5 text-[#111827]">
+    <div className="space-y-5 text-[var(--ui-text)]">
       {loading ? <InlineStatus message="Loading SEO and monetization suggestions" /> : null}
-      <div className="rounded-2xl bg-[#F3F4F8] p-5">
+      <div className="rounded-2xl bg-[var(--ui-bg)] p-5">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm font-black">Optimized description</p>
-          <button type="button" onClick={() => onPublishDescription(description)} disabled={publishing === `${video.id}:Description` || !description.trim()} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[#f9dc0b] px-4 text-xs font-black text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white disabled:opacity-45">
-            {publishing === `${video.id}:Description` ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+          <button type="button" onClick={() => onPublishDescription(description)} disabled={publishing === `${video.id}:Description` || !description.trim()} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[var(--ui-accent)] px-4 text-xs font-black text-[var(--ui-accent-ink)] transition hover:bg-[var(--ui-text)] hover:text-[var(--ui-panel)] disabled:opacity-45">
+            {publishing === `${video.id}:Description` ? <Loader2 className="h-4 w-4 ui-spin" /> : <Send className="h-4 w-4" />}
             Publish description
           </button>
         </div>
-        <p className="mt-3 whitespace-pre-wrap text-sm font-semibold leading-7 text-[#111827]/70">{optimization?.description || "Suggestions will appear after the optimization check finishes."}</p>
+        <p className="mt-3 whitespace-pre-wrap text-sm font-semibold leading-7 text-[var(--ui-text)]/70">{optimization?.description || "Suggestions will appear after the optimization check finishes."}</p>
       </div>
       <div>
         <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="text-sm font-black">Tags for niche, search, and common misspellings</p>
-            <p className="mt-1 text-xs font-semibold text-[#111827]/50">Scores are guidance only. AutoYT publishes only the tag text.</p>
+            <p className="mt-1 text-xs font-semibold text-[var(--ui-text)]/50">Scores are guidance only. AutoYT publishes only the tag text.</p>
           </div>
-          <button type="button" onClick={() => onPublishTags(publishableTags)} disabled={publishing === `${video.id}:Tags` || !publishableTags.length} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[#f9dc0b] px-4 text-xs font-black text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white disabled:opacity-45">
-            {publishing === `${video.id}:Tags` ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+          <button type="button" onClick={() => onPublishTags(publishableTags)} disabled={publishing === `${video.id}:Tags` || !publishableTags.length} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[var(--ui-accent)] px-4 text-xs font-black text-[var(--ui-accent-ink)] transition hover:bg-[var(--ui-text)] hover:text-[var(--ui-panel)] disabled:opacity-45">
+            {publishing === `${video.id}:Tags` ? <Loader2 className="h-4 w-4 ui-spin" /> : <Send className="h-4 w-4" />}
             Publish tags
           </button>
         </div>
         <div className="flex flex-wrap gap-2">
           {visibleTags.map((tag) => <TagScoreChip key={`${tag.label}-${tag.score}`} tag={tag} />)}
         </div>
-        {tagScores.length > 8 ? <button type="button" onClick={() => setExpanded((value) => !value)} className="mt-3 h-10 rounded-full bg-[#F4F5F8] px-5 text-sm font-black text-[#1A1A1A] hover:bg-[#E8ECF3]">{expanded ? "Show fewer tags" : "Show more tags"}</button> : null}
+        {tagScores.length > 8 ? <button type="button" onClick={() => setExpanded((value) => !value)} className="mt-3 h-10 rounded-full bg-[var(--ui-bg)] px-5 text-sm font-black text-[var(--ui-text)] hover:bg-[var(--ui-bg)]">{expanded ? "Show fewer tags" : "Show more tags"}</button> : null}
       </div>
       <div className="grid gap-4 md:grid-cols-2">
-        <div className="rounded-2xl bg-[#F3F4F8] p-4">
+        <div className="rounded-2xl bg-[var(--ui-bg)] p-4">
           <p className="font-black">Action cards</p>
           <div className="mt-3 space-y-2">
-            {(optimization?.actionCards || []).map((item) => <p key={item} className="rounded-xl bg-white px-3 py-2 text-sm font-bold leading-6 text-[#111827]/68">{item}</p>)}
-            {!optimization?.actionCards?.length ? <p className="text-sm font-semibold text-[#111827]/55">Run more performance checks to unlock channel-specific actions.</p> : null}
+            {(optimization?.actionCards || []).map((item) => <p key={item} className="rounded-xl bg-[var(--ui-panel)] px-3 py-2 text-sm font-bold leading-6 text-[var(--ui-text)]/68">{item}</p>)}
+            {!optimization?.actionCards?.length ? <p className="text-sm font-semibold text-[var(--ui-text)]/55">Run more performance checks to unlock channel-specific actions.</p> : null}
           </div>
         </div>
-        <div className="rounded-2xl bg-[#F3F4F8] p-4">
+        <div className="rounded-2xl bg-[var(--ui-bg)] p-4">
           <p className="font-black">Monetization notes</p>
           <div className="mt-3 space-y-2">
-            {(optimization?.monetizationNotes || []).map((item) => <p key={item} className="rounded-xl bg-white px-3 py-2 text-sm font-bold leading-6 text-[#111827]/68">{item}</p>)}
-            {!optimization?.monetizationNotes?.length ? <p className="text-sm font-semibold text-[#111827]/55">Recommendations will become sharper as this channel builds a performance history.</p> : null}
+            {(optimization?.monetizationNotes || []).map((item) => <p key={item} className="rounded-xl bg-[var(--ui-panel)] px-3 py-2 text-sm font-bold leading-6 text-[var(--ui-text)]/68">{item}</p>)}
+            {!optimization?.monetizationNotes?.length ? <p className="text-sm font-semibold text-[var(--ui-text)]/55">Recommendations will become sharper as this channel builds a performance history.</p> : null}
           </div>
         </div>
       </div>
@@ -3183,5 +3183,5 @@ function ReviewPanel({ video }: { video: YouTubeDashboardVideo }) {
 }
 
 function ReviewNote({ title, body }: { title: string; body: string }) {
-  return <div className="rounded-2xl bg-[#F3F4F8] p-4"><p className="font-black">{title}</p><p className="mt-2 text-sm font-semibold leading-6 text-[#111827]/58">{body}</p></div>;
+  return <div className="rounded-2xl bg-[var(--ui-bg)] p-4"><p className="font-black">{title}</p><p className="mt-2 text-sm font-semibold leading-6 text-[var(--ui-text)]/58">{body}</p></div>;
 }

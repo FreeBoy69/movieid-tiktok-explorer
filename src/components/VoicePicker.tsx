@@ -1,6 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { AudioLines, Check, ChevronsUpDown, Loader2, Mic, Play, Search, Sparkles, Square, Star, X } from "lucide-react";
+import { AudioLines, Check, ChevronsUpDown, Loader2, Mic, Play, Sparkles, Square, Star, X } from "lucide-react";
+import { SearchField } from "./ui/controls";
 import { usePreview, voicePreviewUrl } from "../utils/voicePreview";
 import { isVoiceReady, type VoiceProfile } from "../utils/voiceProfiles";
 import "./VoicePicker.css";
@@ -218,7 +219,7 @@ export function VoicePicker({
       <button
         ref={trigger}
         type="button"
-        className="mk-voice-trigger"
+        className="ui-trigger mk-voice-trigger"
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-labelledby={labelledBy}
@@ -230,7 +231,7 @@ export function VoicePicker({
           <strong>{selected ? selected.name : loading ? "Loading voices…" : noneLabel || placeholder}</strong>
           <small>{selected ? detail(selected) : voices.length ? `${voices.length} voices available` : loading ? "" : "No voices yet"}</small>
         </span>
-        {loading ? <Loader2 size={16} className="mk-voice-spin" /> : <ChevronsUpDown size={16} className="mk-voice-chevron" />}
+        {loading ? <Loader2 size={16} className="ui-spin" /> : <ChevronsUpDown size={16} className="mk-voice-chevron" />}
       </button>
       )}
       {open && host && position &&
@@ -247,21 +248,18 @@ export function VoicePicker({
             >
               <div className="mk-voice-panel-head">
                 <strong id={titleId}>Choose a voice</strong>
-                <button type="button" className="mk-voice-close" onClick={() => close(true)} aria-label="Close">
+                <button type="button" className="ui-icon-btn mk-voice-close" onClick={() => close(true)} aria-label="Close">
                   <X size={16} />
                 </button>
               </div>
               {voices.length > 6 && (
-                <label className="mk-voice-search">
-                  <Search size={15} aria-hidden="true" />
-                  <input ref={search} value={query} placeholder="Search voices" aria-label="Search voices" style={{ paddingLeft: 34 }} onChange={(e) => setQuery(e.target.value)} />
-                </label>
+                <SearchField ref={search} size="sm" className="mk-voice-search" value={query} onChange={setQuery} placeholder="Search voices" />
               )}
               {voices.length > 6 && filters.length > 1 && (
                 <div className="mk-voice-filters" role="group" aria-label="Filter voices">
-                  <button type="button" className={!filter ? "is-on" : ""} aria-pressed={!filter} onClick={() => setFilter("")}>All</button>
+                  <button type="button" className="ui-chip" aria-pressed={!filter} onClick={() => setFilter("")}>All</button>
                   {filters.map((item) => (
-                    <button key={item.id} type="button" className={filter === item.id ? "is-on" : ""} aria-pressed={filter === item.id} onClick={() => setFilter(filter === item.id ? "" : item.id)}>
+                    <button key={item.id} type="button" className="ui-chip" aria-pressed={filter === item.id} onClick={() => setFilter(filter === item.id ? "" : item.id)}>
                       {item.id === "favorites" ? <Star size={12} aria-hidden="true" /> : null}
                       {item.label}
                     </button>
@@ -329,7 +327,7 @@ export function VoicePicker({
                               onClick={() => void preview.toggle(voice.id, voicePreviewUrl(voice.id))}
                             >
                               {status === "loading" ? (
-                                <Loader2 size={15} className="mk-voice-spin" />
+                                <Loader2 size={15} className="ui-spin" />
                               ) : status === "playing" ? (
                                 <Square size={12} fill="currentColor" />
                               ) : (

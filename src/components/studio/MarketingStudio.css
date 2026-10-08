@@ -18,8 +18,7 @@
   --mks-fill: color-mix(in srgb, var(--cs-text) 4%, transparent);
   --mks-fill-strong: color-mix(in srgb, var(--cs-text) 9%, transparent);
   --mks-grid: color-mix(in srgb, var(--cs-text) 5%, transparent);
-  --mks-ease: cubic-bezier(0.22, 1, 0.36, 1);
-  --mks-focus: color-mix(in srgb, var(--cs-text) 40%, transparent);
+  --mks-ease: var(--ui-ease);
   --mks-check: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23171717' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
   color: var(--mks-text);
   font-family: Inter, ui-sans-serif, system-ui, sans-serif;
@@ -51,14 +50,7 @@
 :is(.mks, .mks-scope) button:disabled {
   cursor: not-allowed;
 }
-/* Keyboard focus is a quiet neutral ring; text fields show focus on their card instead. */
-:root :is(.mks, .mks-scope) :focus-visible {
-  outline: 2px solid var(--mks-focus);
-  outline-offset: 2px;
-}
-:root :is(.mks, .mks-scope) :is(textarea, input):focus-visible {
-  outline: none;
-}
+/* Keyboard focus: the global ring (index.css). The prompt shows focus on its bar. */
 :is(.mks, .mks-scope) ::selection {
   background: var(--mks-pink);
   color: var(--mks-on-accent);
@@ -119,9 +111,9 @@
   transition: background-color 160ms, color 160ms;
 }
 .ui-seg.mks-modes > button[aria-checked="true"] {
-  background: var(--mks-fill-strong);
-  color: var(--mks-text);
-  box-shadow: none;
+  background: var(--ui-raised);
+  color: var(--ui-text);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.12), 0 0 0 1px var(--ui-line);
 }
 .mks-bar {
   flex: 1;
@@ -218,23 +210,24 @@
   align-items: center;
   gap: 8px;
 }
+/* Icon chips: the .ui-chip frame, square. */
 .mks-plus,
 .mks-chip-icon {
   display: grid;
   place-items: center;
-  width: 34px;
-  height: 34px;
-  border: 1px solid var(--mks-line);
-  border-radius: 10px;
-  background: var(--mks-fill);
-  color: var(--mks-muted);
-  transition: background-color 160ms, color 160ms;
+  width: var(--ui-control-sm);
+  height: var(--ui-control-sm);
+  border: 1px solid var(--ui-line);
+  background: var(--ui-panel);
+  color: var(--ui-text-muted);
+  transition: background-color var(--ui-duration), color var(--ui-duration);
 }
 .mks-plus:hover,
 .mks-chip-icon:hover,
 .mks-chip-icon[aria-expanded="true"] {
-  background: var(--mks-fill-strong);
-  color: var(--mks-text);
+  border-color: var(--ui-line-strong);
+  background: var(--ui-hover);
+  color: var(--ui-text);
 }
 .mks-tag {
   display: inline-flex;
@@ -243,8 +236,8 @@
   max-width: 200px;
   height: 30px;
   padding: 0 6px 0 4px;
-  border-radius: 8px;
-  background: var(--mks-fill-strong);
+  border-radius: 999px;
+  background: var(--ui-chip);
   font-size: 12px;
   font-weight: 600;
 }
@@ -267,18 +260,20 @@
   background: transparent;
   color: var(--mks-faint);
 }
+/* A chip holding a button (and an optional remove x): the .ui-chip frame. */
 .mks-chip {
   display: inline-flex;
   align-items: stretch;
-  height: 34px;
+  height: var(--ui-control-sm);
   overflow: hidden;
-  border: 1px solid var(--mks-line);
-  border-radius: 10px;
-  background: var(--mks-fill);
-  transition: background-color 160ms, border-color 160ms;
+  border: 1px solid var(--ui-line);
+  border-radius: 999px;
+  background: var(--ui-panel);
+  transition: background-color var(--ui-duration), border-color var(--ui-duration);
 }
 .mks-chip:hover {
-  background: var(--mks-fill-strong);
+  border-color: var(--ui-line-strong);
+  background: var(--ui-hover);
 }
 .mks-chip > button {
   display: inline-flex;
@@ -302,9 +297,8 @@
   color: var(--mks-on-accent);
 }
 .mks-chip.is-setting {
-  border-color: transparent;
-  background: var(--mks-setting);
-  color: var(--cs-accent-text);
+  border-color: color-mix(in srgb, var(--ui-accent) 70%, transparent);
+  background: var(--ui-accent-soft);
 }
 .mks-cluster {
   display: flex;
@@ -411,15 +405,13 @@
   left: 0;
   z-index: 30;
   width: 260px;
+  /* The .ui-menu surface (the stacked Choice lists add .ui-menu itself). */
   padding: 6px;
-  border: 1px solid var(--mks-line);
-  border-radius: 14px;
-  background: var(--mks-panel-solid);
-  box-shadow: var(--cs-shadow-lift);
-  animation: mks-in 180ms var(--mks-ease);
-}
-@keyframes mks-in {
-  from { opacity: 0; transform: translateY(4px); }
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-raised);
+  box-shadow: var(--ui-shadow-lift);
+  animation: ui-menu-in 140ms var(--ui-ease);
 }
 .mks-tech-row {
   position: relative;
@@ -431,15 +423,15 @@
   min-height: 40px;
   padding: 0 10px;
   border: 0;
-  border-radius: 10px;
+  border-radius: var(--ui-radius-sm);
   background: transparent;
-  color: var(--mks-muted);
+  color: var(--ui-text-muted);
   font-size: 13px;
   text-align: left;
   cursor: pointer;
 }
 .mks-tech-row:hover {
-  background: var(--mks-fill-strong);
+  background: var(--ui-hover);
 }
 .mks-tech-row strong {
   color: var(--mks-text);
@@ -462,12 +454,12 @@
   top: 0;
   bottom: 0;
   width: var(--fill, 0%);
-  border-radius: 10px;
-  background: var(--mks-fill-strong);
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-accent-soft);
   pointer-events: none;
 }
 .mks-tech-row.is-slider:has(input:focus-visible) {
-  outline: 2px solid var(--mks-focus);
+  outline: 2px solid var(--ui-focus);
 }
 .mks-tech.mks-tech-settings {
   display: grid;
@@ -494,23 +486,26 @@
 .mks-tech-group .cs-pop {
   width: 100%;
 }
+/* Here the model chip is a full-width field-shaped trigger (.ui-trigger look). */
 .mks-tech-group .cs-chip-model {
   display: flex;
   align-items: center;
   gap: 8px;
   width: 100%;
-  height: 38px;
+  max-width: none;
+  min-height: var(--ui-field-height);
   padding: 0 12px;
-  border: 1px solid var(--mks-line);
-  background: var(--mks-fill);
-  font-size: 13px;
+  border: 1px solid var(--ui-line-strong);
+  border-radius: var(--ui-radius-control) !important;
+  background: var(--ui-input);
+  font-size: 14px;
   text-align: left;
 }
 .mks-tech-group .cs-chip-model > .cs-truncate {
   flex: 1;
 }
 .mks-tech-group .cs-chip-model:hover {
-  background: var(--mks-fill-strong);
+  background: var(--ui-input);
 }
 .mks-tech-group .cs-model-menu {
   top: calc(100% + 6px);
@@ -652,31 +647,13 @@
   margin-bottom: 16px;
   padding-right: 44px;
 }
-.ui-seg.mks-tabs {
-  gap: 4px;
-  padding: 0;
-  border-radius: 0;
-  background: transparent;
-}
+
 .mks-tabs-row {
   display: flex;
   justify-content: center;
   margin-bottom: 18px;
 }
-.ui-seg.mks-tabs > button {
-  height: 32px;
-  min-height: 0;
-  padding: 0 14px;
-  border-radius: 999px;
-  color: var(--mks-muted);
-  font-size: 13px;
-  font-weight: 600;
-}
-.ui-seg.mks-tabs > button[aria-checked="true"] {
-  background: var(--mks-fill-strong);
-  color: var(--mks-text);
-  box-shadow: none;
-}
+
 .ui-search.mks-search {
   width: 240px;
 }
@@ -768,12 +745,18 @@
   align-items: center;
   gap: 8px;
   min-width: 240px;
-  height: 42px;
+  height: var(--ui-field-height);
   padding: 0 4px 0 12px;
-  border: 1px solid var(--mks-line);
-  border-radius: 12px;
-  background: var(--mks-fill);
-  color: var(--mks-faint);
+  /* A field with an inline action: the .ui-input frame. */
+  border: 1px solid var(--ui-line-strong);
+  border-radius: var(--ui-radius-control);
+  background: var(--ui-input);
+  box-shadow: var(--ui-shadow-soft);
+  color: var(--ui-text-faint);
+}
+.mks-url:focus-within {
+  border-color: var(--ui-focus);
+  box-shadow: 0 0 0 3px var(--ui-ring);
 }
 .mks-url input {
   flex: 1;
@@ -788,46 +771,15 @@
 .mks-url button {
   display: grid;
   place-items: center;
-  width: 34px;
-  height: 34px;
+  width: var(--ui-control-sm);
+  height: var(--ui-control-sm);
   border: 0;
-  border-radius: 9px;
-  background: var(--mks-fill-strong);
+  background: var(--ui-chip);
   font-size: 16px;
 }
 .mks-or {
   color: var(--mks-faint);
   font-size: 12px;
-}
-.mks-white,
-.mks-pink,
-.mks-ghost {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  height: 40px;
-  padding: 0 18px;
-  border: 0;
-  border-radius: 999px;
-  font-size: 13px;
-  font-weight: 700;
-}
-.mks-white {
-  background: var(--cs-text);
-  color: var(--cs-bg);
-}
-.mks-pink {
-  background: var(--mks-pink);
-  color: var(--mks-on-accent);
-}
-.mks-pink:disabled {
-  opacity: 0.45;
-}
-.mks-ghost {
-  border: 1px solid var(--mks-line);
-  background: transparent;
-  color: var(--mks-muted);
 }
 .mks-manual {
   display: flex;
@@ -838,22 +790,27 @@
 .mks-manual textarea,
 .mks-create input,
 .mks-create textarea {
+  /* The .ui-input / .ui-textarea skin. */
   width: 100%;
-  padding: 10px 12px;
-  border: 1px solid var(--mks-line);
-  border-radius: 12px;
-  background: var(--mks-fill);
-  color: var(--mks-text);
+  min-height: var(--ui-field-height);
+  padding: 9px 12px;
+  border: 1px solid var(--ui-line-strong);
+  border-radius: var(--ui-radius-control);
+  background: var(--ui-input);
+  box-shadow: var(--ui-shadow-soft);
+  color: var(--ui-text);
   font: inherit;
   font-size: 14px;
   resize: none;
   outline: none;
+  transition: border-color var(--ui-duration) ease, box-shadow var(--ui-duration) ease;
 }
 .mks-manual input:focus,
 .mks-manual textarea:focus,
 .mks-create input:focus,
 .mks-create textarea:focus {
-  border-color: var(--mks-line-strong);
+  border-color: var(--ui-focus);
+  box-shadow: 0 0 0 3px var(--ui-ring);
 }
 .cs-refs.mks-uploads {
   flex-wrap: wrap;
@@ -988,10 +945,13 @@
   font-size: 13px;
   text-align: left;
 }
+.mks-avatars aside button:hover {
+  background: var(--ui-hover);
+}
 .mks-avatars aside button[aria-pressed="true"] {
-  border-color: var(--mks-line-strong);
-  background: var(--mks-fill-strong);
-  color: var(--mks-text);
+  border-color: color-mix(in srgb, var(--ui-accent) 70%, transparent);
+  background: var(--ui-accent-soft);
+  color: var(--ui-text);
 }
 .mks-faces {
   display: grid;

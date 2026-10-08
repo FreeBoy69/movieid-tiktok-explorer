@@ -11,7 +11,6 @@
 }
 .sl *, .sl *::before, .sl *::after { box-sizing: border-box; }
 :where(.sl) button { font: inherit; color: inherit; cursor: pointer; }
-.sl :focus-visible { outline: 2px solid var(--ui-accent); outline-offset: 2px; }
 .sl-inner {
   width: min(960px, 100% - 32px);
   margin: 0 auto;
@@ -48,7 +47,7 @@
   box-shadow: var(--ui-shadow-soft);
   transition: border-color 0.18s ease, box-shadow 0.18s ease;
 }
-.sl-box:focus-within { border-color: var(--ui-text-faint); box-shadow: var(--ui-shadow-soft), 0 0 0 4px var(--ui-ring); }
+.sl-box:focus-within { border-color: var(--ui-focus); box-shadow: var(--ui-shadow-soft), 0 0 0 3px var(--ui-ring); }
 .sl-box textarea {
   width: 100%;
   min-height: 52px;
@@ -131,18 +130,19 @@
 .sl-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .sl-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
 .sl-hint { color: var(--ui-text-muted); font-size: 13px; }
+/* Same values as .ui-seg. */
 .sl-mode {
   display: inline-flex;
+  gap: 2px;
   padding: 3px;
-  border: 1px solid var(--ui-line);
   border-radius: 999px;
-  background: var(--ui-sunken);
+  background: color-mix(in srgb, var(--ui-text) 7%, transparent);
 }
 .sl-mode button {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-height: 30px;
+  min-height: var(--ui-control-sm);
   padding: 0 12px;
   border: 0;
   border-radius: 999px;
@@ -151,7 +151,7 @@
   font-size: 13px;
   font-weight: 600;
 }
-.sl-mode button[aria-checked="true"] { background: var(--ui-raised); color: var(--ui-text); box-shadow: 0 1px 2px rgb(0 0 0 / 0.12), inset 0 0 0 1px var(--ui-line); }
+.sl-mode button[aria-checked="true"] { background: var(--ui-raised); color: var(--ui-text); box-shadow: 0 1px 2px rgb(0 0 0 / 0.12), 0 0 0 1px var(--ui-line); }
 
 .sl-model { position: relative; }
 .sl-model-btn {
@@ -159,11 +159,11 @@
   align-items: center;
   gap: 6px;
   max-width: 240px;
-  min-height: 36px;
+  min-height: var(--ui-control-sm);
   padding: 0 12px;
   border: 1px solid var(--ui-line);
   border-radius: 999px;
-  background: transparent;
+  background: var(--ui-panel);
   color: var(--ui-text);
   font-size: 13px;
   font-weight: 600;
@@ -182,25 +182,27 @@
   padding: 6px;
   overflow-y: auto;
   list-style: none;
+  /* Same values as .ui-menu. */
   border: 1px solid var(--ui-line);
-  border-radius: 14px;
-  background: var(--ui-panel);
-  box-shadow: var(--ui-shadow);
-  animation: sl-pop 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-raised);
+  box-shadow: var(--ui-shadow-lift);
+  animation: ui-menu-in 140ms var(--ui-ease);
 }
-@keyframes sl-pop { from { opacity: 0; transform: translateY(-4px); } }
 .sl-model-menu button {
   display: flex;
   width: 100%;
   align-items: center;
   gap: 10px;
-  padding: 9px 10px;
+  min-height: 36px;
+  padding: 8px 10px;
   border: 0;
-  border-radius: 10px;
+  border-radius: var(--ui-radius-sm);
   background: transparent;
   text-align: left;
 }
-.sl-model-menu button:hover, .sl-model-menu button[aria-selected="true"] { background: var(--ui-hover); }
+.sl-model-menu button:hover, .sl-model-menu button:focus-visible { background: var(--ui-hover); outline: none; }
+.sl-model-menu button[aria-selected="true"] { background: var(--ui-accent-soft); }
 .sl-model-menu button > svg { flex: none; color: var(--ui-accent-text); }
 .sl-model-text { display: grid; flex: 1; min-width: 0; line-height: 1.3; }
 .sl-model-text strong { font-size: 13.5px; font-weight: 600; }
@@ -220,10 +222,8 @@
   transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease;
 }
 .sl-send:not(:disabled) { background: var(--ui-accent); color: var(--ui-accent-ink); }
-.sl-send:not(:disabled):hover { transform: translateY(-1px); }
+.sl-send:not(:disabled):hover { background: var(--ui-accent-hover); }
 .sl-send:disabled { color: var(--ui-text-faint); cursor: default; }
-.sl-spin { animation: sl-spin 0.9s linear infinite; }
-@keyframes sl-spin { to { transform: rotate(360deg); } }
 
 /* ---------- gallery ---------- */
 .sl-gallery-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin: 64px 0 14px; }
@@ -236,31 +236,15 @@
   letter-spacing: -0.005em;
 }
 .sl-tabs-row { margin-bottom: 22px; }
+/* Canonical rounded tabs (.ui-tabs.is-pill); the row fades out under the aside link. */
 .sl-tabs.ui-tabs {
-  gap: 2px;
   margin: 0 -6px;
   padding: 0 40px 0 6px;
-  border-bottom: 0;
   mask-image: linear-gradient(90deg, #000 calc(100% - 48px), transparent);
 }
-.sl-tabs.ui-tabs > button {
-  flex: none;
-  gap: 7px;
-  min-height: 38px;
-  margin: 0;
-  padding: 0 10px;
-  border: 0;
-  border-radius: 10px;
-  background: transparent;
-  color: var(--ui-text-muted);
-  font-size: 14px;
-  font-weight: 550;
-  transition: background 0.15s ease, color 0.15s ease;
-}
+.sl-tabs.ui-tabs > button { flex: none; }
 .sl-tabs.ui-tabs > button > svg { opacity: 0.8; }
-.sl-tabs.ui-tabs > button:hover:not(:disabled) { color: var(--ui-text); }
-.sl-tabs.ui-tabs > button[aria-selected="true"] { background: var(--ui-chip); color: var(--ui-text); font-weight: 600; }
-.sl-tabs.ui-tabs > button small { padding: 1px 6px; border-radius: 999px; background: var(--ui-sunken); color: var(--ui-text-muted); font-size: 11.5px; }
+.sl-tabs.ui-tabs > button small { padding: 1px 6px; border-radius: 999px; background: var(--ui-chip); color: var(--ui-text-muted); font-size: 11px; }
 .sl-aside {
   display: inline-flex;
   flex: none;
@@ -323,14 +307,18 @@
 .sl-card-title { display: grid; min-width: 0; line-height: 1.3; }
 .sl-card-title strong { font-size: 14.5px; font-weight: 600; }
 .sl-card-title small { overflow: hidden; color: var(--ui-text-muted); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+/* Same values as .ui-badge. */
 .sl-card-tag {
+  display: inline-flex;
   flex: none;
-  padding: 3px 9px;
-  border-radius: 8px;
+  align-items: center;
+  min-height: 20px;
+  padding: 0 8px;
+  border-radius: 999px;
   background: var(--ui-chip);
   color: var(--ui-text-muted);
-  font-size: 12.5px;
-  font-weight: 550;
+  font-size: 11px;
+  font-weight: 650;
   white-space: nowrap;
 }
 
@@ -358,11 +346,11 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  min-height: 40px;
-  padding: 0 18px;
+  min-height: var(--ui-control);
+  padding: 0 16px;
   border: 1px solid var(--ui-line-strong);
   border-radius: 999px;
-  background: var(--ui-panel);
+  background: transparent;
   color: var(--ui-text);
   font-size: 14px;
   font-weight: 600;
@@ -387,40 +375,26 @@
 .sl .mks-bar,
 .cns .sl .cns-bar { border: 1px solid var(--ui-line-strong); border-radius: 20px; background: var(--ui-input); box-shadow: var(--ui-shadow-soft); -webkit-backdrop-filter: none; backdrop-filter: none; }
 .sl .mks-bar:focus-within,
-.cns .sl .cns-bar:focus-within { border-color: var(--ui-text-faint); box-shadow: var(--ui-shadow-soft), 0 0 0 4px var(--ui-ring); }
+.cns .sl .cns-bar:focus-within { border-color: var(--ui-focus); box-shadow: var(--ui-shadow-soft), 0 0 0 3px var(--ui-ring); }
 .sl-above .ui-seg.mks-modes,
-.cns .sl-above .ui-seg.cns-modes { display: inline-flex; flex-direction: row; gap: 2px; padding: 3px; border: 1px solid var(--ui-line); border-radius: 999px; background: var(--ui-sunken); box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+.cns .sl-above .ui-seg.cns-modes { display: inline-flex; flex-direction: row; gap: 2px; padding: 3px; border: 0; border-radius: 999px; background: color-mix(in srgb, var(--ui-text) 7%, transparent); box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
 .sl-above .ui-seg.mks-modes > button,
-.cns .sl-above .ui-seg.cns-modes > button { flex-direction: row; width: auto; min-height: 32px; gap: 6px; padding: 0 14px; border-radius: 999px; font-size: 13px; }
+.cns .sl-above .ui-seg.cns-modes > button { flex-direction: row; width: auto; min-height: var(--ui-control-sm); gap: 6px; padding: 0 12px; border-radius: 999px; font-size: 13px; }
 .sl .ui-notice.cns-notice { position: static; width: auto; transform: none; }
 .sl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 18px; }
 .sl-empty-note { margin: 24px 0; color: var(--ui-text-muted); text-align: center; }
 /* Cinema: the whole dock (scene bar, camera rig, Generate) is the box. */
 .cns .sl .cns-dock { padding: 10px; border: 1px solid var(--ui-line-strong); border-radius: 20px; background: var(--ui-input); box-shadow: var(--ui-shadow-soft); }
-.cns .sl .cns-dock:focus-within { border-color: var(--ui-text-faint); box-shadow: var(--ui-shadow-soft), 0 0 0 4px var(--ui-ring); }
+.cns .sl .cns-dock:focus-within { border-color: var(--ui-focus); box-shadow: var(--ui-shadow-soft), 0 0 0 3px var(--ui-ring); }
 .cns .sl .cns-bar, .cns .sl .cns-bar:focus-within { border: 0; border-radius: 12px; background: transparent; box-shadow: none; }
-
-/* Audio Studio (Text to Speech): the script is the box, settings in its bar. */
-.as-root.as-in-layout { display: flex; flex-direction: column; flex: 1; height: 100%; min-height: 0; padding: 0; overflow: hidden; }
-.as-in-layout .sl-above .as-head-actions { display: flex; align-items: center; gap: 10px; }
-.as-in-layout .as-box textarea.as-script { min-height: 140px; padding: 0; border: 0; background: transparent; box-shadow: none; resize: vertical; }
-.as-in-layout .as-controls { gap: 8px; }
-.as-in-layout .as-controls .as-field { display: inline-flex; min-width: 0; max-width: 260px; }
-.as-in-layout .as-controls .as-count, .as-in-layout .as-controls .as-cost, .as-in-layout .as-controls .as-blocked { color: var(--ui-text-muted); font-size: 12.5px; }
-.as-in-layout .as-player-below { margin-top: 18px; }
-.as-in-layout .as-history-below { display: grid; gap: 10px; margin-top: 28px; }
 
 /* Create Video and Create Film start screens. */
 .maker-scroll.maker-in-layout { display: flex; flex-direction: column; padding: 0; }
-.maker-box-chip { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 0 12px; border: 1px solid var(--ui-line); border-radius: 999px; background: transparent; color: var(--ui-text); font-size: 13px; font-weight: 600; }
+/* Same values as .ui-chip. */
+.maker-box-chip { display: inline-flex; align-items: center; gap: 6px; min-height: var(--ui-control-sm); padding: 0 12px; border: 1px solid var(--ui-line); border-radius: 999px; background: var(--ui-panel); color: var(--ui-text); font-size: 13px; font-weight: 600; }
 .maker-box-chip:hover { background: var(--ui-hover); }
 .maker-box-meta { color: var(--ui-text-muted); font-size: 12.5px; }
 .dr-in-layout { display: grid; gap: 40px; max-width: none; margin: 0; padding: 0; }
-/* Create Video and Create Film style every button and textarea under .maker-workspace;
-   inside the layout the shared box and tabs win. */
-.maker-workspace .sl-box textarea { min-height: 52px; padding: 0 8px 0 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; outline: none; resize: none; font: 400 18px/1.45 var(--font-sans); color: var(--ui-text); }
-.maker-workspace .sl-tabs.ui-tabs > button { flex: none; gap: 7px; min-height: 38px; margin: 0; padding: 0 10px; border: 0; border-radius: 10px; background: transparent; color: var(--ui-text-muted); font-size: 14px; font-weight: 550; box-shadow: none; }
-.maker-workspace .sl-tabs.ui-tabs > button[aria-selected="true"] { background: var(--ui-chip); color: var(--ui-text); font-weight: 600; }
 /* Tabs that follow the box directly (no gallery heading) keep their distance. */
 .sl-box + .sl-tabs-row, .sl-notices + .sl-tabs-row, .sl-box + .sl-gallery-head, .sl-notices + .sl-gallery-head { margin-top: 24px; }
 /* Create Film: the idea section is the box area itself, edge to edge with the column. */

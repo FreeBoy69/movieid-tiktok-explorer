@@ -210,7 +210,7 @@ export const MixPreview = forwardRef<MixPreviewHandle, { voice?: string | null; 
             {clock(time)} / {clock(total)}
           </span>
         </div>
-        <input type="range" aria-label="Preview position" min={0} max={total} step={0.1} value={Math.min(time, total)} onChange={(e) => seek(Number(e.target.value))} />
+        <input type="range" className="ui-range" style={{ ["--fill" as string]: `${total ? (Math.min(time, total) / total) * 100 : 0}%` }} aria-label="Preview position" min={0} max={total} step={0.1} value={Math.min(time, total)} onChange={(e) => seek(Number(e.target.value))} />
       </div>
       {voice ? (
         <label className="spb-mix-toggle">

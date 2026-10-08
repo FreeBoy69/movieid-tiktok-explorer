@@ -2,38 +2,27 @@
    A prompt opens in a centered dialog (a full-height sheet on phones). */
 .plib,
 .plib-overlay {
-  --pl-bg: #f9f8f6;
-  --pl-surface: #fff;
-  --pl-sunken: #f1efea;
-  --pl-text: #1a1a1a;
-  --pl-muted: #5f5d58;
-  --pl-faint: #8b8983;
-  --pl-line: #e7e4dd;
-  --pl-line-strong: #cfcbc1;
-  --pl-accent: #f9dc0b;
-  --pl-accent-hover: #ecd00a;
-  --pl-accent-soft: #fdf5c2;
-  --pl-accent-text: #7a6600;
-  --pl-bad: #a13a2a;
-  --pl-shadow: 0 1px 2px rgb(26 26 26 / 0.05), 0 14px 30px -18px rgb(26 26 26 / 0.3);
+  /* The site tokens (index.css); [data-theme] on the root re-scopes them. */
+  --pl-bg: var(--ui-bg);
+  --pl-surface: var(--ui-panel);
+  --pl-sunken: var(--ui-sunken);
+  --pl-text: var(--ui-text);
+  --pl-muted: var(--ui-text-muted);
+  --pl-faint: var(--ui-text-faint);
+  --pl-line: var(--ui-line);
+  --pl-line-strong: var(--ui-line-strong);
+  --pl-accent: var(--ui-accent);
+  --pl-accent-hover: var(--ui-accent-hover);
+  --pl-accent-soft: var(--ui-accent-soft);
+  --pl-accent-text: var(--ui-accent-text);
+  --pl-bad: var(--ui-danger);
+  --pl-shadow: var(--ui-shadow);
   color: var(--pl-text);
   font-family: Inter, ui-sans-serif, system-ui, sans-serif;
   font-size: 14px;
 }
 .plib[data-theme="dark"],
 .plib-overlay[data-theme="dark"] {
-  --pl-bg: #111214;
-  --pl-surface: #1a1b1e;
-  --pl-sunken: #1e1f23;
-  --pl-text: #f0efec;
-  --pl-muted: #aeada8;
-  --pl-faint: #85847f;
-  --pl-line: #2e2f33;
-  --pl-line-strong: #45464b;
-  --pl-accent-soft: #3a3410;
-  --pl-accent-text: #f2d63a;
-  --pl-bad: #f09b8b;
-  --pl-shadow: 0 1px 2px rgb(0 0 0 / 0.35), 0 16px 34px -18px rgb(0 0 0 / 0.8);
   color-scheme: dark;
 }
 .plib {
@@ -50,11 +39,6 @@
 .plib-overlay ::selection {
   background: var(--pl-accent);
   color: #171717;
-}
-.plib :focus-visible,
-.plib-overlay :focus-visible {
-  outline: 2px solid var(--pl-accent-text);
-  outline-offset: 2px;
 }
 .plib-scroll {
   height: 100%;
@@ -98,46 +82,10 @@
   color: inherit;
   cursor: pointer;
 }
-.plib-primary,
-.plib-outline {
-  min-height: 38px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  padding: 8px 14px;
-  border-radius: 9px;
-  font-size: 13px;
-  font-weight: 600;
-  white-space: nowrap;
-  transition: background 0.16s, border-color 0.16s, color 0.16s;
-}
-.plib .plib-primary,
-.plib-overlay .plib-primary {
-  border: 0;
-  background: var(--pl-accent);
-  color: #171717;
-}
-.plib .plib-primary:hover:not(:disabled),
-.plib-overlay .plib-primary:hover:not(:disabled) {
-  background: var(--pl-accent-hover);
-}
-.plib-overlay .plib-primary:disabled,
-.plib-overlay .plib-outline:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-.plib-overlay .plib-outline {
-  border: 1px solid var(--pl-line);
-  background: var(--pl-surface);
-}
-.plib-overlay .plib-outline:hover:not(:disabled) {
-  border-color: var(--pl-line-strong);
-}
+/* Buttons are .ui-btn (.is-primary for the main action). */
 .plib-overlay .plib-outline.is-on {
-  border-color: color-mix(in srgb, var(--pl-accent) 60%, var(--pl-line));
-  background: var(--pl-accent-soft);
-  color: var(--pl-accent-text);
+  border-color: color-mix(in srgb, var(--ui-accent) 70%, transparent);
+  background: var(--ui-accent-soft);
 }
 .plib-overlay .plib-outline.is-on svg {
   fill: currentColor;
@@ -177,28 +125,6 @@
   gap: 6px;
   margin-top: 12px;
 }
-.plib-subtabs button {
-  min-height: 30px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 12px;
-  border: 1px solid var(--pl-line);
-  border-radius: 999px;
-  background: transparent;
-  font-size: 12.5px;
-  font-weight: 550;
-  color: var(--pl-muted);
-  transition: background 0.16s, color 0.16s, border-color 0.16s;
-}
-.plib-subtabs button:hover {
-  color: var(--pl-text);
-}
-.plib-subtabs button[aria-pressed="true"] {
-  border-color: var(--pl-text);
-  color: var(--pl-text);
-  background: color-mix(in srgb, var(--pl-text) 6%, transparent);
-}
 .plib-subtabs button span {
   font-family: "JetBrains Mono", ui-monospace, monospace;
   font-size: 11px;
@@ -225,29 +151,6 @@
   margin: 0;
   font-size: 12.5px;
   color: var(--pl-faint);
-}
-.plib-filter-toggle {
-  min-height: 32px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 12px;
-  border: 1px solid var(--pl-line);
-  border-radius: 999px;
-  background: transparent;
-  font-size: 12.5px;
-  font-weight: 550;
-  color: var(--pl-muted);
-  transition: background 0.16s, color 0.16s, border-color 0.16s;
-}
-.plib-filter-toggle:hover {
-  color: var(--pl-text);
-  border-color: color-mix(in srgb, var(--pl-text) 30%, transparent);
-}
-.plib-filter-toggle[aria-pressed="true"] {
-  border-color: var(--pl-text);
-  background: var(--pl-text);
-  color: var(--pl-bg);
 }
 .plib-filter-toggle span {
   font-family: "JetBrains Mono", ui-monospace, monospace;
@@ -442,44 +345,24 @@
     opacity: 1;
   }
 }
-.plib-card.is-skeleton .plib-cover,
-.plib-skel-line {
+.plib-card.is-skeleton .plib-cover {
   display: block;
-  background: var(--pl-sunken);
+  background: var(--ui-chip);
   box-shadow: none;
-  animation: plib-pulse 1.3s ease-in-out infinite;
 }
 .plib-skel-line {
+  display: block;
   height: 12px;
   margin-top: 8px;
-  border-radius: 6px;
   width: 80%;
 }
 .plib-skel-line.is-short {
   width: 50%;
 }
-@keyframes plib-pulse {
-  50% {
-    opacity: 0.55;
-  }
-}
 .plib-more-wrap {
   display: flex;
   justify-content: center;
   margin-top: 32px;
-}
-.plib-more {
-  min-height: 40px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 18px;
-  border: 0;
-  border-radius: 999px;
-  background: var(--pl-surface);
-  box-shadow: var(--pl-shadow);
-  font-size: 13px;
-  font-weight: 600;
 }
 .plib-empty {
   display: grid;
@@ -778,32 +661,6 @@
   flex-wrap: wrap;
   gap: 6px;
 }
-.plib-overlay .plib-chips button {
-  min-height: 32px;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 5px 12px;
-  border: 0;
-  border-radius: 999px;
-  background: var(--pl-sunken);
-  font-size: 12.5px;
-  font-weight: 550;
-  color: var(--pl-muted);
-}
-.plib-overlay .plib-chips button.is-on {
-  background: var(--pl-accent-soft);
-  color: var(--pl-accent-text);
-}
-.plib-spin {
-  animation: plib-spin 0.9s linear infinite;
-}
-@keyframes plib-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 @media (max-width: 860px) {
   .plib-head {
     flex-direction: column;
@@ -861,9 +718,7 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .plib-overlay,
-  .plib-dialog,
-  .plib-skel-line,
-  .plib-card.is-skeleton .plib-cover {
+  .plib-dialog {
     animation: none;
   }
   .plib-cover,

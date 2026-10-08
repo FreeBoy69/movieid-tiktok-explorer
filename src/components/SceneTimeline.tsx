@@ -608,11 +608,11 @@ export function SceneTimeline({
           </button>
           <span className="tl-volume">
             {iconBtn(volume === 0 ? "Unmute" : "Mute", volume === 0 ? <VolumeX size={16} /> : <Volume2 size={16} />, () => setVolume(volume === 0 ? 1 : 0))}
-            <input type="range" aria-label="Preview volume" min={0} max={1} step={0.05} value={volume} onChange={(e) => setVolume(Number(e.target.value))} />
+            <input type="range" className="ui-range" style={{ ["--fill" as string]: `${volume * 100}%` }} aria-label="Preview volume" min={0} max={1} step={0.05} value={volume} onChange={(e) => setVolume(Number(e.target.value))} />
           </span>
           <span className="tl-sep" />
           {iconBtn("Zoom out", <ZoomOut size={16} />, () => zoomTo(pps / 1.5), { disabled: pps <= fitPps + 0.01, kbd: "-" })}
-          <input className="tl-zoom" type="range" aria-label="Timeline zoom" min={0} max={100} value={zoomValue} onChange={(e) => zoomTo(fitPps * Math.pow(MAX_PPS / fitPps, Number(e.target.value) / 100))} />
+          <input className="ui-range tl-zoom" style={{ ["--fill" as string]: `${zoomValue}%` }} type="range" aria-label="Timeline zoom" min={0} max={100} value={zoomValue} onChange={(e) => zoomTo(fitPps * Math.pow(MAX_PPS / fitPps, Number(e.target.value) / 100))} />
           {iconBtn("Zoom in", <ZoomIn size={16} />, () => zoomTo(pps * 1.5), { disabled: pps >= MAX_PPS, kbd: "=" })}
           {iconBtn("Zoom to fit", <MoveHorizontal size={16} />, fit, { kbd: "\\" })}
           <span className="tl-keys-wrap">

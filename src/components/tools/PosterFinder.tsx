@@ -71,13 +71,13 @@ export function PosterFinder({ tool }: { tool: ToolDef }) {
     <form style={{ display: "contents" }} onSubmit={(event) => void submit(event)}>
       <label className="mt-field">
         <span className="mt-label">Film or series</span>
-        <input className="mt-input" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="e.g. Blade Runner" autoComplete="off" />
+        <input className="ui-input" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="e.g. Blade Runner" autoComplete="off" />
       </label>
       <label className="mt-field">
         <span className="mt-label">Year <small>optional</small></span>
-        <input className="mt-input" value={year} onChange={(event) => setYear(event.target.value.replace(/[^\d]/g, "").slice(0, 4))} inputMode="numeric" placeholder="e.g. 1982" />
+        <input className="ui-input" value={year} onChange={(event) => setYear(event.target.value.replace(/[^\d]/g, "").slice(0, 4))} inputMode="numeric" placeholder="e.g. 1982" />
       </label>
-      <button type="submit" className="mt-primary" disabled={!title.trim() || busy}>
+      <button type="submit" className="ui-btn is-primary is-lg is-block mt-primary" disabled={!title.trim() || busy}>
         {busy ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
         {tool.action}
       </button>
@@ -92,7 +92,7 @@ export function PosterFinder({ tool }: { tool: ToolDef }) {
         <span className="mt-meta">{film ? (film.mediaType === "tv" ? "Series" : "Film") : "Nothing yet"}</span>
       </div>
       <div className="mt-stage-inner">
-        {busy ? <div className="mt-skeleton" aria-hidden="true"><span /><span /><span /></div> : null}
+        {busy ? <div className="mt-skeleton" aria-hidden="true"><span className="ui-skeleton" /><span className="ui-skeleton" /><span className="ui-skeleton" /></div> : null}
         {missing ? <p className="mt-error" role="status">{missing}</p> : null}
         {film ? (
           <article className="mt-film">
@@ -128,10 +128,10 @@ export function PosterFinder({ tool }: { tool: ToolDef }) {
                   </ul>
                 ) : null}
                 <div className="mt-actions" style={{ marginTop: 16 }}>
-                  <a className="mt-secondary" href={fullSize(film.posterUrl)} target="_blank" rel="noreferrer"><ExternalLink size={15} />Poster, full size</a>
-                  {film.backdropUrl ? <a className="mt-secondary" href={fullSize(film.backdropUrl)} target="_blank" rel="noreferrer"><ExternalLink size={15} />Backdrop, full size</a> : null}
-                  {film.tmdbUrl ? <a className="mt-ghost" href={film.tmdbUrl} target="_blank" rel="noreferrer">TMDB <ExternalLink size={13} /></a> : null}
-                  {film.imdbUrl ? <a className="mt-ghost" href={film.imdbUrl} target="_blank" rel="noreferrer">IMDb <ExternalLink size={13} /></a> : null}
+                  <a className="ui-btn is-sm mt-secondary" href={fullSize(film.posterUrl)} target="_blank" rel="noreferrer"><ExternalLink size={15} />Poster, full size</a>
+                  {film.backdropUrl ? <a className="ui-btn is-sm mt-secondary" href={fullSize(film.backdropUrl)} target="_blank" rel="noreferrer"><ExternalLink size={15} />Backdrop, full size</a> : null}
+                  {film.tmdbUrl ? <a className="ui-btn is-sm is-ghost mt-ghost" href={film.tmdbUrl} target="_blank" rel="noreferrer">TMDB <ExternalLink size={13} /></a> : null}
+                  {film.imdbUrl ? <a className="ui-btn is-sm is-ghost mt-ghost" href={film.imdbUrl} target="_blank" rel="noreferrer">IMDb <ExternalLink size={13} /></a> : null}
                 </div>
               </div>
             </div>

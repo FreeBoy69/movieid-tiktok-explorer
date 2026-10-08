@@ -97,17 +97,17 @@ export function CharactersStep({
           <div className="maker-actions">
             {needs && !generateBlocked ? <span className="chs-needs">{needs}</span> : null}
             {dirty && (
-              <button className="maker-outline" disabled={busy} onClick={onSave}>
+              <button className="ui-btn" disabled={busy} onClick={onSave}>
                 <Save size={15} />
                 Save
               </button>
             )}
             {reviewCount > 0 && onReview ? (
-              <button className="maker-outline" onClick={onReview}>
+              <button className="ui-btn" onClick={onReview}>
                 Review {reviewCount} scenes
               </button>
             ) : null}
-            <button className="maker-primary" title={blocked || generateLabel} disabled={busy || generating || Boolean(blocked)} onClick={onGenerate}>
+            <button className="ui-btn is-primary" title={blocked || generateLabel} disabled={busy || generating || Boolean(blocked)} onClick={onGenerate}>
               <Clapperboard size={15} />
               {generateLabel}
             </button>
@@ -192,11 +192,11 @@ export function CharactersStep({
           title="Who's in this story?"
           body="Let the AI read your script and cast its recurring characters, or add them yourself. Videos without people can skip straight to the storyboard."
         >
-            <button className="maker-primary" disabled={busy || suggesting} onClick={onSuggest}>
+            <button className="ui-btn is-primary" disabled={busy || suggesting} onClick={onSuggest}>
               {suggesting ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
               {suggesting ? "Reading the script" : "Cast from script"}
             </button>
-            <button className="maker-outline" onClick={onAdd}>
+            <button className="ui-btn" onClick={onAdd}>
               <Plus size={15} />
               Add a character
             </button>
@@ -255,7 +255,7 @@ function CharacterDetail({
         </span>
         <div className="chs-head-actions">
           <SheetPhotoButton variant="icon" name={character.name} disabled={busy} onFile={onUpload} />
-          <button type="button" className="chs-iconbtn is-danger" title={`Remove ${character.name}`} aria-label={`Remove ${character.name}`} onClick={onRemove}>
+          <button type="button" className="ui-icon-btn is-bordered is-lg chs-iconbtn is-danger" title={`Remove ${character.name}`} aria-label={`Remove ${character.name}`} onClick={onRemove}>
             <Trash2 size={16} />
           </button>
         </div>
@@ -277,7 +277,7 @@ function CharacterDetail({
             </span>
           )}
           {shown && shown === locked ? (
-            <em className="chs-tag is-locked">
+            <em className="ui-badge chs-tag is-locked">
               <Lock size={12} />
               Locked
             </em>
@@ -350,7 +350,7 @@ function CharacterDetail({
           <TakeCount value={count} onChange={setCount} />
           <button
             type="button"
-            className="maker-primary chs-go"
+            className="ui-btn is-primary is-lg is-block"
             disabled={busy || running || !described}
             onClick={() => {
               setPreview("");

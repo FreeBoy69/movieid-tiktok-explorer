@@ -217,11 +217,11 @@ function TopNicheIndexPage({ hierarchy, summary, warning }: { hierarchy: NicheMa
             key={group.name}
             type="button"
             onClick={() => writeDeepLink({ view: "niches", nichePath: nichePath(slugify(group.name)) })}
-            className="grid w-full min-w-[680px] grid-cols-[minmax(240px,1.4fr)_110px_90px_110px_130px] gap-3 border-b border-[#1A1A1A]/6 px-4 py-4 text-left transition last:border-b-0 hover:bg-[#F9F8F6]"
+            className="grid w-full min-w-[680px] grid-cols-[minmax(240px,1.4fr)_110px_90px_110px_130px] gap-3 border-b border-[var(--ui-line)] px-4 py-4 text-left transition last:border-b-0 hover:bg-[var(--ui-bg)]"
           >
             <span className="min-w-0">
-              <span className="block text-sm font-black text-[#1A1A1A]">{group.name}</span>
-              <span className="mt-1 block truncate text-xs font-semibold text-[#1A1A1A]/45">{group.subNiches.slice(0, 3).map((sub) => sub.name).join(", ")}</span>
+              <span className="block text-sm font-black text-[var(--ui-text)]">{group.name}</span>
+              <span className="mt-1 block truncate text-xs font-semibold text-[var(--ui-text)]/45">{group.subNiches.slice(0, 3).map((sub) => sub.name).join(", ")}</span>
             </span>
             <CellMono>{group.subNicheCount}</CellMono>
             <CellMono>{group.msnCount}</CellMono>
@@ -257,11 +257,11 @@ function SubNicheIndexPage({ top }: { top: NicheMacroGroup }) {
             key={sub.name}
             type="button"
             onClick={() => writeDeepLink({ view: "niches", nichePath: nichePath(slugify(top.name), slugify(sub.name)) })}
-            className="grid w-full min-w-[730px] grid-cols-[minmax(260px,1.35fr)_100px_110px_minmax(260px,1fr)] gap-3 border-b border-[#1A1A1A]/6 px-4 py-4 text-left transition last:border-b-0 hover:bg-[#F9F8F6]"
+            className="grid w-full min-w-[730px] grid-cols-[minmax(260px,1.35fr)_100px_110px_minmax(260px,1fr)] gap-3 border-b border-[var(--ui-line)] px-4 py-4 text-left transition last:border-b-0 hover:bg-[var(--ui-bg)]"
           >
             <span className="min-w-0">
-              <span className="block text-sm font-black text-[#1A1A1A]">{sub.name}</span>
-              <span className="mt-1 block text-xs font-semibold text-[#1A1A1A]/45">{sub.topRpmRange}</span>
+              <span className="block text-sm font-black text-[var(--ui-text)]">{sub.name}</span>
+              <span className="mt-1 block text-xs font-semibold text-[var(--ui-text)]/45">{sub.topRpmRange}</span>
             </span>
             <CellMono>{sub.msnCount}</CellMono>
             <span><ScorePill score={sub.bestScore} /></span>
@@ -297,14 +297,14 @@ function MsnIndexPage({ top, sub }: { top: NicheMacroGroup; sub: NicheSubGroup }
             key={niche.id}
             type="button"
             onClick={() => writeDeepLink({ view: "niches", nichePath: nichePath(slugify(top.name), slugify(sub.name), niche.id) })}
-            className="grid w-full min-w-[690px] grid-cols-[minmax(300px,1.5fr)_150px_150px_90px] gap-3 border-b border-[#1A1A1A]/6 px-4 py-4 text-left transition last:border-b-0 hover:bg-[#F9F8F6]"
+            className="grid w-full min-w-[690px] grid-cols-[minmax(300px,1.5fr)_150px_150px_90px] gap-3 border-b border-[var(--ui-line)] px-4 py-4 text-left transition last:border-b-0 hover:bg-[var(--ui-bg)]"
           >
             <span className="min-w-0">
-              <span className="flex flex-wrap items-center gap-2 text-sm font-black leading-snug text-[#1A1A1A]">
+              <span className="flex flex-wrap items-center gap-2 text-sm font-black leading-snug text-[var(--ui-text)]">
                 {niche.msn}
-                {isAgentDiscovered(niche) ? <span className="rounded-full bg-[#f9dc0b] px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-[#1A1A1A]">Agent-found</span> : null}
+                {isAgentDiscovered(niche) ? <span className="rounded-full bg-[var(--ui-accent)] px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-[var(--ui-accent-ink)]">Agent-found</span> : null}
               </span>
-              <span className="mt-1 block truncate text-xs font-semibold text-[#1A1A1A]/45">{niche.audienceValue}</span>
+              <span className="mt-1 block truncate text-xs font-semibold text-[var(--ui-text)]/45">{niche.audienceValue}</span>
             </span>
             <CellMuted>{niche.geoTier}</CellMuted>
             <CellMuted>{niche.rpmRange}</CellMuted>
@@ -318,26 +318,26 @@ function MsnIndexPage({ top, sub }: { top: NicheMacroGroup; sub: NicheSubGroup }
 
 function NicheDetailPage({ niche, topSlug, subSlug }: { niche: PremiumNiche; topSlug: string; subSlug: string }) {
   return (
-    <section className="workspace-floating-shell relative flex h-full min-h-0 flex-col overflow-hidden bg-white">
+    <section className="workspace-floating-shell relative flex h-full min-h-0 flex-col overflow-hidden bg-[var(--ui-panel)]">
       <header className="workspace-floating-header flex min-h-12 flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 items-center gap-3">
           <BackButton label={`Back to ${niche.subNiche}`} path={[topSlug, subSlug]} compact />
-          <Database className="h-4 w-4 text-[#1A1A1A]/45" />
+          <Database className="h-4 w-4 text-[var(--ui-text)]/45" />
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <span className="rounded-full bg-[#f9dc0b]/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-[#6a5b00]">{niche.cpmTier} CPM</span>
-          <span className="rounded-full bg-[#f9dc0b] px-3 py-1 font-mono text-xs font-black text-[#1A1A1A]">{niche.trendScore}/100</span>
+          <span className="rounded-full bg-[var(--ui-accent)]/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-[var(--ui-accent-text)]">{niche.cpmTier} CPM</span>
+          <span className="rounded-full bg-[var(--ui-accent)] px-3 py-1 font-mono text-xs font-black text-[var(--ui-accent-ink)]">{niche.trendScore}/100</span>
         </div>
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="border-b border-[#1A1A1A]/8 bg-[#FDFCFA] p-5 md:p-6">
+        <div className="border-b border-[var(--ui-line)] bg-[var(--ui-panel)] p-5 md:p-6">
           <div className="mb-4 flex flex-wrap items-center gap-2">
-            {isAgentDiscovered(niche) ? <span className="rounded-full border border-[#f9dc0b] bg-[#f9dc0b]/35 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-[#1A1A1A]">Discovered by agents</span> : null}
+            {isAgentDiscovered(niche) ? <span className="rounded-full border border-[var(--ui-accent)] bg-[var(--ui-accent)]/35 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-[var(--ui-text)]">Discovered by agents</span> : null}
           </div>
-          <p className="text-xs font-black uppercase tracking-widest text-[#f9dc0b]">{niche.macroNiche} / {niche.subNiche}</p>
-          <h1 className="mt-3 max-w-4xl text-2xl font-black leading-tight text-[#1A1A1A] sm:text-3xl">{niche.msn}</h1>
-          <p className="mt-4 max-w-3xl text-base font-semibold leading-7 text-[#1A1A1A]/58">{niche.audienceValue}</p>
+          <p className="text-xs font-black uppercase tracking-widest text-[var(--ui-accent-text)]">{niche.macroNiche} / {niche.subNiche}</p>
+          <h1 className="mt-3 max-w-4xl text-2xl font-black leading-tight text-[var(--ui-text)] sm:text-3xl">{niche.msn}</h1>
+          <p className="mt-4 max-w-3xl text-base font-semibold leading-7 text-[var(--ui-text)]/58">{niche.audienceValue}</p>
         </div>
 
         <div className="p-4 md:p-5">
@@ -368,13 +368,13 @@ function NicheDetailPage({ niche, topSlug, subSlug }: { niche: PremiumNiche; top
           <Panel title="Search seeds">
             <ListBlock icon={<Search className="h-4 w-4" />} items={niche.acquisitionQueries} />
           </Panel>
-          <div className="rounded-2xl border border-[#1A1A1A]/8 bg-white p-5 shadow-sm">
-            <p className="text-[10px] font-black uppercase tracking-widest text-[#1A1A1A]/35">Creator fit</p>
-            <p className="mt-3 text-sm font-semibold leading-6 text-[#1A1A1A]/62">{niche.creatorFit}</p>
+          <div className="rounded-2xl border border-[var(--ui-line)] bg-[var(--ui-panel)] p-5 shadow-sm">
+            <p className="text-[10px] font-black uppercase tracking-widest text-[var(--ui-text)]/35">Creator fit</p>
+            <p className="mt-3 text-sm font-semibold leading-6 text-[var(--ui-text)]/62">{niche.creatorFit}</p>
           </div>
-          <div className="rounded-2xl border border-[#f9dc0b]/12 bg-[#f9dc0b]/5 p-5 shadow-sm">
-            <p className="text-[10px] font-black uppercase tracking-widest text-[#6a5b00]">Risk note</p>
-            <p className="mt-3 text-sm font-semibold leading-6 text-[#1A1A1A]/62">{niche.riskNotes}</p>
+          <div className="rounded-2xl border border-[var(--ui-accent)]/12 bg-[var(--ui-accent)]/5 p-5 shadow-sm">
+            <p className="text-[10px] font-black uppercase tracking-widest text-[var(--ui-accent-text)]">Risk note</p>
+            <p className="mt-3 text-sm font-semibold leading-6 text-[var(--ui-text)]/62">{niche.riskNotes}</p>
           </div>
         </div>
       </div>
@@ -386,12 +386,12 @@ function PageHeader({ eyebrow, title, description, metrics }: { eyebrow: string;
   return (
     <header className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
       <div className="min-w-0">
-        <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-[#f9dc0b]/15 bg-[#f9dc0b]/8 px-3 py-1 text-[11px] font-black uppercase tracking-widest text-[#f9dc0b]">
+        <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-[var(--ui-accent)]/15 bg-[var(--ui-accent)]/8 px-3 py-1 text-[11px] font-black uppercase tracking-widest text-[var(--ui-accent-text)]">
           <Database className="h-3.5 w-3.5" />
           {eyebrow}
         </div>
-        <h1 className="max-w-3xl font-serif text-2xl font-bold leading-tight tracking-tight text-[#1A1A1A] md:text-3xl">{title}</h1>
-        <p className="mt-2 max-w-2xl text-xs font-semibold leading-5 text-[#1A1A1A]/55">{description}</p>
+        <h1 className="max-w-3xl font-serif text-2xl font-bold leading-tight tracking-tight text-[var(--ui-text)] md:text-3xl">{title}</h1>
+        <p className="mt-2 max-w-2xl text-xs font-semibold leading-5 text-[var(--ui-text)]/55">{description}</p>
       </div>
       <div className="grid w-full grid-cols-2 gap-2 md:w-auto md:min-w-[420px] md:grid-cols-4">
         {metrics.map(([label, value]) => <HeroMetric key={label} label={label} value={value} />)}
@@ -402,8 +402,8 @@ function PageHeader({ eyebrow, title, description, metrics }: { eyebrow: string;
 
 function DataTable({ columns, headers, children }: { columns: string; headers: string[]; children: ReactNode }) {
   return (
-    <section className="overflow-hidden rounded-2xl border border-[#1A1A1A]/8 bg-white shadow-sm">
-      <div className={`hidden min-w-[680px] ${columns} gap-3 border-b border-[#1A1A1A]/8 bg-[#FDFCFA] px-4 py-3 text-[10px] font-black uppercase tracking-widest text-[#1A1A1A]/38 sm:grid`}>
+    <section className="overflow-hidden rounded-2xl border border-[var(--ui-line)] bg-[var(--ui-panel)] shadow-sm">
+      <div className={`hidden min-w-[680px] ${columns} gap-3 border-b border-[var(--ui-line)] bg-[var(--ui-panel)] px-4 py-3 text-[10px] font-black uppercase tracking-widest text-[var(--ui-text)]/38 sm:grid`}>
         {headers.map((header, index) => <span key={header} className={index === headers.length - 1 ? "text-right" : ""}>{header}</span>)}
       </div>
       <div className="overflow-x-auto overscroll-x-contain">{children}</div>
@@ -413,7 +413,7 @@ function DataTable({ columns, headers, children }: { columns: string; headers: s
 
 function BackButton({ label, path, compact = false }: { label: string; path: string[]; compact?: boolean }) {
   return (
-    <button type="button" onClick={() => writeDeepLink({ view: "niches", nichePath: path })} className={cn("inline-flex max-w-full items-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-white text-xs font-black text-[#1A1A1A]/70 shadow-sm transition hover:border-[#1A1A1A]/25 hover:text-[#1A1A1A]", compact ? "h-9 px-3" : "min-h-10 px-4 py-2")}>
+    <button type="button" onClick={() => writeDeepLink({ view: "niches", nichePath: path })} className={cn("inline-flex max-w-full items-center gap-2 rounded-xl border border-[var(--ui-line)] bg-[var(--ui-panel)] text-xs font-black text-[var(--ui-text)]/70 shadow-sm transition hover:border-[var(--ui-line-strong)] hover:text-[var(--ui-text)]", compact ? "h-9 px-3" : "min-h-10 px-4 py-2")}>
       <ArrowLeft className="h-4 w-4" />
       <span className={compact ? "hidden sm:inline" : ""}>{label}</span>
     </button>
@@ -422,9 +422,9 @@ function BackButton({ label, path, compact = false }: { label: string; path: str
 
 function LoadingState({ label }: { label: string }) {
   return (
-    <div className="grid min-h-[420px] place-items-center rounded-2xl border border-[#1A1A1A]/8 bg-white shadow-sm">
-      <span className="inline-flex items-center gap-2 text-sm font-bold text-[#1A1A1A]/50">
-        <Loader2 className="h-4 w-4 animate-spin text-[#f9dc0b]" />
+    <div className="grid min-h-[420px] place-items-center rounded-2xl border border-[var(--ui-line)] bg-[var(--ui-panel)] shadow-sm">
+      <span className="inline-flex items-center gap-2 text-sm font-bold text-[var(--ui-text)]/50">
+        <Loader2 className="h-4 w-4 ui-spin text-[var(--ui-accent-text)]" />
         {label}
       </span>
     </div>
@@ -434,12 +434,12 @@ function LoadingState({ label }: { label: string }) {
 function ErrorState({ message, onBack }: { message: string; onBack: () => void }) {
   return (
     <div className="space-y-4">
-      <button type="button" onClick={onBack} className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-white px-4 text-xs font-black text-[#1A1A1A]/70 shadow-sm transition hover:border-[#1A1A1A]/25 hover:text-[#1A1A1A]">
+      <button type="button" onClick={onBack} className="ui-btn">
         <ArrowLeft className="h-4 w-4" />
         Back to niches
       </button>
-      <div className="rounded-2xl border border-[#f9dc0b]/18 bg-[#fff9d6] p-6">
-        <p className="text-sm font-bold text-[#443b00]">{message}</p>
+      <div className="rounded-2xl border border-[var(--ui-accent)]/18 bg-[var(--ui-accent-soft)] p-6">
+        <p className="text-sm font-bold text-[var(--ui-accent-text)]">{message}</p>
       </div>
     </div>
   );
@@ -451,33 +451,33 @@ function WarningBar({ message }: { message: string }) {
 
 function HeroMetric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-[#1A1A1A]/8 bg-white px-4 py-3 shadow-sm">
-      <p className="text-[10px] font-black uppercase tracking-widest text-[#1A1A1A]/35">{label}</p>
-      <p className="mt-1 font-mono text-xl font-black text-[#1A1A1A]">{value}</p>
+    <div className="rounded-2xl border border-[var(--ui-line)] bg-[var(--ui-panel)] px-4 py-3 shadow-sm">
+      <p className="text-[10px] font-black uppercase tracking-widest text-[var(--ui-text)]/35">{label}</p>
+      <p className="mt-1 font-mono text-xl font-black text-[var(--ui-text)]">{value}</p>
     </div>
   );
 }
 
 function ScorePill({ score }: { score: number }) {
   return (
-    <span className="inline-flex min-w-10 justify-center rounded-full bg-[#1A1A1A] px-2 py-1 font-mono text-xs font-black text-[#f9dc0b]">
+    <span className="inline-flex min-w-10 justify-center rounded-full bg-[var(--ui-text)] px-2 py-1 font-mono text-xs font-black text-[var(--ui-accent)]">
       {score || 0}
     </span>
   );
 }
 
 function CellMono({ children }: { children: ReactNode }) {
-  return <span className="font-mono text-sm font-black text-[#1A1A1A]/60">{children}</span>;
+  return <span className="font-mono text-sm font-black text-[var(--ui-text)]/60">{children}</span>;
 }
 
 function CellMuted({ children }: { children: ReactNode }) {
-  return <span className="min-w-0 truncate text-xs font-bold leading-5 text-[#1A1A1A]/58">{children}</span>;
+  return <span className="min-w-0 truncate text-xs font-bold leading-5 text-[var(--ui-text)]/58">{children}</span>;
 }
 
 function Panel({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="rounded-2xl border border-[#1A1A1A]/8 bg-white p-5 shadow-sm">
-      <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-[#1A1A1A]/35">{title}</p>
+    <div className="rounded-2xl border border-[var(--ui-line)] bg-[var(--ui-panel)] p-5 shadow-sm">
+      <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-[var(--ui-text)]/35">{title}</p>
       {children}
     </div>
   );
@@ -485,10 +485,10 @@ function Panel({ title, children }: { title: string; children: ReactNode }) {
 
 function DetailMetric({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
   return (
-    <div className="rounded-xl border border-[#1A1A1A]/8 bg-[#FDFCFA] p-3">
-      <div className="mb-2 text-[#f9dc0b]">{icon}</div>
-      <p className="text-[10px] font-black uppercase tracking-widest text-[#1A1A1A]/35">{label}</p>
-      <p className="mt-1 text-xs font-black leading-5 text-[#1A1A1A]">{value}</p>
+    <div className="rounded-xl border border-[var(--ui-line)] bg-[var(--ui-panel)] p-3">
+      <div className="mb-2 text-[var(--ui-accent-text)]">{icon}</div>
+      <p className="text-[10px] font-black uppercase tracking-widest text-[var(--ui-text)]/35">{label}</p>
+      <p className="mt-1 text-xs font-black leading-5 text-[var(--ui-text)]">{value}</p>
     </div>
   );
 }
@@ -497,7 +497,7 @@ function PillBlock({ items }: { items: string[] }) {
   return (
     <div className="flex flex-wrap gap-1.5">
       {items.map((item) => (
-        <span key={item} className="rounded-full border border-[#1A1A1A]/8 bg-[#F9F8F6] px-2.5 py-1 text-[11px] font-bold text-[#1A1A1A]/58">{item}</span>
+        <span key={item} className="rounded-full border border-[var(--ui-line)] bg-[var(--ui-bg)] px-2.5 py-1 text-[11px] font-bold text-[var(--ui-text)]/58">{item}</span>
       ))}
     </div>
   );
@@ -507,8 +507,8 @@ function ListBlock({ icon, items }: { icon: ReactNode; items: string[] }) {
   return (
     <div className="space-y-1.5">
       {items.map((item) => (
-        <div key={item} className="rounded-xl border border-[#1A1A1A]/6 bg-[#FDFCFA] px-3 py-2 text-xs font-semibold leading-5 text-[#1A1A1A]/62">
-          <span className="mr-2 inline-flex align-[-3px] text-[#f9dc0b]">{icon}</span>
+        <div key={item} className="rounded-xl border border-[var(--ui-line)] bg-[var(--ui-panel)] px-3 py-2 text-xs font-semibold leading-5 text-[var(--ui-text)]/62">
+          <span className="mr-2 inline-flex align-[-3px] text-[var(--ui-accent-text)]">{icon}</span>
           {item}
         </div>
       ))}

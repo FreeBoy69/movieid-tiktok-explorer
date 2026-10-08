@@ -108,7 +108,7 @@ export function StudioAgents({ mode, catalog, generations, now, onGenerations }:
         )}
         <div className="cs-agent-tools">
           <ChatHistory chats={visibleChats} current={chatId} onPick={setChatId} onDelete={(id) => void removeChat(id)} now={now} />
-          {chat ? <button type="button" className="cs-ghost" onClick={() => setChatId("")}><Plus className="h-3.5 w-3.5" />New chat</button> : null}
+          {chat ? <button type="button" className="ui-btn is-sm cs-ghost" onClick={() => setChatId("")}><Plus className="h-3.5 w-3.5" />New chat</button> : null}
         </div>
       </div>
 
@@ -176,7 +176,7 @@ export function StudioAgents({ mode, catalog, generations, now, onGenerations }:
             placeholder={meta.placeholder}
             aria-label="Message"
           />
-          <button type="submit" className="cs-send" disabled={!message.trim() || sending} aria-label="Send">
+          <button type="submit" className="ui-btn is-primary cs-send" disabled={!message.trim() || sending} aria-label="Send">
             {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
           </button>
         </div>
@@ -199,7 +199,7 @@ function ProposedWork({ action, busy, onApprove, onSkip }: { action: Action; bus
       <p className="cs-launch-prompt">{action.prompt}</p>
       <div className="cs-proposed-actions">
         <button type="button" className="cs-approve" disabled={busy} onClick={onApprove}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}Make it</button>
-        <button type="button" className="cs-ghost" disabled={busy} onClick={onSkip}>Skip</button>
+        <button type="button" className="ui-btn is-sm cs-ghost" disabled={busy} onClick={onSkip}>Skip</button>
       </div>
     </div>
   );
@@ -239,19 +239,19 @@ function ChatHistory({ chats, current, onPick, onDelete, now }: { chats: Chat[];
   const { open, setOpen, ref } = usePopover();
   return (
     <div className="cs-pop" ref={ref}>
-      <button type="button" className="cs-ghost" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)} disabled={!chats.length}>
+      <button type="button" className="ui-btn is-sm cs-ghost" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)} disabled={!chats.length}>
         <History className="h-3.5 w-3.5" />History<ChevronDown className="h-3 w-3" />
       </button>
       {open ? (
-        <div className="cs-menu cs-menu-right cs-history" role="menu">
+        <div className="ui-menu cs-menu cs-menu-right cs-history" role="menu">
           {chats.map((c) => (
             <div key={c.id} className="cs-history-row">
-              <button type="button" role="menuitem" className="cs-menu-item" onClick={() => { onPick(c.id); setOpen(false); }}>
+              <button type="button" role="menuitem" className="ui-menu-item cs-menu-item" onClick={() => { onPick(c.id); setOpen(false); }}>
                 <span className="cs-truncate">{c.title}</span>
                 <span className="cs-meta">{timeAgo(c.updatedAt || c.createdAt, now)}</span>
                 {c.id === current ? <Check className="h-3.5 w-3.5" /> : null}
               </button>
-              <button type="button" className="cs-icon" onClick={() => onDelete(c.id)} aria-label={`Delete chat ${c.title}`}><Trash2 className="h-3.5 w-3.5" /></button>
+              <button type="button" className="ui-icon-btn cs-icon" onClick={() => onDelete(c.id)} aria-label={`Delete chat ${c.title}`}><Trash2 className="h-3.5 w-3.5" /></button>
             </div>
           ))}
         </div>

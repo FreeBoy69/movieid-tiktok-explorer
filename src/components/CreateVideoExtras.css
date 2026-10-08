@@ -19,7 +19,6 @@
 }
 .cvx-look:hover:not(:disabled) { border-color: var(--mk-line-strong); }
 .cvx-look.is-on { border-color: var(--mk-accent); background: var(--mk-accent-soft); }
-.cvx-look:focus-visible { outline: 2px solid var(--mk-text); outline-offset: 2px; }
 .cvx-swatch {
   display: grid;
   width: 38px;
@@ -41,22 +40,6 @@
 .cvx-editor-preview { position: sticky; top: 0; display: grid; gap: 8px; }
 .cvx-editor-preview small { color: var(--mk-muted); font-size: 12px; line-height: 1.45; }
 .cvx-kinds { display: flex; flex-wrap: wrap; gap: 6px; }
-.maker-workspace .cvx-kinds button,
-.cvx-kinds button {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 34px;
-  padding: 0 12px;
-  border: 1px solid var(--mk-line);
-  border-radius: 999px;
-  background: var(--mk-surface);
-  color: var(--mk-text);
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-}
-.cvx-kinds button.is-on { border-color: transparent; background: var(--mk-text); color: var(--mk-surface); }
 .cvx-narration { margin: 0; padding: 10px 12px; border-left: 3px solid var(--mk-accent); border-radius: 0 8px 8px 0; background: var(--mk-sunken); color: var(--mk-muted); font-size: 13px; line-height: 1.5; }
 .cvx-items { display: grid; gap: 6px; }
 .cvx-items-head { color: var(--mk-text); font-size: 13px; font-weight: 600; }
@@ -65,20 +48,16 @@
 .cvx-preview { position: relative; overflow: hidden; width: 100%; max-height: 62vh; border-radius: 12px; background: #000; box-shadow: 0 0 0 1px var(--mk-line); }
 .cvx-preview iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
 .cvx-preview > span { position: absolute; inset: 0; display: grid; place-items: center; padding: 20px; color: rgb(255 255 255 / 0.6); font-size: 13px; text-align: center; }
-.cvx-remove { margin-right: auto; color: var(--mk-bad) !important; }
+.cvx-remove.ui-btn { margin-right: auto; color: var(--ui-danger); }
 
 /* ---------- Scene card badge ---------- */
-.cvx-badge { display: inline-flex; max-width: 100%; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: var(--mk-accent-soft); color: var(--mk-accent-text); font-size: 12px; font-weight: 600; }
+.cvx-badge { display: inline-flex; max-width: 100%; align-items: center; gap: 6px; min-height: 22px; padding: 0 10px; border-radius: 999px; background: var(--ui-accent-soft); color: var(--ui-accent-text); font-size: 12px; font-weight: 650; }
 .cvx-badge span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ---------- Winning thumbnails ---------- */
 .cvx-winners { display: grid; gap: 10px; }
 .cvx-winners-bar { display: flex; gap: 8px; }
-.cvx-search { position: relative; display: block; flex: 1; min-width: 0; }
-.cvx-search svg { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--mk-faint); pointer-events: none; }
-.maker-workspace .cvx-search input,
-.cvx-search input { width: 100%; min-height: 40px; padding: 8px 12px; border: 1px solid var(--mk-line); border-radius: 10px; background: var(--mk-surface); color: var(--mk-text); font: inherit; font-size: 13.5px; }
-.cvx-search svg + input { padding-left: 34px !important; }
+.cvx-search { flex: 1; min-width: 0; }
 .cvx-hint { margin: 0; color: var(--mk-muted); font-size: 12px; }
 .cvx-error { margin: 0; color: var(--mk-bad); font-size: 12.5px; }
 .cvx-winner-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
@@ -91,7 +70,7 @@
 .cvx-winner:hover .cvx-winner-thumb { box-shadow: 0 0 0 2px var(--mk-line-strong); }
 .cvx-winner.is-on .cvx-winner-thumb { box-shadow: 0 0 0 3px var(--mk-accent); }
 .cvx-winner:focus-visible { outline: none; }
-.cvx-winner:focus-visible .cvx-winner-thumb { box-shadow: 0 0 0 3px var(--mk-text); }
+.cvx-winner:focus-visible .cvx-winner-thumb { box-shadow: 0 0 0 3px var(--ui-focus); }
 .cvx-winner-title { display: -webkit-box; overflow: hidden; font-size: 12.5px; font-weight: 600; line-height: 1.35; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .cvx-winner small { color: var(--mk-muted); font-size: 11.5px; }
 
@@ -118,11 +97,11 @@
 .cvx-overlays li button:hover { background: var(--mk-sunken); color: var(--mk-text); }
 
 /* ---------- Art style "Look" button (opens the art style grid) ---------- */
-.maker-art-button { display: inline-flex; max-width: 100%; align-items: center; gap: 8px; min-height: 34px; padding: 3px 12px 3px 4px; border: 1px solid var(--mk-line, rgb(127 127 127 / .3)); border-radius: 999px; background: var(--mk-surface, transparent); color: inherit; font: inherit; font-size: 13px; cursor: pointer; }
-.maker-art-button:hover { border-color: var(--mk-line-strong, rgb(127 127 127 / .5)); }
-.maker-art-button-thumb { display: grid; width: 26px; height: 26px; flex: none; place-items: center; overflow: hidden; border-radius: 999px; background: var(--mk-accent-soft, #fdf5c2); color: var(--mk-accent-text, #7a6600); }
+.maker-art-button { display: inline-flex; max-width: 100%; align-items: center; gap: 8px; min-height: 34px; padding: 3px 12px 3px 4px; border: 1px solid var(--ui-line-strong); border-radius: 999px; background: var(--ui-input); color: inherit; font: inherit; font-size: 13px; cursor: pointer; }
+.maker-art-button:hover { border-color: color-mix(in srgb, var(--ui-text) 32%, transparent); }
+.maker-art-button-thumb { display: grid; width: 26px; height: 26px; flex: none; place-items: center; overflow: hidden; border-radius: 999px; background: var(--ui-accent-soft); color: var(--ui-accent-text); }
 .maker-art-button-thumb img { width: 100%; height: 100%; object-fit: cover; }
-.maker-art-button-label { color: var(--mk-muted, inherit); font-weight: 600; }
+.maker-art-button-label { color: var(--ui-text-muted); font-weight: 600; }
 .maker-art-button strong { overflow: hidden; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
 .maker-art-auto { display: flex; width: 100%; align-items: center; gap: 8px; margin: 0 0 12px; padding: 12px 14px; border: 1px solid var(--mk-line); border-radius: 12px; background: var(--mk-surface); color: var(--mk-text); font: inherit; font-weight: 650; text-align: left; cursor: pointer; }
 .maker-art-auto.is-on { border-color: var(--mk-accent); background: var(--mk-accent-soft); }

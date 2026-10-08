@@ -140,7 +140,7 @@ export function FileDrop({
         <>
           <strong className="file-drop-title">{over ? "Drop to add" : title}</strong>
           {hint ? <span className="file-drop-hint">{hint}</span> : null}
-          <button type="button" className="file-drop-button" onClick={() => input.current?.click()} disabled={disabled}>
+          <button type="button" className={`ui-btn ${size === "roomy" ? "is-primary" : "is-sm"} file-drop-button`} onClick={() => input.current?.click()} disabled={disabled}>
             {buttonLabel}
           </button>
           {children}

@@ -7,7 +7,7 @@ import { chooseLingbasePack, chooseLingbasePlan, continueLingbaseCheckout, openL
 import { purchasesAllowed } from "../native/platform";
 import "./AccountServices.css";
 import { Dialog } from "./ui/Dialog";
-import { Meter } from "./ui/controls";
+import { Meter, Segmented } from "./ui/controls";
 
 // User-facing pieces of billing, governance and support: the credit balance in the
 // account menu, the Help & support dialog, the site-wide notice banner, and the
@@ -94,7 +94,7 @@ export function TokenSummary({ email = "" }: { theme?: Theme; email?: string }) 
   if (!offer) {
     return (
       <div className="as-tokens" aria-busy="true">
-        <span className="as-tokens-row"><span>Credits</span><Loader2 size={13} className="as-spin" aria-hidden="true" /></span>
+        <span className="as-tokens-row"><span>Credits</span><Loader2 size={13} className="ui-spin" aria-hidden="true" /></span>
         <Meter className="as-meter" value={0} label="Credits loading" />
       </div>
     );
@@ -271,7 +271,7 @@ function EmbeddedCheckout({ session, onPaid }: { session: CheckoutSession; onPai
   }
   return (
     <>
-      {phase === "loading" ? <p className="as-billing-embed-status"><Loader2 className="as-spin" size={18} aria-hidden="true" /> Loading secure checkout</p> : null}
+      {phase === "loading" ? <p className="as-billing-embed-status"><Loader2 className="ui-spin" size={18} aria-hidden="true" /> Loading secure checkout</p> : null}
       <div className="as-billing-embed-clip">
         <div ref={slot} className="as-billing-embed" aria-label="Secure checkout form" />
       </div>
@@ -368,15 +368,15 @@ function BillingDialog({ open, onClose, theme, offer, email, initialTab = "plans
           <header className="as-dialog-head">
             <Wallet size={18} className="as-head-icon" aria-hidden="true" />
             <h2>Credits & plans</h2>
-            <button type="button" className="as-icon" onClick={onClose} aria-label="Close"><X size={18} /></button>
+            <button type="button" className="ui-icon-btn" onClick={onClose} aria-label="Close"><X size={18} /></button>
           </header>
         )}
         {checkout ? (
           <div className="as-dialog-body as-billing-checkout">
             <div className="as-checkout-main">
               <div className="as-checkout-bar">
-                <button type="button" className="as-icon" onClick={() => setCheckout(null)} aria-label="Back"><ArrowLeft size={18} /></button>
-                <button type="button" className="as-icon" onClick={onClose} aria-label="Close"><X size={18} /></button>
+                <button type="button" className="ui-icon-btn" onClick={() => setCheckout(null)} aria-label="Back"><ArrowLeft size={18} /></button>
+                <button type="button" className="ui-icon-btn" onClick={onClose} aria-label="Close"><X size={18} /></button>
               </div>
               <div className="as-checkout-scroll">
                 <EmbeddedCheckout session={checkout} onPaid={finishCheckout} />
@@ -399,15 +399,26 @@ function BillingDialog({ open, onClose, theme, offer, email, initialTab = "plans
               <p>{hasPlan ? "Your monthly allowance renews with your plan. Buy a credit bundle any time you need more." : "Every plan includes the full workspace. Pay in this window. Credits appear after Stripe confirms the payment."}</p>
             </div>
             <div className="as-billing-controls">
-              <div className="as-billing-tabs" role="tablist" aria-label="Billing options">
-                <button type="button" role="tab" aria-selected={tab === "plans"} className={tab === "plans" ? "is-active" : ""} onClick={() => setTab("plans")}>Plans</button>
-                <button type="button" role="tab" aria-selected={tab === "packs"} className={tab === "packs" ? "is-active" : ""} onClick={() => setTab("packs")}>Credit bundles</button>
-              </div>
+              <Segmented
+                label="Billing options"
+                value={tab}
+                onChange={(next) => setTab(next as "plans" | "packs")}
+                options={[
+                  { value: "plans", label: "Plans" },
+                  { value: "packs", label: "Credit bundles" },
+                ]}
+              />
               {tab === "plans" ? (
-                <div className="as-billing-period" role="tablist" aria-label="Billing period">
-                  <button type="button" role="tab" aria-selected={interval === "month"} className={interval === "month" ? "is-active" : ""} onClick={() => setInterval("month")}>Monthly</button>
-                  <button type="button" role="tab" aria-selected={interval === "year"} className={interval === "year" ? "is-active" : ""} onClick={() => setInterval("year")}>Annual <em>save ~10%</em></button>
-                </div>
+                <Segmented
+                  label="Billing period"
+                  className="as-billing-period"
+                  value={interval}
+                  onChange={(next) => setInterval(next as "month" | "year")}
+                  options={[
+                    { value: "month", label: "Monthly" },
+                    { value: "year", label: <>Annual <em>save ~10%</em></> },
+                  ]}
+                />
               ) : null}
             </div>
             {!offer.payment.available ? <p className="as-error">Checkout is temporarily unavailable. No payment will be taken.</p> : null}
@@ -615,7 +626,7 @@ export function SupportDialog({ open, onClose, theme }: { open: boolean; onClose
         ) : null}
           {error ? <p className="as-error" role="alert">{error}</p> : null}
           {view === "list" ? (
-            tickets === null ? <p className="as-muted as-center"><Loader2 size={16} className="as-spin" aria-hidden="true" /> Loading…</p> : (
+            tickets === null ? <p className="as-muted as-center"><Loader2 size={16} className="ui-spin" aria-hidden="true" /> Loading…</p> : (
               <>
                 <button type="button" className="as-new" onClick={() => setView("new")}><Plus size={16} aria-hidden="true" /> New request</button>
                 <ul className="as-tickets">
@@ -648,7 +659,7 @@ export function SupportDialog({ open, onClose, theme }: { open: boolean; onClose
               }}
             >
               <label>Topic
-                <select value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })}>
+                <select className="ui-select" value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })}>
                   <option value="general">General question</option>
                   <option value="billing">Billing and credits</option>
                   <option value="bug">Something's broken</option>
@@ -657,14 +668,14 @@ export function SupportDialog({ open, onClose, theme }: { open: boolean; onClose
                 </select>
               </label>
               <label>Subject
-                <input value={form.subject} maxLength={160} onChange={(event) => setForm({ ...form, subject: event.target.value })} placeholder="e.g. My video export stopped at 85%" required />
+                <input className="ui-input" value={form.subject} maxLength={160} onChange={(event) => setForm({ ...form, subject: event.target.value })} placeholder="e.g. My video export stopped at 85%" required />
               </label>
               <label>What happened?
-                <textarea rows={5} value={form.body} maxLength={8000} onChange={(event) => setForm({ ...form, body: event.target.value })} placeholder="What you were doing, what you expected, and what you saw instead." required />
+                <textarea className="ui-textarea" rows={5} value={form.body} maxLength={8000} onChange={(event) => setForm({ ...form, body: event.target.value })} placeholder="What you were doing, what you expected, and what you saw instead." required />
               </label>
-              <button type="submit" className="as-primary" disabled={busy || !form.subject.trim() || !form.body.trim()}>{busy ? <Loader2 size={15} className="as-spin" aria-hidden="true" /> : null} Send request</button>
+              <button type="submit" className="ui-btn is-primary" disabled={busy || !form.subject.trim() || !form.body.trim()}>{busy ? <Loader2 size={15} className="ui-spin" aria-hidden="true" /> : null} Send request</button>
             </form>
-          ) : !thread ? <p className="as-muted as-center"><Loader2 size={16} className="as-spin" aria-hidden="true" /> Loading…</p> : (
+          ) : !thread ? <p className="as-muted as-center"><Loader2 size={16} className="ui-spin" aria-hidden="true" /> Loading…</p> : (
             <>
               <ol className="as-thread">
                 {thread.messages.map((m) => (
@@ -685,8 +696,8 @@ export function SupportDialog({ open, onClose, theme }: { open: boolean; onClose
                   }
                 }}
               >
-                <textarea rows={3} value={reply} onChange={(event) => setReply(event.target.value)} placeholder="Add a reply" aria-label="Reply" />
-                <button type="submit" className="as-primary" disabled={busy || !reply.trim()}>{busy ? <Loader2 size={15} className="as-spin" aria-hidden="true" /> : null} Send</button>
+                <textarea className="ui-textarea" rows={3} value={reply} onChange={(event) => setReply(event.target.value)} placeholder="Add a reply" aria-label="Reply" />
+                <button type="submit" className="ui-btn is-primary" disabled={busy || !reply.trim()}>{busy ? <Loader2 size={15} className="ui-spin" aria-hidden="true" /> : null} Send</button>
               </form>
             </>
           )}
@@ -742,12 +753,12 @@ export function DeleteAccountDialog({ open, onClose, theme }: { open: boolean; o
           {error ? <p className="as-error" role="alert">{error}</p> : null}
           <form className="as-form" onSubmit={(event) => { event.preventDefault(); if (ready && !busy) void submit(); }}>
             <label>Type DELETE to confirm
-              <input value={confirm} onChange={(event) => setConfirm(event.target.value)} autoComplete="off" autoCapitalize="characters" spellCheck={false} placeholder="DELETE" aria-describedby="as-delete-title" />
+              <input className="ui-input" value={confirm} onChange={(event) => setConfirm(event.target.value)} autoComplete="off" autoCapitalize="characters" spellCheck={false} placeholder="DELETE" aria-describedby="as-delete-title" />
             </label>
             <div className="as-delete-actions">
-              <button type="button" className="as-delete-cancel" onClick={onClose} disabled={busy}>Cancel</button>
-              <button type="submit" className="as-delete-confirm" disabled={!ready || busy}>
-                {busy ? <Loader2 size={15} className="as-spin" aria-hidden="true" /> : null}
+              <button type="button" className="ui-btn" onClick={onClose} disabled={busy}>Cancel</button>
+              <button type="submit" className="ui-btn is-danger" disabled={!ready || busy}>
+                {busy ? <Loader2 size={15} className="ui-spin" aria-hidden="true" /> : null}
                 {subscriptionWarning ? "Delete anyway" : "Delete account"}
               </button>
             </div>

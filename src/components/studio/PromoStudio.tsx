@@ -318,7 +318,7 @@ function FormatPopover({ draft, patch, locked }: { draft: Draft; patch: (changes
           </fieldset>
           <fieldset disabled={locked}>
             <legend><Clock className="h-3.5 w-3.5" />Length</legend>
-            <Segment className="cs-tile-seg" label="Length" value={String(draft.duration)} options={PROMO_DURATIONS.map((value) => ({ value: String(value), label: <span className="prs-num">{value}s</span>, disabled: locked }))} onChange={(value) => patch({ duration: Number(value) })} />
+            <Segment className="cs-tile-seg is-tiles" label="Length" value={String(draft.duration)} options={PROMO_DURATIONS.map((value) => ({ value: String(value), label: <span className="prs-num">{value}s</span>, disabled: locked }))} onChange={(value) => patch({ duration: Number(value) })} />
           </fieldset>
         </div>
       ) : null}
@@ -494,7 +494,7 @@ function TemplatePreview({ item, selected, onUse, onStep, onBack }: { item: Temp
             </a>
           </p>
         </div>
-        <button type="button" className="prs-use" onClick={onUse}>
+        <button type="button" className="ui-btn is-primary is-lg prs-use" onClick={onUse}>
           {selected ? <Check className="h-4 w-4" aria-hidden="true" /> : null}
           {selected ? "Keep this template" : "Use this template"}
         </button>

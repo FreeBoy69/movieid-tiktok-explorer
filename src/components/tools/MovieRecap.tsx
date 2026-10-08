@@ -172,7 +172,7 @@ function FilmSources({ onPick, onError, defaultQuery }: { onPick: (url: string) 
             aria-label="Search my sources for a film"
           />
           <button type="button" className="mt-secondary" disabled={searching} onClick={() => void search()}>
-            {searching ? <Loader2 size={15} className="animate-spin" aria-hidden="true" /> : <Search size={15} aria-hidden="true" />}Search
+            {searching ? <Loader2 size={15} className="ui-spin" aria-hidden="true" /> : <Search size={15} aria-hidden="true" />}Search
           </button>
         </div>
       ) : null}
@@ -354,7 +354,8 @@ function NewRecapPanel({ onCreated, onError }: { onCreated: (recap: Recap) => vo
           <FormatOption on={formats.includes("long")} onToggle={() => toggleFormat("long")} title="Long recap" detail={`${longMinutes} minutes, 16:9`}>
             <input
               type="range"
-              className="mr-range"
+              className="ui-range"
+              style={{ ["--fill" as string]: `${((longMinutes - 10) / 7) * 100}%` }}
               min={10}
               max={17}
               step={1}
@@ -365,11 +366,7 @@ function NewRecapPanel({ onCreated, onError }: { onCreated: (recap: Recap) => vo
             />
           </FormatOption>
           <FormatOption on={formats.includes("short")} onToggle={() => toggleFormat("short")} title="Short" detail={`${shortSeconds} seconds, 9:16`}>
-            <div className="mr-steps" role="radiogroup" aria-label="Short length">
-              {SHORT_LENGTHS.map((s) => (
-                <button key={s} type="button" role="radio" aria-checked={shortSeconds === s} disabled={!formats.includes("short")} onClick={() => setShortSeconds(s)}>{s}s</button>
-              ))}
-            </div>
+            <Segmented block size="sm" label="Short length" value={String(shortSeconds)} onChange={(v) => setShortSeconds(Number(v))} options={SHORT_LENGTHS.map((s) => ({ value: String(s), label: `${s}s`, disabled: !formats.includes("short") }))} />
           </FormatOption>
         </div>
       </div>
@@ -384,20 +381,14 @@ function NewRecapPanel({ onCreated, onError }: { onCreated: (recap: Recap) => vo
         <span className="mt-label">Tone</span>
         <div className="mt-chips" role="radiogroup" aria-label="Tone">
           {TONES.map((t) => (
-            <button key={t.id} type="button" role="radio" aria-checked={tone === t.id} className="mr-chip" onClick={() => setTone(t.id)}>{t.label}</button>
+            <button key={t.id} type="button" role="radio" aria-checked={tone === t.id} className="ui-chip" onClick={() => setTone(t.id)}>{t.label}</button>
           ))}
         </div>
       </div>
 
       <div className="mt-field">
         <span className="mt-label" id="mr-pace-label">Pace <small>Pauses are always trimmed</small></span>
-        <div className="mr-steps mr-pace" role="radiogroup" aria-labelledby="mr-pace-label">
-          {PACES.map((p) => (
-            <button key={p.id} type="button" role="radio" aria-checked={pace === p.id} onClick={() => setPace(p.id)}>
-              {p.label}<small>{p.hint}</small>
-            </button>
-          ))}
-        </div>
+        <Segmented block className="mr-pace" label="Pace" value={pace} onChange={(v) => setPace(v as RecapPace)} options={PACES.map((p) => ({ value: p.id, label: p.label, hint: p.hint }))} />
       </div>
 
       <div className="mt-field">
@@ -431,7 +422,7 @@ function NewRecapPanel({ onCreated, onError }: { onCreated: (recap: Recap) => vo
       </details>
 
       <button type="button" className="mt-primary" disabled={!ready} onClick={() => void submit()}>
-        {submitting ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <Projector size={16} aria-hidden="true" />}
+        {submitting ? <Loader2 size={16} className="ui-spin" aria-hidden="true" /> : <Projector size={16} aria-hidden="true" />}
         {submitting ? (uploadShare !== null ? `Uploading ${Math.round(uploadShare * 100)}%` : "Starting") : "Analyze film"}
       </button>
     </>
@@ -466,11 +457,11 @@ function RecapList({ recaps, onOpen }: { recaps: Recap[]; onOpen: (id: string) =
             {recap.poster ? (
               <span className="mr-row-poster" data-status={recap.status} aria-hidden="true">
                 <img src={recap.poster} alt="" loading="lazy" decoding="async" />
-                {recap.status === "working" || recap.status === "queued" ? <span className="mr-row-poster-busy"><Loader2 size={16} className="animate-spin" /></span> : null}
+                {recap.status === "working" || recap.status === "queued" ? <span className="mr-row-poster-busy"><Loader2 size={16} className="ui-spin" /></span> : null}
               </span>
             ) : (
               <span className="mr-row-mark" data-status={recap.status} aria-hidden="true">
-                {recap.status === "working" || recap.status === "queued" ? <Loader2 size={16} className="animate-spin" /> : recap.status === "done" ? <Clapperboard size={16} /> : recap.status === "failed" ? <AlertCircle size={16} /> : <Film size={16} />}
+                {recap.status === "working" || recap.status === "queued" ? <Loader2 size={16} className="ui-spin" /> : recap.status === "done" ? <Clapperboard size={16} /> : recap.status === "failed" ? <AlertCircle size={16} /> : <Film size={16} />}
               </span>
             )}
             <span className="mr-row-main">
@@ -486,7 +477,7 @@ function RecapList({ recaps, onOpen }: { recaps: Recap[]; onOpen: (id: string) =
                 </span>
               ) : null}
             </span>
-            <span className="mr-pill" data-status={recap.status}>{STATUS_LABEL[recap.status]}</span>
+            <span className="ui-badge mr-pill" data-status={recap.status}>{STATUS_LABEL[recap.status]}</span>
             <ArrowRight size={16} className="mr-row-go" aria-hidden="true" />
           </button>
         </li>
@@ -498,7 +489,7 @@ function RecapList({ recaps, onOpen }: { recaps: Recap[]; onOpen: (id: string) =
 function ListSkeleton() {
   return (
     <ul className="mr-list" aria-busy="true" aria-label="Loading recaps">
-      {[0, 1, 2].map((i) => <li key={i} className="mr-row mr-skel" />)}
+      {[0, 1, 2].map((i) => <li key={i} className="mr-row mr-skel ui-skeleton" />)}
     </ul>
   );
 }
@@ -582,7 +573,7 @@ function RecapView({ id, onBack, onError }: { id: string; onBack: () => void; on
       <div className="mr-view">
         <RecapBar title="" onBack={onBack} />
         <div className="mr-center">
-          <Loader2 size={20} className="animate-spin" aria-label="Loading" />
+          <Loader2 size={20} className="ui-spin" aria-label="Loading" />
           {offline ? <p className="mt-note">Can't reach the server right now (it may be restarting). Trying again…</p> : null}
         </div>
       </div>
@@ -623,7 +614,7 @@ function RecapView({ id, onBack, onError }: { id: string; onBack: () => void; on
             ) : null}
             {working && (recap.script || recap.progress >= 0.75) ? <button type="button" className="mt-ghost" onClick={() => void act(() => backToStoryboard(recap.id))} title="Stop rendering and reopen the script and its settings"><Undo2 size={14} aria-hidden="true" /><span className="mr-bar-label">Back to storyboard</span></button> : null}
             {working ? <button type="button" className="mt-ghost" onClick={() => void act(() => cancelRecap(recap.id))}><Square size={14} aria-hidden="true" /><span className="mr-bar-label">Stop</span></button> : null}
-            <button type="button" className="mr-icon-btn" onClick={() => void remove()} aria-label="Delete recap" title="Delete recap"><Trash2 size={16} /></button>
+            <button type="button" className="ui-icon-btn" onClick={() => void remove()} aria-label="Delete recap" title="Delete recap"><Trash2 size={16} /></button>
           </>
         }
       />
@@ -1097,24 +1088,24 @@ function ScriptReview({ recap, onChange, onRender, onError }: { recap: Recap; on
               <span>Screen size</span>
               <output>{zoomPct ? `+${zoomPct}%` : "Off"}</output>
             </span>
-            <input type="range" className="mr-range" min={0} max={30} step={1} value={zoomPct} onChange={(event) => setZoomPct(Number(event.target.value))} aria-label="Screen size: how far the footage is zoomed in" />
+            <input type="range" className="ui-range" style={{ ["--fill" as string]: `${(zoomPct / 30) * 100}%` }} min={0} max={30} step={1} value={zoomPct} onChange={(event) => setZoomPct(Number(event.target.value))} aria-label="Screen size: how far the footage is zoomed in" />
           </label>
           <Switch compact className="mr-toggle" checked={pan} onChange={setPan} label="Freeze and zoom shots" />
           <p className="mt-note">A bigger picture, slow pans, and the odd frozen push-in keep the footage from matching the film frame for frame.</p>
           {recap.options.formats.includes("long") ? (
             <>
               <Switch compact className="mr-toggle" checked={hasIntro} onChange={(on) => { if (!introBusy) void toggleIntro(on); }} label="Intro: a teaser over quick cuts of the best shots" />
-              {introBusy ? <p className="mt-note"><Loader2 size={13} className="animate-spin" aria-hidden="true" /> {hasIntro ? "Removing the intro" : "Writing the intro"}</p> : null}
+              {introBusy ? <p className="mt-note"><Loader2 size={13} className="ui-spin" aria-hidden="true" /> {hasIntro ? "Removing the intro" : "Writing the intro"}</p> : null}
             </>
           ) : null}
         </div>
         <div className="mr-side-block">
           <button type="button" className="mt-secondary" disabled={naming} onClick={() => void fixNames()} title="Sets every character's name to the film's cast list from TMDB; nothing else in the script changes">
-            {naming ? <Loader2 size={15} className="animate-spin" aria-hidden="true" /> : <Users size={15} aria-hidden="true" />}Correct character names
+            {naming ? <Loader2 size={15} className="ui-spin" aria-hidden="true" /> : <Users size={15} aria-hidden="true" />}Correct character names
           </button>
           {namesNote ? <p className="mt-note">{namesNote}</p> : null}
           <button type="button" className="mt-secondary" disabled={rewriting} onClick={() => void rewrite()} title="A new script from the same analysis: the opening told shot by shot from what the film shows">
-            {rewriting ? <Loader2 size={15} className="animate-spin" aria-hidden="true" /> : <PenLine size={15} aria-hidden="true" />}Write the script again
+            {rewriting ? <Loader2 size={15} className="ui-spin" aria-hidden="true" /> : <PenLine size={15} aria-hidden="true" />}Write the script again
           </button>
         </div>
         <div className="mr-side-block mr-side-rules">
@@ -1122,7 +1113,7 @@ function ScriptReview({ recap, onChange, onRender, onError }: { recap: Recap; on
           <p>2 to 4 second cuts, film skipped between every cut, the film's audio removed{zoomPct ? `, ${zoomPct}% larger` : ""}{pan ? ", slow pans and freeze-zooms" : ""}{recap.options.transforms.color ? ", color and hue shift" : ""}{recap.options.transforms.mirror ? ", mirrored" : ""}.</p>
         </div>
         <button type="button" className="mt-primary mr-render" disabled={rendering || beats.some((beat) => !beat.text.trim())} onClick={() => void render()}>
-          {rendering ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <Clapperboard size={16} aria-hidden="true" />}
+          {rendering ? <Loader2 size={16} className="ui-spin" aria-hidden="true" /> : <Clapperboard size={16} aria-hidden="true" />}
           Render {recap.options.formats.length > 1 ? "both" : FORMAT_LABEL[recap.options.formats[0]].toLowerCase()}
         </button>
         <p className="mt-note">When it finishes, Edit in Vibe Edit opens it with every cut and caption on the timeline.</p>
@@ -1171,8 +1162,8 @@ function BeatRow({ index, beat, recapId, shots, filmDuration, onPatch, onRemove,
           </span>
           <span className="mr-beat-len">{Math.round(seconds)}s spoken</span>
           <span className="mr-beat-actions">
-            <button type="button" className="mr-icon-btn" onClick={onAdd} aria-label={`Add a line after line ${index + 1}`} title="Add a line after"><Plus size={15} /></button>
-            {onRemove ? <button type="button" className="mr-icon-btn" onClick={onRemove} aria-label={`Remove line ${index + 1}`} title="Remove line"><X size={15} /></button> : null}
+            <button type="button" className="ui-icon-btn" onClick={onAdd} aria-label={`Add a line after line ${index + 1}`} title="Add a line after"><Plus size={15} /></button>
+            {onRemove ? <button type="button" className="ui-icon-btn" onClick={onRemove} aria-label={`Remove line ${index + 1}`} title="Remove line"><X size={15} /></button> : null}
           </span>
         </div>
       </div>
@@ -1308,7 +1299,7 @@ function PostPanel({ recap, format, onChange, onError }: { recap: Recap; format:
         <ul className="mr-post-list">
           {posts.slice(0, 3).map((p) => (
             <li key={p.id} data-status={p.status}>
-              {p.status === "uploading" ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : p.status === "posted" ? <Check size={14} strokeWidth={3} aria-hidden="true" /> : <AlertCircle size={14} aria-hidden="true" />}
+              {p.status === "uploading" ? <Loader2 size={14} className="ui-spin" aria-hidden="true" /> : p.status === "posted" ? <Check size={14} strokeWidth={3} aria-hidden="true" /> : <AlertCircle size={14} aria-hidden="true" />}
               <span>{p.status === "uploading" ? `Posting to ${p.channel || "your channel"} in the background` : p.status === "posted" ? `Posted to ${p.channel || "your channel"} (${p.privacy})` : `Post to ${p.channel || "your channel"} failed: ${p.error || "unknown error"}`}</span>
               {p.url ? <a href={p.url} target="_blank" rel="noreferrer"><ExternalLink size={13} aria-hidden="true" />Open</a> : null}
               {p.status === "posted" ? (
@@ -1316,7 +1307,7 @@ function PostPanel({ recap, format, onChange, onError }: { recap: Recap; format:
                   <span className="mr-post-thumb" title="YouTube shows the thumbnail from this page">Thumbnail set</span>
                 ) : (
                   <button type="button" className="mr-post-thumb-btn" disabled={thumbing === p.id} onClick={() => void setThumbnail(p.id)} title={p.thumbnail?.error || "Use this page's thumbnail on YouTube"}>
-                    {thumbing === p.id ? <Loader2 size={13} className="animate-spin" aria-hidden="true" /> : <ImageIcon size={13} aria-hidden="true" />}
+                    {thumbing === p.id ? <Loader2 size={13} className="ui-spin" aria-hidden="true" /> : <ImageIcon size={13} aria-hidden="true" />}
                     {p.thumbnail?.status === "failed" ? "Retry thumbnail" : "Set thumbnail"}
                   </button>
                 )
@@ -1350,7 +1341,7 @@ function PostPanel({ recap, format, onChange, onError }: { recap: Recap; format:
                   Another channel
                 </button>
                 <button type="button" className="ui-btn is-primary" disabled={posting || !title.trim()} onClick={() => void post()}>
-                  {posting ? <Loader2 size={15} className="animate-spin" aria-hidden="true" /> : <Upload size={15} aria-hidden="true" />}
+                  {posting ? <Loader2 size={15} className="ui-spin" aria-hidden="true" /> : <Upload size={15} aria-hidden="true" />}
                   Post in the background
                 </button>
               </>
@@ -1358,7 +1349,7 @@ function PostPanel({ recap, format, onChange, onError }: { recap: Recap; format:
           }
         >
           {drafting ? (
-            <p className="mt-note mr-modal-wait"><Loader2 size={14} className="animate-spin" aria-hidden="true" /> Writing a title and description in {channel?.title || "this channel"}'s style</p>
+            <p className="mt-note mr-modal-wait"><Loader2 size={14} className="ui-spin" aria-hidden="true" /> Writing a title and description in {channel?.title || "this channel"}'s style</p>
           ) : (
             <div className="mr-post-form">
               <YouTubePublishFields

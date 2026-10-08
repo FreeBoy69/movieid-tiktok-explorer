@@ -237,7 +237,7 @@ function ReferenceStack({ references, uploading, mode, onAdd, onRemove }: { refe
       ))}
       {shown.length < limit ? (
         <button type="button" className="sl-stack-card is-add" style={{ ["--i" as string]: shown.length }} onClick={onAdd} aria-label={mode === "video" ? "Add a start frame" : "Add reference images"} title={mode === "video" ? "Add a start frame" : "Add reference images"}>
-          {uploading ? <Loader2 size={16} className="sl-spin" /> : <Plus size={18} />}
+          {uploading ? <Loader2 size={16} className="ui-spin" /> : <Plus size={18} />}
         </button>
       ) : null}
       {!shown.length ? (

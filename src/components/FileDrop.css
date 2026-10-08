@@ -1,18 +1,17 @@
-/* FileDrop: picks up the host's palette (studio --cs-*, Vibe --ve-*, maker --mk-*)
-   and falls back to neutral ink so it reads on any surface. */
+/* FileDrop: the one drop area, on the site tokens (--ui-*). */
 .file-drop {
-  --fd-line: var(--cs-line-strong, var(--ve-line-strong, var(--mk-line-strong, rgb(120 120 120 / 0.45))));
-  --fd-text: var(--cs-text, var(--ve-text, var(--mk-text, currentColor)));
-  --fd-muted: var(--cs-muted, var(--ve-muted, var(--mk-muted, rgb(120 120 120))));
-  --fd-accent: var(--cs-accent, var(--ve-accent, var(--mk-accent, #f9dc0b)));
-  --fd-accent-ink: var(--cs-accent-ink, var(--ve-accent-ink, var(--mk-accent-ink, #1a1a1a)));
+  --fd-line: var(--ui-line-strong);
+  --fd-text: var(--ui-text);
+  --fd-muted: var(--ui-text-muted);
+  --fd-accent: var(--ui-accent);
+  --fd-accent-ink: var(--ui-accent-ink);
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 6px;
   padding: 20px 16px;
   border: 1.5px dashed var(--fd-line);
-  border-radius: 12px;
+  border-radius: var(--ui-radius-md);
   color: var(--fd-muted);
   text-align: center;
   transition: border-color 160ms ease, background-color 160ms ease;
@@ -63,37 +62,7 @@
 .file-drop-num {
   font-variant-numeric: tabular-nums;
 }
-.file-drop .file-drop-button {
-  margin-top: 6px;
-  min-height: 34px;
-  padding: 6px 14px;
-  border: 1px solid var(--fd-line);
-  border-radius: 8px;
-  background: transparent;
-  color: var(--fd-text);
-  font: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: border-color 140ms ease, background-color 140ms ease;
-}
-.file-drop .file-drop-button:hover:not(:disabled) {
-  border-color: var(--fd-text);
-}
-.file-drop-roomy .file-drop-button {
-  border-color: transparent;
-  background: var(--fd-accent);
-  color: var(--fd-accent-ink);
-}
-.file-drop-roomy .file-drop-button:hover:not(:disabled) {
-  border-color: transparent;
-  filter: brightness(0.96);
-}
-.file-drop .file-drop-button:focus-visible,
-.file-drop .file-drop-link:focus-visible {
-  outline: 2px solid var(--fd-text);
-  outline-offset: 2px;
-}
+.file-drop .file-drop-button { margin-top: 6px; }
 .file-drop .file-drop-link {
   padding: 0;
   border: 0;

@@ -6,12 +6,12 @@
   --cap-cycle: 2.4s; /* three words, then a short hold */
   --cap-slot: 0.72s; /* one word's turn, 30% of the cycle */
   /* Theme tokens: the Maker's light palette, else Vibe Edit's dark one. */
-  --cap-muted: var(--mk-muted, var(--ve-muted, #7a7872));
-  --cap-faint: var(--mk-faint, var(--ve-faint, #9a9892));
-  --cap-accent: var(--mk-accent, var(--ve-accent, #f9dc0b));
-  --cap-accent-soft: var(--mk-accent-soft, rgb(249 220 11 / 0.25));
-  --cap-accent-text: var(--mk-accent-text, var(--ve-accent-text, #7a6600));
-  --cap-radius: var(--mk-radius, 10px);
+  --cap-muted: var(--ui-text-muted);
+  --cap-faint: var(--ui-text-faint);
+  --cap-accent: var(--ui-accent);
+  --cap-accent-soft: var(--ui-accent-soft);
+  --cap-accent-text: var(--ui-accent-text);
+  --cap-radius: var(--ui-radius-md);
   display: grid;
   gap: 10px;
 }
@@ -70,7 +70,7 @@
   opacity: 0.55;
 }
 .cap-card:focus-visible {
-  outline: 2px solid var(--cap-accent);
+  outline: 2px solid var(--ui-focus);
   outline-offset: 2px;
 }
 .cap-tile {

@@ -1,16 +1,16 @@
 /* Shared audio player: paper surface, charcoal ink, yellow for the one live thing.
    Falls back to AutoYT tokens when rendered outside the creator workspace. */
 .mk-audio {
-  --ap-surface: var(--mk-surface, var(--vs-panel, var(--cs-surface, #fff)));
-  --ap-sunken: var(--mk-sunken, var(--vs-panel-soft, var(--cs-sunken, #f2f0eb)));
-  --ap-text: var(--mk-text, var(--vs-ink, var(--cs-text, #1a1a1a)));
-  --ap-muted: var(--mk-muted, var(--vs-muted, var(--cs-muted, #5f5d58)));
-  --ap-faint: var(--mk-faint, var(--vs-subtle, var(--cs-faint, #8b8983)));
-  --ap-line: var(--mk-line, var(--vs-line, var(--cs-line, #e4e1da)));
-  --ap-accent: var(--mk-accent, var(--vs-accent, var(--cs-accent, #f9dc0b)));
-  --ap-accent-hover: var(--mk-accent-hover, var(--cs-accent-hover, #ecd00a));
-  --ap-accent-ink: var(--mk-accent-ink, var(--cs-accent-ink, #171717));
-  --ap-bad: var(--mk-bad, var(--cs-bad, #a13a2a));
+  --ap-surface: var(--ui-panel);
+  --ap-sunken: var(--ui-sunken);
+  --ap-text: var(--ui-text);
+  --ap-muted: var(--ui-text-muted);
+  --ap-faint: var(--ui-text-faint);
+  --ap-line: var(--ui-line);
+  --ap-accent: var(--ui-accent);
+  --ap-accent-hover: var(--ui-accent-hover);
+  --ap-accent-ink: var(--ui-accent-ink);
+  --ap-bad: var(--ui-danger);
   display: grid;
   grid-template-columns: 44px minmax(0, 1fr);
   align-items: center;
@@ -18,9 +18,9 @@
   width: 100%;
   padding: 10px 12px 10px 10px;
   border: 1px solid var(--ap-line);
-  border-radius: 12px;
+  border-radius: var(--ui-radius-md);
   background: var(--ap-surface);
-  box-shadow: 0 1px 2px rgb(26 26 26 / 0.04);
+  box-shadow: var(--ui-shadow-soft);
   color: var(--ap-text);
   font-family: Inter, ui-sans-serif, system-ui, sans-serif;
   transition: border-color 0.2s, box-shadow 0.2s;
@@ -63,12 +63,7 @@
   margin-left: 2px;
 }
 .mk-audio .mk-audio-spin {
-  animation: mk-audio-spin 0.9s linear infinite;
-}
-@keyframes mk-audio-spin {
-  to {
-    transform: rotate(360deg);
-  }
+  animation: ui-spin 0.8s linear infinite;
 }
 
 /* Body: waveform, then time and tools. When the row runs out of room they wrap under the waveform. */
@@ -162,7 +157,7 @@
   cursor: default;
 }
 .mk-audio-wave:has(input:focus-visible) {
-  outline: 2px solid var(--mk-accent-text, #7a6600);
+  outline: 2px solid var(--ui-focus);
   outline-offset: 3px;
   border-radius: 4px;
 }
@@ -228,7 +223,7 @@
 }
 .mk-audio .mk-audio-tool:focus-visible,
 .mk-audio .mk-audio-play:focus-visible {
-  outline: 2px solid var(--mk-accent-text, var(--cs-accent-text, #7a6600));
+  outline: 2px solid var(--ui-focus);
   outline-offset: 2px;
 }
 /* Skip buttons: the circular arrow with the seconds tucked inside it. */
@@ -251,13 +246,13 @@
   margin: 0 6px 0 2px;
   appearance: none;
   border-radius: 999px;
-  background: linear-gradient(to right, var(--ap-text) var(--mk-audio-level, 100%), color-mix(in srgb, var(--ap-text) 16%, transparent) var(--mk-audio-level, 100%));
+  background: linear-gradient(to right, var(--ui-accent) var(--mk-audio-level, 100%), var(--ui-line-strong) var(--mk-audio-level, 100%));
   cursor: pointer;
 }
 .mk-audio-volume::-webkit-slider-thumb {
   appearance: none;
-  width: 12px;
-  height: 12px;
+  width: 14px;
+  height: 14px;
   border-radius: 999px;
   background: var(--ap-text);
   border: 2px solid var(--ap-surface);
@@ -270,8 +265,10 @@
   border: 2px solid var(--ap-surface);
 }
 .mk-audio-volume:focus-visible {
-  outline: 2px solid var(--mk-accent-text, var(--cs-accent-text, #7a6600));
-  outline-offset: 4px;
+  outline: none;
+}
+.mk-audio-volume:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 3px var(--ui-ring), 0 0 0 1px var(--ui-focus);
 }
 .mk-audio-head > :first-child:not(.mk-audio-title):not(.mk-audio-meta) {
   flex-shrink: 0;

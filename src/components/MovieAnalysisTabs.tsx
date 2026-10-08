@@ -123,8 +123,8 @@ export function MovieAnalysisTabs({
   }
 
   return (
-    <div className="w-full max-w-full overflow-hidden rounded-xl border shadow-sm" style={{ background: C.bgCard, borderColor: C.border }}>
-      <div className="border-b p-2" style={{ background: C.bg, borderColor: C.border }}>
+    <div className="w-full max-w-full overflow-hidden rounded-xl border shadow-sm border-[var(--ui-line)]" style={{ background: C.bgCard, borderColor: C.border }}>
+      <div className="border-b p-2 border-[var(--ui-line)]" style={{ background: C.bg, borderColor: C.border }}>
         <div className="flex gap-1 overflow-x-auto overscroll-x-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {postContent && (
             <button
@@ -206,7 +206,7 @@ function IdentificationSourceBadge({ result, prominent = false }: { result: Movi
   const style = sourceBadgeStyle(display.source);
   return (
     <div
-      className={cn("inline-flex max-w-full flex-col gap-1 rounded-xl border px-3 py-2", prominent ? "w-full" : "w-fit")}
+      className={cn("inline-flex max-w-full flex-col gap-1 rounded-xl border px-3 py-2 border-[var(--ui-line)]", prominent ? "w-full" : "w-fit")}
       style={{ background: style.background, borderColor: style.border }}
     >
       <div className="flex flex-wrap items-center gap-2">
@@ -267,7 +267,7 @@ function MovieTab({
           <button
             type="button"
             onClick={onRewrite}
-            className="inline-flex items-center gap-2 rounded-lg px-5 py-3 text-sm font-bold text-white shadow-lg transition-all hover:bg-[#1A1A1A]"
+            className="inline-flex items-center gap-2 rounded-lg px-5 py-3 text-sm font-bold text-white shadow-lg transition-all hover:bg-[var(--ui-text)]"
             style={{ background: C.accent, boxShadow: `0 8px 20px ${C.accent}33` }}
           >
             <Zap className="h-4 w-4" />
@@ -470,13 +470,13 @@ function TabbedPage({ nav, children }: { nav: [string, string][]; children: Reac
   return (
     <div className="grid min-w-0 gap-5 lg:grid-cols-[170px_minmax(0,1fr)]">
       <aside className="lg:sticky lg:top-4 lg:self-start">
-        <div className="flex gap-2 overflow-x-auto overscroll-x-contain rounded-lg border p-2 lg:flex-col lg:overflow-visible [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" style={{ background: C.bg, borderColor: C.border }}>
+        <div className="flex gap-2 overflow-x-auto overscroll-x-contain rounded-lg border p-2 lg:flex-col lg:overflow-visible [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden border-[var(--ui-line)]" style={{ background: C.bg, borderColor: C.border }}>
           {nav.map(([id, label]) => (
             <button
               key={id}
               type="button"
               onClick={() => setActiveSection(id)}
-              className="shrink-0 rounded-md px-3 py-2 text-left text-xs font-semibold transition-colors hover:bg-white"
+              className="shrink-0 rounded-md px-3 py-2 text-left text-xs font-semibold transition-colors hover:bg-[var(--ui-panel)]"
               style={activeSection === id ? { background: "#fff", color: C.text, boxShadow: "0 1px 3px rgba(0,0,0,0.06)" } : { color: C.textMuted }}
             >
               {label}
@@ -491,7 +491,7 @@ function TabbedPage({ nav, children }: { nav: [string, string][]; children: Reac
 
 function Panel({ id, title, action, children }: { id: string; title: string; action?: ReactNode; children: ReactNode }) {
   return (
-    <section id={id} className="scroll-mt-24 rounded-xl border p-5" style={{ background: C.bgCard, borderColor: C.border }}>
+    <section id={id} className="scroll-mt-24 rounded-xl border p-5 border-[var(--ui-line)]" style={{ background: C.bgCard, borderColor: C.border }}>
       <div className="mb-4 flex items-center gap-3">
         <h3 className="font-serif text-2xl font-bold" style={{ color: C.text }}>{title}</h3>
         {action && <div className="ml-auto">{action}</div>}
@@ -555,7 +555,7 @@ function Pill({ children, muted = false }: { children: ReactNode; muted?: boolea
 
 function AnalysisLink({ href, label }: { href: string; label: string }) {
   return (
-    <a href={href} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-lg border px-5 py-3 text-sm font-semibold hover:bg-[#1A1A1A]/5" style={{ color: C.text, borderColor: C.border }}>
+    <a href={href} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-lg border px-5 py-3 text-sm font-semibold hover:bg-[var(--ui-text)]/5 border-[var(--ui-line)]" style={{ color: C.text, borderColor: C.border }}>
       {label} <ExternalLink className="h-4 w-4" />
     </a>
   );
@@ -563,7 +563,7 @@ function AnalysisLink({ href, label }: { href: string; label: string }) {
 
 function SmallAction({ onClick, children }: { onClick: () => void; children: ReactNode }) {
   return (
-    <button type="button" onClick={onClick} className="rounded-lg px-3 py-2 text-xs font-bold text-white transition-colors hover:bg-[#1A1A1A]" style={{ background: C.accent }}>
+    <button type="button" onClick={onClick} className="rounded-lg px-3 py-2 text-xs font-bold text-white transition-colors hover:bg-[var(--ui-text)]" style={{ background: C.accent }}>
       {children}
     </button>
   );
@@ -632,7 +632,7 @@ function EvidenceCard({ icon, title, content }: { icon: ReactNode; title: string
 
 function EmptyNote({ children }: { children: ReactNode }) {
   return (
-    <div className="ui-inherit rounded-lg border border-dashed" style={{ background: C.bg, borderColor: C.border, color: C.text }}>
+    <div className="ui-inherit rounded-lg border border-dashed border-[var(--ui-line)]" style={{ background: C.bg, borderColor: C.border, color: C.text }}>
       <EmptyState compact title="Nothing here yet" body={children} />
     </div>
   );

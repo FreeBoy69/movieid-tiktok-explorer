@@ -10,18 +10,18 @@
   --cs-faint: var(--ui-text-faint);
   --cs-line: var(--ui-line);
   --cs-line-strong: var(--ui-line-strong);
-  --cs-accent: #f9dc0b;
-  --cs-accent-hover: #ecd00a;
-  --cs-accent-ink: #171717;
-  --cs-accent-soft: #fdf5c2;
-  --cs-accent-text: #6e5c00;
-  --cs-bad: #a13a2a;
-  --cs-bad-soft: #fbe9e5;
-  --cs-shadow: 0 1px 2px rgb(26 26 26 / 0.04), 0 4px 14px -8px rgb(26 26 26 / 0.14);
-  --cs-shadow-lift: 0 2px 4px rgb(26 26 26 / 0.05), 0 18px 40px -18px rgb(26 26 26 / 0.28);
-  --cs-radius: 12px;
-  --cs-radius-sm: 8px;
-  --cs-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --cs-accent: var(--ui-accent);
+  --cs-accent-hover: var(--ui-accent-hover);
+  --cs-accent-ink: var(--ui-accent-ink);
+  --cs-accent-soft: var(--ui-accent-soft);
+  --cs-accent-text: var(--ui-accent-text);
+  --cs-bad: var(--ui-danger);
+  --cs-bad-soft: color-mix(in srgb, var(--ui-danger) 12%, transparent);
+  --cs-shadow: var(--ui-shadow-soft);
+  --cs-shadow-lift: var(--ui-shadow-lift);
+  --cs-radius: var(--ui-radius-md);
+  --cs-radius-sm: var(--ui-radius-sm);
+  --cs-ease: var(--ui-ease);
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -33,20 +33,6 @@
   line-height: 1.45;
 }
 .cstudio[data-theme="dark"] {
-  --cs-bg: var(--ui-bg);
-  --cs-surface: var(--ui-panel);
-  --cs-sunken: var(--ui-sunken);
-  --cs-text: var(--ui-text);
-  --cs-muted: var(--ui-text-muted);
-  --cs-faint: var(--ui-text-faint);
-  --cs-line: var(--ui-line);
-  --cs-line-strong: var(--ui-line-strong);
-  --cs-accent-soft: #3a3410;
-  --cs-accent-text: #f2d63a;
-  --cs-bad: #f09b8b;
-  --cs-bad-soft: #3a1d18;
-  --cs-shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 6px 18px -10px rgb(0 0 0 / 0.6);
-  --cs-shadow-lift: 0 2px 4px rgb(0 0 0 / 0.35), 0 18px 40px -18px rgb(0 0 0 / 0.85);
   color-scheme: dark;
 }
 .cstudio *,
@@ -58,15 +44,8 @@
   background: var(--cs-accent);
   color: var(--cs-accent-ink);
 }
-/* Focus is neutral, never yellow: a soft ring for keyboard focus, and text
-   fields rely on their container's focus state instead of an outline. */
-.cstudio :focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--cs-text) 40%, transparent);
-  outline-offset: 2px;
-}
-.cstudio :is(textarea, input):focus-visible {
-  outline: none;
-}
+/* Focus: the global ring from index.css (2px --ui-focus). Fields inside a composer
+   show focus on the composer instead (see .cs-composer:focus-within). */
 :where(.cstudio) button {
   font: inherit;
   color: inherit;
@@ -84,16 +63,6 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.cstudio ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
-.cstudio ::-webkit-scrollbar-thumb {
-  background: var(--cs-line-strong);
-  border: 3px solid var(--cs-bg);
-  border-radius: 999px;
-}
-
 /* ---------- Header and app navigation ---------- */
 .cs-header {
   display: flex;
@@ -126,8 +95,7 @@
   min-width: 0;
 }
 .cs-nav > *,
-.cs-chips > *,
-.cs-ops > * {
+.cs-chips > * {
   flex-shrink: 0;
 }
 .cs-nav-item {
@@ -190,13 +158,6 @@
   bottom: calc(100% + 8px);
   min-width: 180px;
   max-height: min(360px, 60vh);
-  overflow-y: auto;
-  padding: 6px;
-  border: 1px solid var(--cs-line);
-  border-radius: var(--cs-radius);
-  background: var(--cs-surface);
-  box-shadow: var(--cs-shadow-lift);
-  animation: cs-menu-in 180ms var(--cs-ease);
 }
 .cs-header .cs-menu,
 .cs-agent-bar .cs-menu {
@@ -207,28 +168,12 @@
   left: auto;
   right: 0;
 }
-@keyframes cs-menu-in {
-  from { opacity: 0; transform: translateY(4px) scale(0.98); }
-}
 .cs-menu-item {
-  display: flex;
-  width: 100%;
-  align-items: center;
   justify-content: space-between;
   gap: 12px;
-  min-height: 36px;
   padding: 8px 10px;
-  border: 0;
-  border-radius: var(--cs-radius-sm);
-  background: none;
-  color: var(--cs-text);
   font-size: 13px;
-  text-align: left;
   text-decoration: none;
-}
-.cs-menu-item:hover,
-.cs-menu-item[aria-selected="true"] {
-  background: var(--cs-sunken);
 }
 .cs-app-menu {
   width: 340px;
@@ -583,36 +528,32 @@
   gap: 2px;
   flex-shrink: 0;
 }
-.cs-icon {
+/* .cs-icon / .cs-ghost ride on .ui-icon-btn / .ui-btn.is-sm; this keeps the few
+   callers outside the studio files (MotionPreview) on the same look. */
+.cs-icon:not(.ui-icon-btn) {
   display: inline-grid;
   place-items: center;
   width: 32px;
   height: 32px;
   border: 0;
-  border-radius: var(--cs-radius-sm);
-  background: none;
-  color: var(--cs-muted);
-  transition: color 140ms, background-color 140ms;
+  border-radius: var(--ui-radius-sm);
+  background: transparent;
+  color: var(--ui-text-muted);
 }
-.cs-icon:hover {
-  background: var(--cs-sunken);
-  color: var(--cs-text);
-}
-.cs-ghost {
+.cs-icon:not(.ui-icon-btn):hover { background: var(--ui-hover); color: var(--ui-text); }
+.cs-ghost:not(.ui-btn) {
   display: inline-flex;
+  min-height: var(--ui-control-sm);
   align-items: center;
   gap: 6px;
-  min-height: 32px;
-  padding: 6px 12px;
-  border: 1px solid var(--cs-line-strong);
-  border-radius: var(--cs-radius-sm);
-  background: var(--cs-surface);
-  font-size: 12px;
-  font-weight: 500;
+  padding: 0 12px;
+  border: 1px solid var(--ui-line-strong);
+  background: transparent;
+  color: var(--ui-text);
+  font-size: 13px;
+  font-weight: 600;
 }
-.cs-ghost:hover {
-  border-color: var(--cs-text);
-}
+.cs-ghost:not(.ui-btn):hover { background: var(--ui-hover); }
 .cs-link {
   margin-left: 8px;
   padding: 0;
@@ -661,8 +602,8 @@
   align-items: flex-start;
   gap: 10px;
 }
-.cs-textarea,
-.cs-input {
+/* The composer prompt: borderless inside the composer, which shows the focus. */
+.cs-textarea {
   width: 100%;
   min-width: 0;
   border: 0;
@@ -680,27 +621,11 @@
   resize: none;
   field-sizing: content;
 }
-.cs-input {
-  padding: 8px 10px;
-  border: 1px solid var(--cs-line);
-  border-radius: var(--cs-radius-sm);
-  background: var(--cs-bg);
-  font-size: 14px;
-}
-.cs-input:focus {
-  border-color: var(--cs-line-strong);
-}
-.cs-textarea::placeholder,
-.cs-input::placeholder {
+.cs-textarea::placeholder {
   color: var(--cs-faint);
 }
 .cs-lyrics {
   min-height: 64px;
-  padding: 8px 10px;
-  border: 1px solid var(--cs-line);
-  border-radius: var(--cs-radius-sm);
-  background: var(--cs-bg);
-  font-size: 14px;
 }
 .cs-controls {
   display: flex;
@@ -716,26 +641,10 @@
   min-width: 0;
 }
 .cs-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 32px;
   max-width: 260px;
-  padding: 0 10px;
-  border: 1px solid var(--cs-line);
-  border-radius: var(--cs-radius-sm);
-  background: var(--cs-bg);
-  font-size: 12px;
-  font-weight: 500;
-  white-space: nowrap;
-  transition: border-color 140ms;
 }
-.cs-chip:hover:not(:disabled),
 .cs-chip[aria-expanded="true"] {
-  border-color: var(--cs-line-strong);
-}
-.cs-chip:disabled {
-  opacity: 0.55;
+  border-color: var(--ui-line-strong);
 }
 .cs-chip-label {
   color: var(--cs-faint);
@@ -747,24 +656,26 @@
   cursor: default;
 }
 /* Toggle: the shared ui Switch, dressed as a composer chip. */
+/* On/off chip: a compact ui Switch with the ui-chip frame. */
 .ui-switch.cs-toggle {
   gap: 8px;
-  height: 32px;
+  height: var(--ui-control-sm);
   padding: 0 10px 0 12px;
-  border: 1px solid var(--cs-line);
+  border: 1px solid var(--ui-line);
   border-radius: 999px;
-  background: var(--cs-bg);
-  font-size: 12px;
+  background: var(--ui-panel);
+  font-size: 13px;
 }
 .ui-switch.cs-toggle:hover {
-  border-color: var(--cs-line-strong);
+  border-color: var(--ui-line-strong);
+  background: var(--ui-hover);
 }
 .ui-switch.cs-toggle .ui-switch-label {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
-  font-weight: 500;
+  font-size: 13px;
+  font-weight: 600;
   white-space: nowrap;
 }
 .ui-switch.cs-toggle .ui-switch-track {
@@ -788,38 +699,10 @@
 }
 .cs-submit,
 .cs-send {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  height: 40px;
-  padding: 0 18px;
-  border: 0;
-  border-radius: var(--cs-radius-sm);
-  background: var(--cs-accent);
-  color: var(--cs-accent-ink);
-  font-size: 14px;
-  font-weight: 700;
-  white-space: nowrap;
   flex-shrink: 0;
-  transition: background-color 160ms, transform 120ms;
-}
-.cs-submit:hover:not(:disabled),
-.cs-send:hover:not(:disabled) {
-  background: var(--cs-text);
-  color: var(--cs-bg);
-}
-.cs-submit:active:not(:disabled),
-.cs-send:active:not(:disabled) {
-  transform: scale(0.97);
-}
-.cs-submit:disabled,
-.cs-send:disabled {
-  background: var(--cs-sunken);
-  color: var(--cs-faint);
 }
 .cs-send {
-  width: 40px;
+  width: var(--ui-control);
   padding: 0;
   align-self: flex-end;
 }
@@ -852,42 +735,20 @@
 .cs-aspect-glyph.is-auto {
   border-style: dashed;
 }
-/* Segment variant: Promo Studio's tiles, the shape over the ratio (cs-tile-seg: same tiles, no shape). */
+/* Promo Studio's tiles (.ui-seg.is-tiles): the shape over the ratio; cs-tile-seg is the same tiles without a shape. */
 .ui-seg:is(.cs-aspect-seg, .cs-tile-seg) {
-  display: grid;
   grid-template-columns: repeat(auto-fit, minmax(58px, 1fr));
   gap: 6px;
   width: 100%;
-  padding: 0;
-  overflow: visible;
-  border-radius: 0;
-  background: transparent;
 }
 .ui-seg:is(.cs-aspect-seg, .cs-tile-seg) > button {
-  flex-direction: column;
-  gap: 6px;
   min-height: 52px;
+  gap: 6px;
   padding: 8px 4px;
-  border: 1px solid var(--cs-line);
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--cs-text) 4%, transparent);
-  color: var(--cs-text);
   font-size: 13px;
   font-weight: 600;
 }
-/* index.css rounds every action button into a pill; tiles keep their corners (the id in :is lifts specificity). */
-.ui-seg:is(.cs-aspect-seg, .cs-tile-seg, #cs-tile-seg) > button {
-  border-radius: 10px !important;
-}
-.ui-seg:is(.cs-aspect-seg, .cs-tile-seg) > button:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--cs-text) 9%, transparent);
-}
-.ui-seg:is(.cs-aspect-seg, .cs-tile-seg) > button[aria-checked="true"] {
-  border-color: transparent;
-  background: var(--cs-accent-soft);
-  color: var(--cs-accent-text);
-  box-shadow: none;
-}
+.ui-seg:is(.cs-aspect-seg, .cs-tile-seg) > button[aria-checked="true"] { color: var(--cs-accent-text); }
 .ui-seg.cs-aspect-seg .cs-aspect-box {
   width: 24px;
   height: 20px;
@@ -940,28 +801,6 @@
   gap: 8px;
   color: var(--cs-text);
 }
-.cs-ops {
-  display: flex;
-  gap: 6px;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-.cs-ops button {
-  height: 32px;
-  padding: 0 12px;
-  border: 1px solid var(--cs-line);
-  border-radius: 999px;
-  background: var(--cs-bg);
-  font-size: 12px;
-  font-weight: 500;
-  white-space: nowrap;
-}
-.cs-ops button[aria-checked="true"] {
-  border-color: var(--cs-text);
-  background: var(--cs-text);
-  color: var(--cs-bg);
-}
-
 /* Media slots */
 .cs-frames,
 .cs-refs {
@@ -986,10 +825,10 @@
   width: 100%;
   height: 100%;
   padding: 4px;
-  border: 1px dashed var(--cs-line-strong);
-  border-radius: var(--cs-radius-sm);
-  background: var(--cs-bg);
-  color: var(--cs-muted);
+  border: 1.5px dashed var(--ui-line-strong);
+  border-radius: var(--ui-radius-control);
+  background: var(--ui-input);
+  color: var(--ui-text-muted);
   font-size: 11px;
   font-weight: 500;
   line-height: 1.2;
@@ -1087,19 +926,20 @@
   font-size: 12px;
   line-height: 1.4;
 }
+/* Add tiles share FileDrop's dashed frame. */
 .cs-ref-add {
   display: grid;
   place-items: center;
   width: 64px;
   height: 64px;
-  border: 1px dashed var(--cs-line-strong);
-  border-radius: var(--cs-radius-sm);
-  background: var(--cs-bg);
-  color: var(--cs-muted);
+  border: 1.5px dashed var(--ui-line-strong);
+  border-radius: var(--ui-radius-control);
+  background: var(--ui-input);
+  color: var(--ui-text-muted);
 }
 .cs-ref-add:hover:not(:disabled) {
-  border-color: var(--cs-text);
-  color: var(--cs-text);
+  border-color: var(--ui-text);
+  color: var(--ui-text);
 }
 /* Paste a link as a reference. In side panels the box opens on its own row under the tray;
    in a prompt bar, which sits at the foot of the page, it floats above the tray instead. */
@@ -1108,8 +948,8 @@
 }
 .cs-ref-link[aria-expanded="true"] {
   border-style: solid;
-  border-color: var(--cs-text);
-  color: var(--cs-text);
+  border-color: var(--ui-focus);
+  color: var(--ui-text);
 }
 .cs-ref-linkbox {
   display: flex;
@@ -1162,10 +1002,11 @@
   z-index: 30;
   width: min(360px, calc(100vw - 64px));
   padding: 8px;
-  border: 1px solid var(--cs-line-strong);
-  border-radius: 12px;
-  background: var(--cs-surface);
-  box-shadow: 0 12px 32px rgb(0 0 0 / 0.18);
+  /* The .ui-menu surface. */
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-raised);
+  box-shadow: var(--ui-shadow-lift);
 }
 @keyframes cs-ref-linkbox-in {
   from { opacity: 0; transform: translateY(4px); }
@@ -1198,38 +1039,20 @@
   scrollbar-width: none;
 }
 .cs-providers button {
-  height: 26px;
+  min-height: 28px;
   padding: 0 10px;
-  border: 1px solid var(--cs-line);
-  border-radius: 999px;
-  background: none;
-  font-size: 11px;
-  font-weight: 500;
-  white-space: nowrap;
-}
-.cs-providers button[aria-pressed="true"] {
-  border-color: var(--cs-text);
-  background: var(--cs-text);
-  color: var(--cs-bg);
+  font-size: 12px;
 }
 .cs-model-list {
   overflow-y: auto;
   padding: 6px;
 }
+/* Rows are .ui-menu-item, stacked: name, facts, description. */
 .cs-model {
-  display: flex;
   flex-direction: column;
+  align-items: stretch;
   gap: 2px;
-  width: 100%;
   padding: 10px;
-  border: 0;
-  border-radius: var(--cs-radius-sm);
-  background: none;
-  text-align: left;
-}
-.cs-model:hover,
-.cs-model[aria-selected="true"] {
-  background: var(--cs-sunken);
 }
 .cs-model-name {
   display: flex;
@@ -1319,19 +1142,20 @@
   flex-direction: column;
   gap: 2px;
   padding: 10px 12px;
-  border: 1px solid var(--cs-line);
-  border-radius: var(--cs-radius-sm);
-  background: var(--cs-bg);
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius-control);
+  background: var(--ui-panel);
   text-align: left;
-  transition: border-color 140ms, background-color 140ms;
+  transition: border-color var(--ui-duration) ease, background-color var(--ui-duration) ease;
 }
 .cs-option:hover {
-  border-color: var(--cs-line-strong);
+  border-color: var(--ui-line-strong);
+  background: var(--ui-hover);
 }
+/* Selected option cards follow the chip rule: accent-soft. */
 .cs-option[aria-checked="true"] {
-  border-color: var(--cs-text);
-  background: var(--cs-surface);
-  box-shadow: inset 0 0 0 1px var(--cs-text);
+  border-color: color-mix(in srgb, var(--ui-accent) 70%, transparent);
+  background: var(--ui-accent-soft);
 }
 .cs-option > svg,
 .cs-option > .cs-aspect-box {
@@ -1365,9 +1189,6 @@
   max-width: 1328px;
   margin: 0 auto;
   padding: 16px 24px 0;
-}
-.cs-agent-bar .cs-ops {
-  min-width: 0;
 }
 .cs-agent-name {
   margin: 0;
@@ -2296,11 +2117,8 @@ figure.cs-tile {
 }
 .cs-gen .cs-submit {
   width: 100%;
-  height: 50px;
-  justify-content: center;
-  border-radius: 14px;
+  min-height: 50px;
   font-size: 15px;
-  font-weight: 700;
 }
 .cs-gen .cs-app-tabs {
   max-width: none;
@@ -2310,18 +2128,7 @@ figure.cs-tile {
 .cs-gen .cs-options {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
-.cs-gen .cs-option {
-  border: 0;
-  border-radius: 12px;
-  background: var(--cs-sunken);
-}
-.cs-gen .cs-input {
-  width: 100%;
-  min-height: 46px;
-  border: 0;
-  border-radius: 12px;
-  background: var(--cs-sunken);
-}
+
 /* Uploads become big drop areas; the prompt becomes a card. */
 .cstudio .cs-gen .cs-prompt-row {
   display: flex;
@@ -2342,31 +2149,30 @@ figure.cs-tile {
 }
 .cs-gen .cs-slot-empty {
   gap: 8px;
-  border-radius: 14px;
-  background: var(--cs-sunken);
+  border-radius: var(--ui-radius-control);
+  background: var(--ui-input);
   font-size: 13px;
   font-weight: 600;
 }
 .cs-gen .cs-slot-filled {
-  border-radius: 14px;
+  border-radius: var(--ui-radius-control);
 }
+/* In the column the prompt is a regular field (the .ui-textarea skin). */
 .cs-gen .cs-textarea {
-  width: 100%;
   min-height: 132px;
-  padding: 14px;
-  border: 0;
-  border-radius: 14px;
-  background: var(--cs-sunken);
+  padding: 12px;
+  border: 1px solid var(--ui-line-strong);
+  border-radius: var(--ui-radius-control);
+  background: var(--ui-input);
+  box-shadow: var(--ui-shadow-soft);
   font-size: 14px;
   line-height: 1.5;
   resize: vertical;
+  transition: border-color var(--ui-duration) ease, box-shadow var(--ui-duration) ease;
 }
-.cs-gen .cs-textarea:focus,
-.cs-gen .cs-input:focus {
-  background: color-mix(in srgb, var(--cs-text) 7%, var(--cs-sunken));
-}
-.cs-gen .cs-textarea.cs-lyrics {
-  min-height: 96px;
+.cs-gen .cs-textarea:focus {
+  border-color: var(--ui-focus);
+  box-shadow: 0 0 0 3px var(--ui-ring);
 }
 /* Settings: a grid of tiles, label above value, like Higgsfield's Model and Quality rows. */
 .cs-gen .cs-controls {
@@ -2384,26 +2190,30 @@ figure.cs-tile {
 .cs-gen .cs-chips > :first-child:is(.cs-pop) {
   grid-column: 1 / -1;
 }
-.cs-gen .cs-chip {
+/* Setting rows: the .ui-trigger field skin (label left, value right). */
+.cs-gen .cs-chip,
+.cs-gen .ui-switch.cs-toggle {
   width: 100%;
   max-width: none;
   height: auto;
-  min-height: 52px;
+  min-height: 48px;
   justify-content: flex-start;
   padding: 8px 12px;
-  border: 0;
-  border-radius: 12px !important;
-  background: var(--cs-sunken);
+  border: 1px solid var(--ui-line-strong);
+  border-radius: var(--ui-radius-control) !important;
+  background: var(--ui-input);
+  box-shadow: var(--ui-shadow-soft);
   font-size: 14px;
   font-weight: 600;
 }
-.cs-gen .ui-switch.cs-toggle {
-  height: auto;
-  min-height: 52px;
-  padding: 8px 12px;
-  border: 0;
-  border-radius: 12px;
-  background: var(--cs-sunken);
+.cs-gen .cs-chip:hover:not(:disabled),
+.cs-gen .ui-switch.cs-toggle:hover {
+  border-color: color-mix(in srgb, var(--ui-text) 32%, transparent);
+  background: var(--ui-input);
+}
+.cs-gen .cs-chip[aria-expanded="true"] {
+  border-color: var(--ui-focus);
+  box-shadow: 0 0 0 3px var(--ui-ring);
 }
 .cs-gen .ui-switch.cs-toggle .ui-switch-label {
   font-size: 14px;
@@ -2762,13 +2572,15 @@ figure.cs-tile {
   align-items: stretch;
   gap: 8px;
 }
+/* Setting rows: the .ui-trigger field skin, as in the generator column. */
 .cs-audio-settings .cs-chip {
   min-height: 48px;
   padding: 10px 12px;
-  border: 1px solid var(--cs-line);
-  border-radius: 10px !important;
-  background: var(--cs-surface);
-  font-size: 13px;
+  border: 1px solid var(--ui-line-strong);
+  border-radius: var(--ui-radius-control) !important;
+  background: var(--ui-input);
+  box-shadow: var(--ui-shadow-soft);
+  font-size: 14px;
 }
 .cs-audio-settings .cs-chip-templates {
   display: none;

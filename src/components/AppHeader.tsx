@@ -258,7 +258,7 @@ export function AppHeader({
           </button>
           {signedIn ? <JuelButton /> : null}
           <button type="button" className={`ah-icon ${running ? "is-busy" : ""}`} onClick={onOpenActivity} aria-label={running ? `Background activity, ${running} running` : "Background activity"} title="Background activity">
-            {running ? <Loader2 size={16} className="ah-spin" /> : <Activity size={16} />}
+            {running ? <Loader2 size={16} className="ui-spin" /> : <Activity size={16} />}
             {running ? <span className="ah-count">{running}</span> : null}
           </button>
           <button type="button" className="ah-icon ah-hide-sm" onClick={() => onThemeChange(theme === "dark" ? "light" : "dark")} aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"} title={theme === "dark" ? "Light mode" : "Dark mode"}>

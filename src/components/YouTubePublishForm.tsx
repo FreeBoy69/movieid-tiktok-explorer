@@ -87,8 +87,8 @@ export function PlaylistControl({ modes = ["none", "existing", "create"], mode, 
           <div className="ytp-label-row">
             <span className="ytp-label" id={listId}>Your playlists</span>
             {onRefresh ? (
-              <button type="button" className="ytp-text-button" onClick={onRefresh} disabled={loading}>
-                {loading ? <Loader2 className="ytp-spin" aria-hidden="true" /> : <RefreshCw aria-hidden="true" />}
+              <button type="button" className="ui-btn is-ghost is-sm ytp-text-button" onClick={onRefresh} disabled={loading}>
+                {loading ? <Loader2 className="ui-spin" aria-hidden="true" /> : <RefreshCw aria-hidden="true" />}
                 {loading ? "Loading" : "Refresh"}
               </button>
             ) : null}
@@ -115,7 +115,7 @@ export function PlaylistControl({ modes = ["none", "existing", "create"], mode, 
       {mode === "create" || mode === "auto" ? (
         <label className="ytp-field">
           <span className="ytp-label">{mode === "auto" ? "Fallback playlist name" : "New playlist name"}</span>
-          <input className="ytp-input" value={newTitle} onChange={(event) => onNewTitleChange(event.target.value)} maxLength={150} placeholder={newTitlePlaceholder || (mode === "auto" ? "AutoYT Picks" : "Movie Recaps")} />
+          <input className="ui-input" value={newTitle} onChange={(event) => onNewTitleChange(event.target.value)} maxLength={150} placeholder={newTitlePlaceholder || (mode === "auto" ? "AutoYT Picks" : "Movie Recaps")} />
         </label>
       ) : null}
       {children}
@@ -153,18 +153,18 @@ export function YouTubePublishFields({ theme = "light", title, onTitleChange, ti
       {before}
       <label className="ytp-field">
         <span className="ytp-label-row"><span className="ytp-label">Title</span><span className="ytp-count" data-full={title.length >= 100 || undefined}>{title.length}/100</span></span>
-        <input className="ytp-input" value={title} maxLength={100} onChange={(event) => onTitleChange(event.target.value.slice(0, 100))} placeholder={titlePlaceholder} />
+        <input className="ui-input" value={title} maxLength={100} onChange={(event) => onTitleChange(event.target.value.slice(0, 100))} placeholder={titlePlaceholder} />
       </label>
       {onDescriptionChange ? (
         <label className="ytp-field">
           <span className="ytp-label">Description</span>
-          <textarea className="ytp-input ytp-textarea" rows={5} value={description || ""} onChange={(event) => onDescriptionChange(event.target.value)} placeholder="Description, links, credits" />
+          <textarea className="ui-textarea" rows={5} value={description || ""} onChange={(event) => onDescriptionChange(event.target.value)} placeholder="Description, links, credits" />
         </label>
       ) : null}
       {onTagsChange ? (
         <label className="ytp-field">
           <span className="ytp-label-row"><span className="ytp-label">Tags</span><span className="ytp-count">Comma separated</span></span>
-          <input className="ytp-input" value={tags || ""} onChange={(event) => onTagsChange(event.target.value)} placeholder="movie recap, sci fi, explained" />
+          <input className="ui-input" value={tags || ""} onChange={(event) => onTagsChange(event.target.value)} placeholder="movie recap, sci fi, explained" />
         </label>
       ) : null}
       {onPostAsShortChange ? (

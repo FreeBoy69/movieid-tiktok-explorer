@@ -49,6 +49,8 @@ export const PANELS: { id: PanelId; label: string; short?: string; icon: ReactNo
   { id: "generate", label: "Generate", icon: <Sparkles size={18} /> },
 ];
 
+// Fill the canonical .ui-range track up to the thumb.
+const rangeFill = (value: number, min: number, max: number) => ({ ["--fill" as string]: `${Math.max(0, Math.min(100, ((value - min) / (max - min || 1)) * 100))}%` });
 const fail = (error: unknown) => toast.error((error as Error)?.message || "Something went wrong");
 
 function Section({ title, children, aside }: { title: string; children: ReactNode; aside?: ReactNode }) {
@@ -66,7 +68,7 @@ function Section({ title, children, aside }: { title: string; children: ReactNod
 function Busy({ on, children }: { on: boolean; children: ReactNode }) {
   return on ? (
     <>
-      <Loader2 size={15} className="ve-spin" /> Working…
+      <Loader2 size={15} className="ui-spin" /> Working…
     </>
   ) : (
     <>{children}</>
@@ -130,8 +132,8 @@ function MediaPanel() {
       >
         <Link2 size={15} className="ve-inline-icon" />
         <input value={link} onChange={(e) => setLink(e.target.value)} placeholder="Paste a TikTok, YouTube, or image link" aria-label="Import from a link" />
-        <button type="submit" className="ve-btn ve-btn-quiet" disabled={!link.trim() || importing}>
-          {importing ? <Loader2 size={14} className="ve-spin" /> : "Import"}
+        <button type="submit" className="ui-btn is-sm is-ghost" disabled={!link.trim() || importing}>
+          {importing ? <Loader2 size={14} className="ui-spin" /> : "Import"}
         </button>
       </form>
       <Section title="In this project" aside={<span className="ve-count">{assets.length}</span>}>
@@ -208,13 +210,13 @@ function VoicePanel({ voicesLoading }: { voicesLoading: boolean }) {
         />
       </Section>
       <Section title="Script" aside={<span className="ve-count">{script.trim() ? script.trim().split(/\s+/).length : 0} words</span>}>
-        <textarea className="ve-textarea" rows={6} value={script} onChange={(e) => setScript(e.target.value)} placeholder="Write what the voice says. Each sentence becomes a caption line." />
+        <textarea className="ui-textarea" rows={6} value={script} onChange={(e) => setScript(e.target.value)} placeholder="Write what the voice says. Each sentence becomes a caption line." />
       </Section>
       <Section title="Delivery">
-        <input className="ve-input" value={direction} onChange={(e) => setDirection(e.target.value)} placeholder="How it's said, e.g. warm and unhurried" aria-label="Delivery direction" />
+        <input className="ui-input" value={direction} onChange={(e) => setDirection(e.target.value)} placeholder="How it's said, e.g. warm and unhurried" aria-label="Delivery direction" />
         <div className="ve-chips">
           {DIRECTIONS.map((d) => (
-            <button key={d} type="button" className={`ve-chip${direction === d ? " is-on" : ""}`} onClick={() => setDirection(direction === d ? "" : d)}>
+            <button key={d} type="button" className={`ui-chip${direction === d ? " is-on" : ""}`} onClick={() => setDirection(direction === d ? "" : d)}>
               {d}
             </button>
           ))}
@@ -236,22 +238,22 @@ function VoicePanel({ voicesLoading }: { voicesLoading: boolean }) {
         </div>
       </Section>
       <Section title="Mix">
-        <label className="ve-check">
-          <input type="checkbox" checked={duck} onChange={(e) => setDuck(e.target.checked)} />
+        <label className="ui-check-row">
+          <input type="checkbox" className="ui-check" checked={duck} onChange={(e) => setDuck(e.target.checked)} />
           <span>Lower music under the voice</span>
         </label>
-        <label className="ve-check">
-          <input type="checkbox" checked={captions} onChange={(e) => setCaptions(e.target.checked)} />
+        <label className="ui-check-row">
+          <input type="checkbox" className="ui-check" checked={captions} onChange={(e) => setCaptions(e.target.checked)} />
           <span>Make captions from the script</span>
         </label>
       </Section>
       <div className="ve-actions">
-        <button type="button" className="ve-btn ve-btn-primary" disabled={!script.trim() || Boolean(busy) || !chosen} onClick={() => void run("script")}>
+        <button type="button" className="ui-btn is-sm is-primary" disabled={!script.trim() || Boolean(busy) || !chosen} onClick={() => void run("script")}>
           <Busy on={busy === "script"}>
             <Mic size={15} /> Voice the script
           </Busy>
         </button>
-        <button type="button" className="ve-btn" disabled={!cueCount || Boolean(busy) || !chosen} onClick={() => void run("captions")} title={cueCount ? "Speak each caption at its time" : "Add captions first"}>
+        <button type="button" className="ui-btn is-sm" disabled={!cueCount || Boolean(busy) || !chosen} onClick={() => void run("captions")} title={cueCount ? "Speak each caption at its time" : "Add captions first"}>
           <Busy on={busy === "captions"}>
             <Captions size={15} /> Read captions aloud
           </Busy>
@@ -285,7 +287,7 @@ function CaptionsPanel() {
   return (
     <>
       <div className="ve-actions">
-        <button type="button" className="ve-btn ve-btn-primary" onClick={() => void run()} disabled={busy}>
+        <button type="button" className="ui-btn is-sm is-primary" onClick={() => void run()} disabled={busy}>
           <Busy on={busy}>
             <Wand2 size={15} /> {captions.cues.length ? "Re-caption from speech" : "Auto-caption from speech"}
           </Busy>
@@ -295,21 +297,21 @@ function CaptionsPanel() {
         <CaptionStylePicker value={resolveCaptionStyleId(captions.style)} onChange={pickStyle} hideNone />
       </Section>
       <Section title="Display">
-        <label className="ve-check">
-          <input type="checkbox" checked={captions.show} onChange={(e) => look({ show: e.target.checked })} />
+        <label className="ui-check-row">
+          <input type="checkbox" className="ui-check" checked={captions.show} onChange={(e) => look({ show: e.target.checked })} />
           <span>Show on video</span>
         </label>
-        <label className="ve-check">
-          <input type="checkbox" checked={captions.wordHighlight} onChange={(e) => look({ wordHighlight: e.target.checked })} />
+        <label className="ui-check-row">
+          <input type="checkbox" className="ui-check" checked={captions.wordHighlight} onChange={(e) => look({ wordHighlight: e.target.checked })} />
           <span>Highlight each word as it's spoken</span>
         </label>
         <label className="ve-field">
           <span>Size</span>
-          <input type="range" min={32} max={130} value={Math.round(captions.size ?? captionStyle(captions.style).size)} onChange={(e) => look({ size: Number(e.target.value) })} />
+          <input type="range" className="ui-range" style={rangeFill(captions.size ?? captionStyle(captions.style).size, 32, 130)} min={32} max={130} value={Math.round(captions.size ?? captionStyle(captions.style).size)} onChange={(e) => look({ size: Number(e.target.value) })} />
         </label>
         <label className="ve-field">
           <span>Height</span>
-          <input type="range" min={0.1} max={0.92} step={0.01} value={captions.y ?? captionStyle(captions.style).y} onChange={(e) => look({ y: Number(e.target.value) })} />
+          <input type="range" className="ui-range" style={rangeFill(captions.y ?? captionStyle(captions.style).y, 0.1, 0.92)} min={0.1} max={0.92} step={0.01} value={captions.y ?? captionStyle(captions.style).y} onChange={(e) => look({ y: Number(e.target.value) })} />
         </label>
       </Section>
       <Section title="Lines" aside={<span className="ve-count">{captions.cues.length}</span>}>
@@ -406,7 +408,7 @@ function MotionTitles() {
     <Section title="Motion titles">
       <div className="ve-chips" role="radiogroup" aria-label="Motion title type">
         {Object.keys(MOTION_FIELDS).map((id) => [id, OVERLAY_KINDS[id as keyof typeof OVERLAY_KINDS]] as const).map(([id, item]) => (
-          <button key={id} type="button" role="radio" aria-checked={kind === id} className={`ve-chip${kind === id ? " is-on" : ""}`} onClick={() => { setKind(id); setVars({}); }}>
+          <button key={id} type="button" role="radio" aria-checked={kind === id} className={`ui-chip${kind === id ? " is-on" : ""}`} onClick={() => { setKind(id); setVars({}); }}>
             {item.name}
           </button>
         ))}
@@ -414,14 +416,14 @@ function MotionTitles() {
       {MOTION_FIELDS[kind].map(([key, label]) => (
         <label key={key} className="ve-field">
           <span>{label}</span>
-          <input className="ve-input" value={vars[key] || ""} placeholder={String((overlayExample(kind) as Record<string, string>)[key] || "")} onChange={(e) => setVars((v) => ({ ...v, [key]: e.target.value }))} />
+          <input className="ui-input" value={vars[key] || ""} placeholder={String((overlayExample(kind) as Record<string, string>)[key] || "")} onChange={(e) => setVars((v) => ({ ...v, [key]: e.target.value }))} />
         </label>
       ))}
       <div className="ve-field">
         <span>Style</span>
         <LookPicker value={look} onChange={setLook} />
       </div>
-      <button type="button" className="ve-btn ve-btn-primary ve-btn-block" disabled={!ready || busy} onClick={() => void add()}>
+      <button type="button" className="ui-btn is-sm is-primary is-block" disabled={!ready || busy} onClick={() => void add()}>
         <Busy on={busy}>
           <Sparkles size={15} /> Animate and add at playhead
         </Busy>
@@ -490,12 +492,12 @@ function GeneratePanel() {
         ]}
       />
       <Section title="Describe the shot">
-        <textarea className="ve-textarea" rows={6} value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="A steam train races a cliffside railway at dusk, film grain, wide shot" />
+        <textarea className="ui-textarea" rows={6} value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="A steam train races a cliffside railway at dusk, film grain, wide shot" />
       </Section>
       {kind === "video" ? (
         <label className="ve-field">
           <span>Length</span>
-          <select value={seconds} onChange={(e) => setSeconds(Number(e.target.value))}>
+          <select className="ui-select" value={seconds} onChange={(e) => setSeconds(Number(e.target.value))}>
             <option value={5}>5 seconds</option>
             <option value={10}>10 seconds</option>
           </select>
@@ -505,7 +507,7 @@ function GeneratePanel() {
         Framed {aspect} to match your edit. {kind === "video" ? "Shots take a minute or two; keep editing while it renders." : "Images take a few seconds."} It lands at the end of the video track.
       </p>
       <div className="ve-actions">
-        <button type="button" className="ve-btn ve-btn-primary" disabled={!prompt.trim() || busy} onClick={() => void run()}>
+        <button type="button" className="ui-btn is-sm is-primary" disabled={!prompt.trim() || busy} onClick={() => void run()}>
           <Busy on={busy}>
             <Sparkles size={15} /> Generate {kind === "video" ? "shot" : "image"}
           </Busy>
@@ -633,16 +635,16 @@ function BetterShot({ clipId, note, flagged, set }: { clipId: string; note: stri
       </div>
       <label className="ve-field">
         <span>What should this shot show?</span>
-        <textarea className="ve-textarea" rows={2} value={note} maxLength={400} placeholder="Optional, e.g. Ned at the party, not the street" onChange={(e) => set({ note: e.target.value })} />
+        <textarea className="ui-textarea" rows={2} value={note} maxLength={400} placeholder="Optional, e.g. Ned at the party, not the street" onChange={(e) => set({ note: e.target.value })} />
       </label>
       <label className="ve-prop-row">
         <span>Flag for a better shot</span>
-        <input type="checkbox" checked={flagged} onChange={(e) => set({ flagged: e.target.checked })} />
+        <input type="checkbox" className="ui-check" checked={flagged} onChange={(e) => set({ flagged: e.target.checked })} />
       </label>
-      <button type="button" className="ve-btn" disabled={busy} onClick={() => void one()}>
+      <button type="button" className="ui-btn is-sm" disabled={busy} onClick={() => void one()}>
         {busy ? <Loader2 size={14} className="animate-spin" /> : <Wand2 size={14} />} Find a better shot
       </button>
-      <button type="button" className="ve-btn" disabled={busy} onClick={() => void showRanked()}>
+      <button type="button" className="ui-btn is-sm" disabled={busy} onClick={() => void showRanked()}>
         <Film size={14} /> Show the best shots
       </button>
       {ranked && ranked.clipId === clipId ? (
@@ -664,13 +666,13 @@ function BetterShot({ clipId, note, flagged, set }: { clipId: string; note: stri
                 </span>
                 <span className="ve-shot-desc">{shot.description}</span>
               </span>
-              <button type="button" className="ve-btn ve-shot-use" disabled={busy} onClick={() => void use(shot)}>Use</button>
+              <button type="button" className="ui-btn is-sm ve-shot-use" disabled={busy} onClick={() => void use(shot)}>Use</button>
             </div>
           ))}
         </div>
       ) : null}
       {flaggedIds.length ? (
-        <button type="button" className="ve-btn" disabled={busy} onClick={() => void all()}>
+        <button type="button" className="ui-btn is-sm" disabled={busy} onClick={() => void all()}>
           <Flag size={14} /> Replace all flagged shots ({flaggedIds.length})
         </button>
       ) : null}
@@ -695,7 +697,7 @@ function Slider({ label, value, display, min, max, step, onChange }: { label: st
         {label}
         <output>{display}</output>
       </span>
-      <input type="range" min={min} max={max} step={step} value={value} onChange={(e) => onChange(Number(e.target.value))} />
+      <input type="range" className="ui-range" style={rangeFill(value, min, max)} min={min} max={max} step={step} value={value} onChange={(e) => onChange(Number(e.target.value))} />
     </label>
   );
 }
@@ -727,7 +729,7 @@ function ProjectProps() {
         </label>
         <label className="ve-prop-row">
           <span>Captions on video</span>
-          <input type="checkbox" checked={project.captions.show} onChange={(e) => vibe.commit((p) => setCaptionLook(p, { show: e.target.checked }))} />
+          <input type="checkbox" className="ui-check" checked={project.captions.show} onChange={(e) => vibe.commit((p) => setCaptionLook(p, { show: e.target.checked }))} />
         </label>
       </Group>
       <Group title="Edit">
@@ -753,7 +755,7 @@ export function Inspector() {
           <strong>{selection.length} items</strong>
         </div>
         <p className="ve-hint">Drag any of them on the timeline to move them together, or right-click one for more.</p>
-        <button type="button" className="ve-btn" onClick={() => vibe.commit((p) => deleteItems(p, selection.filter((id) => !isLocked(p, id))))}>
+        <button type="button" className="ui-btn is-sm" onClick={() => vibe.commit((p) => deleteItems(p, selection.filter((id) => !isLocked(p, id))))}>
           <Trash2 size={14} /> Delete {selection.length} items
         </button>
       </div>
@@ -796,7 +798,7 @@ export function Inspector() {
         </Group>
         {text ? (
           <Group title="Text">
-            <textarea className="ve-textarea" rows={2} value={text.text} onChange={(e) => set({ text: e.target.value })} aria-label="Title text" />
+            <textarea className="ui-textarea" rows={2} value={text.text} onChange={(e) => set({ text: e.target.value })} aria-label="Title text" />
             <Segmented
               label="Look"
               block
@@ -824,7 +826,7 @@ export function Inspector() {
         ) : null}
         {cue ? (
           <Group title="Caption">
-            <textarea className="ve-textarea" rows={3} value={cue.text} onChange={(e) => set({ text: e.target.value })} aria-label="Caption text" />
+            <textarea className="ui-textarea" rows={3} value={cue.text} onChange={(e) => set({ text: e.target.value })} aria-label="Caption text" />
             <p className="ve-hint">Style every caption at once in the Captions panel.</p>
           </Group>
         ) : null}
@@ -850,7 +852,7 @@ export function Inspector() {
           <Group title="Color">
             <label className="ve-prop-row">
               <span>Color boost</span>
-              <input type="checkbox" checked={Boolean(clip.grade)} onChange={(e) => set({ grade: e.target.checked ? COLOR_BOOST : null })} />
+              <input type="checkbox" className="ui-check" checked={Boolean(clip.grade)} onChange={(e) => set({ grade: e.target.checked ? COLOR_BOOST : null })} />
             </label>
             {clip.grade ? (
               <>
@@ -866,12 +868,12 @@ export function Inspector() {
           <Group title="Clip audio">
             <label className="ve-prop-row">
               <span>Mute this clip</span>
-              <input type="checkbox" checked={Boolean(clip.muted)} onChange={(e) => set({ muted: e.target.checked })} />
+              <input type="checkbox" className="ui-check" checked={Boolean(clip.muted)} onChange={(e) => set({ muted: e.target.checked })} />
             </label>
             <Slider label="Volume" value={clip.volume ?? 1} display={`${Math.round((clip.volume ?? 1) * 100)}%`} min={0} max={2} step={0.05} onChange={(v) => set({ volume: v, muted: false })} />
             <label className="ve-field">
               <span>Voice treatment</span>
-              <select value={clip.preset || "flat"} onChange={(e) => set({ preset: e.target.value === "flat" ? null : e.target.value })}>
+              <select className="ui-select" value={clip.preset || "flat"} onChange={(e) => set({ preset: e.target.value === "flat" ? null : e.target.value })}>
                 {SOUND_PRESETS.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name}: {p.character}
@@ -891,12 +893,12 @@ export function Inspector() {
             <Group title="Mix">
               <label className="ve-prop-row">
                 <span>Duck other sound under this</span>
-                <input type="checkbox" checked={sound.duck !== undefined} onChange={(e) => set({ duck: e.target.checked ? 0.4 : null })} />
+                <input type="checkbox" className="ui-check" checked={sound.duck !== undefined} onChange={(e) => set({ duck: e.target.checked ? 0.4 : null })} />
               </label>
               {sound.duck !== undefined ? <Slider label="Others drop to" value={sound.duck} display={`${Math.round(sound.duck * 100)}%`} min={0} max={0.9} step={0.05} onChange={(v) => set({ duck: v })} /> : null}
               <label className="ve-field">
                 <span>Voice treatment</span>
-                <select value={sound.preset || "flat"} onChange={(e) => set({ preset: e.target.value === "flat" ? null : e.target.value })}>
+                <select className="ui-select" value={sound.preset || "flat"} onChange={(e) => set({ preset: e.target.value === "flat" ? null : e.target.value })}>
                   {SOUND_PRESETS.map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.name}: {p.character}

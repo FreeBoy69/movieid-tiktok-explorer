@@ -91,7 +91,7 @@ const STEPS: { id: StepId; title: string; detail: string; icon: ReactNode; on: b
 const fail = (error: unknown) => toast.error((error as Error)?.message || "Something went wrong");
 
 function StatusMark({ status, icon }: { status: Status; icon: ReactNode }) {
-  if (status === "running") return <Loader2 size={16} className="ve-spin" aria-label="Running" />;
+  if (status === "running") return <Loader2 size={16} className="ui-spin" aria-label="Running" />;
   if (status === "done") return <Check size={16} aria-label="Done" />;
   if (status === "failed") return <X size={16} aria-label="Failed" />;
   if (status === "skipped") return <Minus size={16} aria-label="Skipped" />;
@@ -186,7 +186,7 @@ export function AutoEditPanel() {
               <li key={step.id} className={`ve-auto-step is-${state}${idle && !picked[step.id] ? " is-off" : ""}`}>
                 {idle ? (
                   <label className="ve-auto-pick">
-                    <input type="checkbox" checked={picked[step.id]} onChange={(e) => setPicked((m) => ({ ...m, [step.id]: e.target.checked }))} />
+                    <input type="checkbox" className="ui-check" checked={picked[step.id]} onChange={(e) => setPicked((m) => ({ ...m, [step.id]: e.target.checked }))} />
                     <span className="ve-auto-mark" aria-hidden="true">{step.icon}</span>
                     <span className="ve-auto-text">
                       <strong>{step.title}</strong>
@@ -209,28 +209,28 @@ export function AutoEditPanel() {
         {idle && picked.music ? (
           <label className="ve-field">
             <span>Music mood</span>
-            <input className="ve-input" value={mood} onChange={(e) => setMood(e.target.value)} placeholder="e.g. upbeat corporate, warm lo-fi" maxLength={60} />
+            <input className="ui-input" value={mood} onChange={(e) => setMood(e.target.value)} placeholder="e.g. upbeat corporate, warm lo-fi" maxLength={60} />
           </label>
         ) : null}
         <div className="ve-actions">
           {running ? (
-            <button type="button" className="ve-btn ve-btn-block" disabled={phase === "stopping"} onClick={() => { stop.current = true; setPhase("stopping"); }}>
+            <button type="button" className="ui-btn is-sm is-block" disabled={phase === "stopping"} onClick={() => { stop.current = true; setPhase("stopping"); }}>
               {phase === "stopping" ? "Stopping after this step…" : "Stop after this step"}
             </button>
           ) : phase === "done" ? (
             <>
-              <button type="button" className="ve-btn ve-btn-primary ve-btn-block" onClick={() => vibe.play(true)}>
+              <button type="button" className="ui-btn is-sm is-primary is-block" onClick={() => vibe.play(true)}>
                 Watch the edit
               </button>
-              <button type="button" className="ve-btn ve-btn-block" onClick={restore}>
+              <button type="button" className="ui-btn is-sm is-block" onClick={restore}>
                 <Undo2 size={15} /> Back to the original
               </button>
-              <button type="button" className="ve-btn ve-btn-quiet ve-btn-block" onClick={() => setPhase("idle")}>
+              <button type="button" className="ui-btn is-sm is-ghost is-block" onClick={() => setPhase("idle")}>
                 Choose steps again
               </button>
             </>
           ) : (
-            <button type="button" className="ve-btn ve-btn-primary ve-btn-lg ve-btn-block" disabled={!hasVideo} onClick={() => void runAll()}>
+            <button type="button" className="ui-btn is-primary is-lg is-block" disabled={!hasVideo} onClick={() => void runAll()}>
               <Wand2 size={16} /> Edit my video
             </button>
           )}
@@ -245,7 +245,7 @@ export function AutoEditPanel() {
         <div className="ve-auto-actions">
           {STEPS.filter((s) => s.id !== "captions").map((step) => (
             <button key={step.id} type="button" className="ve-auto-action" disabled={running || busy !== null || !hasVideo} onClick={() => void one(step.id)}>
-              <span className="ve-auto-mark" aria-hidden="true">{busy === step.id ? <Loader2 size={16} className="ve-spin" /> : step.icon}</span>
+              <span className="ve-auto-mark" aria-hidden="true">{busy === step.id ? <Loader2 size={16} className="ui-spin" /> : step.icon}</span>
               <span className="ve-auto-text">
                 <strong>{step.title}</strong>
                 <small>{step.detail}</small>
@@ -253,7 +253,7 @@ export function AutoEditPanel() {
             </button>
           ))}
           <button type="button" className="ve-auto-action" disabled={running || busy !== null || !hasVideo} onClick={() => (captions.cues.length ? nextStyle() : void one("captions"))}>
-            <span className="ve-auto-mark" aria-hidden="true">{busy === "captions" ? <Loader2 size={16} className="ve-spin" /> : <Captions size={16} />}</span>
+            <span className="ve-auto-mark" aria-hidden="true">{busy === "captions" ? <Loader2 size={16} className="ui-spin" /> : <Captions size={16} />}</span>
             <span className="ve-auto-text">
               <strong>{captions.cues.length ? "Next caption style" : "Add captions"}</strong>
               <small>{captions.cues.length ? "Click again for another look." : "Word-timed captions from the speech."}</small>

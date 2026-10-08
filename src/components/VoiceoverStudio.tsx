@@ -79,7 +79,7 @@ function OutputPlayer({ tracks, title }: { tracks: Track[]; title: string }) {
   useEffect(() => { if (!tracks.some((item) => item.id === trackId)) setTrackId(tracks[0]?.id || ""); }, [tracks, trackId]);
   if (!track) return null;
   const switcher = tracks.length > 1
-    ? <span className="voice-player-tracks" role="tablist" aria-label="Audio track">{tracks.map((item) => <button type="button" role="tab" aria-selected={item.id === track.id} key={item.id} onClick={() => setTrackId(item.id)}>{item.label}</button>)}</span>
+    ? <Segmented size="sm" className="voice-player-tracks" label="Audio track" value={track.id} onChange={setTrackId} options={tracks.map((item) => ({ value: item.id, label: item.label }))} />
     : track.meta || track.label;
   return <AudioPlayer key={track.url} className="voice-output" src={track.url} title={title} meta={switcher} download skip volume />;
 }
@@ -427,12 +427,12 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId, embedded 
   return <div className="voice-workspace voice-studio-app" data-theme={theme}>
     <header className="vs-topbar">
       <div className="vs-topbar-left">
-        {!embedded && <button className="voice-icon" title="Back to tools" aria-label="Back to tools" onClick={() => writeDeepLink({ view: "tools" })}><ArrowLeft size={18} /></button>}
+        {!embedded && <button className="ui-icon-btn is-lg" title="Back to tools" aria-label="Back to tools" onClick={() => writeDeepLink({ view: "tools" })}><ArrowLeft size={18} /></button>}
         <strong className="vs-product">{title}</strong>
         <div className="vs-project-pickers">
           {lockAgent ? null : <SourcePicker compact theme={theme} label="Channel or agent" placeholder="Channel" value={agentId || ""} disabled={submitting} onChange={value => selectSource({ slug: value })} options={agents.map(agent => ({ value: agent.id, label: agent.channelTitle || agent.name, imageUrl: agent.channelThumbnailUrl }))} />}
           <SourcePicker compact theme={theme} label="Source video" placeholder={loading ? "Loading..." : "Video"} value={uploadId || ""} disabled={loading || submitting} onChange={value => selectSource({ slug: agentId, uploadId: value })} options={uploads.map(upload => ({ value: upload.id, label: upload.title || upload.movieTitle || upload.id, imageUrl: upload.thumbnailUrl, kind: "video" }))} />
-          <button className={`voice-icon voice-import ${showImport ? "is-open" : ""}`} aria-label="Import video link" title="Import video link" aria-expanded={showImport} onClick={() => setShowImport(!showImport)}><Plus size={18} /></button>
+          <button className={`ui-icon-btn is-lg is-bordered voice-import ${showImport ? "is-open" : ""}`} aria-label="Import video link" title="Import video link" aria-expanded={showImport} onClick={() => setShowImport(!showImport)}><Plus size={18} /></button>
         </div>
       </div>
       <div className="vs-topbar-center">
@@ -446,18 +446,18 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId, embedded 
             { value: "result", label: "Result", disabled: !outputVideo },
           ]}
         />
-        {selected?.youtubeUrl && <a className="voice-icon" href={selected.youtubeUrl} target="_blank" rel="noreferrer" title="Open original upload" aria-label="Open original upload"><ExternalLink size={16} /></a>}
+        {selected?.youtubeUrl && <a className="ui-icon-btn is-lg" href={selected.youtubeUrl} target="_blank" rel="noreferrer" title="Open original upload" aria-label="Open original upload"><ExternalLink size={16} /></a>}
       </div>
       <div className="vs-topbar-right">
         <span className={`voice-engine ${online ? "is-online" : ""}`}><span />{online === null ? "Connecting" : online ? "Ready" : "Offline"}</span>
-        <button className="voice-icon" title="Refresh voices" aria-label="Refresh voices" onClick={() => void refreshVoices().catch((e) => setError(e.message))}><RefreshCw size={16} /></button>
-        {running && job && <button className="voice-button" onClick={() => void api<{ job: Job }>(`/api/automation/voice/jobs/${job.id}/stop`, {}).then(({ job: next }) => acceptJob(next)).catch((e) => setError(e.message))}><Square size={15} />Stop</button>}
-        {outputVideo && <a className="voice-button" download href={outputVideo}><Download size={16} />Export</a>}
-        <button className="voice-button voice-primary" disabled={!canRender} onClick={() => void run("process")}><WandSparkles size={16} />{renderLabel}</button>
+        <button className="ui-icon-btn is-lg" title="Refresh voices" aria-label="Refresh voices" onClick={() => void refreshVoices().catch((e) => setError(e.message))}><RefreshCw size={16} /></button>
+        {running && job && <button className="ui-btn" onClick={() => void api<{ job: Job }>(`/api/automation/voice/jobs/${job.id}/stop`, {}).then(({ job: next }) => acceptJob(next)).catch((e) => setError(e.message))}><Square size={15} />Stop</button>}
+        {outputVideo && <a className="ui-btn" download href={outputVideo}><Download size={16} />Export</a>}
+        <button className="ui-btn is-primary" disabled={!canRender} onClick={() => void run("process")}><WandSparkles size={16} />{renderLabel}</button>
       </div>
     </header>
 
-    {showImport && <form className="voice-import-form vs-import" onSubmit={(e) => { e.preventDefault(); void importSource(); }}><input type="url" aria-label="Video URL" placeholder="https://youtube.com/watch?v=..." value={sourceUrl} onChange={(e) => setSourceUrl(e.target.value)} required /><button className="voice-button" disabled={!rights || !agentId || submitting}>Import video</button></form>}
+    {showImport && <form className="voice-import-form vs-import" onSubmit={(e) => { e.preventDefault(); void importSource(); }}><input type="url" className="ui-input" aria-label="Video URL" placeholder="https://youtube.com/watch?v=..." value={sourceUrl} onChange={(e) => setSourceUrl(e.target.value)} required /><button className="ui-btn" disabled={!rights || !agentId || submitting}>Import video</button></form>}
     {running && <div className="vs-progress-line" role="status" aria-live="polite"><Progress label="Voiceover progress" value={(job?.progress || 0) / 100} message={`${job?.message || "Working"}${eta > 0 ? ` · ~${duration(eta)} left` : ""}`} /></div>}
 
     <div className="vs-main">
@@ -485,7 +485,7 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId, embedded 
             {selected?.thumbnailUrl ? <img src={selected.thumbnailUrl} alt={selected.title} /> : <span className="voice-stage-glyph"><Film size={28} strokeWidth={1.5} /></span>}
             <strong>{selected ? "Ready to edit" : "Select a video"}</strong>
             <p>{selected ? "Analyze to build the timeline and transcript, then edit in this full studio." : "Pick a channel video above, or import a link."}</p>
-            {selected && <button className="voice-button voice-primary" disabled={running || !rights} onClick={() => void run("prepare")}>{running ? <Loader2 className="voice-spin" size={16} /> : <AudioLines size={16} />}Analyze video</button>}
+            {selected && <button className="ui-btn is-primary" disabled={running || !rights} onClick={() => void run("prepare")}>{running ? <Loader2 className="ui-spin" size={16} /> : <AudioLines size={16} />}Analyze video</button>}
             {selected && !rights && !running && <small>Confirm edit permission in the inspector first.</small>}
           </div>}
           {mode === "subtitles" && subtitles.enabled && (!subtitles.autoPlacement || subtitleEstimate) && playback === "source" && mediaUrl && <div className="voice-subtitle-preview" aria-label="Subtitle placement preview" style={{ width: previewBox.width, height: previewRegion.bandHeight * previewBox.scale, left: previewBox.left, top: previewBox.top + previewRegion.y * previewBox.scale, background: subtitles.treatment === "strip" ? "#000" : "#0006", backdropFilter: subtitles.treatment === "blur" ? "blur(12px)" : undefined }}><span style={{ color: subtitles.color, fontFamily: subtitles.font, fontWeight: subtitles.bold ? 700 : 400, fontStyle: subtitles.italic ? "italic" : "normal", fontSize: previewRegion.fontSize * previewBox.scale, WebkitTextStroke: `${subtitles.outline * previewBox.scale}px #000` }}>{script.split(/\s+/).slice(0, 6).join(" ") || "Your updated voiceover captions"}</span></div>}
@@ -496,8 +496,8 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId, embedded 
             <div className="voice-quality-row">
               <span className={`voice-chip ${playback === "result" ? "is-accent" : ""}`}>{mediaUrl ? (playback === "result" ? "Result preview" : "Source preview") : "No media"}</span>
               {result?.timing && <span className={`voice-chip ${result.timing.passed ? "is-passed" : "is-warn"}`}>{scenes.length || result.timing.sceneCount || 1} scenes</span>}
-              {mediaUrl && <span className="voice-chip is-format">{videoFormat === "portrait" ? "9:16 portrait" : videoFormat === "landscape" ? "16:9 landscape" : "1:1 square"}</span>}
-              {result?.remake && <span className="voice-chip is-accent">{result.remake.layout}{avatarProviders[result.remake.provider || ""]?.label ? ` · ${avatarProviders[result.remake.provider || ""].label}` : ""}</span>}
+              {mediaUrl && <span className="ui-badge voice-chip is-format">{videoFormat === "portrait" ? "9:16 portrait" : videoFormat === "landscape" ? "16:9 landscape" : "1:1 square"}</span>}
+              {result?.remake && <span className="ui-badge voice-chip is-accent">{result.remake.layout}{avatarProviders[result.remake.provider || ""]?.label ? ` · ${avatarProviders[result.remake.provider || ""].label}` : ""}</span>}
             </div>
           </div>
           {tracks.length > 0 ? <OutputPlayer tracks={tracks} title={selected?.title || selected?.movieTitle || "Rendered audio"} /> : null}
@@ -544,23 +544,23 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId, embedded 
             <div className="voice-style-import">
               <label>
                 <span>Learn from channel</span>
-                <input type="url" aria-label="Reference channel URL" value={styleChannelUrl} onChange={(e) => setStyleChannelUrl(e.target.value)} placeholder="youtube.com/@channel" disabled={styleLearning || running} />
+                <input type="url" className="ui-input" aria-label="Reference channel URL" value={styleChannelUrl} onChange={(e) => setStyleChannelUrl(e.target.value)} placeholder="youtube.com/@channel" disabled={styleLearning || running} />
               </label>
-              <button type="button" className="voice-button voice-primary" disabled={!styleChannelUrl || styleLearning || running || !uploadId} onClick={() => void run("style")}>
+              <button type="button" className="ui-btn is-primary" disabled={!styleChannelUrl || styleLearning || running || !uploadId} onClick={() => void run("style")}>
                 <LibraryBig size={16} />{styleLearning ? "Learning…" : "Learn"}
               </button>
             </div>
           </div> : mode === "voiceover" ? <div className="vs-tool">
             <header className="vs-tool-head">
               <h2><FileText size={16} />Script</h2>
-              <button className="voice-button voice-text-button" disabled={!uploadId || !rights || running} onClick={() => void run("prepare")}>
+              <button className="ui-btn is-ghost is-sm voice-text-button" disabled={!uploadId || !rights || running} onClick={() => void run("prepare")}>
                 {script ? <RefreshCw size={14} /> : <AudioLines size={14} />}{script ? "Re-analyze" : "Transcribe"}
               </button>
             </header>
             <textarea className="voice-script" aria-label="Narration script" value={script} onChange={(e) => setScript(e.target.value)} disabled={running} placeholder="Narration…" spellCheck />
             <div className="voice-script-meta">
               <span>{words.toLocaleString()} words</span>
-              <label><input type="checkbox" checked={rewrite} onChange={(e) => setRewrite(e.target.checked)} disabled={running} />Rewrite</label>
+              <label><input type="checkbox" className="ui-check" checked={rewrite} onChange={(e) => setRewrite(e.target.checked)} disabled={running} />Rewrite</label>
             </div>
             <div className="voice-active-style">
               <Sparkles size={14} />
@@ -568,7 +568,7 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId, embedded 
               <button type="button" onClick={() => openTool("style")}>Change</button>
             </div>
             {rewrite && (
-              <button type="button" className="voice-button voice-rewrite-button" disabled={!script.trim() || !uploadId || !rights || running} onClick={() => void run("rewrite")}>
+              <button type="button" className="ui-btn voice-rewrite-button" disabled={!script.trim() || !uploadId || !rights || running} onClick={() => void run("rewrite")}>
                 <Sparkles size={15} />Preview rewrite
               </button>
             )}
@@ -577,15 +577,15 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId, embedded 
                 <span>Voice</span>
                 <VoicePicker voices={voices as VoiceProfile[]} value={profileId} onChange={setProfileId} disabled={running || !online} placeholder="Choose voice" />
               </label>
-              <button className="voice-button voice-clone" title="Clone narrator from this video" disabled={running || !online || !uploadId || !rights || !voiceConsent} onClick={() => void run("clone")}>
+              <button className="ui-btn voice-clone" title="Clone narrator from this video" disabled={running || !online || !uploadId || !rights || !voiceConsent} onClick={() => void run("clone")}>
                 <Mic size={15} />Clone
               </button>
             </div>
             <div className="voice-mix-setting">
-              <label><input type="checkbox" checked={keepBackground} disabled={running} onChange={(e) => setKeepBackground(e.target.checked)} />Keep background</label>
+              <label><input type="checkbox" className="ui-check" checked={keepBackground} disabled={running} onChange={(e) => setKeepBackground(e.target.checked)} />Keep background</label>
               {keepBackground && (
                 <label className="voice-volume">
-                  <input type="range" min="0" max="1" step="0.05" aria-label="Background volume" value={backgroundVolume} disabled={running} onChange={(e) => setBackgroundVolume(Number(e.target.value))} />
+                  <input type="range" className="ui-range" style={{ ["--fill" as string]: `${backgroundVolume * 100}%` }} min="0" max="1" step="0.05" aria-label="Background volume" value={backgroundVolume} disabled={running} onChange={(e) => setBackgroundVolume(Number(e.target.value))} />
                   <output>{Math.round(backgroundVolume * 100)}%</output>
                 </label>
               )}
@@ -602,11 +602,11 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId, embedded 
             >
               <label className="ml-range">
                 <span>Level</span>
-                <input type="range" min="0" max="1" step="0.05" aria-label="Music level" value={backgroundVolume} disabled={running} onChange={(e) => setBackgroundVolume(Number(e.target.value))} />
+                <input type="range" className="ui-range" style={{ ["--fill" as string]: `${backgroundVolume * 100}%` }} min="0" max="1" step="0.05" aria-label="Music level" value={backgroundVolume} disabled={running} onChange={(e) => setBackgroundVolume(Number(e.target.value))} />
                 <output>{Math.round(backgroundVolume * 100)}%</output>
               </label>
               <label className="ml-check">
-                <input type="checkbox" checked={preserveDialogue} onChange={(e) => setPreserveDialogue(e.target.checked)} disabled={running} />
+                <input type="checkbox" className="ui-check" checked={preserveDialogue} onChange={(e) => setPreserveDialogue(e.target.checked)} disabled={running} />
                 Keep dialogue
               </label>
             </MusicLibrary>
@@ -614,13 +614,13 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId, embedded 
             <div className="vs-tool">
               <header className="vs-tool-head"><h2><SlidersHorizontal size={16} />Stems</h2></header>
               <p className="vs-tool-blurb">Export vocals and accompaniment as WAV.</p>
-              <span className="voice-chip">{stemEngine || "Checking engine…"}</span>
+              <span className="ui-badge voice-chip">{stemEngine || "Checking engine…"}</span>
             </div>
           )}
 
           <div className="voice-consents vs-consents">
-            <label><input type="checkbox" checked={rights} onChange={(e) => setRights(e.target.checked)} />Permission to edit this video</label>
-            {(mode === "voiceover" || mode === "avatar") && <label><input type="checkbox" checked={voiceConsent} onChange={(e) => setVoiceConsent(e.target.checked)} />Permission to use this voice</label>}
+            <label><input type="checkbox" className="ui-check" checked={rights} onChange={(e) => setRights(e.target.checked)} />Permission to edit this video</label>
+            {(mode === "voiceover" || mode === "avatar") && <label><input type="checkbox" className="ui-check" checked={voiceConsent} onChange={(e) => setVoiceConsent(e.target.checked)} />Permission to use this voice</label>}
           </div>
           {result?.rewrite?.originalScript && <details className="voice-script-comparison"><summary>Compare scripts</summary><div><section><h3>Original</h3><p>{result.rewrite.originalScript}</p></section><section><h3>Rendered</h3><p>{result.rewrite.rewrittenScript}</p></section></div></details>}
         </div>

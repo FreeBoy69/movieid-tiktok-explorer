@@ -161,12 +161,13 @@ export function MusicLibrary({
         <>
           <form className="ml-search" onSubmit={(e) => { e.preventDefault(); if (query.trim()) void search(query.trim()); }}>
             <SearchField value={query} onChange={setQuery} label="Search music" placeholder="Mood, genre or instrument" size="sm" className="ml-search-field" />
-            <button type="submit" disabled={disabled || loading || !query.trim()}>{loading ? <Loader2 size={14} className="ml-spin" /> : "Search"}</button>
+            <button type="submit" className="ui-btn is-sm" disabled={disabled || loading || !query.trim()}>{loading ? <Loader2 size={14} className="ui-spin" /> : "Search"}</button>
           </form>
           <div className="ml-moods" aria-label="Moods">
             {MOODS.map((item) => (
               <button
                 type="button"
+                className="ui-chip"
                 key={item.id}
                 disabled={disabled}
                 aria-pressed={mood === item.id}
@@ -193,19 +194,19 @@ export function MusicLibrary({
                       </small>
                     </span>
                     {track.landingUrl ? (
-                      <a className="ml-icon" href={track.landingUrl} target="_blank" rel="noreferrer" aria-label={`Source page for ${track.title}`} title="Source and license">
+                      <a className="ui-icon-btn" href={track.landingUrl} target="_blank" rel="noreferrer" aria-label={`Source page for ${track.title}`} title="Source and license">
                         <ExternalLink size={14} />
                       </a>
                     ) : null}
-                    <button type="button" className="ml-use" disabled={disabled || Boolean(using)} aria-pressed={selected} onClick={() => void use(track)}>
-                      {using === track.id ? <Loader2 size={14} className="ml-spin" /> : selected ? <><Check size={14} />In use</> : useLabel}
+                    <button type="button" className={`ui-btn is-sm ml-use${selected ? " is-primary" : ""}`} disabled={disabled || Boolean(using)} aria-pressed={selected} onClick={() => void use(track)}>
+                      {using === track.id ? <Loader2 size={14} className="ui-spin" /> : selected ? <><Check size={14} />In use</> : useLabel}
                     </button>
                   </li>
                 );
               })}
             </ul>
           ) : (
-            <p className="ml-empty">{loading ? <><Loader2 size={14} className="ml-spin" />Finding tracks…</> : searched ? emptyText : "Pick a mood or search. Every track is CC0 or CC BY."}</p>
+            <p className="ml-empty">{loading ? <><Loader2 size={14} className="ui-spin" />Finding tracks…</> : searched ? emptyText : "Pick a mood or search. Every track is CC0 or CC BY."}</p>
           )}
         </>
       ) : library === "pixabay" ? (

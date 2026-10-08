@@ -92,31 +92,31 @@ function Actions({ item, output, handlers, onClose }: { item: Generation; output
     <div className="cs-tile-actions">
       {output && kind === "image" ? (
         <>
-          <button type="button" className="cs-icon" aria-label="Animate in Video Studio" title="Animate in Video Studio" onClick={act(() => { onClose?.(); handlers.onSend("video", "firstFrame", output); })}><Clapperboard className="h-3.5 w-3.5" /></button>
-          <button type="button" className="cs-icon" aria-label="Edit in Magic Edit" title="Edit in Magic Edit" onClick={act(() => { onClose?.(); handlers.onSend("magic-edit", "image", output); })}><Sparkles className="h-3.5 w-3.5" /></button>
-          <button type="button" className="cs-icon" aria-label="Make it talk in Lip Sync" title="Make it talk in Lip Sync" onClick={act(() => { onClose?.(); handlers.onSend("lipsync", "image", output); })}><Mic className="h-3.5 w-3.5" /></button>
+          <button type="button" className="ui-icon-btn cs-icon" aria-label="Animate in Video Studio" title="Animate in Video Studio" onClick={act(() => { onClose?.(); handlers.onSend("video", "firstFrame", output); })}><Clapperboard className="h-3.5 w-3.5" /></button>
+          <button type="button" className="ui-icon-btn cs-icon" aria-label="Edit in Magic Edit" title="Edit in Magic Edit" onClick={act(() => { onClose?.(); handlers.onSend("magic-edit", "image", output); })}><Sparkles className="h-3.5 w-3.5" /></button>
+          <button type="button" className="ui-icon-btn cs-icon" aria-label="Make it talk in Lip Sync" title="Make it talk in Lip Sync" onClick={act(() => { onClose?.(); handlers.onSend("lipsync", "image", output); })}><Mic className="h-3.5 w-3.5" /></button>
         </>
       ) : null}
       {output && kind === "audio" ? (
-        <button type="button" className="cs-icon" aria-label="Use in Lip Sync" title="Use in Lip Sync" onClick={act(() => handlers.onSend("lipsync", "audioFile", output))}><Mic className="h-3.5 w-3.5" /></button>
+        <button type="button" className="ui-icon-btn cs-icon" aria-label="Use in Lip Sync" title="Use in Lip Sync" onClick={act(() => handlers.onSend("lipsync", "audioFile", output))}><Mic className="h-3.5 w-3.5" /></button>
       ) : null}
       {output && item.tab === "vibe-motion" && kind === "html" ? (
-        <button type="button" className="cs-icon" aria-label="Revise this motion graphic" title="Revise" onClick={act(() => { onClose?.(); handlers.onRevise(output.file); })}><PenLine className="h-3.5 w-3.5" /></button>
+        <button type="button" className="ui-icon-btn cs-icon" aria-label="Revise this motion graphic" title="Revise" onClick={act(() => { onClose?.(); handlers.onRevise(output.file); })}><PenLine className="h-3.5 w-3.5" /></button>
       ) : null}
       {output && item.tab === "promo" && item.source ? (
-        <button type="button" className="cs-icon" aria-label="Revise this film" title="Revise" onClick={act(() => { onClose?.(); handlers.onRevise(item.source!.file); })}><PenLine className="h-3.5 w-3.5" /></button>
+        <button type="button" className="ui-icon-btn cs-icon" aria-label="Revise this film" title="Revise" onClick={act(() => { onClose?.(); handlers.onRevise(item.source!.file); })}><PenLine className="h-3.5 w-3.5" /></button>
       ) : null}
       {output && item.tab === "explainer" && item.source ? (
-        <button type="button" className="cs-icon" aria-label="Edit the script" title="Edit the script" onClick={act(() => { onClose?.(); handlers.onRevise(item.source!.file); })}><PenLine className="h-3.5 w-3.5" /></button>
+        <button type="button" className="ui-icon-btn cs-icon" aria-label="Edit the script" title="Edit the script" onClick={act(() => { onClose?.(); handlers.onRevise(item.source!.file); })}><PenLine className="h-3.5 w-3.5" /></button>
       ) : null}
       {output && item.tab === "explainer" && item.captions ? (
-        <a className="cs-icon" href={`${item.captions.url}?download=1`} aria-label="Download captions (SRT)" title="Download captions (SRT)" onClick={(event) => event.stopPropagation()}><Captions className="h-3.5 w-3.5" /></a>
+        <a className="ui-icon-btn cs-icon" href={`${item.captions.url}?download=1`} aria-label="Download captions (SRT)" title="Download captions (SRT)" onClick={(event) => event.stopPropagation()}><Captions className="h-3.5 w-3.5" /></a>
       ) : null}
-      <button type="button" className="cs-icon" aria-label="Reuse settings" title="Reuse settings" onClick={act(() => { onClose?.(); handlers.onReuse(item); })}><RotateCcw className="h-3.5 w-3.5" /></button>
+      <button type="button" className="ui-icon-btn cs-icon" aria-label="Reuse settings" title="Reuse settings" onClick={act(() => { onClose?.(); handlers.onReuse(item); })}><RotateCcw className="h-3.5 w-3.5" /></button>
       {output ? (
-        <a className="cs-icon" href={`${output.url}?download=1`} aria-label="Download" title="Download" onClick={(event) => event.stopPropagation()}><Download className="h-3.5 w-3.5" /></a>
+        <a className="ui-icon-btn cs-icon" href={`${output.url}?download=1`} aria-label="Download" title="Download" onClick={(event) => event.stopPropagation()}><Download className="h-3.5 w-3.5" /></a>
       ) : null}
-      <button type="button" className="cs-icon" aria-label="Delete" title="Delete" onClick={act(() => { onClose?.(); handlers.onDelete(item); })}><Trash2 className="h-3.5 w-3.5" /></button>
+      <button type="button" className="ui-icon-btn cs-icon" aria-label="Delete" title="Delete" onClick={act(() => { onClose?.(); handlers.onDelete(item); })}><Trash2 className="h-3.5 w-3.5" /></button>
     </div>
   );
 }
@@ -224,7 +224,7 @@ function StatusTile({ item, handlers, now }: { item: Generation; handlers: Galle
         </ol>
       ) : null}
       <div className="cs-tile-status-actions">
-        <button type="button" className="cs-ghost" onClick={() => handlers.onStop(item)}><Square className="h-3 w-3" />Stop</button>
+        <button type="button" className="ui-btn is-sm cs-ghost" onClick={() => handlers.onStop(item)}><Square className="h-3 w-3" />Stop</button>
       </div>
     </div>
   );
@@ -260,7 +260,7 @@ export function StudioGallery({ items, now, handlers, extraAudio = [] }: { items
           <div key={clip.id} className="cs-tile cs-tile-audio">
             <AudioPlayer src={clip.url} title={clip.title} meta={clip.meta} download />
             <div className="cs-tile-actions is-static">
-              <button type="button" className="cs-icon" aria-label="Use in Lip Sync" title="Use in Lip Sync" onClick={clip.onLipSync}><Mic className="h-3.5 w-3.5" /></button>
+              <button type="button" className="ui-icon-btn cs-icon" aria-label="Use in Lip Sync" title="Use in Lip Sync" onClick={clip.onLipSync}><Mic className="h-3.5 w-3.5" /></button>
             </div>
           </div>
         ))}
@@ -330,7 +330,7 @@ function GalleryLightbox({ tile, position, handlers, now, onClose, onPrev, onNex
       <aside className="cs-lb-info" onClick={(event) => event.stopPropagation()}>
         <div className="cs-lb-head">
           <span>{position}</span>
-          <button ref={close} type="button" className="cs-icon" onClick={onClose} aria-label="Close preview"><X className="h-4 w-4" /></button>
+          <button ref={close} type="button" className="ui-icon-btn cs-icon" onClick={onClose} aria-label="Close preview"><X className="h-4 w-4" /></button>
         </div>
         {output.title ? <h2>{output.title}</h2> : null}
         {output.caption ? <p className="cs-lb-caption">{output.caption}</p> : null}

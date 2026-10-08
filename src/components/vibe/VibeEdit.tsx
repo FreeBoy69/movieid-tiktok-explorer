@@ -21,7 +21,7 @@ import { Timeline } from "./Timeline";
 import "../../styles/captionFonts.css";
 import "./VibeEdit.css";
 import { confirm } from "../ui/Dialog";
-import { Progress } from "../ui/controls";
+import { Progress, SearchField } from "../ui/controls";
 import { AspectPicker } from "../studio/studioShared";
 import { VideoPlayer } from "../VideoPlayer";
 
@@ -79,10 +79,10 @@ function Home({ onOpen, onCreate }: { onOpen: (id: string) => void; onCreate: (a
         <p>Drop in footage and edit on a timeline, or tell the assistant what you want: captions, a voiceover in any of 30 voices, music under the voice, titles, generated shots.</p>
         <div className="ve-home-start">
           <AspectPicker label="Frame" className="ve-home-frame" value={aspect} onChange={(next) => setAspect(next as VibeAspect)} options={VIBE_ASPECTS.map((a) => ({ value: a.id, label: a.label, hint: a.id }))} />
-          <button type="button" className="ve-btn ve-btn-primary ve-btn-lg" onClick={() => onCreate(aspect)}>
+          <button type="button" className="ui-btn is-primary is-lg" onClick={() => onCreate(aspect)}>
             <Plus size={17} /> New edit
           </button>
-          <button type="button" className="ve-btn ve-btn-lg" onClick={() => input.current?.click()}>
+          <button type="button" className="ui-btn is-lg" onClick={() => input.current?.click()}>
             <Upload size={16} /> Start from footage
           </button>
           <input
@@ -198,8 +198,8 @@ function ExportMenu() {
   const running = phase !== "" || job?.status === "running";
   return (
     <div className="ve-export" ref={box}>
-      <button type="button" className="ve-btn ve-btn-ink" onClick={() => setOpen((o) => !o)} aria-expanded={open} disabled={duration <= 0}>
-        {running ? <Loader2 size={15} className="ve-spin" /> : <Download size={15} />} Export
+      <button type="button" className="ui-btn is-sm is-ink" onClick={() => setOpen((o) => !o)} aria-expanded={open} disabled={duration <= 0}>
+        {running ? <Loader2 size={15} className="ui-spin" /> : <Download size={15} />} Export
       </button>
       {open ? (
         <div className="ve-pop" role="dialog" aria-label="Export">
@@ -228,7 +228,7 @@ function ExportMenu() {
                 message={phase === "frames" ? "Drawing captions and titles…" : "Rendering on the server. You can keep editing; this edit is what exports."}
               />
               {job?.status === "running" ? (
-                <button type="button" className="ve-btn ve-btn-quiet" onClick={() => void stopRender(job.id).then(() => setJob({ ...job, status: "stopped" }))}>
+                <button type="button" className="ui-btn is-sm is-ghost" onClick={() => void stopRender(job.id).then(() => setJob({ ...job, status: "stopped" }))}>
                   <Square size={13} /> Stop
                 </button>
               ) : null}
@@ -237,10 +237,10 @@ function ExportMenu() {
             <div className="ve-done">
               <VideoPlayer src={job.url} label="Exported video" size="fit" className="ve-done-video" />
               <div className="ve-actions">
-                <a className="ve-btn ve-btn-primary" href={`${job.url}?download=1`} download>
+                <a className="ui-btn is-sm is-primary" href={`${job.url}?download=1`} download>
                   <Download size={15} /> Download MP4
                 </a>
-                <button type="button" className="ve-btn" onClick={() => void start()}>
+                <button type="button" className="ui-btn is-sm" onClick={() => void start()}>
                   Export again
                 </button>
               </div>
@@ -248,7 +248,7 @@ function ExportMenu() {
           ) : (
             <>
               {job?.status === "failed" ? <p className="ve-error">{job.error || "The export failed."}</p> : null}
-              <button type="button" className="ve-btn ve-btn-primary ve-btn-block" onClick={() => void start()}>
+              <button type="button" className="ui-btn is-sm is-primary is-block" onClick={() => void start()}>
                 <Film size={15} /> Render MP4
               </button>
             </>
@@ -266,7 +266,7 @@ function StatusStrip() {
   if (!labels.length) return null;
   return (
     <div className="ve-status" role="status">
-      <Loader2 size={14} className="ve-spin" /> {labels[0]}
+      <Loader2 size={14} className="ui-spin" /> {labels[0]}
       {labels.length > 1 ? <span> +{labels.length - 1} more</span> : null}
     </div>
   );
@@ -303,7 +303,7 @@ function ShareButton() {
     }
   };
   return (
-    <button type="button" className="ve-btn ve-btn-outline" onClick={() => void share()}>
+    <button type="button" className="ui-btn is-sm" onClick={() => void share()}>
       {copied ? <Check size={15} /> : <Link2 size={15} />} <span className="ve-label-wide">{copied ? "Link copied" : "Share"}</span>
     </button>
   );
@@ -313,7 +313,7 @@ function SaveBadge() {
   const save = useVibe((s) => s.save);
   return (
     <span className={`ve-save is-${save}`} aria-live="polite">
-      {save === "saving" ? <Loader2 size={12} className="ve-spin" /> : save === "error" ? <CloudOff size={12} /> : save === "saved" ? <Check size={12} /> : null}
+      {save === "saving" ? <Loader2 size={12} className="ui-spin" /> : save === "error" ? <CloudOff size={12} /> : save === "saved" ? <Check size={12} /> : null}
       {save === "saved" ? "Saved" : save === "saving" || save === "dirty" ? "Saving" : "Not saved"}
     </span>
   );
@@ -384,10 +384,7 @@ function Sidebar({ open, onToggle, onAll, onOpenEdit, onNew, children }: { open:
         ) : null}
       </div>
       {open ? (
-        <label className="ve-nav-search">
-          <Search size={15} strokeWidth={1.75} aria-hidden="true" />
-          <input ref={search} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search edits" aria-label="Search edits" spellCheck={false} />
-        </label>
+        <SearchField ref={search} value={query} onChange={setQuery} placeholder="Search edits" size="sm" className="ve-nav-search" />
       ) : (
         <SideItem
           icon={<Search size={18} strokeWidth={1.75} />}
@@ -801,7 +798,7 @@ export default function VibeEdit({ theme, projectId }: { theme: "light" | "dark"
         <Editor onBack={() => void back()} onOpenEdit={(id) => void switchTo(id)} onNew={() => void startNew()} />
       ) : openId ? (
         <div className="ve-loading">
-          <Loader2 size={20} className="ve-spin" /> Opening your edit…
+          <Loader2 size={20} className="ui-spin" /> Opening your edit…
         </div>
       ) : (
         <Home onOpen={open} onCreate={(a, f) => void create(a, f)} />

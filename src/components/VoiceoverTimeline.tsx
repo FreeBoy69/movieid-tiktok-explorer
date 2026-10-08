@@ -84,7 +84,7 @@ export function VoiceoverTimeline({ scenes, playhead, playing, selectedId, disab
         <button className="st-command" onClick={onOpenAvatar} disabled={disabled}><Columns2 size={15} />Split screen</button>
         <button className="st-command" onClick={onOpenMusic} disabled={disabled}><Music2 size={15} />Audio</button>
       </div>
-      <div className="st-zoom"><button className="st-icon" onClick={fit} title="Fit timeline to width" aria-label="Fit timeline to width"><Maximize2 size={15} /></button><input type="range" min="1" max="8" step="0.25" value={zoom} onChange={e => setZoom(Number(e.target.value))} aria-label="Timeline zoom" /><output>{Math.round(zoom * 100)}%</output></div>
+      <div className="st-zoom"><button className="st-icon" onClick={fit} title="Fit timeline to width" aria-label="Fit timeline to width"><Maximize2 size={15} /></button><input type="range" className="ui-range" style={{ ["--fill" as string]: `${((zoom - 1) / 7) * 100}%` }} min="1" max="8" step="0.25" value={zoom} onChange={e => setZoom(Number(e.target.value))} aria-label="Timeline zoom" /><output>{Math.round(zoom * 100)}%</output></div>
     </header>
     <div className="st-body">
       <div className="st-track-heads">

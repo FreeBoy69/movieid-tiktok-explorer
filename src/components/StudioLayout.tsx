@@ -66,7 +66,7 @@ export function StudioLayout<T extends string>({
         ) : null}
         {tabs && tabs.length > 1 && tab !== undefined && onTab ? (
           <div className="sl-tabs-row">
-            <Tabs className="sl-tabs" label={tabsLabel} value={tab} options={tabs} onChange={onTab} />
+            <Tabs className="sl-tabs is-pill" label={tabsLabel} value={tab} options={tabs} onChange={onTab} />
           </div>
         ) : null}
         <div className="sl-panel">{children}</div>
@@ -112,7 +112,7 @@ export function Composer({
 export function SendButton({ disabled, busy, label, type = "button", onClick }: { disabled?: boolean; busy?: boolean; label: string; type?: "button" | "submit"; onClick?: () => void }) {
   return (
     <button type={type} className="sl-send" disabled={disabled} onClick={onClick} aria-label={label} title={label}>
-      {busy ? <Loader2 size={18} className="sl-spin" /> : <ArrowUp size={18} />}
+      {busy ? <Loader2 size={18} className="ui-spin" /> : <ArrowUp size={18} />}
     </button>
   );
 }

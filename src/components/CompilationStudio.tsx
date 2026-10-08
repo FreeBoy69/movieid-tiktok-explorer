@@ -962,25 +962,25 @@ export function CompilationStudio({
   }
 
   return (
-    <div className={cn("relative flex h-full min-h-0 flex-col overflow-hidden bg-[#F9F8F6] text-[#1A1A1A]", !embedded && "workspace-floating-shell")}>
+    <div className={cn("relative flex h-full min-h-0 flex-col overflow-hidden bg-[var(--ui-bg)] text-[var(--ui-text)]", !embedded && "workspace-floating-shell")}>
       {/* ── Top bar ── */}
       <header className={cn(
         "workspace-floating-header min-h-12 gap-2 px-3 py-2 sm:px-4",
         embedded
-          ? "grid grid-cols-1 items-center border-b border-[#1A1A1A]/8 bg-white sm:grid-cols-[auto_minmax(0,1fr)]"
+          ? "grid grid-cols-1 items-center border-b border-[var(--ui-line)] bg-[var(--ui-panel)] sm:grid-cols-[auto_minmax(0,1fr)]"
           : "flex flex-wrap items-stretch sm:items-center",
       )}>
         {backTarget ? (
-          <button type="button" onClick={() => navigateBack(backTarget, "/compile")} className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-lg px-2 text-xs font-black text-[#1A1A1A] transition hover:bg-[#1A1A1A]/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70">
+          <button type="button" onClick={() => navigateBack(backTarget, "/compile")} className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-lg px-2 text-xs font-black text-[var(--ui-text)] transition hover:bg-[var(--ui-text)]/5">
             <ArrowLeft className="h-4 w-4" />
             {compilationBackLabel(backTarget)}
           </button>
         ) : null}
 
         {/* URL/Search toggle */}
-        <div className="inline-flex shrink-0 rounded-lg border border-[#1A1A1A]/8 bg-[#F9F8F6] p-0.5">
-          <button type="button" onClick={() => setSourceMode("url")} className={cn("min-h-10 rounded-md px-3 text-xs font-black transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70", sourceMode === "url" ? "bg-white text-[#1A1A1A] shadow-sm" : "text-[#1A1A1A]/45 hover:text-[#1A1A1A]")} aria-pressed={sourceMode === "url"}>URL</button>
-          <button type="button" onClick={() => setSourceMode("search")} className={cn("min-h-10 rounded-md px-3 text-xs font-black transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70", sourceMode === "search" ? "bg-white text-[#1A1A1A] shadow-sm" : "text-[#1A1A1A]/45 hover:text-[#1A1A1A]")} aria-pressed={sourceMode === "search"}>Search</button>
+        <div className="inline-flex shrink-0 rounded-lg border border-[var(--ui-line)] bg-[var(--ui-bg)] p-0.5">
+          <button type="button" onClick={() => setSourceMode("url")} className={cn("min-h-10 rounded-md px-3 text-xs font-black transition", sourceMode === "url" ? "bg-[var(--ui-panel)] text-[var(--ui-text)] shadow-sm" : "text-[var(--ui-text)]/45 hover:text-[var(--ui-text)]")} aria-pressed={sourceMode === "url"}>URL</button>
+          <button type="button" onClick={() => setSourceMode("search")} className={cn("min-h-10 rounded-md px-3 text-xs font-black transition", sourceMode === "search" ? "bg-[var(--ui-panel)] text-[var(--ui-text)] shadow-sm" : "text-[var(--ui-text)]/45 hover:text-[var(--ui-text)]")} aria-pressed={sourceMode === "search"}>Search</button>
         </div>
 
         {/* URL input — takes remaining space */}
@@ -991,12 +991,12 @@ export function CompilationStudio({
             : "flex flex-1 flex-wrap sm:flex-nowrap",
         )}>
           <label className={cn("relative min-w-0", !embedded && "min-w-[min(100%,14rem)] flex-1", embedded && "col-span-2 sm:col-span-1")}>
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#1A1A1A]/35" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--ui-text)]/35" />
             <input
               value={url}
               onChange={(event) => setUrl(event.target.value)}
               placeholder={sourceMode === "search" ? "Type a TikTok search term, e.g. anime recap" : "Paste TikTok playlist, channel, search, or collection URL"}
-              className="h-11 w-full rounded-lg border border-[#1A1A1A]/10 bg-[#F9F8F6] pl-9 pr-4 text-sm font-semibold outline-none transition focus:border-[#f9dc0b] focus:ring-2 focus:ring-[#f9dc0b]/20"
+              className="h-11 w-full rounded-lg border border-[var(--ui-line)] bg-[var(--ui-bg)] pl-9 pr-4 text-sm font-semibold outline-none transition focus:border-[var(--ui-accent)]"
             />
           </label>
           <label className="relative shrink-0">
@@ -1004,13 +1004,13 @@ export function CompilationStudio({
             <input
               type="number" min={1} max={5000} value={count}
               onChange={(event) => setCount(Number(event.target.value))}
-              className="h-11 w-20 rounded-lg border border-[#1A1A1A]/10 bg-[#F9F8F6] px-3 text-sm font-bold outline-none focus:border-[#f9dc0b] focus:ring-2 focus:ring-[#f9dc0b]/20"
+              className="h-11 w-20 rounded-lg border border-[var(--ui-line)] bg-[var(--ui-bg)] px-3 text-sm font-bold outline-none focus:border-[var(--ui-accent)]"
               aria-label="Clip count"
               title="Maximum clips to load"
             />
           </label>
-          <button type="submit" disabled={loading || !url.trim()} className={cn("inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-lg bg-[#f9dc0b] px-4 text-xs font-black text-[#1A1A1A] shadow-sm transition hover:bg-[#1A1A1A] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70 disabled:opacity-50", embedded && "min-w-28")}>
-            {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+          <button type="submit" disabled={loading || !url.trim()} className={cn("inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-lg bg-[var(--ui-accent)] px-4 text-xs font-black text-[var(--ui-accent-ink)] shadow-sm transition hover:bg-[var(--ui-text)] hover:text-[var(--ui-panel)] disabled:opacity-50", embedded && "min-w-28")}>
+            {loading ? <Loader2 className="h-3.5 w-3.5 ui-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
             {sourceMode === "search" ? "Search" : "Load clips"}
           </button>
         </form>
@@ -1028,11 +1028,11 @@ export function CompilationStudio({
 
       {/* Status bar */}
       {(notice || metadataLoading || (jobMessage && processing) || downloadUrl) ? (
-        <div className="flex flex-wrap items-center gap-2 border-b border-[#1A1A1A]/8 bg-white px-4 py-2 text-xs font-bold">
-          {notice ? <span className="rounded-lg bg-[#fff9d6] px-3 py-1.5 text-[#6a5b00]">{notice}</span> : null}
-          {jobMessage && processing ? <span className="inline-flex items-center gap-2 rounded-lg bg-[#f9dc0b]/15 px-3 py-1.5 text-[#1A1A1A]/75"><Loader2 className="h-3.5 w-3.5 animate-spin" />{jobMessage}</span> : null}
-          {metadataLoading ? <span className="inline-flex items-center gap-2 text-[#1A1A1A]/45"><Loader2 className="h-3.5 w-3.5 animate-spin" />Updating views and durations</span> : null}
-          {downloadUrl ? <a href={downloadUrl} className="rounded-lg bg-[#1A1A1A] px-3 py-1.5 text-white">Download compilation</a> : null}
+        <div className="flex flex-wrap items-center gap-2 border-b border-[var(--ui-line)] bg-[var(--ui-panel)] px-4 py-2 text-xs font-bold">
+          {notice ? <span className="rounded-lg bg-[var(--ui-accent-soft)] px-3 py-1.5 text-[var(--ui-accent-text)]">{notice}</span> : null}
+          {jobMessage && processing ? <span className="inline-flex items-center gap-2 rounded-lg bg-[var(--ui-accent)]/15 px-3 py-1.5 text-[var(--ui-text)]/75"><Loader2 className="h-3.5 w-3.5 ui-spin" />{jobMessage}</span> : null}
+          {metadataLoading ? <span className="inline-flex items-center gap-2 text-[var(--ui-text)]/45"><Loader2 className="h-3.5 w-3.5 ui-spin" />Updating views and durations</span> : null}
+          {downloadUrl ? <a href={downloadUrl} className="ui-btn is-ink">Download compilation</a> : null}
         </div>
       ) : null}
 
@@ -1051,21 +1051,21 @@ export function CompilationStudio({
               {/* Source header + controls */}
               <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div className="min-w-0">
-                  <p className="text-[11px] font-bold uppercase tracking-widest text-[#f9dc0b]">{playlist.author || "Source"}</p>
-                  <h2 className="truncate text-lg font-black text-[#1A1A1A]">{playlist.title || "Selected source"}</h2>
+                  <p className="text-[11px] font-bold uppercase tracking-widest text-[var(--ui-accent-text)]">{playlist.author || "Source"}</p>
+                  <h2 className="truncate text-lg font-black text-[var(--ui-text)]">{playlist.title || "Selected source"}</h2>
                 </div>
                 <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap">
-                  <select value={sort} onChange={(event) => changeSort(event.target.value as SortMode)} className="col-span-2 h-11 min-w-0 rounded-lg border border-[#1A1A1A]/10 bg-white px-3 text-xs font-bold outline-none focus:border-[#f9dc0b] focus:ring-2 focus:ring-[#f9dc0b]/20 sm:col-span-1">
+                  <select value={sort} onChange={(event) => changeSort(event.target.value as SortMode)} className="col-span-2 h-11 min-w-0 rounded-lg border border-[var(--ui-line)] bg-[var(--ui-panel)] px-3 text-xs font-bold outline-none focus:border-[var(--ui-accent)] sm:col-span-1">
                     <option value="views">Views high to low</option>
                     <option value="newest">Newest first</option>
                     <option value="oldest">Oldest first</option>
                     <option value="length">Longest first</option>
                   </select>
-                  <button type="button" onClick={selectUntilTarget} className="inline-flex h-11 items-center gap-2 rounded-lg bg-[#f9dc0b] px-4 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70">
+                  <button type="button" onClick={selectUntilTarget} className="ui-btn is-primary">
                     <Sparkles className="h-4 w-4" />
                     Auto-select
                   </button>
-                  <button type="button" onClick={() => setSelectedIds(new Set())} className="inline-flex h-11 items-center rounded-lg border border-[#1A1A1A]/10 bg-white px-4 text-xs font-bold text-[#1A1A1A]/60 transition hover:text-[#1A1A1A] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70">
+                  <button type="button" onClick={() => setSelectedIds(new Set())} className="ui-btn">
                     Clear
                   </button>
                 </div>
@@ -1087,13 +1087,13 @@ export function CompilationStudio({
                       }}
                       meta={`${compact(videoViews(video))} views / ${compact(video.stats?.commentCount)} comments / ${formatDuration(durationSeconds(video))}`}
                       imageUrl={video.dynamicCover}
-                      fallback={<div className="grid h-full w-full place-items-center text-[#f9dc0b]"><Film className="h-8 w-8" /></div>}
+                      fallback={<div className="grid h-full w-full place-items-center text-[var(--ui-accent-text)]"><Film className="h-8 w-8" /></div>}
                       onOpen={() => openPreview(video)}
                       badge={selected ? "Selected" : formatDuration(durationSeconds(video))}
                       topRight={<label className="grid h-11 w-11 place-items-center rounded-lg bg-black/65 text-white shadow-md ring-1 ring-white/20 backdrop-blur-sm" onClick={(event) => event.stopPropagation()} title="Add to compilation">
-                          <input type="checkbox" checked={selected} onChange={() => toggleClip(video)} className="h-4 w-4 accent-[#f9dc0b]" aria-label="Add clip to compilation" />
+                          <input type="checkbox" checked={selected} onChange={() => toggleClip(video)} className="ui-check" aria-label="Add clip to compilation" />
                         </label>}
-                      className={selected ? "ring-2 ring-[#f9dc0b]" : undefined}
+                      className={selected ? "ring-2 ring-[var(--ui-accent)]" : undefined}
                     />
                   );
                 })}
@@ -1101,28 +1101,28 @@ export function CompilationStudio({
               {loadedSearchUrl ? (
                 <div className="flex flex-col items-center gap-2 pb-4 pt-10">
                   {playlist.videos.length < count ? (
-                    <button type="button" onClick={() => void loadMoreSearchResults()} disabled={loadingMore} className="inline-flex h-11 items-center gap-2 rounded-lg bg-[#f9dc0b] px-5 text-xs font-black text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white disabled:opacity-50">
-                      {loadingMore ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                    <button type="button" onClick={() => void loadMoreSearchResults()} disabled={loadingMore} className="ui-btn is-primary">
+                      {loadingMore ? <Loader2 className="h-4 w-4 ui-spin" /> : <RefreshCw className="h-4 w-4" />}
                       Load {Math.min(SEARCH_PAGE_SIZE, count - playlist.videos.length)} more
                     </button>
                   ) : null}
-                  <p className="text-[11px] font-bold text-[#1A1A1A]/35">{playlist.videos.length} of {count} clips loaded</p>
+                  <p className="text-[11px] font-bold text-[var(--ui-text)]/35">{playlist.videos.length} of {count} clips loaded</p>
                 </div>
               ) : null}
             </>
           ) : (
             <div className="flex h-full min-h-[340px] flex-col items-center justify-center gap-4 text-center">
-              <div className="grid h-14 w-14 place-items-center rounded-2xl bg-[#f9dc0b]/10 text-[#f9dc0b]"><Clock3 className="h-6 w-6" /></div>
+              <div className="grid h-14 w-14 place-items-center rounded-2xl bg-[var(--ui-accent)]/10 text-[var(--ui-accent-text)]"><Clock3 className="h-6 w-6" /></div>
               <div>
-                <h2 className="font-serif text-lg font-bold text-[#1A1A1A]">Load a source to start selecting clips.</h2>
-                <p className="mt-1 text-sm text-[#1A1A1A]/45">Paste a URL or search above.</p>
+                <h2 className="font-serif text-lg font-bold text-[var(--ui-text)]">Load a source to start selecting clips.</h2>
+                <p className="mt-1 text-sm text-[var(--ui-text)]/45">Paste a URL or search above.</p>
               </div>
             </div>
           )}
         </main>
 
         <aside className={cn(
-          "order-first min-h-0 overflow-visible border-b border-[#1A1A1A]/8 bg-white px-4 py-4",
+          "order-first min-h-0 overflow-visible border-b border-[var(--ui-line)] bg-[var(--ui-panel)] px-4 py-4",
           embedded
             ? "min-[1120px]:order-none min-[1120px]:overflow-y-auto min-[1120px]:border-b-0 min-[1120px]:border-l"
             : "lg:order-none lg:overflow-y-auto lg:border-b-0 lg:border-l",
@@ -1137,7 +1137,7 @@ export function CompilationStudio({
                     max={240}
                     value={minMinutes}
                     onChange={(event) => setMinMinutes(event.target.value === "" ? "" : Number(event.target.value))}
-                    className="input bg-white"
+                    className="ui-input"
                     placeholder="Min"
                   />
                 </Field>
@@ -1148,7 +1148,7 @@ export function CompilationStudio({
                     max={300}
                     value={maxMinutes}
                     onChange={(event) => setMaxMinutes(event.target.value === "" ? "" : Number(event.target.value))}
-                    className="input bg-white"
+                    className="ui-input"
                     placeholder="Max"
                   />
                 </Field>
@@ -1157,7 +1157,7 @@ export function CompilationStudio({
                 <OrientationPicker label="Format" value={layout} onChange={setLayout} />
               </Field>
             </div>
-            <div className="grid gap-4 border-t border-[#1A1A1A]/8 pt-5">
+            <div className="grid gap-4 border-t border-[var(--ui-line)] pt-5">
               <SectionTitle icon={<Youtube className="h-4 w-4" />} title="Upload details" />
               <Field label="Channel">
                 <SourcePicker label="Channel" value={accountId} onChange={value => { setAccountId(value); void loadPlaylists(value); }} options={auth.accounts.map(item => ({ value: item.id, label: item.channelTitle, imageUrl: item.thumbnailUrl }))} />
@@ -1182,12 +1182,12 @@ export function CompilationStudio({
                 }}
               />
             </div>
-            <label className="flex items-start gap-3 rounded-lg border border-[#f9dc0b]/70 bg-[#f9dc0b]/15 p-3 text-xs font-bold leading-5 text-[#1A1A1A]/75">
-              <input type="checkbox" checked={rightsConfirmed} onChange={(event) => setRightsConfirmed(event.target.checked)} className="mt-1 h-4 w-4 shrink-0 accent-[#f9dc0b]" />
+            <label className="flex items-start gap-3 rounded-lg border border-[var(--ui-accent)]/70 bg-[var(--ui-accent)]/15 p-3 text-xs font-bold leading-5 text-[var(--ui-text)]/75">
+              <input type="checkbox" checked={rightsConfirmed} onChange={(event) => setRightsConfirmed(event.target.checked)} className="ui-check mt-1 shrink-0" />
               I have rights or permission to compile and upload these clips.
             </label>
-            <button type="button" onClick={createCompilation} disabled={processing || !selectedVideos.length || !rightsConfirmed} className="inline-flex h-12 items-center justify-center gap-2 rounded-lg bg-[#f9dc0b] px-5 text-xs font-black text-[#1A1A1A] shadow-sm transition hover:bg-[#1A1A1A] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70 disabled:opacity-45">
-              {processing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+            <button type="button" onClick={createCompilation} disabled={processing || !selectedVideos.length || !rightsConfirmed} className="ui-btn is-primary is-lg">
+              {processing ? <Loader2 className="h-4 w-4 ui-spin" /> : <Play className="h-4 w-4" />}
               Create and upload
             </button>
           </div>
@@ -1199,9 +1199,9 @@ export function CompilationStudio({
 
 function MiniStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex h-9 min-w-0 flex-col justify-center rounded-lg bg-[#F9F8F6] px-2 sm:min-w-[84px] sm:px-3">
-      <p className="text-[9px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">{label}</p>
-      <p className="text-sm font-black leading-tight text-[#1A1A1A]">{value}</p>
+    <div className="flex h-9 min-w-0 flex-col justify-center rounded-lg bg-[var(--ui-bg)] px-2 sm:min-w-[84px] sm:px-3">
+      <p className="text-[9px] font-bold uppercase tracking-widest text-[var(--ui-text)]/35">{label}</p>
+      <p className="text-sm font-black leading-tight text-[var(--ui-text)]">{value}</p>
     </div>
   );
 }
@@ -1209,7 +1209,7 @@ function MiniStat({ label, value }: { label: string; value: string }) {
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="block min-w-0">
-      <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-[#1A1A1A]/40">{label}</span>
+      <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-widest text-[var(--ui-text)]/40">{label}</span>
       {children}
     </label>
   );
@@ -1218,8 +1218,8 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 function SectionTitle({ icon, title }: { icon: React.ReactNode; title: string }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="grid h-8 w-8 place-items-center rounded-lg bg-[#f9dc0b]/10 text-[#f9dc0b]">{icon}</span>
-      <h3 className="text-sm font-black text-[#1A1A1A]">{title}</h3>
+      <span className="grid h-8 w-8 place-items-center rounded-lg bg-[var(--ui-accent)]/10 text-[var(--ui-accent-text)]">{icon}</span>
+      <h3 className="text-sm font-black text-[var(--ui-text)]">{title}</h3>
     </div>
   );
 }
@@ -1249,24 +1249,24 @@ function CompilationPreview({
 }) {
   const postContent = (
     <div className="grid min-w-0 items-start gap-5 overflow-x-clip lg:grid-cols-[minmax(170px,260px)_minmax(0,1fr)]">
-      <div className="relative mx-auto aspect-[9/16] max-h-[72vh] w-full max-w-[260px] overflow-hidden rounded-2xl border border-[#1A1A1A]/10 bg-black shadow-2xl">
+      <div className="relative mx-auto aspect-[9/16] max-h-[72vh] w-full max-w-[260px] overflow-hidden rounded-2xl border border-[var(--ui-line)] bg-black shadow-2xl">
         <CleanTikTokVideo video={video} onError={onPreviewError} />
       </div>
-      <div className="min-w-0 space-y-5 rounded-2xl border border-[#1A1A1A]/8 bg-[#FDFCFA] p-4">
+      <div className="min-w-0 space-y-5 rounded-2xl border border-[var(--ui-line)] bg-[var(--ui-panel)] p-4">
         <div>
-          <button type="button" onClick={onOpenChannel} className="inline-flex items-center gap-2 text-xs font-bold text-[#f9dc0b] underline-offset-2 hover:underline">
+          <button type="button" onClick={onOpenChannel} className="inline-flex items-center gap-2 text-xs font-bold text-[var(--ui-accent-text)] underline-offset-2 hover:underline">
             <User className="h-3.5 w-3.5" />
             {video.authorHandle || video.author || "Open creator"}
           </button>
-          <h2 className="mt-2 break-words font-serif text-xl font-bold leading-snug text-[#1A1A1A] sm:text-2xl">{video.title || "Untitled clip"}</h2>
+          <h2 className="mt-2 break-words font-serif text-xl font-bold leading-snug text-[var(--ui-text)] sm:text-2xl">{video.title || "Untitled clip"}</h2>
           {durationSeconds(video) ? (
-            <p className="mt-2 inline-flex w-fit items-center gap-1.5 rounded-full bg-[#1A1A1A]/5 px-3 py-1 text-xs font-bold text-[#1A1A1A]/55">
+            <p className="mt-2 inline-flex w-fit items-center gap-1.5 rounded-full bg-[var(--ui-text)]/5 px-3 py-1 text-xs font-bold text-[var(--ui-text)]/55">
               <Clock3 className="h-3.5 w-3.5" />
               {formatDuration(durationSeconds(video))}
             </p>
           ) : null}
         </div>
-        <div className="grid grid-cols-2 gap-3 border-t border-[#1A1A1A]/5 pt-5 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 border-t border-[var(--ui-line)] pt-5 sm:grid-cols-4">
           <StatItem icon={<Heart className="h-5 w-5" />} label="Likes" value={video.stats?.diggCount || 0} />
           <StatItem icon={<MessageCircle className="h-5 w-5" />} label="Comments" value={video.stats?.commentCount || 0} />
           <StatItem icon={<Share2 className="h-5 w-5" />} label="Shares" value={video.stats?.shareCount || 0} />
@@ -1277,22 +1277,22 @@ function CompilationPreview({
   );
 
   return (
-    <section className="workspace-floating-shell relative flex h-full min-h-0 flex-col overflow-hidden bg-white text-[#1A1A1A]">
+    <section className="workspace-floating-shell relative flex h-full min-h-0 flex-col overflow-hidden bg-[var(--ui-panel)] text-[var(--ui-text)]">
       <header className="workspace-floating-header flex min-h-12 flex-col gap-3 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex min-w-0 items-center gap-3">
-          <button type="button" onClick={onBack} className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-lg px-2 text-[#1A1A1A]/55 transition hover:bg-[#F3F4F6] hover:text-[#1A1A1A] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70" aria-label="Back to clips">
+          <button type="button" onClick={onBack} className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-lg px-2 text-[var(--ui-text)]/55 transition hover:bg-[var(--ui-bg)] hover:text-[var(--ui-text)]" aria-label="Back to clips">
             <ArrowLeft className="h-4 w-4" />
             <span className="hidden text-xs font-black sm:inline">Back to clips</span>
           </button>
-          <Scissors className="h-4 w-4 text-[#1A1A1A]/45" />
+          <Scissors className="h-4 w-4 text-[var(--ui-text)]/45" />
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <label className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-[#1A1A1A]/10 bg-white px-3 text-xs font-black text-[#1A1A1A]/65">
-            <input type="checkbox" checked={selected} onChange={() => onToggle()} className="h-4 w-4 accent-[#f9dc0b]" />
+          <label className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-[var(--ui-line)] bg-[var(--ui-panel)] px-3 text-xs font-black text-[var(--ui-text)]/65">
+            <input type="checkbox" checked={selected} onChange={() => onToggle()} className="ui-check" />
             Add to compilation
           </label>
-          <button type="button" onClick={onAnalyze} disabled={analyzing} className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-[#f9dc0b] px-4 text-xs font-black text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70 disabled:opacity-60">
-            {analyzing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
+          <button type="button" onClick={onAnalyze} disabled={analyzing} className="ui-btn is-primary">
+            {analyzing ? <Loader2 className="h-4 w-4 ui-spin" /> : <Zap className="h-4 w-4" />}
             {analysis ? "Re-analyze" : "Analyze clip"}
           </button>
         </div>
@@ -1349,14 +1349,14 @@ function CleanTikTokVideo({ video, onError }: { video: TikTokVideo; onError: (me
 
   if (loading) {
     return (
-      <div className="grid h-full w-full place-items-center bg-[#1A1A1A] text-white">
-        <Loader2 className="h-7 w-7 animate-spin" />
+      <div className="grid h-full w-full place-items-center bg-[var(--ui-text)] text-[var(--ui-panel)]">
+        <Loader2 className="h-7 w-7 ui-spin" />
       </div>
     );
   }
 
   if (!src) {
-    return video.dynamicCover ? <img src={video.dynamicCover} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" /> : <div className="grid h-full w-full place-items-center bg-[#1A1A1A] text-white"><Film className="h-8 w-8" /></div>;
+    return video.dynamicCover ? <img src={video.dynamicCover} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" /> : <div className="grid h-full w-full place-items-center bg-[var(--ui-text)] text-[var(--ui-panel)]"><Film className="h-8 w-8" /></div>;
   }
 
   return <VideoPlayer src={src} poster={video.dynamicCover || undefined} fit="cover" className="h-full w-full" style={{ height: "100%", borderRadius: 0 }} label="Source video" />;
@@ -1364,21 +1364,21 @@ function CleanTikTokVideo({ video, onError }: { video: TikTokVideo; onError: (me
 
 function LockedAnalysisTabs({ postContent, loading, error }: { postContent: ReactNode; loading: boolean; error: string }) {
   return (
-    <div className="overflow-hidden rounded-2xl border border-[#1A1A1A]/8 bg-white shadow-sm">
-      <div className="flex gap-2 overflow-x-auto border-b border-[#1A1A1A]/8 px-3 pt-3">
+    <div className="overflow-hidden rounded-2xl border border-[var(--ui-line)] bg-[var(--ui-panel)] shadow-sm">
+      <div className="flex gap-2 overflow-x-auto border-b border-[var(--ui-line)] px-3 pt-3">
         {["Post", "Movie ID", "SEO", "Script", "Comments"].map((item, index) => (
-          <button key={item} type="button" disabled className={cn("shrink-0 border-b-2 px-3 py-3 text-xs font-black", index === 0 ? "border-[#f9dc0b] text-[#1A1A1A]" : "border-transparent text-[#1A1A1A]/35")}>
+          <button key={item} type="button" disabled className={cn("shrink-0 border-b-2 px-3 py-3 text-xs font-black", index === 0 ? "border-[var(--ui-accent)] text-[var(--ui-text)]" : "border-transparent text-[var(--ui-text)]/35")}>
             {item}
           </button>
         ))}
       </div>
       <div className="space-y-4 p-4">
         {postContent}
-        <div className={cn("rounded-2xl border p-4 text-sm font-bold", error ? "border-[#f9dc0b]/35 bg-[#fff9d6] text-[#6a5b00]" : "border-[#f9dc0b]/60 bg-[#f9dc0b]/15 text-[#1A1A1A]/70")}>
+        <div className={cn("rounded-2xl border p-4 text-sm font-bold", error ? "border-[var(--ui-accent)]/35 bg-[var(--ui-accent-soft)] text-[var(--ui-accent-text)]" : "border-[var(--ui-accent)]/60 bg-[var(--ui-accent)]/15 text-[var(--ui-text)]/70")}>
           {error ? (
             <span className="inline-flex items-center gap-2"><AlertCircle className="h-4 w-4" />{error}</span>
           ) : loading ? (
-            <span className="inline-flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" />Analyzing this clip</span>
+            <span className="inline-flex items-center gap-2"><Loader2 className="h-4 w-4 ui-spin" />Analyzing this clip</span>
           ) : (
             <span className="inline-flex items-center gap-2"><Zap className="h-4 w-4" />Analyze this clip to unlock the same Movie ID tabs used in TikTok Explorer.</span>
           )}
@@ -1390,10 +1390,10 @@ function LockedAnalysisTabs({ postContent, loading, error }: { postContent: Reac
 
 function StatItem({ icon, label, value }: { icon: ReactNode; label: string; value: number }) {
   return (
-    <div className="rounded-xl bg-white p-3">
-      <div className="text-[#f9dc0b]">{icon}</div>
-      <p className="mt-2 text-[10px] font-black uppercase tracking-widest text-[#1A1A1A]/35">{label}</p>
-      <p className="mt-1 text-sm font-black text-[#1A1A1A]">{compact(value)}</p>
+    <div className="rounded-xl bg-[var(--ui-panel)] p-3">
+      <div className="text-[var(--ui-accent-text)]">{icon}</div>
+      <p className="mt-2 text-[10px] font-black uppercase tracking-widest text-[var(--ui-text)]/35">{label}</p>
+      <p className="mt-1 text-sm font-black text-[var(--ui-text)]">{compact(value)}</p>
     </div>
   );
 }

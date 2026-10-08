@@ -92,7 +92,7 @@ export function SourcePicker({ options, value, onChange, label = "Source", place
       }}>
       <div className="source-picker-modal-head">
         <div className="source-picker-modal-title"><span className="source-picker-modal-icon"><Layers3 size={16} /></span><strong id={`${id}-title`}>{label}</strong></div>
-        <div className="source-picker-modal-actions"><span>{modalMeta}</span><button type="button" className="source-picker-close" onClick={() => close(true)} aria-label="Close source picker" title="Close"><X size={17} /></button></div>
+        <div className="source-picker-modal-actions"><span>{modalMeta}</span><button type="button" className="ui-icon-btn source-picker-close" onClick={() => close(true)} aria-label="Close source picker" title="Close"><X size={17} /></button></div>
       </div>
       <div className="source-picker-tabs" role="tablist" aria-label={`${label} options`}>
         <button id={`${id}-sources-tab`} type="button" role="tab" aria-selected={pickerTab === "sources"} aria-controls={`${id}-sources`} className={`source-picker-tab ${pickerTab === "sources" ? "is-active" : ""}`} onClick={() => setPickerTab("sources")}><Layers3 size={14} />{sourcesTabLabel}</button>
@@ -110,8 +110,8 @@ export function SourcePicker({ options, value, onChange, label = "Source", place
       {pickerTab === "sources" && hasUrlFlow ? <div id={`${id}-sources-link`} role="group" className="source-picker-url-panel">
         <div className="source-picker-panel-label"><Link2 size={14} /><strong>Paste link</strong></div>
         <div className="source-picker-url-row">
-          <input value={draftUrl} onChange={event => updateUrl(event.target.value)} onPaste={handleUrlPaste} onKeyDown={event => { if (event.key === "Enter") { event.stopPropagation(); event.preventDefault(); void submitUrl(); } }} placeholder={urlPlaceholder} inputMode="url" autoComplete="off" aria-label={`${label} link`} />
-          <button type="button" onClick={() => void submitUrl()} disabled={!draftUrl.trim() || urlBusy} className="source-picker-url-submit" title="Analyze source" aria-label={urlBusy ? "Analyzing source" : "Analyze source"}>{urlBusy ? <Loader2 size={16} className="source-picker-spin" /> : <Search size={16} />}</button>
+          <input className="ui-input" value={draftUrl} onChange={event => updateUrl(event.target.value)} onPaste={handleUrlPaste} onKeyDown={event => { if (event.key === "Enter") { event.stopPropagation(); event.preventDefault(); void submitUrl(); } }} placeholder={urlPlaceholder} inputMode="url" autoComplete="off" aria-label={`${label} link`} />
+          <button type="button" onClick={() => void submitUrl()} disabled={!draftUrl.trim() || urlBusy} className="ui-icon-btn is-lg source-picker-url-submit" title="Analyze source" aria-label={urlBusy ? "Analyzing source" : "Analyze source"}>{urlBusy ? <Loader2 size={16} className="ui-spin" /> : <Search size={16} />}</button>
         </div>
         {(urlError || localUrlError) ? <p className="source-picker-url-error" role="alert">{urlError || localUrlError}</p> : null}
       </div> : null}
@@ -119,7 +119,7 @@ export function SourcePicker({ options, value, onChange, label = "Source", place
         <div className="source-picker-panel-label"><Tags size={14} /><strong>Saved tags</strong></div>
         <div className="source-picker-tags">{tags?.map(tag => {
           const activeTag = selectedTags?.some(item => item.toLowerCase() === tag.toLowerCase());
-          return <button key={tag} type="button" aria-pressed={activeTag} className={`source-picker-tag ${activeTag ? "is-selected" : ""}`} onClick={() => onToggleTag?.(tag)}>{tag}</button>;
+          return <button key={tag} type="button" aria-pressed={activeTag} className="ui-chip source-picker-tag" onClick={() => onToggleTag?.(tag)}>{tag}</button>;
         })}</div>
       </div> : null}
     </div></div>, document.body)}
@@ -181,18 +181,18 @@ export function PickerDialog({ open, onClose, title, items, value = "", onChoose
       }}>
       <div className="source-picker-modal-head">
         <div className="source-picker-modal-title"><span className="source-picker-modal-icon"><Layers3 size={16} /></span><strong id={`${id}-title`}>{title}</strong></div>
-        <div className="source-picker-modal-actions"><span>{loading ? "Loading" : `${filtered.length} ${filtered.length === 1 ? "option" : "options"}`}</span><button type="button" className="source-picker-close" onClick={onClose} aria-label="Close" title="Close"><X size={17} /></button></div>
+        <div className="source-picker-modal-actions"><span>{loading ? "Loading" : `${filtered.length} ${filtered.length === 1 ? "option" : "options"}`}</span><button type="button" className="ui-icon-btn source-picker-close" onClick={onClose} aria-label="Close" title="Close"><X size={17} /></button></div>
       </div>
       <div className="source-picker-tabpanel">
         {items.length > 6 ? <div className="source-picker-search"><Search size={16} /><input ref={search} value={query} onChange={(event) => { setQuery(event.target.value); setActive(0); }} placeholder="Search" aria-label={`Search ${title.toLowerCase()}`} role="combobox" aria-expanded="true" aria-controls={id} aria-activedescendant={filtered[active] ? `${id}-${active}` : undefined} /></div> : null}
         <div id={id} role="listbox" aria-label={title} className="source-picker-list">
-          {loading ? <div className="source-picker-empty" role="status"><Loader2 size={15} className="source-picker-spin" /> Loading</div> : null}
+          {loading ? <div className="source-picker-empty" role="status"><Loader2 size={15} className="ui-spin" /> Loading</div> : null}
           {!loading && filtered.map((item, i) => (
             <div key={item.value} id={`${id}-${i}`} role="option" tabIndex={0} aria-selected={item.value === value} aria-disabled={item.disabled || undefined} className={`source-picker-option${active === i ? " is-active" : ""}${action ? " has-action" : ""}`}
               onPointerMove={() => { if (!item.disabled) setActive(i); }} onClick={() => choose(item)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); choose(item); } }}>
               <span className="source-picker-avatar"><Picture option={item} />{item.platform ? <PlatformBadge id={item.platform} /> : null}</span>
               <span className="source-picker-copy"><span className="source-picker-name">{item.label}</span>{item.meta ? <span className="source-picker-meta">{item.meta}</span> : null}</span>
-              {busyValue === item.value ? <Loader2 className="source-picker-spin" size={16} /> : item.value === value ? <Check className="source-picker-check" size={17} /> : null}
+              {busyValue === item.value ? <Loader2 className="ui-spin" size={16} /> : item.value === value ? <Check className="source-picker-check" size={17} /> : null}
               {action ? <span className="source-picker-option-action" onClick={(event) => event.stopPropagation()}>{action(item)}</span> : null}
             </div>
           ))}

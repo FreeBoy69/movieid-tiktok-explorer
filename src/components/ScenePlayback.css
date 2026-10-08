@@ -116,7 +116,6 @@
 }
 .spb-mix input[type="range"] {
   width: 100%;
-  accent-color: var(--mk-text);
 }
 .spb-mix-toggle {
   display: flex;

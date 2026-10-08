@@ -177,7 +177,7 @@ export function TemplateGallery({
             </h2>
             <p>{copy.hint}</p>
           </div>
-          <button type="button" className="tg-icon" onClick={onClose} aria-label="Close templates">
+          <button type="button" className="ui-icon-btn is-bordered is-lg tg-icon" onClick={onClose} aria-label="Close templates">
             <X size={18} />
           </button>
         </header>
@@ -195,7 +195,7 @@ export function TemplateGallery({
           <div className="tg-filters" role="group" aria-label="Filters">
             {output === "image"
               ? IMAGE_FILTERS.map((filter) => (
-                  <button key={filter.id || "all"} type="button" aria-pressed={category === filter.id} onClick={() => setCategory(filter.id)}>
+                  <button key={filter.id || "all"} type="button" className="ui-chip" aria-pressed={category === filter.id} onClick={() => setCategory(filter.id)}>
                     {filter.label}
                   </button>
                 ))
@@ -220,7 +220,7 @@ export function TemplateGallery({
                 {Array.from({ length: 9 }, (_, i) => (
                   <div key={i} className="tg-card is-skeleton">
                     <span className="tg-cover" />
-                    <span className="tg-skel" />
+                    <span className="ui-skeleton tg-skel" />
                   </div>
                 ))}
               </div>
@@ -247,8 +247,8 @@ export function TemplateGallery({
                   ))}
                 </ul>
                 {items.length < total ? (
-                  <button type="button" className="tg-more" onClick={() => void loadMore()} disabled={loadingMore}>
-                    {loadingMore ? <Loader2 size={15} className="tg-spin" /> : null} Show more
+                  <button type="button" className="ui-btn tg-more" onClick={() => void loadMore()} disabled={loadingMore}>
+                    {loadingMore ? <Loader2 size={15} className="ui-spin" /> : null} Show more
                   </button>
                 ) : null}
               </>
@@ -278,6 +278,7 @@ export function TemplateGallery({
                       <label key={variable.name}>
                         <span>{variableLabel(variable.name)}</span>
                         <input
+                          className="ui-input"
                           value={values[variable.name] || ""}
                           placeholder={variable.example}
                           maxLength={300}
@@ -292,7 +293,7 @@ export function TemplateGallery({
                 <div className="tg-prompt">
                   <div className="tg-prompt-head">
                     <span>Prompt</span>
-                    <button type="button" onClick={() => void copyPrompt()}>
+                    <button type="button" className="ui-btn is-sm" onClick={() => void copyPrompt()}>
                       {copied ? <Check size={13} /> : <Copy size={13} />} {copied ? "Copied" : "Copy"}
                     </button>
                   </div>
@@ -321,10 +322,10 @@ export function TemplateGallery({
             )}
             {selected ? (
               <div className="tg-preview-foot">
-                <button type="button" className="tg-secondary" onClick={onClose}>
+                <button type="button" className="ui-btn" onClick={onClose}>
                   Cancel
                 </button>
-                <button type="button" className="tg-primary" disabled={filled.length > STUDIO_PROMPT_LIMIT} title={filled.length > STUDIO_PROMPT_LIMIT ? "This prompt is too long for one generation" : undefined} onClick={() => onUse(filled, selected)}>
+                <button type="button" className="ui-btn is-primary" disabled={filled.length > STUDIO_PROMPT_LIMIT} title={filled.length > STUDIO_PROMPT_LIMIT ? "This prompt is too long for one generation" : undefined} onClick={() => onUse(filled, selected)}>
                   {useLabel}
                 </button>
               </div>

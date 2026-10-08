@@ -80,7 +80,7 @@ export function VoiceoverAvatarPanel({
       {value.layout === "split" ? (
         <label className="voice-subtitle-range">
           <span>Split</span>
-          <input type="range" min={0.35} max={0.6} step={0.01} value={value.splitRatio} disabled={disabled} aria-label="Top pane height" onChange={(e) => patch({ splitRatio: Number(e.target.value) })} />
+          <input type="range" className="ui-range" style={{ ["--fill" as string]: `${((value.splitRatio - 0.35) / 0.25) * 100}%` }} min={0.35} max={0.6} step={0.01} value={value.splitRatio} disabled={disabled} aria-label="Top pane height" onChange={(e) => patch({ splitRatio: Number(e.target.value) })} />
           <output>{Math.round(value.splitRatio * 100)}%</output>
         </label>
       ) : null}
@@ -92,6 +92,7 @@ export function VoiceoverAvatarPanel({
           return (
             <label key={id} className={!meta.available ? "is-disabled" : undefined}>
               <input
+                className="ui-check"
                 type="radio"
                 name="avatar-provider"
                 checked={value.provider === id}
@@ -108,6 +109,7 @@ export function VoiceoverAvatarPanel({
         <legend>Captions</legend>
         <label>
           <input
+            className="ui-check"
             type="checkbox"
             checked={subtitles.enabled}
             onChange={(e) => patchSubtitles({ enabled: e.target.checked })}
@@ -152,7 +154,7 @@ export function VoiceoverAvatarPanel({
         {value.provider !== "preview" ? (
           <label>
             <span>Prompt</span>
-            <input type="text" value={value.prompt} disabled={disabled} onChange={(e) => patch({ prompt: e.target.value })} placeholder={DEFAULT_AVATAR_REMAKE.prompt} />
+            <input type="text" className="ui-input" value={value.prompt} disabled={disabled} onChange={(e) => patch({ prompt: e.target.value })} placeholder={DEFAULT_AVATAR_REMAKE.prompt} />
           </label>
         ) : null}
       </div>

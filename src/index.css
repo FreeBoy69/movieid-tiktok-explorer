@@ -570,34 +570,21 @@ html[data-theme="dark"] .agent-chat-composer-dock {
   }
 }
 
-@layer components {
-  .input {
-    @apply w-full rounded-lg border border-[#1A1A1A]/10 bg-white px-3 py-2 text-sm font-semibold text-[#1A1A1A] outline-none transition focus:border-[#f9dc0b]/40 focus:ring-2 focus:ring-[#f9dc0b]/60 disabled:cursor-not-allowed disabled:opacity-50;
-  }
-}
 
 html[data-theme="dark"] .bg-white {
   background-color: #151923 !important;
 }
 
 html[data-theme="dark"] [class~="bg-[#F9F8F6]"],
-html[data-theme="dark"] [class~="bg-[#FDFCFA]"],
-html[data-theme="dark"] [class~="bg-[#F7F7F5]"],
-html[data-theme="dark"] [class~="bg-[#F4F5F8]"],
-html[data-theme="dark"] [class~="bg-[#F4F4F2]"],
-html[data-theme="dark"] [class~="bg-[#F3F4F8]"] {
+html[data-theme="dark"] [class~="bg-[#F7F7F5]"] {
   background-color: rgba(255, 255, 255, 0.06) !important;
 }
 
-html[data-theme="dark"] [class~="text-[#1A1A1A]"],
-html[data-theme="dark"] [class~="text-[#111827]"] {
+html[data-theme="dark"] [class~="text-[#1A1A1A]"] {
   color: #f8fafc !important;
 }
 
-html[data-theme="dark"] [class~="text-[#1A1A1A]/80"],
-html[data-theme="dark"] [class~="text-[#1A1A1A]/75"],
 html[data-theme="dark"] [class~="text-[#1A1A1A]/72"],
-html[data-theme="dark"] [class~="text-[#1A1A1A]/70"],
 html[data-theme="dark"] [class~="text-[#1A1A1A]/65"],
 html[data-theme="dark"] [class~="text-[#1A1A1A]/60"],
 html[data-theme="dark"] [class~="text-[#1A1A1A]/58"],
@@ -606,127 +593,15 @@ html[data-theme="dark"] [class~="text-[#1A1A1A]/50"],
 html[data-theme="dark"] [class~="text-[#1A1A1A]/45"],
 html[data-theme="dark"] [class~="text-[#1A1A1A]/42"],
 html[data-theme="dark"] [class~="text-[#1A1A1A]/40"],
-html[data-theme="dark"] [class~="text-[#1A1A1A]/38"],
-html[data-theme="dark"] [class~="text-[#1A1A1A]/35"],
-html[data-theme="dark"] [class~="text-[#1A1A1A]/30"],
-html[data-theme="dark"] [class~="text-[#111827]/80"],
-html[data-theme="dark"] [class~="text-[#111827]/75"],
-html[data-theme="dark"] [class~="text-[#111827]/70"],
-html[data-theme="dark"] [class~="text-[#111827]/65"],
-html[data-theme="dark"] [class~="text-[#111827]/58"],
-html[data-theme="dark"] [class~="text-[#111827]/45"],
-html[data-theme="dark"] [class~="text-[#111827]/30"],
-html[data-theme="dark"] [class~="text-[#111827]/25"] {
+html[data-theme="dark"] [class~="text-[#1A1A1A]/38"] {
   color: rgba(248, 250, 252, 0.72) !important;
 }
 
-html[data-theme="dark"] [class~="border-[#1A1A1A]/12"],
 html[data-theme="dark"] [class~="border-[#1A1A1A]/10"],
-html[data-theme="dark"] [class~="border-[#1A1A1A]/8"],
-html[data-theme="dark"] [class~="border-[#1A1A1A]/5"],
-html[data-theme="dark"] [class~="border-[#111827]/8"] {
+html[data-theme="dark"] [class~="border-[#1A1A1A]/8"] {
   border-color: rgba(255, 255, 255, 0.1) !important;
 }
 
-html[data-theme="dark"] .input {
-  border-color: rgba(255, 255, 255, 0.12);
-  background-color: rgba(255, 255, 255, 0.06) !important;
-  color: #f8fafc;
-}
-
-html[data-theme="dark"] .input::placeholder {
-  color: rgba(248, 250, 252, 0.35);
-}
-
-html[data-theme="dark"] .agent-field-label {
-  color: rgba(248, 245, 232, 0.5);
-}
-
-html[data-theme="dark"] .agent-toggle {
-  border-color: rgba(248, 245, 232, 0.12);
-  background-color: #191c18 !important;
-}
-
-html[data-theme="dark"] .agent-toggle-title {
-  color: #f8f5e8;
-}
-
-html[data-theme="dark"] .agent-toggle-body {
-  color: rgba(248, 245, 232, 0.58);
-}
-
-html[data-theme="dark"] .agent-toggle-track-off {
-  border-color: rgba(248, 245, 232, 0.16);
-  background-color: rgba(248, 245, 232, 0.12);
-}
-
-html[data-theme="dark"] .rewriter-shell {
-  background: #0b0e14 !important;
-  color: #f8fafc !important;
-}
-
-html[data-theme="dark"] .rewriter-shell .bg-white,
-html[data-theme="dark"] .rewriter-shell [class~="bg-[#FAFAFB]"] {
-  background-color: #10141d !important;
-}
-
-html[data-theme="dark"] .rewriter-shell [class~="bg-[#F3F4F6]"],
-html[data-theme="dark"] .rewriter-shell [class~="hover:bg-[#F3F4F6]"]:hover,
-html[data-theme="dark"] .rewriter-shell [class~="hover:bg-[#FAFAFB]"]:hover {
-  background-color: rgba(255, 255, 255, 0.08) !important;
-}
-
-html[data-theme="dark"] .rewriter-shell [class~="bg-[#fff9d6]"] {
-  background-color: rgba(249, 220, 11, 0.14) !important;
-  color: #f9dc0b !important;
-}
-
-html[data-theme="dark"] .rewriter-shell [class~="bg-[#111827]"] {
-  background-color: #f8fafc !important;
-  color: #111827 !important;
-}
-
-html[data-theme="dark"] .rewriter-shell [class~="hover:bg-[#111827]"]:hover {
-  background-color: #f8fafc !important;
-  color: #111827 !important;
-}
-
-html[data-theme="dark"] .rewriter-shell [class~="text-[#111827]"],
-html[data-theme="dark"] .rewriter-shell [class~="hover:text-[#111827]"]:hover {
-  color: #f8fafc !important;
-}
-
-html[data-theme="dark"] .rewriter-shell [class~="text-[#6B7280]"],
-html[data-theme="dark"] .rewriter-shell [class~="text-[#5F5300]"] {
-  color: rgba(248, 250, 252, 0.58) !important;
-}
-
-html[data-theme="dark"] .rewriter-shell [class~="border-[#E5E7EB]"],
-html[data-theme="dark"] .rewriter-shell [class~="border-[#DADDE3]"],
-html[data-theme="dark"] .rewriter-shell [class~="border-[#111827]"],
-html[data-theme="dark"] .rewriter-shell [class~="hover:border-[#111827]/30"]:hover {
-  border-color: rgba(255, 255, 255, 0.12) !important;
-}
-
-html[data-theme="dark"] .rewriter-shell input,
-html[data-theme="dark"] .rewriter-shell select,
-html[data-theme="dark"] .rewriter-shell textarea {
-  background-color: #0b0e14 !important;
-  color: #f8fafc !important;
-}
-
-html[data-theme="dark"] .rewriter-shell input::placeholder,
-html[data-theme="dark"] .rewriter-shell textarea::placeholder {
-  color: rgba(248, 250, 252, 0.35) !important;
-}
-
-html[data-theme="dark"] .rewriter-shell [class~="bg-[#D1D5DB]"] {
-  background-color: rgba(255, 255, 255, 0.18) !important;
-}
-
-html[data-theme="dark"] .rewriter-shell [class~="accent-[#111827]"] {
-  accent-color: #f9dc0b;
-}
 
 html[data-theme="dark"] [class~="bg-[#f9dc0b]"],
 html[data-theme="dark"] [class~="hover:bg-[#f9dc0b]"]:hover {
@@ -765,7 +640,7 @@ html .workspace-content .workspace-floating-shell {
 
 /* Only action buttons are pills. Anything holding media, headings, paragraphs, block wrappers,
    or a title-plus-subtitle pair is a card, row, or tile and keeps the corners it was designed with. */
-button:not(.ve-marker):not(.sp-tile):not(.ui-tabs [role="tab"]):not(.ui-menu-item):not(.ui-trigger):not(.mks-generate):not(.cns-generate):not(.sl-stack-card):not(.sl-chip button):not(.mks-card):not(.mks-slot):not(.mks-strip-card):not(.mks-face):not(.prs-slot):not(.maker-art-tile):not(.cs-thumb):not(.cs-slot-empty):not(.cs-app-card):not(.cns-rig-card):not(.tg-card):not(.plib-card-open):not(.dr-template):not(.dr-genre-card):not(.dr-location-art):not(.chs-person):not(.exs-visual):not(.exs-draft):not(.exs-visual-option):not(.gv-apple):not(.cs-option):not(.eds-canvas):not(.eds-item):not(.ve-card-open):not(.ve-asset):not(.ve-preset):not(.ve-style):not(.ve-text-preset):not(.ve-rail-btn):not(.ve-nav-item):not(.ve-nav-toggle):not(.ve-nav-link):not(.ve-collapse):not(.ve-lane-add):not(.ve-crumb-back):not(.ve-tabs [role="tab"]):not(.ve-starter):not(.ve-tool):not(.ve-btn):not(.ve-mini):not(.cs-gen .cs-chip):not(.dpm-product):not(.dpm-new-book):not(.dpm-toc-item):not(.cs-ref-add):not(.vs-rail [role="tab"]):not(.dr-menu-item):not(.cs-menu-item):not(.sb-prompt):not(.cap-card):not(.mks-tech-row):not(.mks-upload):not(.cs-model):not(.cs-rig-toggle):not(.voice-avatar-layout):not(.source-picker-trigger):not(.st-track-head):not(.st-audio-clip):not(.adm-ticket):not(.mr-row):not(.mr-format-toggle):not(.mr-switch):not(.mr-segment button):not(.mr-steps button):not([role="option"]):not([role^="menuitem"]):not(:has(img, video, picture, canvas, iframe, svg image, figure, p, h1, h2, h3, h4, h5, h6, ul, ol, table, div, section, article, strong ~ span, strong ~ small, strong ~ em, b ~ span)),
+button:not(.ve-marker):not(.sp-tile):not(.ui-tabs [role="tab"]):not(.ui-menu-item):not(.ui-trigger):not(.ui-seg.is-tiles > button):not(.ui-seg.is-vertical > button):not(.cvx-look):not(.dpm-reader-toc > button):not(.mks-generate):not(.cns-generate):not(.sl-stack-card):not(.sl-chip button):not(.mks-card):not(.mks-slot):not(.mks-strip-card):not(.mks-face):not(.prs-slot):not(.maker-art-tile):not(.cs-thumb):not(.cs-slot-empty):not(.cs-app-card):not(.cns-rig-card):not(.tg-card):not(.plib-card-open):not(.dr-template):not(.dr-genre-card):not(.dr-location-art):not(.chs-person):not(.exs-visual):not(.exs-draft):not(.exs-visual-option):not(.gv-apple):not(.cs-option):not(.eds-canvas):not(.eds-item):not(.ve-card-open):not(.ve-asset):not(.ve-preset):not(.ve-style):not(.ve-text-preset):not(.ve-rail-btn):not(.ve-nav-item):not(.ve-nav-toggle):not(.ve-nav-link):not(.ve-collapse):not(.ve-lane-add):not(.ve-crumb-back):not(.ve-tabs [role="tab"]):not(.ve-starter):not(.ve-tool):not(.ve-btn):not(.ve-mini):not(.cs-gen .cs-chip):not(.dpm-product):not(.dpm-new-book):not(.dpm-toc-item):not(.cs-ref-add):not(.vs-rail [role="tab"]):not(.dr-menu-item):not(.cs-menu-item):not(.sb-prompt):not(.cap-card):not(.mks-tech-row):not(.mks-upload):not(.cs-model):not(.cs-rig-toggle):not(.voice-avatar-layout):not(.source-picker-trigger):not(.st-track-head):not(.st-audio-clip):not(.adm-ticket):not(.mr-row):not(.mr-format-toggle):not(.mr-switch):not(.mr-segment button):not(.mr-steps button):not([role="option"]):not([role^="menuitem"]):not(:has(img, video, picture, canvas, iframe, svg image, figure, p, h1, h2, h3, h4, h5, h6, ul, ol, table, div, section, article, strong ~ span, strong ~ small, strong ~ em, b ~ span)),
 input[type="button"],
 input[type="submit"],
 input[type="reset"],
@@ -787,14 +662,6 @@ button.plib-card-open,
 .mks-product > button:first-child,
 .prs-card > button {
   border-radius: 0 !important;
-}
-
-/* Prompt bars keep short corners. Chips, send, attach, and menus inside the input stay rectangular. */
-:is(.cs-composer, .dr-composer, .gv-compose, .cns-dock, .mks-dock, .agent-chat-composer) :is(button, [role="button"], [role="tab"], input[type="button"], input[type="submit"], input[type="reset"]):not(.mks-generate):not(.cns-generate):not(.mks-card):not(.mks-slot):not(.mks-strip-card):not(.mks-face):not(.prs-slot):not(.maker-art-tile):not(.cs-thumb):not(.cs-slot-empty):not(.cs-app-card):not(.cns-rig-card):not(.tg-card):not(.plib-card-open):not(.dr-template):not(.dr-genre-card):not(.dr-location-art):not(.chs-person) {
-  border-radius: 8px !important;
-}
-:is(.cs-composer, .dr-composer) :is(.cs-segment, .cs-chip, .dr-composer-chip) {
-  border-radius: 8px;
 }
 
 .site-foot {

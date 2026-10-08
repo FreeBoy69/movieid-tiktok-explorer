@@ -1,6 +1,6 @@
 .agent-setup-index {
   scrollbar-width: none;
-  box-shadow: 0 4px 18px rgba(26, 26, 26, 0.04);
+  box-shadow: var(--ui-shadow-soft);
 }
 
 .agent-setup-index::-webkit-scrollbar {
@@ -38,12 +38,12 @@
 .agent-header-channel-switcher .source-picker.is-compact .source-picker-trigger:hover,
 .agent-header-channel-switcher .source-picker.is-compact .source-picker-trigger[data-open="true"] {
   transform: none;
-  background: rgba(26, 26, 26, 0.05);
+  background: var(--ui-hover);
   box-shadow: none;
 }
 
 .agent-header-channel-switcher .source-picker.is-compact .source-picker-trigger[data-open="true"] {
-  box-shadow: inset 0 0 0 2px rgba(249, 220, 11, 0.5);
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--ui-accent) 50%, transparent);
 }
 
 .agent-header-channel-switcher .source-picker.is-compact .source-picker-picture {
@@ -72,11 +72,6 @@
   transform: none;
   background: transparent;
   color: var(--sp-text);
-}
-
-[data-theme="dark"] .agent-header-channel-switcher .source-picker.is-compact .source-picker-trigger:hover,
-[data-theme="dark"] .agent-header-channel-switcher .source-picker.is-compact .source-picker-trigger[data-open="true"] {
-  background: rgba(248, 245, 232, 0.08);
 }
 
 .agent-essentials-stack {
@@ -163,7 +158,7 @@
 
 .agent-social-status {
   border-radius: 999px;
-  background: rgba(26, 26, 26, 0.05);
+  background: var(--ui-hover);
   padding: 0.25rem 0.5rem;
   font-size: 0.625rem;
   font-weight: 800;
@@ -172,8 +167,8 @@
 }
 
 .agent-social-status-on {
-  background: rgba(249, 220, 11, 0.2);
-  color: #806f00;
+  background: var(--ui-accent-soft);
+  color: var(--ui-accent-text);
 }
 
 @media (prefers-reduced-motion: reduce) {

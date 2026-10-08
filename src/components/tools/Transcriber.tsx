@@ -122,10 +122,10 @@ export function Transcriber({ tool }: { tool: ToolDef }) {
         <span className="mt-label">Video link</span>
         <div className="relative">
           <Link2 size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 opacity-50" aria-hidden="true" />
-          <input className="mt-input" style={{ paddingLeft: 34 }} type="url" inputMode="url" value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://www.youtube.com/watch?v=…" disabled={busy} />
+          <input className="ui-input" style={{ paddingLeft: 34 }} type="url" inputMode="url" value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://www.youtube.com/watch?v=…" disabled={busy} />
         </div>
       </label>
-      <button type="submit" className="mt-primary" disabled={!url.trim() || busy}>
+      <button type="submit" className="ui-btn is-primary is-lg is-block mt-primary" disabled={!url.trim() || busy}>
         {busy ? <Loader2 size={16} className="animate-spin" /> : <Captions size={16} />}
         {busy ? "Transcribing" : tool.action}
       </button>
@@ -147,16 +147,16 @@ export function Transcriber({ tool }: { tool: ToolDef }) {
           </div>
         ) : null}
         {busy && !job ? (
-          <div className="mt-skeleton" aria-hidden="true"><span /><span /><span /></div>
+          <div className="mt-skeleton" aria-hidden="true"><span className="ui-skeleton" /><span className="ui-skeleton" /><span className="ui-skeleton" /></div>
         ) : null}
         {result ? (
           <>
             <div className="mt-actions">
-              <button type="button" className="mt-secondary" onClick={() => void copy()} aria-live="polite">{copied ? <Check size={15} /> : <Copy size={15} />}{copied ? "Copied" : "Copy"}</button>
-              <button type="button" className="mt-secondary" onClick={() => saveText(`${baseName()}.txt`, result.text)}><Download size={15} />Text file</button>
-              <button type="button" className="mt-secondary" disabled={!result.segments?.length} title={result.segments?.length ? "Subtitles with timings" : "Timings are only available for videos that ran as a background job"} onClick={() => result.segments && saveText(`${baseName()}.srt`, buildSrt(result.segments), "application/x-subrip")}><Captions size={15} />Subtitles (.srt)</button>
-              <button type="button" className="mt-secondary" onClick={() => window.dispatchEvent(new CustomEvent("navToRewriter", { detail: { transcript: result.text, phases: [] } }))}><PenLine size={15} />Rewrite with AI</button>
-              <button type="button" className="mt-secondary" onClick={() => window.dispatchEvent(new CustomEvent("navToTts", { detail: { text: result.text.slice(0, 5000) } }))}><Mic size={15} />Read aloud</button>
+              <button type="button" className="ui-btn is-sm mt-secondary" onClick={() => void copy()} aria-live="polite">{copied ? <Check size={15} /> : <Copy size={15} />}{copied ? "Copied" : "Copy"}</button>
+              <button type="button" className="ui-btn is-sm mt-secondary" onClick={() => saveText(`${baseName()}.txt`, result.text)}><Download size={15} />Text file</button>
+              <button type="button" className="ui-btn is-sm mt-secondary" disabled={!result.segments?.length} title={result.segments?.length ? "Subtitles with timings" : "Timings are only available for videos that ran as a background job"} onClick={() => result.segments && saveText(`${baseName()}.srt`, buildSrt(result.segments), "application/x-subrip")}><Captions size={15} />Subtitles (.srt)</button>
+              <button type="button" className="ui-btn is-sm mt-secondary" onClick={() => window.dispatchEvent(new CustomEvent("navToRewriter", { detail: { transcript: result.text, phases: [] } }))}><PenLine size={15} />Rewrite with AI</button>
+              <button type="button" className="ui-btn is-sm mt-secondary" onClick={() => window.dispatchEvent(new CustomEvent("navToTts", { detail: { text: result.text.slice(0, 5000) } }))}><Mic size={15} />Read aloud</button>
             </div>
             <textarea className="mt-output" value={result.text} onChange={(event) => setResult({ ...result, text: event.target.value })} aria-label="Transcript" spellCheck={false} />
             {!result.text.trim() ? <p className="mt-error"><AlertCircle size={16} />The video had no speech we could hear.</p> : null}

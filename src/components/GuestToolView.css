@@ -1,5 +1,4 @@
-.gv { --gv-bg:#0b0d12; --gv-ink:#f6f5f1; --gv-muted:#a6a9ad; --gv-line:rgba(255,255,255,.12); color:var(--gv-ink); min-height:calc(100dvh - 150px); padding:14px clamp(20px,4vw,56px) 50px; }
-.gv[data-theme="light"] { --gv-bg:#f9f8f6; --gv-ink:#191b1e; --gv-muted:#62676d; --gv-line:rgba(0,0,0,.12); }
+.gv { --gv-bg:var(--ui-bg); --gv-ink:var(--ui-text); --gv-muted:var(--ui-text-muted); --gv-line:var(--ui-line-strong); color:var(--gv-ink); min-height:calc(100dvh - 150px); padding:14px clamp(20px,4vw,56px) 50px; }
 .gv-top { display:flex; align-items:center; justify-content:space-between; gap:16px; }
 .gv-back,.gv-private { display:inline-flex; align-items:center; gap:8px; font-size:13px; color:var(--gv-muted); }
 .gv-back { border:0; background:none; padding:8px 0; cursor:pointer; }
@@ -17,25 +16,24 @@
 .gv-compose textarea::placeholder { color:var(--gv-muted); }
 .gv-compose-actions { display:flex; align-items:center; justify-content:space-between; gap:12px; }
 .gv-compose button { border:0; cursor:pointer; }
-.gv-compose .gv-upload { display:grid; place-items:center; width:32px; height:32px; border:1px solid var(--gv-line); border-radius:8px; background:transparent; color:var(--gv-muted); transition:border-color 140ms, color 140ms; }
-.gv-compose .gv-upload:hover { color:var(--gv-ink); border-color:var(--gv-muted); }
-.gv-submit { display:inline-flex; align-items:center; justify-content:center; gap:8px; height:40px; padding:0 18px; border-radius:8px; background:#f9dc0b; color:#171717; font-size:14px; font-weight:700; white-space:nowrap; transition:background-color 160ms, color 160ms, transform 120ms; }
-.gv-submit:hover { background:var(--gv-ink); color:var(--gv-bg); }
-.gv-submit:active { transform:scale(.97); }
-.gv-compose button:focus-visible { outline:2px solid color-mix(in srgb, var(--gv-ink) 40%, transparent); outline-offset:2px; }
+/* .ui-icon-btn.is-bordered */
+.gv-compose .gv-upload { display:grid; place-items:center; width:var(--ui-control-sm); height:var(--ui-control-sm); border:1px solid var(--ui-line); background:transparent; color:var(--ui-text-muted); }
+.gv-compose .gv-upload:hover { background:var(--ui-hover); color:var(--ui-text); }
+/* .ui-btn.is-primary */
+.gv-submit { display:inline-flex; align-items:center; justify-content:center; gap:8px; min-height:var(--ui-control); padding:0 18px; background:var(--ui-accent); color:var(--ui-accent-ink); font-size:14px; font-weight:600; white-space:nowrap; transition:background-color var(--ui-duration); }
+.gv-submit:hover { background:var(--ui-accent-hover); }
 .gv-art { display:block; width:100%; max-height:590px; aspect-ratio:3/4; object-fit:cover; border-radius:8px; }
-.gv-dialog-backdrop { position:fixed; inset:0; z-index:150; display:grid; place-items:center; padding:18px; background:rgba(4,5,7,.7); backdrop-filter:blur(9px); }
-.gv-dialog-backdrop[data-theme="light"] { background:rgb(20 19 17 / 0.24); }
+.gv-dialog-backdrop { position:fixed; inset:0; z-index:150; display:grid; place-items:center; padding:18px; background:var(--ui-scrim); backdrop-filter:blur(9px); }
 .gv-dialog { position:relative; width:min(100%,390px); padding:32px; border:1px solid var(--glass-input-line); border-top-color:var(--glass-input-edge); border-radius:8px; background:var(--glass-panel-bg); box-shadow:var(--glass-input-shadow); -webkit-backdrop-filter:blur(22px) saturate(1.6); backdrop-filter:blur(22px) saturate(1.6); color:#f6f5f1; text-align:center; }
 .gv-dialog-backdrop[data-theme="light"] .gv-dialog { color:#1a1a1a; }
 .gv-dialog-close { position:absolute; top:13px; right:13px; display:grid; place-items:center; width:32px; height:32px; border:0; border-radius:6px; background:transparent; color:inherit; cursor:pointer; }
-.gv-dialog-close:hover { background:rgba(128,128,128,.15); }
+.gv-dialog-close:hover { background:var(--ui-hover); }
 .gv-dialog-mark { display:grid; place-items:center; width:48px; height:48px; margin:4px auto 21px; border-radius:8px; background:#f9dc0b; color:#171717; }
 .gv-dialog h2 { margin:0; font-size:24px; font-weight:800; }
 .gv-dialog p { margin:11px 0 25px; color:#a9adb3; font-size:14px; line-height:1.5; }
 .gv-dialog-backdrop[data-theme="light"] .gv-dialog p { color:#656a70; }
 .gv-google { display:flex; align-items:center; justify-content:center; gap:12px; min-height:48px; border-radius:6px; background:#f9dc0b; color:#171717; font-size:14px; font-weight:800; text-decoration:none; }
-.gv-google:hover { background:#ffe95a; }
+.gv-google:hover { background:var(--ui-accent-hover); }
 .gv-google svg { width:19px; height:19px; }
 .gv-dialog .gv-auth-error { margin-bottom:12px; color:#f57575; }
 .gv-later { margin-top:19px; border:0; background:none; color:inherit; opacity:.7; font-size:13px; cursor:pointer; }

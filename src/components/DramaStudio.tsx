@@ -916,7 +916,7 @@ function SeriesPage({ accountId, id, onError }: { accountId: string; id: string;
               </div>
               <ol className="dr-skeleton" aria-hidden="true">
                 {Array.from({ length: Math.min(series.episodeCount, 5) }, (_, index) => (
-                  <li key={index} style={{ animationDelay: `${index * 120}ms` }} />
+                  <li key={index} className="ui-skeleton" style={{ animationDelay: `${index * 120}ms` }} />
                 ))}
               </ol>
             </section>

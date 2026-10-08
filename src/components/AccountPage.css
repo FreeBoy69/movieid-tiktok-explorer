@@ -1,21 +1,22 @@
 /* Account settings (/account). Dark-first tokens from DESIGN.md; light is an explicit theme. */
 .acp {
-  --acp-bg: #0f1113;
-  --acp-panel: #17191c;
-  --acp-raised: #1e2124;
-  --acp-line: rgb(255 255 255 / 0.08);
-  --acp-line-strong: rgb(255 255 255 / 0.14);
-  --acp-text: #f4f4f2;
-  --acp-muted: #a3a6ab;
-  --acp-faint: #6f7379;
-  --acp-hover: rgb(255 255 255 / 0.05);
-  --acp-accent: #f9dc0b;
-  --acp-accent-ink: #f9dc0b;
-  --acp-on-accent: #171717;
-  --acp-bar: #f9dc0b;
-  --acp-good: #4ade80;
-  --acp-bad: #f87171;
-  --acp-warn: #fbbf24;
+  /* Site tokens (src/index.css); [data-theme] on .acp re-scopes them. */
+  --acp-bg: var(--ui-bg);
+  --acp-panel: var(--ui-panel);
+  --acp-raised: var(--ui-sunken);
+  --acp-line: var(--ui-line);
+  --acp-line-strong: var(--ui-line-strong);
+  --acp-text: var(--ui-text);
+  --acp-muted: var(--ui-text-muted);
+  --acp-faint: var(--ui-text-faint);
+  --acp-hover: var(--ui-hover);
+  --acp-accent: var(--ui-accent);
+  --acp-accent-ink: var(--ui-accent-text);
+  --acp-on-accent: var(--ui-accent-ink);
+  --acp-bar: var(--ui-accent);
+  --acp-good: var(--ui-success);
+  --acp-bad: var(--ui-danger);
+  --acp-warn: var(--ui-warning);
   height: 100%;
   overflow-y: auto;
   background: var(--acp-bg);
@@ -23,26 +24,8 @@
   font-family: var(--font-sans);
   font-size: 14px;
   line-height: 1.5;
-  scrollbar-color: var(--acp-line-strong) transparent;
-}
-.acp[data-theme="light"] {
-  --acp-bg: #f9f8f6;
-  --acp-panel: #ffffff;
-  --acp-raised: #f3f1ed;
-  --acp-line: rgb(26 26 26 / 0.09);
-  --acp-line-strong: rgb(26 26 26 / 0.16);
-  --acp-text: #1a1a1a;
-  --acp-muted: #5c5f63;
-  --acp-faint: #85888c;
-  --acp-hover: rgb(26 26 26 / 0.04);
-  --acp-accent-ink: #7a6600;
-  --acp-bar: #a68b00;
-  --acp-good: #15803d;
-  --acp-bad: #b91c1c;
-  --acp-warn: #a16207;
 }
 .acp ::selection { background: rgb(249 220 11 / 0.35); color: inherit; }
-.acp :focus-visible { outline: 2px solid var(--acp-accent); outline-offset: 2px; }
 
 .acp-shell {
   max-width: 1080px;
@@ -173,59 +156,10 @@
 .acp-tile strong { font-size: 18px; font-weight: 650; font-variant-numeric: tabular-nums; }
 .acp-tile small { color: var(--acp-muted); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.acp-segmented {
-  display: inline-flex;
-  justify-self: start;
-  padding: 3px;
-  border: 1px solid var(--acp-line);
-  border-radius: 12px;
-  background: var(--acp-raised);
-}
-.acp-segmented button {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 34px;
-  padding: 0 14px;
-  border: 0;
-  border-radius: 9px;
-  background: transparent;
-  color: var(--acp-muted);
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
-}
-.acp-segmented button[aria-checked="true"] { background: var(--acp-panel); color: var(--acp-text); box-shadow: 0 1px 2px rgb(0 0 0 / 0.18), inset 0 0 0 1px var(--acp-line); }
+.acp-theme { justify-self: start; }
 
 /* ---------- buttons ---------- */
 .acp-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.acp-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  min-height: 40px;
-  padding: 0 16px;
-  border: 1px solid var(--acp-line-strong);
-  border-radius: 10px;
-  background: var(--acp-raised);
-  color: var(--acp-text);
-  font: inherit;
-  font-weight: 650;
-  text-decoration: none;
-  white-space: nowrap;
-  cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
-}
-.acp-btn:hover:not(:disabled) { border-color: var(--acp-faint); }
-.acp-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.acp-btn.is-primary { border-color: transparent; background: var(--acp-accent); color: var(--acp-on-accent); }
-.acp-btn.is-primary:hover:not(:disabled) { background: #e8cb00; }
-.acp-btn.is-ghost { border-color: transparent; background: transparent; color: var(--acp-muted); }
-.acp-btn.is-ghost:hover:not(:disabled) { background: var(--acp-hover); color: var(--acp-text); }
-.acp-btn.is-danger { border-color: color-mix(in srgb, var(--acp-bad) 40%, transparent); background: transparent; color: var(--acp-bad); }
-.acp-btn.is-danger:hover { background: color-mix(in srgb, var(--acp-bad) 10%, transparent); }
-.acp-btn.is-small { min-height: 32px; padding: 0 12px; font-size: 13px; }
 .acp-link {
   padding: 0;
   border: 0;
@@ -241,8 +175,6 @@
 
 .acp-note { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--acp-muted); font-size: 13.5px; }
 .acp-note.is-error { color: var(--acp-bad); }
-.acp-spin { animation: acp-spin 0.9s linear infinite; }
-@keyframes acp-spin { to { transform: rotate(360deg); } }
 
 .acp-status {
   flex-shrink: 0;
@@ -262,17 +194,7 @@
 .acp-status.is-pending, .acp-status.is-past_due { color: var(--acp-warn); }
 .acp-status.is-failed, .acp-status.is-refunded, .acp-status.is-canceled { color: var(--acp-bad); }
 
-.acp-chip {
-  display: inline-block;
-  margin-left: 8px;
-  padding: 1px 8px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--acp-accent) 18%, transparent);
-  color: var(--acp-accent-ink);
-  font-size: 11.5px;
-  font-weight: 700;
-  vertical-align: 2px;
-}
+.acp-chip { margin-left: 8px; vertical-align: 2px; }
 
 /* ---------- billing ---------- */
 .acp-balance { display: grid; gap: 12px; }

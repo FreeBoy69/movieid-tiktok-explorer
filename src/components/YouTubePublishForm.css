@@ -1,41 +1,18 @@
-/* YouTube publish form (YouTubePublishForm.tsx). One look in every host: light and dark
-   app surfaces, or "studio" to follow the CreatorStudio --cs-* tokens. */
+/* YouTube publish form (YouTubePublishForm.tsx): layout only; fields, segments and
+   switches are the canonical ui/ controls on the site tokens. */
 .ytp {
-  --ytp-text: #1a1a1a;
-  --ytp-muted: rgb(26 26 26 / 0.62);
-  --ytp-faint: rgb(26 26 26 / 0.46);
-  --ytp-line: rgb(26 26 26 / 0.1);
-  --ytp-line-strong: rgb(26 26 26 / 0.2);
-  --ytp-field: #fdfcfa;
-  --ytp-sunken: rgb(26 26 26 / 0.045);
-  --ytp-accent: #f9dc0b;
-  --ytp-accent-ink: #1a1a1a;
-  --ytp-accent-soft: rgb(249 220 11 / 0.28);
-  --ytp-radius: 10px;
+  --ytp-text: var(--ui-text);
+  --ytp-muted: var(--ui-text-muted);
+  --ytp-faint: var(--ui-text-faint);
+  --ytp-line: var(--ui-line);
+  --ytp-line-strong: var(--ui-line-strong);
+  --ytp-field: var(--ui-input);
+  --ytp-sunken: var(--ui-chip);
+  --ytp-accent: var(--ui-accent);
+  --ytp-accent-ink: var(--ui-accent-ink);
+  --ytp-accent-soft: var(--ui-accent-soft);
+  --ytp-radius: var(--ui-radius-control);
   color: var(--ytp-text);
-}
-.ytp[data-theme="dark"] {
-  --ytp-text: #f4f2ee;
-  --ytp-muted: rgb(244 242 238 / 0.66);
-  --ytp-faint: rgb(244 242 238 / 0.46);
-  --ytp-line: rgb(255 255 255 / 0.1);
-  --ytp-line-strong: rgb(255 255 255 / 0.2);
-  --ytp-field: #121417;
-  --ytp-sunken: rgb(255 255 255 / 0.05);
-  --ytp-accent-soft: rgb(249 220 11 / 0.22);
-}
-.ytp[data-theme="studio"] {
-  --ytp-text: var(--cs-text);
-  --ytp-muted: var(--cs-muted);
-  --ytp-faint: var(--cs-faint);
-  --ytp-line: var(--cs-line);
-  --ytp-line-strong: var(--cs-line-strong);
-  --ytp-field: var(--cs-bg);
-  --ytp-sunken: var(--cs-sunken);
-  --ytp-accent: var(--cs-accent);
-  --ytp-accent-ink: var(--cs-accent-ink);
-  --ytp-accent-soft: var(--cs-accent-soft);
-  --ytp-radius: var(--cs-radius-sm);
 }
 .ytp-form {
   display: grid;
@@ -73,46 +50,6 @@
   font-size: 12px;
   line-height: 1.45;
 }
-.ytp .ytp-input {
-  width: 100%;
-  min-width: 0;
-  min-height: 42px;
-  padding: 10px 12px;
-  border: 1px solid var(--ytp-line);
-  border-radius: var(--ytp-radius);
-  background: var(--ytp-field);
-  color: var(--ytp-text);
-  font: inherit;
-  font-size: 14px;
-  transition: border-color 160ms ease-out, box-shadow 160ms ease-out;
-}
-.ytp .ytp-textarea {
-  resize: vertical;
-  min-height: 112px;
-  line-height: 1.5;
-}
-.ytp .ytp-input::placeholder {
-  color: var(--ytp-faint);
-}
-.ytp .ytp-input:hover {
-  border-color: var(--ytp-line-strong);
-}
-.ytp .ytp-input:focus {
-  outline: none;
-  border-color: var(--ytp-line-strong);
-  box-shadow: 0 0 0 3px var(--ytp-accent-soft);
-}
-
-/* Segmented choice (visibility, playlist mode) and switch rows use the shared
-   ui/ controls; .ytp hands them its palette. */
-.ytp:not([data-theme="studio"]) {
-  --cs-text: var(--ytp-text);
-  --cs-muted: var(--ytp-muted);
-  --cs-line: var(--ytp-line);
-  --cs-line-strong: var(--ytp-line-strong);
-  --cs-sunken: var(--ytp-sunken);
-  --cs-surface: var(--ytp-field);
-}
 .ytp-choice {
   container-type: inline-size;
 }
@@ -142,47 +79,15 @@
 @container (max-width: 290px) {
   .ytp .ui-seg.ytp-seg { --ytp-count: 1; }
 }
-.ytp .ui-switch.ytp-switch {
-  border-radius: var(--ytp-radius);
-  background: var(--ytp-field);
-}
-
 /* Playlist. */
 .ytp-playlist {
   display: grid;
   gap: 12px;
   min-width: 0;
 }
-.ytp .ytp-text-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 2px 4px;
-  border: 0;
-  border-radius: 6px;
-  background: none;
-  color: var(--ytp-muted);
-  font: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-}
-.ytp .ytp-text-button:hover {
-  color: var(--ytp-text);
-}
-.ytp .ytp-text-button:disabled {
-  cursor: default;
-  opacity: 0.6;
-}
 .ytp .ytp-text-button svg {
   width: 13px;
   height: 13px;
-}
-.ytp-spin {
-  animation: ytp-spin 900ms linear infinite;
-}
-@keyframes ytp-spin {
-  to { transform: rotate(360deg); }
 }
 .ytp-list {
   display: grid;
@@ -260,14 +165,8 @@
   color: var(--ytp-muted);
   font-size: 13px;
 }
-.ytp .ytp-list-row:focus-visible,
-.ytp .ytp-text-button:focus-visible {
-  outline: 2px solid var(--ytp-accent);
-  outline-offset: 2px;
-}
 @media (prefers-reduced-motion: reduce) {
-  .ytp *,
-  .ytp-spin {
+  .ytp * {
     transition: none !important;
     animation: none !important;
   }

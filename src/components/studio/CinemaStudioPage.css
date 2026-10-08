@@ -11,10 +11,9 @@
   --cns-faint: var(--cs-faint);
   --cns-accent: var(--cs-accent);
   --cns-accent-ink: var(--cs-accent-ink);
-  --cns-focus: color-mix(in srgb, var(--cns-text) 40%, transparent);
   --cns-fill: color-mix(in srgb, var(--cs-text) 4%, transparent);
   --cns-fill-strong: color-mix(in srgb, var(--cs-text) 9%, transparent);
-  --cns-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --cns-ease: var(--ui-ease);
   position: relative;
   display: flex;
   flex: 1;
@@ -38,14 +37,7 @@
   cursor: not-allowed;
   opacity: 0.45;
 }
-/* Keyboard focus is a quiet neutral ring; text fields show focus on their card instead. */
-:root .cns :focus-visible {
-  outline: 2px solid var(--cns-focus);
-  outline-offset: 2px;
-}
-:root .cns :is(textarea, input):focus-visible {
-  outline: none;
-}
+/* Keyboard focus: the global ring (index.css). The prompt field shows focus on its bar. */
 .cns ::selection {
   background: var(--cns-accent);
   color: var(--cns-accent-ink);
@@ -139,9 +131,9 @@
   font-weight: 600;
 }
 :is(.cns, .cns-kit) .ui-seg.cns-modes > button[aria-checked="true"] {
-  background: var(--cns-fill-strong);
-  color: var(--cns-text);
-  box-shadow: none;
+  background: var(--ui-raised);
+  color: var(--ui-text);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.12), 0 0 0 1px var(--ui-line);
 }
 :is(.cns, .cns-kit) .ui-seg.cns-modes > button {
   min-height: 0;
@@ -190,22 +182,9 @@
 :is(.cns, .cns-kit) .cns-looks > * {
   flex-shrink: 0;
 }
-:is(.cns, .cns-kit) .cns-look {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 28px;
-  padding: 0 10px;
-  border: 1px solid var(--cns-line);
-  border-radius: 8px;
-  background: var(--cns-fill);
-  font-size: 12px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-:is(.cns, .cns-kit) .cns-look:hover,
 :is(.cns, .cns-kit) .cns-look[aria-expanded="true"] {
-  background: var(--cns-fill-strong);
+  border-color: var(--ui-line-strong);
+  background: var(--ui-hover);
 }
 :is(.cns, .cns-kit) .cns-look-label {
   color: var(--cns-faint);
@@ -245,69 +224,40 @@
   align-items: center;
   gap: 6px;
 }
-/* The shared ModelPicker in the dock: a chip like the others, its list opening upward. */
+/* The shared ModelPicker in the dock: a .ui-chip like the others, its list opening upward. */
 :is(.cns, .cns-kit) .cns-controls .cs-chip-model {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 30px;
   max-width: 220px;
-  padding: 0 10px;
-  border: 1px solid var(--cns-line);
-  border-radius: 9px;
-  background: var(--cns-fill);
-  font-size: 12px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-:is(.cns, .cns-kit) .cns-controls .cs-chip-model:hover:not(:disabled),
-:is(.cns, .cns-kit) .cns-controls .cs-chip-model[aria-expanded="true"] {
-  background: var(--cns-fill-strong);
 }
 :is(.cns, .cns-kit) .cns-icon.cns-icon {
   display: grid;
   place-items: center;
-  width: 30px;
-  height: 30px;
+  width: var(--ui-control-sm);
+  height: var(--ui-control-sm);
   padding: 0;
-  border: 1px solid var(--cns-line);
-  border-radius: 9px;
-  background: var(--cns-fill);
-  color: var(--cns-muted);
+  border: 1px solid var(--ui-line);
+  background: var(--ui-panel);
+  color: var(--ui-text-muted);
 }
 :is(.cns, .cns-kit) .cns-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 30px;
   max-width: 220px;
-  padding: 0 10px;
-  border: 1px solid var(--cns-line);
-  border-radius: 9px;
-  background: var(--cns-fill);
-  font-size: 12px;
-  font-weight: 600;
-  white-space: nowrap;
 }
 :is(.cns, .cns-kit) .cns-chip span {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-:is(.cns, .cns-kit) .cns-chip:hover:not(:disabled),
 :is(.cns, .cns-kit) .cns-chip[aria-expanded="true"] {
-  background: var(--cns-fill-strong);
-}
-:is(.cns, .cns-kit) .cns-chip[aria-pressed="true"] {
-  color: var(--cns-accent);
+  border-color: var(--ui-line-strong);
+  background: var(--ui-hover);
 }
 :is(.cns, .cns-kit) .cns-stepper {
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  height: 30px;
+  height: var(--ui-control-sm);
   padding: 0 4px;
-  border: 1px solid var(--cns-line);
-  border-radius: 9px;
+  border: 1px solid var(--ui-line);
+  border-radius: 999px;
+  background: var(--ui-panel);
   font-size: 12px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
@@ -399,7 +349,7 @@
   box-shadow: none;
 }
 :is(.cns, .cns-kit) .cns-generate:hover:not(:disabled) {
-  filter: brightness(1.06);
+  background: var(--ui-accent-hover);
 }
 :is(.cns, .cns-kit) .cns-generate:active:not(:disabled) {
   transform: scale(0.97);
@@ -431,14 +381,12 @@
   left: 0;
   bottom: calc(100% + 10px);
   z-index: 20;
-  border: 1px solid var(--cns-line);
-  border-radius: 16px;
-  background: var(--cns-solid);
-  box-shadow: var(--cs-shadow-lift);
-  animation: cns-in 180ms var(--cns-ease);
-}
-@keyframes cns-in {
-  from { opacity: 0; transform: translateY(6px); }
+  /* The .ui-menu surface, also for the grid panels that aren't plain lists. */
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-raised);
+  box-shadow: var(--ui-shadow-lift);
+  animation: ui-menu-in 140ms var(--ui-ease);
 }
 :is(.cns, .cns-kit) .cns-lookpanel {
   display: grid;
@@ -634,16 +582,16 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
-:is(.cns, .cns-kit) .cns-lookpanel-list button,
-:is(.cns, .cns-kit) .cns-mini button {
+:is(.cns, .cns-kit) .cns-lookpanel-list button {
   display: flex;
+  min-height: 36px;
   align-items: center;
   gap: 10px;
-  padding: 7px 8px;
+  padding: 0 10px;
   border: 0;
-  border-radius: 10px;
+  border-radius: var(--ui-radius-sm);
   background: transparent;
-  font-size: 13px;
+  font-size: 14px;
   text-align: left;
 }
 :is(.cns, .cns-kit) .cns-lookpanel-list button svg:last-child,
@@ -651,10 +599,11 @@
   margin-left: auto;
 }
 :is(.cns, .cns-kit) .cns-lookpanel-list button:hover,
-:is(.cns, .cns-kit) .cns-lookpanel-list button[aria-selected="true"],
-:is(.cns, .cns-kit) .cns-mini button:hover,
-:is(.cns, .cns-kit) .cns-mini button[aria-selected="true"] {
-  background: var(--cns-fill-strong);
+:is(.cns, .cns-kit) .cns-lookpanel-list button:focus-visible {
+  background: var(--ui-hover);
+}
+:is(.cns, .cns-kit) .cns-lookpanel-list button[aria-selected="true"] {
+  background: var(--ui-accent-soft);
 }
 :is(.cns, .cns-kit) .cns-dot-thumb {
   display: grid;
@@ -691,19 +640,10 @@
   padding: 6px;
 }
 :is(.cns, .cns-kit) .cns-listpanel button {
-  display: flex;
   flex-direction: column;
+  align-items: stretch;
   gap: 2px;
-  width: 100%;
   padding: 9px 10px;
-  border: 0;
-  border-radius: 10px;
-  background: transparent;
-  text-align: left;
-}
-:is(.cns, .cns-kit) .cns-listpanel button:hover,
-:is(.cns, .cns-kit) .cns-listpanel button[aria-selected="true"] {
-  background: var(--cns-fill-strong);
 }
 :is(.cns, .cns-kit) .cns-listpanel strong {
   display: flex;
@@ -716,24 +656,25 @@
   font-size: 12px;
 }
 :is(.cns, .cns-kit) .cns-mini {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
   min-width: 150px;
   max-height: 320px;
-  overflow-y: auto;
-  padding: 8px;
 }
+/* Same frame as .ui-search. */
 :is(.cns, .cns-kit) .cns-search {
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 34px;
+  min-height: 34px;
   margin-bottom: 6px;
   padding: 0 10px;
-  border: 1px solid var(--cns-line);
-  border-radius: 10px;
-  color: var(--cns-faint);
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius-control);
+  background: var(--ui-input);
+  color: var(--ui-text-muted);
+}
+:is(.cns, .cns-kit) .cns-search:focus-within {
+  border-color: var(--ui-focus);
+  box-shadow: 0 0 0 3px var(--ui-ring);
 }
 :is(.cns, .cns-kit) .cns-search input {
   flex: 1;
@@ -753,24 +694,32 @@
   width: min(520px, calc(100vw - 32px));
   padding: 12px;
 }
+/* Rig parts switch like a .ui-seg: a track, the picked part on a raised surface. */
 :is(.cns, .cns-kit) .cns-rig-tabs {
   display: flex;
-  gap: 4px;
+  gap: 2px;
   margin-bottom: 12px;
+  padding: 3px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ui-text) 7%, transparent);
 }
 :is(.cns, .cns-kit) .cns-rig-tabs button {
-  height: 30px;
-  padding: 0 14px;
+  flex: 1;
+  min-height: 28px;
+  padding: 0 12px;
   border: 0;
-  border-radius: 999px;
   background: transparent;
-  color: var(--cns-muted);
+  color: var(--ui-text-muted);
   font-size: 12px;
   font-weight: 600;
 }
+:is(.cns, .cns-kit) .cns-rig-tabs button:hover {
+  color: var(--ui-text);
+}
 :is(.cns, .cns-kit) .cns-rig-tabs button[aria-selected="true"] {
-  background: var(--cs-text);
-  color: var(--cs-bg);
+  background: var(--ui-raised);
+  color: var(--ui-text);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.12), 0 0 0 1px var(--ui-line);
 }
 :is(.cns, .cns-kit) .cns-rig-cards {
   display: grid;
@@ -790,10 +739,13 @@
   text-align: center;
   transition: border-color 160ms, background-color 160ms;
 }
-:is(.cns, .cns-kit) .cns-rig-card:hover,
+:is(.cns, .cns-kit) .cns-rig-card:hover {
+  border-color: var(--ui-line-strong);
+  background: var(--ui-hover);
+}
 :is(.cns, .cns-kit) .cns-rig-card[aria-pressed="true"] {
-  border-color: var(--cns-line-strong);
-  background: var(--cns-fill-strong);
+  border-color: color-mix(in srgb, var(--ui-accent) 70%, transparent);
+  background: var(--ui-accent-soft);
 }
 :is(.cns, .cns-kit) .cns-rig-card em {
   color: var(--cns-faint);
@@ -890,8 +842,8 @@
   opacity: 1;
 }
 :is(.cns, .cns-kit) .cns-rig-options button[aria-selected="true"] {
-  background: var(--cns-fill-strong);
-  color: var(--cns-text);
+  background: var(--ui-accent-soft);
+  color: var(--ui-text);
 }
 :is(.cns, .cns-kit) .cns-rig-check {
   position: absolute;
@@ -934,7 +886,7 @@
   text-align: left;
 }
 :is(.cns, .cns-kit) .cns-setups button:hover {
-  background: var(--cns-fill-strong);
+  background: var(--ui-hover);
 }
 :is(.cns, .cns-kit) .cns-setups img {
   width: 48px;
@@ -1045,35 +997,33 @@
    and per-shot camera). Same tokens as .cns; on maker pages the --cs-* colours they
    lean on come from the --mk-* theme. Popovers open downward, under page content. */
 .cns-kit {
-  --cns-bg: var(--cs-bg);
-  --cns-panel: var(--cs-surface);
-  --cns-solid: var(--cs-surface);
-  --cns-line: var(--cs-line);
-  --cns-line-strong: var(--cs-line-strong);
-  --cns-text: var(--cs-text);
-  --cns-muted: var(--cs-muted);
-  --cns-faint: var(--cs-faint);
-  --cns-accent: var(--cs-accent);
-  --cns-accent-ink: var(--cs-accent-ink);
-  --cns-focus: color-mix(in srgb, var(--cns-text) 40%, transparent);
-  --cns-fill: color-mix(in srgb, var(--cs-text) 4%, transparent);
-  --cns-fill-strong: color-mix(in srgb, var(--cs-text) 9%, transparent);
-  --cns-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  /* Outside .cstudio the studio tokens come straight from the site tokens. */
+  --cs-bg: var(--ui-bg);
+  --cs-surface: var(--ui-panel);
+  --cs-sunken: var(--ui-sunken);
+  --cs-text: var(--ui-text);
+  --cs-muted: var(--ui-text-muted);
+  --cs-faint: var(--ui-text-faint);
+  --cs-line: var(--ui-line);
+  --cs-line-strong: var(--ui-line-strong);
+  --cs-accent: var(--ui-accent);
+  --cs-accent-ink: var(--ui-accent-ink);
+  --cs-accent-soft: var(--ui-accent-soft);
+  --cs-shadow-lift: var(--ui-shadow-lift);
+  --cns-bg: var(--ui-bg);
+  --cns-panel: var(--ui-panel);
+  --cns-solid: var(--ui-panel);
+  --cns-line: var(--ui-line);
+  --cns-line-strong: var(--ui-line-strong);
+  --cns-text: var(--ui-text);
+  --cns-muted: var(--ui-text-muted);
+  --cns-faint: var(--ui-text-faint);
+  --cns-accent: var(--ui-accent);
+  --cns-accent-ink: var(--ui-accent-ink);
+  --cns-fill: color-mix(in srgb, var(--ui-text) 4%, transparent);
+  --cns-fill-strong: color-mix(in srgb, var(--ui-text) 9%, transparent);
+  --cns-ease: var(--ui-ease);
   color: var(--cns-text);
-}
-.maker-workspace .cns-kit {
-  --cs-bg: var(--mk-bg);
-  --cs-surface: var(--mk-surface);
-  --cs-sunken: var(--mk-sunken);
-  --cs-text: var(--mk-text);
-  --cs-muted: var(--mk-muted);
-  --cs-faint: var(--mk-faint);
-  --cs-line: var(--mk-line);
-  --cs-line-strong: var(--mk-line-strong);
-  --cs-accent: var(--mk-accent);
-  --cs-accent-ink: var(--mk-accent-ink);
-  --cs-accent-soft: var(--mk-accent-soft);
-  --cs-shadow-lift: var(--mk-shadow-lift);
 }
 .cns-kit *,
 .cns-kit *::before,
@@ -1120,10 +1070,6 @@ html .maker-workspace :where(.cns-kit) button {
   box-shadow: none;
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
-}
-.cns-kit .cns-look {
-  height: 32px;
-  background: var(--cns-solid);
 }
 /* A rig part left on Auto: a sparkle where the gear photo would be. */
 :is(.cns, .cns-kit) .cns-rig-auto {

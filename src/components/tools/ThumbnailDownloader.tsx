@@ -92,10 +92,10 @@ export function ThumbnailDownloader({ tool }: { tool: ToolDef }) {
         <span className="mt-label">Video link</span>
         <div className="relative">
           <Link2 size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 opacity-50" aria-hidden="true" />
-          <input className="mt-input" style={{ paddingLeft: 34 }} type="url" inputMode="url" value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://www.youtube.com/watch?v=…" disabled={busy} />
+          <input className="ui-input" style={{ paddingLeft: 34 }} type="url" inputMode="url" value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://www.youtube.com/watch?v=…" disabled={busy} />
         </div>
       </label>
-      <button type="submit" className="mt-primary" disabled={!url.trim() || busy}>
+      <button type="submit" className="ui-btn is-primary is-lg is-block mt-primary" disabled={!url.trim() || busy}>
         {busy ? <Loader2 size={16} className="animate-spin" /> : <ImageDown size={16} />}
         {busy ? "Looking" : tool.action}
       </button>
@@ -110,7 +110,7 @@ export function ThumbnailDownloader({ tool }: { tool: ToolDef }) {
         <span className="mt-meta">{size || (info ? "Full size" : "Nothing yet")}</span>
       </div>
       <div className="mt-stage-inner">
-        {busy ? <div className="mt-skeleton" aria-hidden="true"><span /><span /><span /></div> : null}
+        {busy ? <div className="mt-skeleton" aria-hidden="true"><span className="ui-skeleton" /><span className="ui-skeleton" /><span className="ui-skeleton" /></div> : null}
         {info ? (
           <>
             <figure className="mt-cover" style={{ margin: 0 }}>
@@ -121,8 +121,8 @@ export function ThumbnailDownloader({ tool }: { tool: ToolDef }) {
                   <span className="mt-meta">{[info.uploader, duration(info.duration)].filter(Boolean).join(" · ")}</span>
                 </div>
                 <div className="mt-actions">
-                  <button type="button" className="mt-secondary" onClick={() => void copyLink()}>{copied ? <Check size={15} /> : <Copy size={15} />}{copied ? "Copied" : "Copy image link"}</button>
-                  <button type="button" className="mt-primary" style={{ width: "auto", height: 34, fontSize: 13 }} onClick={() => void save()} disabled={saving}>
+                  <button type="button" className="ui-btn is-sm mt-secondary" onClick={() => void copyLink()}>{copied ? <Check size={15} /> : <Copy size={15} />}{copied ? "Copied" : "Copy image link"}</button>
+                  <button type="button" className="ui-btn is-primary is-lg is-block mt-primary" style={{ width: "auto", height: 34, fontSize: 13 }} onClick={() => void save()} disabled={saving}>
                     {saving ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
                     {saving ? "Saving" : "Download"}
                   </button>

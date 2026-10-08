@@ -60,10 +60,10 @@ export function ContextMenu({ x, y, items, label, onClose }: { x: number; y: num
   };
 
   return (
-    <div ref={ref} className="ve-menu" role="menu" aria-label={label} style={pos} onKeyDown={onKeyDown} onContextMenu={(e) => e.preventDefault()}>
+    <div ref={ref} className="ui-menu ve-menu" role="menu" aria-label={label} style={pos} onKeyDown={onKeyDown} onContextMenu={(e) => e.preventDefault()}>
       {items.map((item, i) =>
         item === "sep" ? (
-          <span key={`sep-${i}`} className="ve-menu-sep" role="separator" />
+          <span key={`sep-${i}`} className="ui-menu-sep" role="separator" />
         ) : "swatches" in item ? (
           <div key={`swatches-${i}`} className="ve-menu-swatches" role="group" aria-label="Color label">
             {item.swatches.map((sw) => (
@@ -102,7 +102,7 @@ export function ContextMenu({ x, y, items, label, onClose }: { x: number; y: num
             key={item.label}
             type="button"
             role="menuitem"
-            className={`ve-menu-item${item.danger ? " is-danger" : ""}`}
+            className={`ui-menu-item ve-menu-item${item.danger ? " is-danger" : ""}`}
             disabled={item.disabled}
             onClick={() => {
               onClose();

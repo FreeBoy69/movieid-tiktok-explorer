@@ -1,19 +1,14 @@
 /* Voiceover Studio — editorial paper surface, charcoal ink, brand-yellow signal. 4pt grid. */
 .voice-workspace {
-  --vs-bg: #f9f8f6; --vs-panel: #ffffff; --vs-panel-soft: #fdfcfa; --vs-ink: #1a1a1a; --vs-muted: #5d5b56; --vs-subtle: #8e8b84;
-  --vs-line: #dadada; --vs-line-strong: #c4c2bc; --vs-soft: #f1efe9; --vs-accent: #f9dc0b; --vs-accent-deep: #8a7500; --vs-accent-wash: #fff9d6;
-  --vs-ok: #2f7f5f; --vs-warn: #b75b51; --vs-shadow: 0 18px 44px rgba(26, 26, 26, 0.12); --vs-pad: 28px;
+  --vs-bg: var(--ui-bg); --vs-panel: var(--ui-panel); --vs-panel-soft: var(--ui-input); --vs-ink: var(--ui-text); --vs-muted: var(--ui-text-muted); --vs-subtle: var(--ui-text-faint);
+  --vs-line: var(--ui-line); --vs-line-strong: var(--ui-line-strong); --vs-soft: var(--ui-chip); --vs-accent: var(--ui-accent); --vs-accent-deep: var(--ui-accent-text); --vs-accent-wash: var(--ui-accent-soft);
+  --vs-ok: var(--ui-success); --vs-warn: var(--ui-danger); --vs-shadow: var(--ui-shadow); --vs-pad: 28px;
   background: transparent; color: var(--vs-ink); height: 100%; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 24px var(--vs-pad) 0;
-  display: flex; flex-direction: column; font-size: 14px; accent-color: var(--vs-accent); scrollbar-color: var(--vs-line-strong) transparent; container-type: inline-size;
+  display: flex; flex-direction: column; font-size: 14px; scrollbar-color: var(--vs-line-strong) transparent; container-type: inline-size;
 }
-.voice-workspace[data-theme=dark] {
-  --vs-bg: #070a12; --vs-panel: #0f1420; --vs-panel-soft: #131927; --vs-ink: #f5f4ef; --vs-muted: #b7b9c2; --vs-subtle: #7f8290;
-  --vs-line: rgba(255, 255, 255, 0.11); --vs-line-strong: rgba(255, 255, 255, 0.22); --vs-soft: rgba(255, 255, 255, 0.06); --vs-accent-wash: rgba(249, 220, 11, 0.12);
-  --vs-accent-deep: #e8cc00; --vs-ok: #5fc39a; --vs-shadow: 0 18px 44px rgba(0, 0, 0, 0.45);
-}
+.voice-workspace[data-theme=dark] { color-scheme: dark; }
 .voice-workspace * { box-sizing: border-box; min-width: 0; }
-.voice-workspace ::selection { background: var(--vs-accent); color: #161616; }
-.voice-workspace :focus-visible { outline: 2px solid var(--vs-accent-deep); outline-offset: 2px; }
+.voice-workspace ::selection { background: var(--vs-accent); color: var(--ui-accent-ink); }
 .voice-workspace button, .voice-workspace a { transition: background-color .18s ease, color .18s ease, border-color .18s ease, transform .12s ease; }
 .voice-workspace button:disabled { opacity: .42; cursor: not-allowed; }
 .voice-workspace button:not(:disabled):active { transform: scale(.985); }
@@ -27,39 +22,26 @@
 .voice-engine { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px; border: 1px solid var(--vs-line); border-radius: 999px; background: var(--vs-panel); font-size: 12px; font-weight: 600; color: var(--vs-muted); white-space: nowrap; }
 .voice-engine > span { width: 7px; height: 7px; border-radius: 50%; background: var(--vs-warn); box-shadow: 0 0 0 3px rgba(183, 91, 81, .18); }
 .voice-engine.is-online > span { background: var(--vs-ok); box-shadow: 0 0 0 3px rgba(47, 127, 95, .18); }
-.voice-icon { height: 36px; width: 36px; flex: none; display: inline-flex; align-items: center; justify-content: center; border: 1px solid transparent; border-radius: 10px; color: var(--vs-ink); background: transparent; cursor: pointer; }
-.voice-icon:hover:not(:disabled) { background: var(--vs-soft); }
 
 /* Source toolbar */
 .voice-source-bar { gap: 12px; align-items: flex-end; padding-bottom: 20px; }
 .voice-workspace label > span { display: block; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--vs-subtle); margin-bottom: 6px; }
 .voice-source-bar > label:first-child { width: 240px; flex: none; }
 .voice-upload-picker { flex: 1; }
-.voice-workspace select, .voice-import-form input, .voice-style-import input { height: 42px; width: 100%; padding: 0 34px 0 14px; border: 1px solid var(--vs-line); border-radius: 10px; background: var(--vs-panel); color: var(--vs-ink); font-size: 14px; font-weight: 600; text-overflow: ellipsis; transition: border-color .18s ease, box-shadow .18s ease; }
-.voice-workspace select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238e8b84' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; }
-.voice-import-form input, .voice-style-import input { padding-right: 14px; font-weight: 500; }
-.voice-workspace select:hover:not(:disabled), .voice-import-form input:hover, .voice-style-import input:hover { border-color: var(--vs-line-strong); }
-.voice-workspace select:focus, .voice-import-form input:focus, .voice-style-import input:focus, .voice-script:focus { outline: none; border-color: rgba(249, 220, 11, .7); box-shadow: 0 0 0 3px rgba(249, 220, 11, .28); }
+/* Selects from child panels (subtitle settings) take the canonical .ui-select look. */
+.voice-workspace select:not(.ui-select) { width: 100%; min-height: var(--ui-field-height); padding: 0 36px 0 12px; border: 1px solid var(--ui-line-strong); border-radius: var(--ui-radius-control); background: var(--ui-input) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238e8b84' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 12px center; color: var(--ui-text); font-size: 14px; appearance: none; }
+.voice-workspace select:not(.ui-select):focus-visible { border-color: var(--ui-focus); box-shadow: 0 0 0 3px var(--ui-ring); outline: none; }
 .voice-import { border-color: var(--vs-line); background: var(--vs-panel); height: 42px; width: 42px; }
-.voice-import[aria-expanded=true], .voice-import.is-open { background: var(--vs-accent); border-color: var(--vs-accent); color: #161616; }
+.voice-import[aria-expanded=true], .voice-import.is-open { background: var(--vs-accent); border-color: var(--vs-accent); color: var(--ui-accent-ink); }
 .vs-topbar .voice-import { height: 34px; width: 34px; }
 .voice-import-form { display: flex; gap: 10px; margin-bottom: 16px; }
 
-/* Buttons */
-.voice-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; padding: 8px 16px; border: 1px solid var(--vs-line); border-radius: 10px; background: var(--vs-panel); color: var(--vs-ink); font-size: 12.5px; font-weight: 700; text-decoration: none; white-space: nowrap; cursor: pointer; }
-.voice-button:hover:not(:disabled) { border-color: var(--vs-line-strong); background: var(--vs-panel-soft); }
-.voice-workspace .voice-primary { background: var(--vs-accent); color: #161616; border-color: var(--vs-accent); box-shadow: 0 6px 16px rgba(249, 220, 11, .28); }
-.voice-workspace .voice-primary:hover:not(:disabled) { background: #1a1a1a; border-color: #1a1a1a; color: #fff; box-shadow: none; }
-.voice-workspace[data-theme=dark] .voice-primary:hover:not(:disabled) { background: #fff; border-color: #fff; color: #161616; }
 .voice-error { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px 10px 14px; margin-bottom: 16px; background: var(--vs-panel); color: var(--vs-ink); border: 1px solid rgba(183, 91, 81, .55); border-left: 4px solid var(--vs-warn); border-radius: 10px; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
 
 /* Editing grid */
 .voice-editing-grid { display: grid; grid-template-columns: minmax(0, 1.16fr) minmax(340px, 1fr); flex: 1; gap: 28px; padding-bottom: 24px; align-items: start; }
 .voice-preview-column { display: flex; flex-direction: column; min-width: 0; }
 .voice-stage-top { justify-content: space-between; margin-bottom: 12px; height: 38px; }
-.voice-segmented { display: inline-flex; padding: 3px; background: var(--vs-soft); border-radius: 10px; gap: 2px; }
-.voice-segmented button { border: 0; padding: 7px 14px; border-radius: 8px; font-size: 12px; font-weight: 700; color: var(--vs-muted); background: transparent; cursor: pointer; }
-.voice-segmented button[aria-pressed=true] { color: var(--vs-ink); background: var(--vs-panel); box-shadow: 0 2px 6px rgba(0, 0, 0, .08); }
 .voice-stage { position: relative; aspect-ratio: 16 / 10; background: #0b0b0b; border-radius: 14px; overflow: hidden; display: grid; place-items: center; box-shadow: var(--vs-shadow); }
 .voice-stage video { width: 100%; height: 100%; max-height: 520px; object-fit: contain; display: block; }
 .voice-stage-empty { width: 100%; height: 100%; min-height: 260px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; color: #d1d1d1; position: relative; text-align: center; padding: 24px; }
@@ -71,11 +53,9 @@
 .voice-stage-meta { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding-top: 14px; }
 .voice-video-title { font-size: 17px; line-height: 1.45; font-weight: 700; letter-spacing: -0.005em; overflow-wrap: anywhere; }
 .voice-quality-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
-.voice-chip { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 11px; flex: none; border: 1px solid var(--vs-line); border-radius: 999px; background: var(--vs-panel); font-size: 11.5px; font-weight: 600; color: var(--vs-muted); white-space: nowrap; }
 .voice-chip svg { flex: none; }
-.voice-chip.is-accent { border-color: rgba(249, 220, 11, .5); background: var(--vs-accent-wash); color: var(--vs-accent-deep); }
-.voice-chip.is-passed { border-color: rgba(47, 127, 95, .35); background: rgba(47, 127, 95, .08); color: var(--vs-ok); }
-.voice-chip.is-warn { border-color: rgba(183, 91, 81, .4); background: rgba(183, 91, 81, .07); color: var(--vs-warn); }
+.voice-chip.is-passed { background: color-mix(in srgb, var(--ui-success) 14%, transparent); color: var(--ui-success); }
+.voice-chip.is-warn { background: color-mix(in srgb, var(--ui-danger) 14%, transparent); color: var(--ui-danger); }
 .voice-chip em { font-style: normal; font-weight: 500; color: var(--vs-subtle); }
 .voice-script-comparison { margin: 16px 0; line-height: 1.7; font-size: 13px; }
 .voice-script-comparison summary { cursor: pointer; font-weight: 700; color: var(--vs-accent-deep); }
@@ -91,7 +71,7 @@
 .voice-editor-sidebar { display: flex; flex-direction: column; gap: 4px; padding-right: 16px; border-right: 1px solid var(--vs-line); }
 .voice-editor-sidebar button { position: relative; display: flex; align-items: center; gap: 9px; min-height: 40px; padding: 0 12px; border: 0; border-radius: 10px; background: transparent; color: var(--vs-muted); text-align: left; font-size: 12.5px; font-weight: 700; cursor: pointer; }
 .voice-editor-sidebar button:hover:not(:disabled) { background: var(--vs-soft); color: var(--vs-ink); }
-.voice-editor-sidebar button[aria-selected=true] { background: var(--vs-accent); color: #161616; }
+.voice-editor-sidebar button[aria-selected=true] { background: var(--vs-accent); color: var(--ui-accent-ink); }
 .voice-editor-sidebar i { width: 6px; height: 6px; margin-left: auto; border-radius: 50%; background: currentColor; opacity: .7; }
 .voice-editor-panel { min-width: 0; }
 .voice-panel-heading { display: flex; justify-content: space-between; gap: 14px; margin-bottom: 4px; }
@@ -117,8 +97,8 @@
 .voice-text-button { background: transparent; border: 0; min-height: 30px; padding: 4px 0 4px 8px; color: var(--vs-accent-deep); }
 .voice-script { width: 100%; height: 220px; min-height: 160px; resize: vertical; background: var(--vs-panel-soft); color: var(--vs-ink); padding: 16px; font-size: 14px; line-height: 1.85; border: 1px solid var(--vs-line); border-radius: 12px; caret-color: var(--vs-accent-deep); transition: border-color .18s ease, box-shadow .18s ease; }
 .voice-script::placeholder { color: var(--vs-subtle); }
+.voice-script:focus-visible { border-color: var(--ui-focus); box-shadow: 0 0 0 3px var(--ui-ring); outline: none; }
 .voice-script-meta { justify-content: space-between; flex-wrap: wrap; margin: 8px 0 12px; color: var(--vs-muted); font-size: 12px; font-weight: 600; }
-.voice-workspace input[type=checkbox] { width: 15px; height: 15px; flex: none; margin: 0; border-radius: 4px; }
 .voice-workspace label:has(input[type=checkbox]) { display: flex; align-items: center; gap: 9px; line-height: 1.6; cursor: pointer; }
 .voice-settings { align-items: flex-end; margin-bottom: 12px; }
 .voice-voice-select { flex: 1; }
@@ -137,7 +117,6 @@
 .voice-audio-upload span { color: var(--vs-muted); font-size: 12.5px; }
 .voice-audio-upload input { max-width: 100%; font-size: 12.5px; }
 .voice-audio-upload-wide { display: block; min-height: 0; padding-bottom: 12px; }
-.voice-button-small { min-height: 32px; padding: 6px 10px; font-size: 11.5px; }
 
 /* Compact inspector tools */
 .vs-tool { display: flex; flex-direction: column; gap: 12px; width: 100%; min-width: 0; }
@@ -145,7 +124,7 @@
 .vs-tool-head h2 { display: inline-flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 700; letter-spacing: -0.01em; }
 .vs-tool-meta { max-width: 55%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--vs-muted); font-size: 11.5px; font-weight: 600; }
 .vs-tool-blurb { color: var(--vs-muted); font-size: 12.5px; line-height: 1.45; }
-.voice-icon.is-accent { background: var(--vs-accent); color: #161616; border-color: var(--vs-accent); }
+.voice-icon.is-accent { background: var(--vs-accent); color: var(--ui-accent-ink); border-color: var(--vs-accent); }
 
 @container (max-width: 520px) {
 }
@@ -173,10 +152,6 @@
 .voice-progress::-moz-progress-bar { background: var(--vs-accent); }
 
 /* Dock player */
-.voice-player-tracks { display: inline-flex; flex-wrap: wrap; gap: 4px; }
-.voice-player-tracks button { height: 24px; padding: 0 9px; border: 1px solid var(--vs-line); border-radius: 999px; background: transparent; color: var(--vs-muted); font-size: 10.5px; font-weight: 700; cursor: pointer; }
-.voice-player-tracks button:hover:not(:disabled) { border-color: var(--vs-line-strong); color: var(--vs-ink); }
-.voice-player-tracks button[aria-selected=true] { background: var(--vs-ink); border-color: var(--vs-ink); color: var(--vs-bg); }
 
 .voice-subtitle-settings { display: grid; gap: 14px; font-size: 12px; }
 .voice-subtitle-settings h2 { display: flex; align-items: center; gap: 8px; font-size: 16px; }
@@ -192,8 +167,6 @@
 .voice-subtitle-type input[type=color] { display: block; width: 38px; height: 38px; padding: 2px; border: 1px solid var(--vs-line); border-radius: 6px; background: var(--vs-panel); }
 .voice-subtitle-preview { position: absolute; display: flex; align-items: center; justify-content: center; pointer-events: none; overflow: hidden; }
 .voice-subtitle-preview span { padding: 0 5%; text-align: center; line-height: 1.2; paint-order: stroke fill; overflow-wrap: anywhere; }
-.voice-spin { animation: voice-spin 1.3s linear infinite; flex: none; }
-@keyframes voice-spin { to { transform: rotate(360deg); } }
 
 /* Full-bleed Google Vids–style studio (not a page nested inside tools chrome) */
 .voice-studio-app {
@@ -221,7 +194,7 @@
 .vs-topbar-left, .vs-topbar-center, .vs-topbar-right { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .vs-topbar-center { justify-content: center; }
 .vs-topbar-right { justify-content: flex-end; flex-wrap: wrap; }
-.vs-topbar-right .voice-button { min-height: 34px; padding: 6px 12px; font-size: 12px; }
+.vs-topbar-right .ui-btn { min-height: var(--ui-control-sm); padding: 0 12px; font-size: 13px; }
 .vs-topbar-right .voice-engine { height: 28px; padding: 0 10px; font-size: 11px; }
 .vs-product { font-family: "Antonio", ui-sans-serif, sans-serif; font-size: 17px; font-weight: 600; white-space: nowrap; }
 .vs-project-pickers { display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1; }
@@ -393,7 +366,6 @@
 .voice-avatar-face,
 .voice-avatar-placeholders label { display: grid; gap: 6px; font-size: 12px; font-weight: 600; color: var(--vs-muted); }
 .voice-avatar-placeholders em { font-style: normal; font-size: 11px; font-weight: 500; color: var(--vs-subtle); }
-.voice-avatar-placeholders input, .voice-avatar-placeholders select { height: 38px; border: 1px solid var(--vs-line); border-radius: 10px; background: var(--vs-panel); color: var(--vs-ink); padding: 0 10px; }
 
 /* Breakpoints */
 @media (min-width: 768px) { .voice-dock { padding-right: calc(var(--vs-pad) + 100px); } }

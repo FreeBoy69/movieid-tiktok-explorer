@@ -83,9 +83,9 @@ function formatVideoDuration(totalSeconds: number): string {
 }
 
 function scoreTone(score: number): string {
-  if (score >= 75) return "text-[#6a5b00] bg-[#fff9d6] border-[#f9dc0b]/18";
-  if (score >= 50) return "text-[#f9dc0b] bg-[#f9dc0b]/10 border-[#f9dc0b]/15";
-  return "text-[#1A1A1A]/55 bg-[#1A1A1A]/5 border-[#1A1A1A]/10";
+  if (score >= 75) return "text-[var(--ui-accent-text)] bg-[var(--ui-accent-soft)] border-[var(--ui-accent)]/18";
+  if (score >= 50) return "text-[var(--ui-accent-text)] bg-[var(--ui-accent)]/10 border-[var(--ui-accent)]/15";
+  return "text-[var(--ui-text)]/55 bg-[var(--ui-text)]/5 border-[var(--ui-line)]";
 }
 
 export function YouTubeRadar() {
@@ -202,7 +202,7 @@ export function YouTubeRadar() {
   const filterSummary = `${REGION_OPTIONS.find(([value]) => value === regionCode)?.[1] || regionCode} · ${AGE_OPTIONS.find(([value]) => value === String(publishedAfterDays))?.[1] || `${publishedAfterDays} days`} · ${DURATION_OPTIONS.find(([value]) => value === duration)?.[1] || duration} · ${maxResults} videos`;
 
   return (
-    <div className="workspace-floating-shell relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-[#F9F8F6] text-[#1A1A1A]">
+    <div className="workspace-floating-shell relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--ui-bg)] text-[var(--ui-text)]">
       <header className="workspace-floating-header flex min-h-14 flex-col gap-3 px-4 py-3 xl:flex-row xl:items-center">
         <form
           onSubmit={(event) => {
@@ -215,7 +215,7 @@ export function YouTubeRadar() {
           }}
           className="flex min-w-0 flex-1 flex-col gap-2 lg:flex-row lg:items-center"
         >
-          <div className="inline-flex w-full shrink-0 rounded-lg border border-[#1A1A1A]/8 bg-[#F9F8F6] p-1 sm:w-auto">
+          <div className="inline-flex w-full shrink-0 rounded-lg border border-[var(--ui-line)] bg-[var(--ui-bg)] p-1 sm:w-auto">
             <SourceModeTab
               active={sourceMode === "search"}
               icon={<Search className="h-4 w-4" />}
@@ -232,20 +232,20 @@ export function YouTubeRadar() {
             />
           </div>
           <label className="relative min-w-0 flex-1">
-            <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#1A1A1A]/35" />
+            <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--ui-text)]/35" />
             <input
               value={sourceMode === "search" ? searchQuery : viralFilter}
               onChange={(event) => sourceMode === "search" ? setSearchQuery(event.target.value) : setViralFilter(event.target.value)}
               placeholder={sourceMode === "search" ? "Keywords, topics, or channel angles" : "Optional title, description, or tag filter"}
-              className="h-11 w-full rounded-lg border border-[#1A1A1A]/10 bg-white pl-11 pr-4 text-sm font-medium outline-none transition focus:border-[#f9dc0b]/45"
+              className="h-11 w-full rounded-lg border border-[var(--ui-line)] bg-[var(--ui-panel)] pl-11 pr-4 text-sm font-medium outline-none transition focus:border-[var(--ui-accent)]/45"
             />
           </label>
           <button
             type="submit"
             disabled={isLoading}
-            className="inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-lg bg-[#f9dc0b] px-4 py-2 text-sm font-bold text-[#1A1A1A] shadow-sm shadow-[#f9dc0b]/20 transition hover:bg-[#1A1A1A] hover:text-white disabled:cursor-not-allowed disabled:opacity-60 lg:w-auto lg:min-w-[9rem]"
+            className="ui-btn is-primary w-full shrink-0 shadow-[#f9dc0b]/20 lg:w-auto lg:min-w-[9rem]"
           >
-            {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : sourceMode === "search" ? <Sparkles className="h-4 w-4" /> : <TrendingUp className="h-4 w-4" />}
+            {isLoading ? <Loader2 className="h-4 w-4 ui-spin" /> : sourceMode === "search" ? <Sparkles className="h-4 w-4" /> : <TrendingUp className="h-4 w-4" />}
             {sourceMode === "search" ? "Scan" : "Find viral"}
           </button>
         </form>
@@ -321,8 +321,8 @@ function SourceModeTab({
       className={cn(
         "inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-bold transition",
         active
-          ? "bg-white text-[#1A1A1A] shadow-sm"
-          : "text-[#1A1A1A]/45 hover:bg-white/70 hover:text-[#1A1A1A]/70",
+          ? "bg-[var(--ui-panel)] text-[var(--ui-text)] shadow-sm"
+          : "text-[var(--ui-text)]/45 hover:bg-white/70 hover:text-[var(--ui-text)]/70",
       )}
     >
       {icon}
@@ -333,13 +333,13 @@ function SourceModeTab({
 
 function FilterDrawer({ summary, children }: { summary: string; children: ReactNode }) {
   return (
-    <details className="group border-b border-[#1A1A1A]/8 pb-3">
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 py-2 text-xs font-bold text-[#1A1A1A]/55 [&::-webkit-details-marker]:hidden">
+    <details className="group border-b border-[var(--ui-line)] pb-3">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 py-2 text-xs font-bold text-[var(--ui-text)]/55 [&::-webkit-details-marker]:hidden">
         <span className="inline-flex items-center gap-2">
-          <SlidersHorizontal className="h-3.5 w-3.5 text-[#f9dc0b]" />
+          <SlidersHorizontal className="h-3.5 w-3.5 text-[var(--ui-accent-text)]" />
           Filters
         </span>
-        <span className="truncate text-[11px] font-semibold text-[#1A1A1A]/38">{summary}</span>
+        <span className="truncate text-[11px] font-semibold text-[var(--ui-text)]/38">{summary}</span>
       </summary>
       <div className="grid gap-2 pt-3 md:grid-cols-5">
         {children}
@@ -352,13 +352,13 @@ function FilterSelect({ label, value, onChange, options }: { label: string; valu
   const id = `yt-radar-${label.toLowerCase().replace(/\s+/g, "-")}`;
   return (
     <div className="space-y-1.5">
-      <label htmlFor={id} className="text-[11px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">{label}</label>
+      <label htmlFor={id} className="text-[11px] font-bold uppercase tracking-widest text-[var(--ui-text)]/35">{label}</label>
       <select
         id={id}
         name={id}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="h-10 w-full rounded-lg border border-[#1A1A1A]/8 bg-[#F9F8F6] px-3 text-xs font-semibold text-[#1A1A1A]/70 outline-none focus:border-[#f9dc0b]/35"
+        className="h-10 w-full rounded-lg border border-[var(--ui-line)] bg-[var(--ui-bg)] px-3 text-xs font-semibold text-[var(--ui-text)]/70 outline-none focus:border-[var(--ui-accent)]/35"
       >
         {options.map(([optionValue, optionLabel]) => (
           <option key={optionValue} value={optionValue}>
@@ -372,19 +372,19 @@ function FilterSelect({ label, value, onChange, options }: { label: string; valu
 
 function RadarTabButton({ icon, label, active, count, onClick }: { icon: ReactNode; label: string; active: boolean; count?: number; onClick: () => void }) {
   return (
-    <button type="button" onClick={onClick} className={cn("inline-flex h-11 shrink-0 items-center gap-2 border-b-2 px-1 text-sm font-bold transition", active ? "border-[#f9dc0b] text-[#1A1A1A]" : "border-transparent text-[#1A1A1A]/45 hover:text-[#1A1A1A]")}>
+    <button type="button" onClick={onClick} className={cn("inline-flex h-11 shrink-0 items-center gap-2 border-b-2 px-1 text-sm font-bold transition", active ? "border-[var(--ui-accent)] text-[var(--ui-text)]" : "border-transparent text-[var(--ui-text)]/45 hover:text-[var(--ui-text)]")}>
       {icon}
       {label}
-      {typeof count === "number" && <span className={cn("rounded-full px-2 py-0.5 text-[10px]", active ? "bg-[#f9dc0b]/18 text-[#1A1A1A]" : "bg-[#1A1A1A]/5 text-[#1A1A1A]/45")}>{count}</span>}
+      {typeof count === "number" && <span className={cn("rounded-full px-2 py-0.5 text-[10px]", active ? "bg-[var(--ui-accent)]/18 text-[var(--ui-text)]" : "bg-[var(--ui-text)]/5 text-[var(--ui-text)]/45")}>{count}</span>}
     </button>
   );
 }
 
 function Metric({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
   return (
-    <div className="rounded-lg border border-[#1A1A1A]/8 bg-[#F9F8F6] px-3 py-2.5">
-      <div className="mb-1.5 flex items-center gap-1.5 text-[#f9dc0b]">{icon}<span className="text-[10px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">{label}</span></div>
-      <p className="truncate text-base font-bold text-[#1A1A1A]">{value}</p>
+    <div className="rounded-lg border border-[var(--ui-line)] bg-[var(--ui-bg)] px-3 py-2.5">
+      <div className="mb-1.5 flex items-center gap-1.5 text-[var(--ui-accent-text)]">{icon}<span className="text-[10px] font-bold uppercase tracking-widest text-[var(--ui-text)]/35">{label}</span></div>
+      <p className="truncate text-base font-bold text-[var(--ui-text)]">{value}</p>
     </div>
   );
 }
@@ -400,7 +400,7 @@ function VideoCard({ video, saved, onToggleSaved }: { video: YouTubeRadarVideo; 
       meta={`${compactNumber(video.viewCount)} views · ${compactNumber(video.viewsPerHour)} VPH · ${dateAge(video.publishedAt)}`}
       imageUrl={video.thumbnailUrl}
       href={video.url}
-      topLeft={<span className={cn("max-w-full truncate rounded-full border px-2.5 py-1 text-[10px] font-black shadow-sm backdrop-blur-sm", scoreTone(discoveryScore))}>Radar {discoveryScore}</span>}
+      topLeft={<span className={cn("max-w-full truncate rounded-full border px-2.5 py-1 text-[10px] font-black shadow-sm backdrop-blur-sm border-[var(--ui-line)]", scoreTone(discoveryScore))}>Radar {discoveryScore}</span>}
       topRight={<div className="flex items-center gap-1.5">
         {durationLabel ? <span className="rounded-lg bg-black/70 px-2 py-1 text-[11px] font-black text-white">{durationLabel}</span> : null}
         <button
@@ -448,9 +448,9 @@ function CompetitorGrid({ competitors }: { competitors: YouTubeRadarCompetitor[]
 
 function MiniStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg bg-white px-3 py-2">
-      <p className="text-[10px] font-bold uppercase tracking-widest text-[#1A1A1A]/32">{label}</p>
-      <p className="mt-1 text-sm font-bold text-[#1A1A1A]/78">{value}</p>
+    <div className="rounded-lg bg-[var(--ui-panel)] px-3 py-2">
+      <p className="text-[10px] font-bold uppercase tracking-widest text-[var(--ui-text)]/32">{label}</p>
+      <p className="mt-1 text-sm font-bold text-[var(--ui-text)]/78">{value}</p>
     </div>
   );
 }
@@ -460,13 +460,13 @@ function NicheGrid({ niches }: { niches: YouTubeRadarNiche[] }) {
   return (
     <div className="grid gap-4 md:grid-cols-2">
       {niches.map((niche) => (
-        <article key={niche.name} className="rounded-xl border border-[#1A1A1A]/8 bg-[#FDFCFA] p-5">
+        <article key={niche.name} className="rounded-xl border border-[var(--ui-line)] bg-[var(--ui-panel)] p-5">
           <div className="mb-4 flex items-start justify-between gap-3">
             <div>
-              <p className="text-xs font-bold uppercase tracking-widest text-[#f9dc0b]">{niche.competition} competition</p>
-              <h3 className="mt-1 font-serif text-2xl font-bold text-[#1A1A1A]">{niche.name}</h3>
+              <p className="text-xs font-bold uppercase tracking-widest text-[var(--ui-accent-text)]">{niche.competition} competition</p>
+              <h3 className="mt-1 font-serif text-2xl font-bold text-[var(--ui-text)]">{niche.name}</h3>
             </div>
-            <span className={cn("rounded-full border px-3 py-1 text-xs font-bold", scoreTone(niche.opportunityScore))}>{niche.opportunityScore}/100</span>
+            <span className={cn("rounded-full border px-3 py-1 text-xs font-bold border-[var(--ui-line)]", scoreTone(niche.opportunityScore))}>{niche.opportunityScore}/100</span>
           </div>
           <div className="mb-4 grid grid-cols-3 gap-2">
             <MiniStat label="RPM" value={niche.estimatedRpm} />
@@ -475,7 +475,7 @@ function NicheGrid({ niches }: { niches: YouTubeRadarNiche[] }) {
           </div>
           <div className="space-y-2">
             {niche.angles.map((angle) => (
-              <div key={angle} className="rounded-lg bg-white px-3 py-2 text-xs font-medium leading-relaxed text-[#1A1A1A]/62">
+              <div key={angle} className="rounded-lg bg-[var(--ui-panel)] px-3 py-2 text-xs font-medium leading-relaxed text-[var(--ui-text)]/62">
                 {angle}
               </div>
             ))}

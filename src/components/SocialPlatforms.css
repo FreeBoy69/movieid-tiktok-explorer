@@ -33,7 +33,7 @@
   gap: 8px;
   padding: 12px 8px;
   border: 1px solid color-mix(in srgb, currentColor 10%, transparent);
-  border-radius: 16px;
+  border-radius: var(--ui-radius-md);
   background: color-mix(in srgb, currentColor 3%, transparent);
   color: inherit;
   font: inherit;
@@ -44,16 +44,12 @@
 }
 .sp-grid .sp-tile:hover {
   border-color: color-mix(in srgb, currentColor 22%, transparent);
-  box-shadow: 0 8px 20px rgb(0 0 0 / 0.06);
+  box-shadow: var(--ui-shadow-soft);
   transform: translateY(-1px);
 }
-.sp-grid .sp-tile:focus-visible {
-  outline: 2px solid #f9dc0b;
-  outline-offset: 2px;
-}
 .sp-grid .sp-tile[data-on] {
-  border-color: rgb(249 220 11 / 0.75);
-  box-shadow: 0 8px 22px rgb(249 220 11 / 0.14);
+  border-color: color-mix(in srgb, var(--ui-accent) 70%, transparent);
+  background: var(--ui-accent-soft);
 }
 .sp-icon {
   display: grid;

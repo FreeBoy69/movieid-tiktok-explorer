@@ -114,12 +114,12 @@ export function usePopover() {
 // behaviour everywhere: Escape and outside-click close, arrow keys move, the pick is focused.
 export type ChoiceOption = { value: string; label: string; hint?: string; icon?: ReactNode };
 const CHOICE_SKINS = {
-  studio: { root: "cs-pop", chip: "cs-chip", label: "cs-chip-label", value: "", menu: "cs-menu", item: "cs-menu-item" },
-  drama: { root: "dr-pop", chip: "dr-composer-chip is-choice", label: "dr-chip-label", value: "dr-composer-chip-text", menu: "dr-menu", item: "dr-menu-item" },
-  cinema: { root: "cns-pop", chip: "cns-look", label: "cns-look-label", value: "", menu: "cns-panel cns-listpanel", item: "" },
-  "cinema-mini": { root: "cns-pop", chip: "cns-chip", label: "", value: "", menu: "cns-panel cns-mini", item: "" },
+  studio: { root: "cs-pop", chip: "ui-chip cs-chip", label: "cs-chip-label", value: "", menu: "ui-menu cs-menu", item: "ui-menu-item cs-menu-item" },
+  drama: { root: "dr-pop", chip: "dr-composer-chip is-choice", label: "dr-chip-label", value: "dr-composer-chip-text", menu: "ui-menu dr-menu", item: "ui-menu-item dr-menu-item" },
+  cinema: { root: "cns-pop", chip: "ui-chip cns-look", label: "cns-look-label", value: "", menu: "ui-menu cns-panel cns-listpanel", item: "ui-menu-item" },
+  "cinema-mini": { root: "cns-pop", chip: "ui-chip cns-chip", label: "", value: "", menu: "ui-menu cns-panel cns-mini", item: "ui-menu-item" },
   // Marketing, Promo, and Explainer: the dock's pill chips and their stacked option lists.
-  mks: { root: "mks-pop", chip: "", label: "", value: "", menu: "mks-tech prs-subjects", item: "prs-subject" },
+  mks: { root: "mks-pop", chip: "", label: "", value: "", menu: "ui-menu mks-tech prs-subjects", item: "ui-menu-item prs-subject" },
 } as const;
 export function Choice({
   label,
@@ -249,31 +249,31 @@ export function ModelPicker({ models, value, onChange, loading, pricing, auto }:
   );
   return (
     <div className="cs-pop" ref={ref}>
-      <button type="button" className="cs-chip cs-chip-model" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(!open)} disabled={!models.length}>
+      <button type="button" className="ui-chip cs-chip cs-chip-model" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(!open)} disabled={!models.length}>
         {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
         <span className="cs-truncate">{current?.name || (auto && !value && models.length ? auto.label : loading ? "Loading models" : "No models available")}</span>
         <ChevronDown className="h-3 w-3" />
       </button>
       {open ? (
-        <div className="cs-menu cs-model-menu" role="dialog" aria-label="Choose a model">
+        <div className="ui-menu cs-menu cs-model-menu" role="dialog" aria-label="Choose a model">
           <SearchField size="sm" autoFocus value={query} onChange={setQuery} placeholder={`Search ${models.length} models`} />
           {providers.length > 1 ? (
             <div className="cs-providers">
-              <button type="button" aria-pressed={!providerFilter} onClick={() => setProviderFilter("")}>All</button>
+              <button type="button" className="ui-chip" aria-pressed={!providerFilter} onClick={() => setProviderFilter("")}>All</button>
               {providers.map((p) => (
-                <button key={p} type="button" aria-pressed={providerFilter === p} onClick={() => setProviderFilter(providerFilter === p ? "" : p)}>{p}</button>
+                <button key={p} type="button" className="ui-chip" aria-pressed={providerFilter === p} onClick={() => setProviderFilter(providerFilter === p ? "" : p)}>{p}</button>
               ))}
             </div>
           ) : null}
           <div className="cs-model-list" role="listbox" aria-label="Models">
             {auto && !query && !providerFilter ? (
-              <button type="button" role="option" aria-selected={!value} className="cs-model" onClick={() => { onChange(""); setOpen(false); }}>
+              <button type="button" role="option" aria-selected={!value} className="ui-menu-item cs-model" onClick={() => { onChange(""); setOpen(false); }}>
                 <span className="cs-model-name">{auto.label}{!value ? <Check className="h-3.5 w-3.5" /> : null}</span>
                 {auto.description ? <span className="cs-model-desc">{auto.description}</span> : null}
               </button>
             ) : null}
             {shown.length ? shown.map((m) => (
-              <button key={m.id} type="button" role="option" aria-selected={m.id === value} className="cs-model" onClick={() => { onChange(m.id); setOpen(false); }}>
+              <button key={m.id} type="button" role="option" aria-selected={m.id === value} className="ui-menu-item cs-model" onClick={() => { onChange(m.id); setOpen(false); }}>
                 <span className="cs-model-name">{m.name}{m.id === value ? <Check className="h-3.5 w-3.5" /> : null}</span>
                 <span className="cs-model-facts" title={pricing ? CREDIT_ESTIMATE_TITLE : undefined}>{modelFacts(m, pricing || null)}</span>
                 {m.description ? <span className="cs-model-desc">{m.description}</span> : null}
@@ -404,7 +404,7 @@ export function LinkField({
       <span className="cs-linkfield-input">
         <Link2 size={15} aria-hidden="true" />
         <input
-          className={tool ? "mt-input" : "cs-input"}
+          className={tool ? "ui-input mt-input" : "ui-input cs-input"}
           type="url"
           inputMode="url"
           autoFocus={autoFocus}
@@ -422,7 +422,7 @@ export function LinkField({
           }}
         />
       </span>
-      <button type="button" className={tool ? "mt-secondary" : "cs-ghost"} disabled={!ready} onClick={() => void go()}>
+      <button type="button" className={tool ? "ui-btn mt-secondary" : "ui-btn is-sm cs-ghost"} disabled={!ready} onClick={() => void go()}>
         {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : null}
         {busy ? busyAction : action}
       </button>
@@ -646,7 +646,7 @@ export function AspectPicker({
       label={label}
       value={value}
       onChange={onChange}
-      className={className ? `cs-aspect-seg ${className}` : "cs-aspect-seg"}
+      className={className ? `cs-aspect-seg is-tiles ${className}` : "cs-aspect-seg is-tiles"}
       options={parts.map((part) => ({ value: part.value, label: <span className="prs-num">{part.label}</span>, icon: icon(part), disabled, title: part.hint }))}
     />
   );
@@ -702,10 +702,10 @@ export function Lightbox({ src, onClose }: { src: string; onClose: () => void })
         <img src={src} alt="Full size preview" onClick={(event) => event.stopPropagation()} />
       )}
       <div className="cs-lightbox-bar" onClick={(event) => event.stopPropagation()}>
-        <a className="cs-icon" href={`${src}${src.includes("?") ? "&" : "?"}download=1`} aria-label="Download" title="Download">
+        <a className="ui-icon-btn cs-icon" href={`${src}${src.includes("?") ? "&" : "?"}download=1`} aria-label="Download" title="Download">
           <Download className="h-4 w-4" />
         </a>
-        <button ref={close} type="button" className="cs-icon" onClick={onClose} aria-label="Close preview" title="Close"><X className="h-4 w-4" /></button>
+        <button ref={close} type="button" className="ui-icon-btn cs-icon" onClick={onClose} aria-label="Close preview" title="Close"><X className="h-4 w-4" /></button>
       </div>
     </div>
   );

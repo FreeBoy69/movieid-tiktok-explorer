@@ -1,15 +1,15 @@
 /* Shared music picker. Colours come from whichever studio hosts it
    (Voiceover --vs-*, Create Video --mk-*, Vibe Edit maps --mk-* to --ve-*). */
 .ml {
-  --ml-ink: var(--vs-ink, var(--mk-text, #1a1a1a));
-  --ml-muted: var(--vs-muted, var(--mk-muted, #5d5b56));
-  --ml-line: var(--vs-line, var(--mk-line, rgb(0 0 0 / 0.12)));
-  --ml-line-strong: var(--vs-line-strong, var(--mk-line-strong, rgb(0 0 0 / 0.22)));
-  --ml-surface: var(--vs-panel, var(--mk-surface, #fff));
-  --ml-sunken: var(--vs-soft, var(--mk-sunken, rgb(0 0 0 / 0.04)));
-  --ml-accent: var(--vs-accent, var(--mk-accent, #f9dc0b));
-  --ml-accent-ink: var(--mk-accent-ink, #171717);
-  --ml-accent-wash: var(--vs-accent-wash, var(--mk-accent-soft, rgb(249 220 11 / 0.14)));
+  --ml-ink: var(--ui-text);
+  --ml-muted: var(--ui-text-muted);
+  --ml-line: var(--ui-line);
+  --ml-line-strong: var(--ui-line-strong);
+  --ml-surface: var(--ui-panel);
+  --ml-sunken: var(--ui-sunken);
+  --ml-accent: var(--ui-accent);
+  --ml-accent-ink: var(--ui-accent-ink);
+  --ml-accent-wash: var(--ui-accent-soft);
   display: grid;
   gap: 12px;
   min-width: 0;
@@ -59,47 +59,10 @@
   background: transparent !important;
   box-shadow: none !important;
 }
-.ml .ml-search > button {
-  display: inline-grid;
-  place-items: center;
-  min-width: 64px;
-  height: 34px;
-  padding: 0 12px;
-  border: 0;
-  border-radius: 8px;
-  background: var(--ml-sunken);
-  color: var(--ml-ink);
-  font: inherit;
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-}
-.ml .ml-search > button:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
 .ml-moods {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-}
-.ml .ml-moods button {
-  min-height: 28px;
-  padding: 4px 11px;
-  border: 1px solid var(--ml-line);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--ml-muted);
-  font: inherit;
-  font-size: 11.5px;
-  font-weight: 600;
-  cursor: pointer;
-}
-.ml .ml-moods button:hover:not(:disabled),
-.ml .ml-moods button[aria-pressed="true"] {
-  border-color: var(--ml-accent);
-  background: var(--ml-accent-wash);
-  color: var(--ml-ink);
 }
 .ml-tracks {
   display: grid;
@@ -165,47 +128,7 @@
   color: var(--ml-muted);
   font-size: 11px;
 }
-.ml-icon {
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 8px;
-  color: var(--ml-muted);
-}
-.ml-icon:hover {
-  background: var(--ml-sunken);
-  color: var(--ml-ink);
-}
-.ml .ml-use {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  min-width: 58px;
-  min-height: 30px;
-  padding: 5px 11px;
-  border: 1px solid var(--ml-line-strong);
-  border-radius: 8px;
-  background: var(--ml-surface);
-  color: var(--ml-ink);
-  font: inherit;
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-}
-.ml .ml-use:hover:not(:disabled),
-.ml .ml-use[aria-pressed="true"] {
-  border-color: var(--ml-accent);
-  background: var(--ml-accent);
-  color: var(--ml-accent-ink);
-}
-.ml .ml-use:disabled:not([aria-pressed="true"]) {
-  opacity: 0.5;
-  cursor: default;
-}
+.ml .ml-use { flex: none; min-width: 58px; }
 .ml-empty,
 .ml-note {
   display: flex;
@@ -282,15 +205,6 @@
   padding-top: 12px;
   border-top: 1px solid var(--ml-line);
 }
-.ml-spin {
-  animation: ml-spin 0.9s linear infinite;
-}
-@keyframes ml-spin {
-  to { transform: rotate(360deg); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .ml-spin { animation: none; }
-}
 /* Host controls in the footer share these two row shapes. */
 .ml .ml-range {
   display: grid;
@@ -302,7 +216,6 @@
 }
 .ml .ml-range input {
   width: 100%;
-  accent-color: var(--ml-accent);
 }
 .ml .ml-range output {
   min-width: 34px;
@@ -318,24 +231,11 @@
   font-size: 12.5px;
   font-weight: 600;
 }
-.ml .ml-check input {
-  accent-color: var(--ml-accent);
-}
 .ml .ml-field {
   display: grid;
   gap: 6px;
   color: var(--ml-muted);
   font-size: 12px;
   font-weight: 600;
-}
-.ml .ml-field input {
-  height: 36px;
-  padding: 0 10px;
-  border: 1px solid var(--ml-line);
-  border-radius: 8px;
-  background: var(--ml-surface);
-  color: var(--ml-ink);
-  font: inherit;
-  font-size: 13px;
 }
 .ml-source-tabs { margin-bottom: 2px; }

@@ -167,7 +167,7 @@ export function FieldPicker({
       <button
         ref={trigger}
         type="button"
-        className={`lang-pick-trigger ${showBadges ? "" : "is-plain"} ${className}`.trim()}
+        className={`ui-trigger lang-pick-trigger ${showBadges ? "" : "is-plain"} ${className}`.trim()}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label={`${label}: ${selected?.label || value || "not set"}`}
@@ -214,7 +214,7 @@ export function FieldPicker({
               ) : (
                 <strong>{label}</strong>
               )}
-              <button type="button" className="lang-pick-close" onClick={() => close(true)} aria-label="Close">
+              <button type="button" className="ui-icon-btn lang-pick-close" onClick={() => close(true)} aria-label="Close">
                 <X size={15} />
               </button>
             </div>
@@ -229,7 +229,7 @@ export function FieldPicker({
                     type="button"
                     role="option"
                     aria-selected={isOn}
-                    className={`lang-pick-option ${index === active ? "is-active" : ""}`}
+                    className={`ui-menu-item lang-pick-option ${index === active ? "is-active" : ""}`}
                     onMouseEnter={() => setActive(index)}
                     onClick={() => choose(option)}
                   >

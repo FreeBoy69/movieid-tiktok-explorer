@@ -72,20 +72,22 @@
   font-size: 12px;
   font-weight: 550;
 }
+/* The .ui-input skin. */
 .shortfilm-picker-fields input {
   width: 100%;
-  min-height: 36px;
-  padding: 0 10px;
-  border: 1px solid var(--mk-line);
-  border-radius: 7px;
-  background: var(--mk-surface);
+  min-height: var(--ui-field-height);
+  padding: 0 12px;
+  border: 1px solid var(--ui-line-strong);
+  border-radius: var(--ui-radius-control);
+  background: var(--ui-input);
   color: inherit;
   font: inherit;
-  font-size: 13px;
+  font-size: 14px;
 }
 .shortfilm-picker-fields input:focus-visible {
-  outline: 2px solid var(--mk-accent);
-  outline-offset: 1px;
+  border-color: var(--ui-focus);
+  box-shadow: 0 0 0 3px var(--ui-ring);
+  outline: none;
 }
 .shortfilm-picker-note {
   margin: 0;

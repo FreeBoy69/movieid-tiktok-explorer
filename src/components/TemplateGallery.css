@@ -1,20 +1,21 @@
 /* Template gallery: a popup over a studio. Paper canvas, white cards,
    charcoal ink, yellow for the one action that matters. */
 .tg-root {
-  --tg-bg: #f9f8f6;
-  --tg-surface: #fff;
-  --tg-sunken: #f2f0eb;
-  --tg-text: #1a1a1a;
-  --tg-muted: #5f5d58;
-  --tg-faint: #767470;
-  --tg-line: #e4e1da;
-  --tg-line-strong: #cfcbc1;
-  --tg-accent: #f9dc0b;
-  --tg-accent-hover: #ecd00a;
-  --tg-accent-ink: #171717;
-  --tg-scrim: rgb(20 19 17 / 0.24);
-  --tg-shadow: 0 2px 6px rgb(26 26 26 / 0.06), 0 40px 90px -30px rgb(26 26 26 / 0.45);
-  --tg-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  /* The site tokens (index.css); [data-theme] on the root re-scopes them. */
+  --tg-bg: var(--ui-bg);
+  --tg-surface: var(--ui-panel);
+  --tg-sunken: var(--ui-sunken);
+  --tg-text: var(--ui-text);
+  --tg-muted: var(--ui-text-muted);
+  --tg-faint: var(--ui-text-faint);
+  --tg-line: var(--ui-line);
+  --tg-line-strong: var(--ui-line-strong);
+  --tg-accent: var(--ui-accent);
+  --tg-accent-hover: var(--ui-accent-hover);
+  --tg-accent-ink: var(--ui-accent-ink);
+  --tg-scrim: var(--ui-scrim);
+  --tg-shadow: var(--ui-shadow-lift);
+  --tg-ease: var(--ui-ease);
   position: fixed;
   inset: 0;
   z-index: 1000;
@@ -27,17 +28,7 @@
   line-height: 1.45;
 }
 .tg-root[data-theme="dark"] {
-  --tg-bg: #151619;
-  --tg-surface: #1c1d21;
-  --tg-sunken: #111214;
-  --tg-text: #f0efec;
-  --tg-muted: #b3b2ad;
-  --tg-faint: #8e8d88;
-  --tg-line: #2e2f33;
-  --tg-line-strong: #45464b;
-  --tg-scrim: rgb(0 0 0 / 0.62);
   --tg-glow: 9%;
-  --tg-shadow: 0 2px 6px rgb(0 0 0 / 0.4), 0 40px 90px -30px rgb(0 0 0 / 0.9);
   color-scheme: dark;
 }
 .tg-root *,
@@ -49,10 +40,6 @@
   font: inherit;
   color: inherit;
   cursor: pointer;
-}
-.tg-root :focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--tg-text) 55%, transparent);
-  outline-offset: 2px;
 }
 .tg-scrim {
   position: absolute;
@@ -119,17 +106,6 @@
 }
 .tg-icon {
   flex-shrink: 0;
-  width: 36px;
-  height: 36px;
-  display: grid;
-  place-items: center;
-  border: 1px solid var(--tg-line);
-  border-radius: 999px;
-  background: var(--tg-surface);
-  transition: border-color 140ms;
-}
-.tg-icon:hover {
-  border-color: var(--tg-line-strong);
 }
 
 .tg-toolbar {
@@ -148,14 +124,16 @@
   align-items: center;
   gap: 8px;
   padding: 0 12px;
-  border: 1px solid var(--tg-line);
-  border-radius: 12px;
-  background: var(--tg-surface);
-  color: var(--tg-faint);
-  transition: border-color 140ms;
+  /* The .ui-search frame. */
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius-control);
+  background: var(--ui-input);
+  color: var(--ui-text-faint);
+  transition: border-color var(--ui-duration);
 }
 .tg-search:focus-within {
-  border-color: var(--tg-line-strong);
+  border-color: var(--ui-focus);
+  box-shadow: 0 0 0 3px var(--ui-ring);
 }
 .tg-search input:focus-visible {
   outline: 0;
@@ -184,29 +162,6 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-}
-.tg-filters button {
-  height: 34px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 13px;
-  border: 1px solid var(--tg-line);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--tg-muted);
-  font-size: 13px;
-  font-weight: 550;
-  transition: background 140ms, color 140ms, border-color 140ms;
-}
-.tg-filters button:hover {
-  color: var(--tg-text);
-  border-color: var(--tg-line-strong);
-}
-.tg-filters button[aria-pressed="true"] {
-  border-color: var(--tg-text);
-  background: var(--tg-text);
-  color: var(--tg-bg);
 }
 .tg-filters button span {
   font-family: "JetBrains Mono", ui-monospace, monospace;
@@ -336,16 +291,11 @@
   white-space: nowrap;
 }
 .tg-card.is-skeleton .tg-cover {
-  animation: tg-pulse 1.4s ease-in-out infinite;
+  background: var(--ui-chip);
 }
 .tg-skel {
   width: 70%;
   height: 12px;
-  border-radius: 6px;
-  background: var(--tg-sunken);
-}
-@keyframes tg-pulse {
-  50% { opacity: 0.55; }
 }
 .tg-empty {
   display: grid;
@@ -360,22 +310,7 @@
 }
 .tg-more {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 38px;
   margin: 20px auto 0;
-  padding: 0 18px;
-  border: 1px solid var(--tg-line);
-  border-radius: 999px;
-  background: var(--tg-surface);
-  font-size: 13px;
-  font-weight: 550;
-}
-.tg-spin {
-  animation: tg-spin 0.8s linear infinite;
-}
-@keyframes tg-spin {
-  to { transform: rotate(360deg); }
 }
 
 .tg-preview {
@@ -459,21 +394,6 @@
   font-size: 12px;
   font-weight: 550;
 }
-.tg-fields input {
-  width: 100%;
-  height: 36px;
-  padding: 0 10px;
-  border: 1px solid var(--tg-line);
-  border-radius: 9px;
-  background: var(--tg-surface);
-  color: var(--tg-text);
-  font: inherit;
-  font-size: 13px;
-}
-.tg-fields input:focus {
-  outline: 0;
-  border-color: var(--tg-line-strong);
-}
 .tg-fields small {
   color: var(--tg-faint);
   font-size: 11.5px;
@@ -493,18 +413,6 @@
   color: var(--tg-faint);
   font-size: 11.5px;
   font-weight: 600;
-}
-.tg-prompt-head button {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 28px;
-  padding: 0 10px;
-  border: 1px solid var(--tg-line);
-  border-radius: 999px;
-  background: var(--tg-surface);
-  font-size: 12px;
-  font-weight: 550;
 }
 .tg-prompt pre {
   max-height: 260px;
@@ -534,30 +442,6 @@
   gap: 8px;
   padding: 14px 22px;
   border-top: 1px solid var(--tg-line);
-}
-.tg-primary,
-.tg-secondary {
-  height: 40px;
-  padding: 0 18px;
-  border-radius: 999px;
-  font-size: 14px;
-  font-weight: 600;
-  transition: background 140ms, border-color 140ms;
-}
-.tg-primary {
-  border: 0;
-  background: var(--tg-accent);
-  color: var(--tg-accent-ink) !important;
-}
-.tg-primary:hover {
-  background: var(--tg-accent-hover);
-}
-.tg-secondary {
-  border: 1px solid var(--tg-line);
-  background: transparent;
-}
-.tg-secondary:hover {
-  border-color: var(--tg-line-strong);
 }
 .tg-preview-empty {
   flex: 1;

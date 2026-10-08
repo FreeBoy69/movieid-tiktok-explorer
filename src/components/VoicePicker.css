@@ -1,17 +1,17 @@
 /* Voice picker: a field-shaped trigger and an anchored popup (bottom sheet on phones). */
 .mk-voice-trigger,
 .mk-voice-panel {
-  --vp-surface: var(--mk-surface, #fff);
-  --vp-sunken: var(--mk-sunken, #f2f0eb);
-  --vp-text: var(--mk-text, #1a1a1a);
-  --vp-muted: var(--mk-muted, #5f5d58);
-  --vp-faint: var(--mk-faint, #8b8983);
-  --vp-line: var(--mk-line, #e4e1da);
-  --vp-line-strong: var(--mk-line-strong, #cfcbc1);
-  --vp-accent: var(--mk-accent, #f9dc0b);
-  --vp-accent-soft: var(--mk-accent-soft, #fdf5c2);
-  --vp-accent-text: var(--mk-accent-text, #7a6600);
-  --vp-accent-ink: var(--mk-accent-ink, #171717);
+  --vp-surface: var(--ui-raised);
+  --vp-sunken: var(--ui-sunken);
+  --vp-text: var(--ui-text);
+  --vp-muted: var(--ui-text-muted);
+  --vp-faint: var(--ui-text-faint);
+  --vp-line: var(--ui-line);
+  --vp-line-strong: var(--ui-line-strong);
+  --vp-accent: var(--ui-accent);
+  --vp-accent-soft: var(--ui-accent-soft);
+  --vp-accent-text: var(--ui-accent-text);
+  --vp-accent-ink: var(--ui-accent-ink);
   --vp-avatar-l: 0.93;
   --vp-avatar-ink-l: 0.42;
 }
@@ -21,49 +21,14 @@
   --vp-avatar-l: 0.33;
   --vp-avatar-ink-l: 0.84;
 }
-/* Outside the maker workspace the panel portals to <body>, beyond any --mk-* tokens; give dark mode its own fallbacks. */
-html[data-theme="dark"] .mk-voice-trigger,
-html[data-theme="dark"] .mk-voice-panel {
-  --vp-surface: var(--mk-surface, #1a1b1e);
-  --vp-sunken: var(--mk-sunken, #151619);
-  --vp-text: var(--mk-text, #f0efec);
-  --vp-muted: var(--mk-muted, #b3b2ad);
-  --vp-faint: var(--mk-faint, #8e8d88);
-  --vp-line: var(--mk-line, #2e2f33);
-  --vp-line-strong: var(--mk-line-strong, #45464b);
-  --vp-accent-soft: var(--mk-accent-soft, #3a3410);
-  --vp-accent-text: var(--mk-accent-text, #f2d63a);
-}
 
-/* Trigger: looks like the other form fields, reads like a chosen thing. */
-.maker-workspace .mk-voice-trigger,
-.mk-voice-trigger {
-  width: 100%;
+/* Trigger: the canonical .ui-trigger, laid out for an avatar and two lines. */
+.mk-voice-trigger.ui-trigger {
   min-height: 52px;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  justify-content: stretch;
   gap: 12px;
   padding: 9px 12px 9px 10px;
-  border: 1px solid var(--glass-input-line);
-  border-top-color: var(--glass-input-edge);
-  border-radius: var(--mk-radius-sm, 7px);
-  background: var(--glass-input-bg);
-  color: var(--vp-text);
-  text-align: left;
-  font-weight: 400;
-  cursor: pointer;
-  transition: border-color 0.16s, box-shadow 0.2s;
-}
-.maker-workspace .mk-voice-trigger:hover:not(:disabled),
-.mk-voice-trigger:hover:not(:disabled) {
-  background: var(--vp-surface);
-  border-color: var(--vp-line-strong);
-}
-.mk-voice-trigger[aria-expanded="true"] {
-  border-color: var(--vp-line-strong);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--vp-accent) 35%, transparent);
 }
 .mk-voice-trigger-text {
   min-width: 0;
@@ -116,14 +81,11 @@ html[data-theme="dark"] .mk-voice-panel {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid var(--glass-input-line);
-  border-top-color: var(--glass-input-edge);
-  border-radius: 12px;
-  background: var(--glass-panel-bg);
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-raised);
   color: var(--vp-text);
-  box-shadow: var(--glass-input-shadow);
-  -webkit-backdrop-filter: blur(22px) saturate(1.6);
-  backdrop-filter: blur(22px) saturate(1.6);
+  box-shadow: var(--ui-shadow-lift);
   font-family: Inter, ui-sans-serif, system-ui, sans-serif;
   font-size: 14px;
   animation: mk-voice-in 0.18s cubic-bezier(0.16, 1, 0.3, 1);
@@ -156,48 +118,7 @@ html[data-theme="dark"] .mk-voice-panel {
   font-size: 14px;
   font-weight: 650;
 }
-.mk-voice-panel .mk-voice-close {
-  width: 32px;
-  min-height: 32px;
-  height: 32px;
-  padding: 0;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--vp-muted);
-  display: grid;
-  place-items: center;
-  cursor: pointer;
-}
-.mk-voice-panel .mk-voice-close:hover {
-  background: color-mix(in srgb, var(--vp-text) 7%, transparent);
-  color: var(--vp-text);
-}
-.mk-voice-search {
-  position: relative;
-  display: block;
-  margin: 6px 12px 4px;
-}
-.mk-voice-search svg {
-  position: absolute;
-  left: 11px;
-  top: 50%;
-  transform: translateY(-50%);
-  color: var(--vp-faint);
-  pointer-events: none;
-}
-.maker-workspace .mk-voice-search input,
-.mk-voice-search input {
-  width: 100%;
-  min-height: 36px;
-  padding: 7px 10px 7px 34px;
-  border: 1px solid var(--vp-line);
-  border-radius: 8px;
-  background: var(--vp-sunken);
-  color: var(--vp-text);
-  font: inherit;
-  font-size: 13px;
-}
+.mk-voice-search { margin: 6px 12px 4px; }
 .mk-voice-list {
   min-height: 0;
   overflow-y: auto;
@@ -222,7 +143,7 @@ html[data-theme="dark"] .mk-voice-panel {
   transition: background 0.14s;
 }
 .mk-voice-row:hover {
-  background: color-mix(in srgb, var(--vp-text) 4.5%, transparent);
+  background: var(--ui-hover);
 }
 .mk-voice-row.is-selected {
   background: var(--vp-accent-soft);
@@ -253,7 +174,6 @@ html[data-theme="dark"] .mk-voice-panel {
   cursor: not-allowed;
 }
 .mk-voice-panel .mk-voice-choose:focus-visible {
-  outline: 2px solid var(--vp-accent-text);
   outline-offset: -2px;
 }
 .mk-voice-text {
@@ -308,21 +228,12 @@ html[data-theme="dark"] .mk-voice-panel {
   line-height: 1.5;
   color: var(--vp-muted);
 }
-.mk-voice-spin {
-  animation: mk-voice-spin 0.9s linear infinite;
-}
-@keyframes mk-voice-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 /* Phones: a bottom sheet with a scrim. */
 .mk-voice-scrim {
   position: fixed;
   inset: 0;
   z-index: 1099;
-  background: rgb(17 18 20 / 0.36);
+  background: var(--ui-scrim);
   animation: mk-voice-fade 0.2s ease-out;
 }
 .mk-voice-panel.is-sheet {
@@ -367,29 +278,7 @@ html[data-theme="dark"] .mk-voice-panel {
   scrollbar-width: none;
 }
 .mk-voice-filters::-webkit-scrollbar { display: none; }
-.mk-voice-panel .mk-voice-filters button {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  gap: 5px;
-  min-height: 28px;
-  padding: 0 11px;
-  border: 1px solid var(--vp-line);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--vp-muted, var(--vp-text));
-  font: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  white-space: nowrap;
-  cursor: pointer;
-}
-.mk-voice-panel .mk-voice-filters button:hover { border-color: var(--vp-line-strong); color: var(--vp-text); }
-.mk-voice-panel .mk-voice-filters button.is-on {
-  border-color: transparent;
-  background: var(--vp-text);
-  color: var(--vp-surface);
-}
+.mk-voice-filters .ui-chip { flex: none; min-height: 28px; padding: 0 11px; font-size: 12px; }
 .mk-voice-panel .mk-voice-star {
   display: grid;
   width: 32px;
@@ -412,5 +301,5 @@ html[data-theme="dark"] .mk-voice-panel {
 .mk-voice-panel .mk-voice-star.is-on,
 .mk-voice-panel.is-sheet .mk-voice-star { opacity: 1; }
 .mk-voice-panel .mk-voice-star:hover { color: var(--vp-text); }
-.mk-voice-panel .mk-voice-star.is-on { color: #e0a800; }
+.mk-voice-panel .mk-voice-star.is-on { color: var(--ui-warning); }
 .mk-voice-panel .mk-voice-star:focus-visible { opacity: 1; outline: 2px solid var(--vp-text); outline-offset: 1px; }

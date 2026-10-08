@@ -181,7 +181,7 @@ export function PromptLibrary({ theme = "light" }: { theme?: "light" | "dark" })
             <h1>Prompt Library</h1>
             <p>Ready-to-use prompts for visual styles, thumbnails, scripts, hooks, narration, music, and whole videos. Use them here, or pick them from Suggestions while you build a video.</p>
           </div>
-          <button type="button" className="plib-primary" onClick={(e) => show("new", e.currentTarget)}>
+          <button type="button" className="ui-btn is-primary plib-primary" onClick={(e) => show("new", e.currentTarget)}>
             <Plus size={16} /> New prompt
           </button>
         </header>
@@ -211,13 +211,13 @@ export function PromptLibrary({ theme = "light" }: { theme?: "light" | "dark" })
         </div>
         {output && OUTPUT_CATEGORIES[output].length > 1 ? (
           <div className="plib-subtabs" role="group" aria-label="Kind">
-            <button type="button" aria-pressed={!category} onClick={() => setCategory("")}>
+            <button type="button" className="ui-chip" aria-pressed={!category} onClick={() => setCategory("")}>
               All {TEMPLATE_OUTPUTS.find((item) => item.id === output)?.label.toLowerCase()}
             </button>
             {categories
               .filter((item) => OUTPUT_CATEGORIES[output].includes(item.id))
               .map((item) => (
-                <button key={item.id} type="button" aria-pressed={category === item.id} onClick={() => setCategory(category === item.id ? "" : item.id)} title={item.hint}>
+                <button key={item.id} type="button" className="ui-chip" aria-pressed={category === item.id} onClick={() => setCategory(category === item.id ? "" : item.id)} title={item.hint}>
                   {item.label}
                   {item.count ? <span>{item.count}</span> : null}
                 </button>
@@ -234,7 +234,7 @@ export function PromptLibrary({ theme = "light" }: { theme?: "light" | "dark" })
           {(!output || output === "video") && (multiScene || multiSceneCount > 0) && (
             <button
               type="button"
-              className="plib-filter-toggle"
+              className="ui-chip plib-filter-toggle"
               aria-pressed={multiScene}
               onClick={() => setMultiScene(!multiScene)}
               title="Prompts laid out as several timed shots or scenes"
@@ -251,8 +251,8 @@ export function PromptLibrary({ theme = "light" }: { theme?: "light" | "dark" })
             {Array.from({ length: 8 }, (_, i) => (
               <div key={i} className="plib-card is-skeleton">
                 <span className="plib-cover" />
-                <span className="plib-skel-line" />
-                <span className="plib-skel-line is-short" />
+                <span className="ui-skeleton plib-skel-line" />
+                <span className="ui-skeleton plib-skel-line is-short" />
               </div>
             ))}
           </div>
@@ -292,8 +292,8 @@ export function PromptLibrary({ theme = "light" }: { theme?: "light" | "dark" })
             </ul>
             {items.length < total && (
               <div className="plib-more-wrap">
-                <button type="button" className="plib-more" onClick={() => void loadMore()} disabled={loadingMore}>
-                  {loadingMore ? <Loader2 size={15} className="plib-spin" /> : <ChevronDown size={15} />} Show more
+                <button type="button" className="ui-btn plib-more" onClick={() => void loadMore()} disabled={loadingMore}>
+                  {loadingMore ? <Loader2 size={15} className="ui-spin" /> : <ChevronDown size={15} />} Show more
                 </button>
               </div>
             )}
@@ -467,24 +467,24 @@ function PromptDetail({ prompt, onFavorite, onDelete }: { prompt: LibraryPrompt;
         </div>
         <div className="plib-actions">
           {usable && studio ? (
-            <button type="button" className="plib-primary" onClick={useInStudio}>
+            <button type="button" className="ui-btn is-primary plib-primary" onClick={useInStudio}>
               <Sparkles size={15} /> Use in {STUDIO_NAMES[studio]}
             </button>
           ) : null}
           {longVideo ? (
-            <button type="button" className="plib-outline" onClick={makeLongVideo} title="Start a Create Video project from this prompt's scenes">
+            <button type="button" className="ui-btn plib-outline" onClick={makeLongVideo} title="Start a Create Video project from this prompt's scenes">
               <Film size={15} /> Make it a long video
             </button>
           ) : null}
-          <button type="button" className={usable || longVideo ? "plib-outline" : "plib-primary"} onClick={() => void copy("snippet", fullPrompt)}>
+          <button type="button" className={usable || longVideo ? "ui-btn plib-outline" : "ui-btn is-primary plib-primary"} onClick={() => void copy("snippet", fullPrompt)}>
             {copied === "snippet" ? <Check size={15} /> : <Copy size={15} />}
             {copied === "snippet" ? "Copied" : "Copy"}
           </button>
-          <button type="button" className={`plib-outline ${prompt.favorite ? "is-on" : ""}`} onClick={onFavorite} aria-pressed={Boolean(prompt.favorite)}>
+          <button type="button" className={`ui-btn plib-outline ${prompt.favorite ? "is-on" : ""}`} onClick={onFavorite} aria-pressed={Boolean(prompt.favorite)}>
             <Star size={15} /> {prompt.favorite ? "Saved" : "Save"}
           </button>
           {prompt.custom && (
-            <button type="button" className="plib-outline plib-danger" onClick={onDelete}>
+            <button type="button" className="ui-btn plib-outline plib-danger" onClick={onDelete}>
               <Trash2 size={15} /> Delete
             </button>
           )}
@@ -549,7 +549,7 @@ function Composer({ onCancel, onCreated }: { onCancel: () => void; onCreated: (i
           {CATEGORIES.map((category) => {
             const on = picked.includes(category.id);
             return (
-              <button type="button" key={category.id} aria-pressed={on} className={on ? "is-on" : ""} onClick={() => setPicked(on ? picked.filter((id) => id !== category.id) : [...picked, category.id])}>
+              <button type="button" key={category.id} aria-pressed={on} className="ui-chip" onClick={() => setPicked(on ? picked.filter((id) => id !== category.id) : [...picked, category.id])}>
                 {on && <Check size={13} />} {category.label}
               </button>
             );
@@ -561,10 +561,10 @@ function Composer({ onCancel, onCreated }: { onCancel: () => void; onCreated: (i
         <textarea rows={7} value={snippet} maxLength={1200} onChange={(e) => setSnippet(e.target.value)} placeholder="High-contrast black and white, hard side light, deep shadows, 35mm grain, slow push-ins" />
       </label>
       <div className="plib-actions">
-        <button type="submit" className="plib-primary" disabled={!ready || busy}>
-          {busy ? <Loader2 size={15} className="plib-spin" /> : <Check size={15} />} Save prompt
+        <button type="submit" className="ui-btn is-primary plib-primary" disabled={!ready || busy}>
+          {busy ? <Loader2 size={15} className="ui-spin" /> : <Check size={15} />} Save prompt
         </button>
-        <button type="button" className="plib-outline" onClick={onCancel}>
+        <button type="button" className="ui-btn plib-outline" onClick={onCancel}>
           Cancel
         </button>
       </div>

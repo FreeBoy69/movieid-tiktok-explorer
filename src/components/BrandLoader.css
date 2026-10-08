@@ -5,7 +5,7 @@
   --bl-ink: #f3f2ee;
   --bl-faint: rgb(243 242 238 / 0.5);
   --bl-line: rgb(255 255 255 / 0.08);
-  --bl-yellow: #f9dc0b;
+  --bl-yellow: var(--ui-accent);
   --bl-play: #111214;
   --bl-ease: cubic-bezier(0.22, 1, 0.36, 1);
   position: fixed;

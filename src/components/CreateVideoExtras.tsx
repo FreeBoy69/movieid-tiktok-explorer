@@ -2,7 +2,8 @@
 // cards (designed here, filmed by the render worker), and thumbnails modelled
 // on the winning videos for a topic.
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { BarChart3, CalendarDays, Check, Hash, ListChecks, Loader2, Quote, Search, Sigma, Trash2, TrendingUp } from "lucide-react";
+import { BarChart3, CalendarDays, Check, Hash, ListChecks, Loader2, Quote, Sigma, Trash2, TrendingUp } from "lucide-react";
+import { SearchField } from "./ui/controls";
 import { VIDEO_LOOKS } from "../utils/videoLooks.js";
 import { GRAPHIC_KINDS, graphicFontCss, graphicHtml, normalizeGraphic } from "../utils/videoGraphics.js";
 import { normalizeOverlay, OVERLAY_KINDS, overlayExample, overlayTemplate } from "../utils/videoOverlays.js";
@@ -106,7 +107,7 @@ export function GraphicEditor({
   const field = (key: string, label: string, placeholder = "", type = "text") => (
     <label className="maker-field">
       {label}
-      <input type={type} value={draft.vars[key] ?? ""} placeholder={placeholder} onChange={(e) => set(key, type === "number" ? Number(e.target.value) : e.target.value)} />
+      <input className="ui-input" type={type} value={draft.vars[key] ?? ""} placeholder={placeholder} onChange={(e) => set(key, type === "number" ? Number(e.target.value) : e.target.value)} />
     </label>
   );
   const many = draft.kind === "bars" || draft.kind === "list";
@@ -118,14 +119,14 @@ export function GraphicEditor({
       footer={
         <>
           {onRemove ? (
-            <button type="button" className="maker-ghost cvx-remove" onClick={onRemove}>
+            <button type="button" className="ui-btn is-ghost cvx-remove" onClick={onRemove}>
               <Trash2 size={15} /> Remove card
             </button>
           ) : null}
-          <button type="button" className="maker-outline" onClick={onClose}>
+          <button type="button" className="ui-btn" onClick={onClose}>
             Cancel
           </button>
-          <button type="button" className="maker-primary" disabled={!valid} onClick={() => valid && onFilm({ kind: valid.kind, vars: valid.vars })}>
+          <button type="button" className="ui-btn is-primary" disabled={!valid} onClick={() => valid && onFilm({ kind: valid.kind, vars: valid.vars })}>
             {scene.graphic ? "Film the new card" : "Film the card"}
           </button>
         </>
@@ -140,7 +141,7 @@ export function GraphicEditor({
                 type="button"
                 role="radio"
                 aria-checked={draft.kind === id}
-                className={draft.kind === id ? "is-on" : ""}
+                className="ui-chip"
                 onClick={() => setDraft((d) => (d.kind === id ? d : { kind: id, vars: { ...EMPTY[id] } }))}
               >
                 {KIND_ICONS[id]} {kind.name}
@@ -185,11 +186,11 @@ export function GraphicEditor({
                 <span className="cvx-items-head">{draft.kind === "bars" ? "Bars" : "Rows"}</span>
                 {draft.vars.items.map((item: any, i: number) => (
                   <div key={i} className="cvx-item">
-                    <input aria-label={`Label ${i + 1}`} placeholder="Label" value={item.label} onChange={(e) => setItem(i, "label", e.target.value)} />
-                    <input aria-label={`Value ${i + 1}`} placeholder={draft.kind === "bars" ? "62" : "Value"} inputMode={draft.kind === "bars" ? "decimal" : undefined} value={item.value} onChange={(e) => setItem(i, "value", e.target.value)} />
+                    <input className="ui-input" aria-label={`Label ${i + 1}`} placeholder="Label" value={item.label} onChange={(e) => setItem(i, "label", e.target.value)} />
+                    <input className="ui-input" aria-label={`Value ${i + 1}`} placeholder={draft.kind === "bars" ? "62" : "Value"} inputMode={draft.kind === "bars" ? "decimal" : undefined} value={item.value} onChange={(e) => setItem(i, "value", e.target.value)} />
                     <button
                       type="button"
-                      className="maker-icon"
+                      className="ui-icon-btn"
                       aria-label={`Remove row ${i + 1}`}
                       disabled={draft.vars.items.length <= 2}
                       onClick={() => setDraft((d) => ({ ...d, vars: { ...d.vars, items: d.vars.items.filter((_: any, k: number) => k !== i) } }))}
@@ -285,19 +286,14 @@ export function WinningThumbnails({ topic, picked, onPick }: { topic: string; pi
           void search();
         }}
       >
-        <label className="cvx-search">
-          <Search size={15} aria-hidden="true" />
-          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Topic, e.g. backyard nostalgia" aria-label="Topic to search" />
-        </label>
-        <button type="submit" className="maker-outline" disabled={busy || !query.trim()}>
-          {busy ? <Loader2 size={15} className="animate-spin" /> : <TrendingUp size={15} />} Find winners
+        <SearchField className="cvx-search" value={query} onChange={setQuery} placeholder="Topic, e.g. backyard nostalgia" label="Topic to search" />
+        <button type="submit" className="ui-btn" disabled={busy || !query.trim()}>
+          {busy ? <Loader2 size={15} className="ui-spin" /> : <TrendingUp size={15} />} Find winners
         </button>
       </form>
       <div className="cvx-winners-bar">
-        <label className="cvx-search">
-          <input value={link} onChange={(e) => setLink(e.target.value)} placeholder="Or paste a YouTube link" aria-label="YouTube link" />
-        </label>
-        <button type="button" className="maker-outline" disabled={!link.trim()} onClick={pasteLink}>
+        <input className="ui-input cvx-search" value={link} onChange={(e) => setLink(e.target.value)} placeholder="Or paste a YouTube link" aria-label="YouTube link" />
+        <button type="button" className="ui-btn" disabled={!link.trim()} onClick={pasteLink}>
           Use this thumbnail
         </button>
       </div>
@@ -396,10 +392,10 @@ export function OverlayEditor({
       onClose={onClose}
       footer={
         <>
-          <button type="button" className="maker-outline" onClick={onClose}>
+          <button type="button" className="ui-btn" onClick={onClose}>
             Cancel
           </button>
-          <button type="button" className="maker-primary" disabled={!valid} onClick={() => valid && onAdd({ kind: valid.kind, vars: valid.vars as Record<string, string>, at })}>
+          <button type="button" className="ui-btn is-primary" disabled={!valid} onClick={() => valid && onAdd({ kind: valid.kind, vars: valid.vars as Record<string, string>, at })}>
             Animate the overlay
           </button>
         </>
@@ -411,7 +407,7 @@ export function OverlayEditor({
             {Object.entries(OVERLAY_KINDS)
               .filter(([id, item]) => !("hidden" in item && item.hidden) && (countdown || id !== "progress"))
               .map(([id, item]) => (
-                <button key={id} type="button" role="radio" aria-checked={kind === id} className={kind === id ? "is-on" : ""} onClick={() => { setKind(id); setVars({}); }}>
+                <button key={id} type="button" role="radio" aria-checked={kind === id} className="ui-chip" onClick={() => { setKind(id); setVars({}); }}>
                   {item.name}
                 </button>
               ))}
@@ -420,12 +416,12 @@ export function OverlayEditor({
           {OVERLAY_FIELDS[kind].map(([key, label, placeholder]) => (
             <label key={key} className="maker-field">
               {label}
-              <input value={vars[key] || ""} placeholder={placeholder} inputMode={key === "rank" || key === "total" ? "numeric" : undefined} onChange={(e) => setVars((v) => ({ ...v, [key]: e.target.value }))} />
+              <input className="ui-input" value={vars[key] || ""} placeholder={placeholder} inputMode={key === "rank" || key === "total" ? "numeric" : undefined} onChange={(e) => setVars((v) => ({ ...v, [key]: e.target.value }))} />
             </label>
           ))}
           <label className="maker-field">
             Starts {at.toFixed(1)}s into the scene
-            <input type="range" min={0} max={Math.max(0, length - 0.5)} step={0.1} value={at} onChange={(e) => setAt(Number(e.target.value))} />
+            <input type="range" className="ui-range" style={{ ["--fill" as string]: `${length > 0.5 ? (at / (length - 0.5)) * 100 : 0}%` }} min={0} max={Math.max(0, length - 0.5)} step={0.1} value={at} onChange={(e) => setAt(Number(e.target.value))} />
           </label>
         </div>
         <div className="cvx-editor-preview">

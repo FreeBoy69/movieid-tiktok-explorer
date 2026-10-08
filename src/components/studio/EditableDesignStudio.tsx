@@ -432,7 +432,7 @@ export function EditableDesignStudio({ theme, catalog, generations, now, onCreat
         <label className="eds-field">
           <span className="eds-label">The brief</span>
           <textarea
-            className="eds-textarea"
+            className="ui-textarea eds-textarea"
             value={draft.brief}
             maxLength={4000}
             rows={6}
@@ -465,7 +465,7 @@ export function EditableDesignStudio({ theme, catalog, generations, now, onCreat
         {catalog && !catalog.configured ? <GenerationUnavailable /> : null}
         </div>
         <div className="eds-composer-foot">
-          <button type="submit" className="eds-primary" disabled={!ready}>
+          <button type="submit" className="ui-btn is-primary is-lg is-block eds-primary" disabled={!ready}>
             {busy ? <Loader2 size={16} className="animate-spin" /> : <Wand2 size={16} />}
             Design it
           </button>
@@ -483,27 +483,27 @@ export function EditableDesignStudio({ theme, catalog, generations, now, onCreat
             {selected?.status === "done" && output ? (
               <div className="eds-actions">
                 {mode === "preview" ? (
-                  <button type="button" className="eds-btn" onClick={() => void openEditor()} disabled={!current}><PenLine size={15} />Edit layers</button>
+                  <button type="button" className="ui-btn is-sm eds-btn" onClick={() => void openEditor()} disabled={!current}><PenLine size={15} />Edit layers</button>
                 ) : (
                   <>
-                    <button type="button" className="eds-btn" onClick={() => editorApi()?.undo()} title="Undo (⌘Z)" disabled={!editorReady}><Undo2 size={15} />Undo</button>
-                    <button type="button" className="eds-btn" onClick={() => editorClick("hf-reset")} title="Back to the generated layout" disabled={!editorReady}><RotateCcw size={15} />Reset</button>
-                    <button type="button" className="eds-btn" aria-pressed={exploded} onClick={toggleExplode} disabled={!editorReady}><Layers size={15} />{exploded ? "Collapse" : "Explode layers"}</button>
-                    <button type="button" className="eds-btn eds-btn-accent" onClick={() => void saveEdits()} disabled={saving || !editorReady}>{saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}Save edits</button>
-                    <button type="button" className="eds-btn" onClick={() => { setMode("preview"); setExploded(false); }}><X size={15} />Done</button>
+                    <button type="button" className="ui-btn is-sm eds-btn" onClick={() => editorApi()?.undo()} title="Undo (⌘Z)" disabled={!editorReady}><Undo2 size={15} />Undo</button>
+                    <button type="button" className="ui-btn is-sm eds-btn" onClick={() => editorClick("hf-reset")} title="Back to the generated layout" disabled={!editorReady}><RotateCcw size={15} />Reset</button>
+                    <button type="button" className="ui-btn is-sm eds-btn" aria-pressed={exploded} onClick={toggleExplode} disabled={!editorReady}><Layers size={15} />{exploded ? "Collapse" : "Explode layers"}</button>
+                    <button type="button" className="ui-btn is-sm is-primary eds-btn" onClick={() => void saveEdits()} disabled={saving || !editorReady}>{saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}Save edits</button>
+                    <button type="button" className="ui-btn is-sm eds-btn" onClick={() => { setMode("preview"); setExploded(false); }}><X size={15} />Done</button>
                   </>
                 )}
-                <button type="button" className="eds-btn" aria-pressed={revising} onClick={() => setRevising((v) => !v)} disabled={!selected.kit}><Sparkles size={15} />Revise</button>
-                <button type="button" className="eds-btn" onClick={() => void exportPng()} disabled={exporting || !current}>{exporting ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}PNG</button>
-                <button type="button" className="eds-btn" onClick={downloadHtml}><FileCode2 size={15} />HTML</button>
-                <button type="button" className="eds-btn" aria-pressed={sheet} onClick={() => setSheet((v) => !v)} aria-label="How it was made" title="How it was made"><Info size={15} /></button>
+                <button type="button" className="ui-btn is-sm eds-btn" aria-pressed={revising} onClick={() => setRevising((v) => !v)} disabled={!selected.kit}><Sparkles size={15} />Revise</button>
+                <button type="button" className="ui-btn is-sm eds-btn" onClick={() => void exportPng()} disabled={exporting || !current}>{exporting ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}PNG</button>
+                <button type="button" className="ui-btn is-sm eds-btn" onClick={downloadHtml}><FileCode2 size={15} />HTML</button>
+                <button type="button" className="ui-btn is-sm eds-btn" aria-pressed={sheet} onClick={() => setSheet((v) => !v)} aria-label="How it was made" title="How it was made"><Info size={15} /></button>
               </div>
             ) : null}
           </header>
           {revising && selected?.status === "done" ? (
             <form className="eds-revise" onSubmit={(event) => void revise(event)}>
-              <input className="eds-input" value={revision} maxLength={2000} placeholder="What should change? e.g. make the headline bigger and move the price to the bottom right" onChange={(event) => setRevision(event.target.value)} autoFocus />
-              <button type="submit" className="eds-primary eds-primary-inline" disabled={!revision.trim() || busy}>{busy ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}Revise</button>
+              <input className="ui-input" value={revision} maxLength={2000} placeholder="What should change? e.g. make the headline bigger and move the price to the bottom right" onChange={(event) => setRevision(event.target.value)} autoFocus />
+              <button type="submit" className="ui-btn is-primary eds-primary-inline" disabled={!revision.trim() || busy}>{busy ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}Revise</button>
             </form>
           ) : null}
           <div ref={stageRef} className="eds-stage" data-mode={mode}>
@@ -518,7 +518,7 @@ export function EditableDesignStudio({ theme, catalog, generations, now, onCreat
                 <Loader2 size={20} className="animate-spin" />
                 <strong>{selected.message || (selected.status === "queued" ? "Queued" : "Working")}</strong>
                 <span className="eds-meta">{selected.prompt.slice(0, 120)}</span>
-                <button type="button" className="eds-btn" onClick={() => void stop(selected)}><Square size={14} />Stop</button>
+                <button type="button" className="ui-btn is-sm eds-btn" onClick={() => void stop(selected)}><Square size={14} />Stop</button>
               </div>
             ) : selected.status !== "done" ? (
               <div className="eds-progress">
@@ -554,7 +554,7 @@ export function EditableDesignStudio({ theme, catalog, generations, now, onCreat
                       <span className="eds-meta">{item.settings?.baseFile ? "Revision · " : ""}{timeAgo(item.createdAt, now)}</span>
                     </span>
                   </button>
-                  <button type="button" className="eds-icon" aria-label="Delete design" onClick={() => void remove(item)}><Trash2 size={14} /></button>
+                  <button type="button" className="ui-icon-btn eds-icon" aria-label="Delete design" onClick={() => void remove(item)}><Trash2 size={14} /></button>
                 </li>
               );
             })}
@@ -566,7 +566,7 @@ export function EditableDesignStudio({ theme, catalog, generations, now, onCreat
         <aside className="eds-sheet" aria-label="How it was made">
           <header>
             <h2>How it was made</h2>
-            <button type="button" className="eds-icon" aria-label="Close" onClick={() => setSheet(false)}><X size={16} /></button>
+            <button type="button" className="ui-icon-btn eds-icon" aria-label="Close" onClick={() => setSheet(false)}><X size={16} /></button>
           </header>
           <div className="eds-sheet-body">
             <section>
@@ -610,7 +610,7 @@ export function EditableDesignStudio({ theme, catalog, generations, now, onCreat
             ) : null}
             <section>
               <h3>Layers <span className="eds-meta">{design.layers.length}</span></h3>
-              <div className="eds-chips">{design.layers.map((layer) => <span key={layer} className="eds-chip">{layer}</span>)}</div>
+              <div className="eds-chips">{design.layers.map((layer) => <span key={layer} className="ui-badge eds-chip">{layer}</span>)}</div>
             </section>
             {design.copy.length ? (
               <section>

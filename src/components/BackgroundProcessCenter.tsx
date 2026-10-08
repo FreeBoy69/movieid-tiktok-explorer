@@ -283,7 +283,7 @@ export function BackgroundProcessCenter({ darkMode = false, onOpenProcess }: {
           {active.length ? (
             <section aria-labelledby="active-processes-title">
               <div className="flex items-center justify-between px-5 pb-2 pt-5">
-                <h3 id="active-processes-title" className="text-xs font-black uppercase text-[#9a8500]">In progress</h3>
+                <h3 id="active-processes-title" className="text-xs font-black uppercase text-[var(--ui-accent-text)]">In progress</h3>
                 <span className={cn("text-[11px] font-bold tabular-nums", darkMode ? "text-[#F8F5E8]/40" : "text-[#1A1A1A]/40")}>{active.length}</span>
               </div>
               <div className={cn("border-y", darkMode ? "border-white/8" : "border-[#1A1A1A]/8")}>

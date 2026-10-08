@@ -311,7 +311,7 @@ function TechPopover({ draft, patch, models, model, auto, durations, duration }:
           {qualities.length > 1 ? (
             <div className="mks-tech-group">
               <p><Sparkles className="h-4 w-4" />Quality</p>
-              <Segment className="cs-tile-seg" label="Quality" value={draft.quality} options={qualities.map((q) => ({ value: q, label: q }))} onChange={(quality) => patch({ quality })} />
+              <Segment className="cs-tile-seg is-tiles" label="Quality" value={draft.quality} options={qualities.map((q) => ({ value: q, label: q }))} onChange={(quality) => patch({ quality })} />
             </div>
           ) : null}
           <label className="mks-tech-row is-slider">
@@ -437,7 +437,7 @@ function ProductModal({ mode, products, selected, onMode, onPick, onClose, onCha
               <button type="button" aria-label="Import" disabled={!url.trim() || Boolean(busy)} onClick={() => void importUrl()}>{busy === "import" ? <Loader2 className="h-4 w-4 animate-spin" /> : "→"}</button>
             </label>
             <span className="mks-or">or</span>
-            <button type="button" className="mks-white" onClick={() => setManual(true)}>Create manually</button>
+            <button type="button" className="ui-btn is-ink" onClick={() => setManual(true)}>Create manually</button>
           </div>
         ) : (
           <div className="mks-manual">
@@ -445,8 +445,8 @@ function ProductModal({ mode, products, selected, onMode, onPick, onClose, onCha
             <textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={2} placeholder="What it is and why people love it (optional)" aria-label="Description" maxLength={600} />
             <ReferenceTray className="mks-uploads" assets={images} max={5} label="product photos" onChange={setImages} onError={setError} empty={images.length ? null : "Up to 5 photos of the product"} />
             <div className="mks-manual-actions">
-              <button type="button" className="mks-ghost" onClick={() => setManual(false)}>Back</button>
-              <button type="button" className="mks-pink" disabled={!name.trim() || !images.length || Boolean(busy)} onClick={() => void save()}>{busy === "save" ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save"}</button>
+              <button type="button" className="ui-btn" onClick={() => setManual(false)}>Back</button>
+              <button type="button" className="ui-btn is-primary" disabled={!name.trim() || !images.length || Boolean(busy)} onClick={() => void save()}>{busy === "save" ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save"}</button>
             </div>
           </div>
         )}
@@ -555,8 +555,8 @@ function CreateAvatar({ onClose, onCreated }: { onClose: () => void; onCreated: 
         <textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={4} placeholder="…or describe them: 28-year-old runner with a buzz cut and a warm smile" aria-label="Describe the presenter" disabled={Boolean(photo)} maxLength={400} />
       </div>
       <div className="mks-manual-actions">
-        <button type="button" className="mks-ghost" onClick={onClose}>Cancel</button>
-        <button type="button" className="mks-pink" disabled={busy || (!photo && !description.trim())} onClick={() => void create()}>
+        <button type="button" className="ui-btn" onClick={onClose}>Cancel</button>
+        <button type="button" className="ui-btn is-primary" disabled={busy || (!photo && !description.trim())} onClick={() => void create()}>
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : photo ? "Create" : <><Pencil className="h-3.5 w-3.5" />Generate avatar</>}
         </button>
       </div>

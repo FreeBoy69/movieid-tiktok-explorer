@@ -35,7 +35,7 @@ export function TakeCount({ value, onChange, counts = SHEET_COUNTS }: { value: n
 export function SheetPhotoButton({ name, onFile, onError, disabled, hasPhoto, variant = "button", className }: { name: string; onFile: (file: File) => void; onError?: (message: string) => void; disabled?: boolean; hasPhoto?: boolean; variant?: "button" | "icon"; className?: string }) {
   return (
     <UploadButton
-      className={className || (variant === "icon" ? "chs-iconbtn" : "maker-outline")}
+      className={className || (variant === "icon" ? "ui-icon-btn is-bordered is-lg chs-iconbtn" : "ui-btn")}
       accept={PHOTO_TYPES}
       maxBytes={PHOTO_MAX_BYTES}
       onFile={onFile}

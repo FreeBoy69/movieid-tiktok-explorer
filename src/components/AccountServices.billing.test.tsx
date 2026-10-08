@@ -41,7 +41,7 @@ describe("LingBase billing checkout", () => {
     render(<BillingOnboarding theme="dark" email="creator@example.com" />);
     expect(await screen.findByRole("dialog", { name: "Credits and plans" })).toBeTruthy();
     expect(screen.queryByText(/free plan/i)).toBeNull();
-    fireEvent.click(screen.getByRole("tab", { name: /Annual/i }));
+    fireEvent.click(screen.getByRole("radio", { name: /Annual/i }));
     expect(screen.getByText("$205.99 billed annually")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Continue with Creator" }));
     await waitFor(() => expect(chooseLingbasePlan).toHaveBeenCalledWith("creator", "year", "creator@example.com"));

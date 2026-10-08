@@ -54,19 +54,13 @@
     flex: 1;
     min-height: 0;
     overflow-y: auto;
-    scrollbar-width: thin;
-    scrollbar-color: var(--cs-line-strong) transparent;
   }
   .eds-composer-foot .eds-primary {
-    height: 50px;
-    border-radius: 14px;
-    font-size: 15px;
+    min-height: 50px;
   }
   .eds-work {
     min-height: 0;
     overflow-y: auto;
-    scrollbar-width: thin;
-    scrollbar-color: var(--cs-line-strong) transparent;
   }
   .eds-stage-card {
     border-radius: 20px;
@@ -102,39 +96,11 @@
   color: var(--cs-faint);
   font-weight: 500;
 }
-.eds-textarea,
-.eds-input {
-  width: 100%;
-  min-width: 0;
-  padding: 10px 12px;
-  border: 1px solid var(--cs-line);
-  border-radius: var(--cs-radius-sm);
-  background: var(--cs-bg);
-  color: var(--cs-text);
-  font: inherit;
-  font-size: 14px;
-  line-height: 1.5;
-  transition: border-color 160ms, box-shadow 160ms;
-}
+/* Fields are .ui-input / .ui-textarea; this only sizes the brief. */
 .eds-textarea {
-  resize: vertical;
   min-height: 150px;
   max-height: 420px;
   field-sizing: content;
-}
-.eds-textarea:hover,
-.eds-input:hover {
-  border-color: var(--cs-line-strong);
-}
-.eds-textarea:focus,
-.eds-input:focus {
-  outline: none;
-  border-color: var(--cs-line-strong);
-  box-shadow: 0 0 0 3px var(--cs-accent-soft);
-}
-.eds-textarea::placeholder,
-.eds-input::placeholder {
-  color: var(--cs-faint);
 }
 .eds-note {
   color: var(--cs-faint);
@@ -147,36 +113,8 @@
   align-items: center;
   gap: 8px;
 }
-.eds-primary {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  width: 100%;
-  height: 44px;
-  padding: 0 18px;
-  border: 0;
-  border-radius: var(--cs-radius-sm);
-  background: var(--cs-accent);
-  color: var(--cs-accent-ink);
-  font-size: 14px;
-  font-weight: 700;
-  transition: background-color 160ms, color 160ms, transform 120ms;
-}
-.eds-primary:hover:not(:disabled) {
-  background: var(--cs-text);
-  color: var(--cs-bg);
-}
-.eds-primary:active:not(:disabled) {
-  transform: scale(0.985);
-}
-.eds-primary:disabled {
-  background: var(--cs-sunken);
-  color: var(--cs-faint);
-}
+/* Buttons are .ui-btn (.is-primary for "Design it"). */
 .eds-primary-inline {
-  width: auto;
-  height: 40px;
   flex-shrink: 0;
 }
 
@@ -229,59 +167,10 @@
   flex-wrap: wrap;
   gap: 6px;
 }
-.eds-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 34px;
-  padding: 0 12px;
-  border: 1px solid var(--cs-line);
-  border-radius: var(--cs-radius-sm);
-  background: var(--cs-surface);
-  color: var(--cs-text);
-  font-size: 13px;
-  font-weight: 600;
-  white-space: nowrap;
-  transition: border-color 160ms, background-color 160ms, color 160ms;
-}
-.eds-btn:hover:not(:disabled) {
-  border-color: var(--cs-line-strong);
-  background: var(--cs-bg);
-}
+/* Toolbar buttons are .ui-btn.is-sm; a toggled one is accent-soft like a chip. */
 .eds-btn[aria-pressed="true"] {
-  border-color: var(--cs-text);
-  background: var(--cs-text);
-  color: var(--cs-bg);
-}
-.eds-btn:disabled {
-  color: var(--cs-faint);
-  cursor: not-allowed;
-}
-.eds-btn-accent:not(:disabled) {
-  border-color: transparent;
-  background: var(--cs-accent);
-  color: var(--cs-accent-ink);
-}
-.eds-btn-accent:hover:not(:disabled) {
-  background: var(--cs-text);
-  color: var(--cs-bg);
-}
-.eds-icon {
-  display: inline-grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  flex-shrink: 0;
-  border: 1px solid transparent;
-  border-radius: var(--cs-radius-sm);
-  background: transparent;
-  color: var(--cs-muted);
-  transition: background-color 140ms, color 140ms, border-color 140ms;
-}
-.eds-icon:hover {
-  border-color: var(--cs-line);
-  background: var(--cs-bg);
-  color: var(--cs-text);
+  border-color: color-mix(in srgb, var(--ui-accent) 70%, transparent);
+  background: var(--ui-accent-soft);
 }
 .eds-revise {
   display: flex;
@@ -580,12 +469,7 @@
   gap: 6px;
 }
 .eds-chip {
-  padding: 4px 10px;
-  border: 1px solid var(--cs-line);
-  border-radius: 999px;
-  background: var(--cs-bg);
   font-family: "JetBrains Mono", ui-monospace, monospace;
-  font-size: 11px;
 }
 .eds-copy {
   margin: 0;

@@ -364,15 +364,15 @@ export function RewriterEngine({ initialTranscript = "", phases = [], onBack }: 
   }
 
   return (
-    <section className="rewriter-shell workspace-floating-shell relative flex h-full min-h-0 flex-col overflow-hidden bg-white text-[#111827]">
+    <section className="rewriter-shell workspace-floating-shell relative flex h-full min-h-0 flex-col overflow-hidden bg-[var(--ui-panel)] text-[var(--ui-text)]">
       <header className="workspace-floating-header flex min-h-12 items-center justify-between px-4 py-3">
         <div className="flex min-w-0 items-center gap-3">
-          <button type="button" onClick={onBack} className="grid h-9 w-9 place-items-center rounded-lg text-[#6B7280] transition hover:bg-[#F3F4F6] hover:text-[#111827]" aria-label="Back">
+          <button type="button" onClick={onBack} className="ui-icon-btn" aria-label="Back">
             <ArrowLeft className="h-4 w-4" />
           </button>
-          <FileText className="h-4 w-4 text-[#6B7280]" />
+          <FileText className="h-4 w-4 text-[var(--ui-text-muted)]" />
           <h1 className="truncate text-sm font-semibold tracking-tight">AI Rewriter</h1>
-          {phaseCount ? <span className="rounded-full bg-[#F3F4F6] px-2 py-1 text-[11px] font-semibold text-[#6B7280]">{phaseCount} source phases</span> : null}
+          {phaseCount ? <span className="rounded-full bg-[var(--ui-bg)] px-2 py-1 text-[11px] font-semibold text-[var(--ui-text-muted)]">{phaseCount} source phases</span> : null}
         </div>
       </header>
 
@@ -380,15 +380,15 @@ export function RewriterEngine({ initialTranscript = "", phases = [], onBack }: 
         {view === "input" ? (
           <motion.div key="input" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="grid min-h-0 flex-1 place-items-center p-6">
             <div className="w-full max-w-3xl space-y-8">
-              <form onSubmit={(event) => void handleProcessVideo(event)} className="rounded-xl border border-[#E5E7EB] bg-[#FAFAFB] p-2">
+              <form onSubmit={(event) => void handleProcessVideo(event)} className="rounded-xl border border-[var(--ui-line-strong)] bg-[var(--ui-bg)] p-2">
                 <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_160px]">
                   <input
                     value={videoLink}
                     onChange={(event) => setVideoLink(event.target.value)}
-                    className="h-12 min-w-0 rounded-lg border border-transparent bg-white px-4 text-sm font-medium outline-none focus:border-[#111827]"
+                    className="h-12 min-w-0 rounded-lg border border-transparent bg-[var(--ui-panel)] px-4 text-sm font-medium outline-none focus:border-[var(--ui-text)]"
                     placeholder="Paste TikTok, YouTube, or direct video URL"
                   />
-                  <button type="submit" disabled={!videoLink.trim()} className="inline-flex h-12 items-center justify-center gap-2 rounded-lg bg-[#111827] px-4 text-sm font-bold text-white transition hover:bg-[#f9dc0b] hover:text-[#111827] disabled:opacity-40">
+                  <button type="submit" disabled={!videoLink.trim()} className="ui-btn is-ink is-lg">
                     <ExternalLink className="h-4 w-4" />
                     Process
                   </button>
@@ -396,7 +396,7 @@ export function RewriterEngine({ initialTranscript = "", phases = [], onBack }: 
               </form>
               <FileDrop
                 size="roomy"
-                className="min-h-64 justify-center bg-white"
+                className="min-h-64 justify-center bg-[var(--ui-panel)]"
                 accept="video/*,audio/*,.mkv"
                 maxBytes={100 * 1024 ** 2}
                 onError={setError}
@@ -410,15 +410,15 @@ export function RewriterEngine({ initialTranscript = "", phases = [], onBack }: 
 
         {view === "processing" ? (
           <motion.div key="processing" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="grid min-h-0 flex-1 place-items-center p-6">
-            <div className="w-full max-w-md rounded-xl border border-[#E5E7EB] bg-white p-8 text-center shadow-sm">
-              <div className="relative mx-auto grid h-20 w-20 place-items-center rounded-full border border-[#E5E7EB]">
-                <Zap className="h-8 w-8 text-[#f9dc0b]" />
+            <div className="w-full max-w-md rounded-xl border border-[var(--ui-line-strong)] bg-[var(--ui-panel)] p-8 text-center shadow-sm">
+              <div className="relative mx-auto grid h-20 w-20 place-items-center rounded-full border border-[var(--ui-line-strong)]">
+                <Zap className="h-8 w-8 text-[var(--ui-accent-text)]" />
                 <svg className="absolute inset-0 h-full w-full -rotate-90" viewBox="0 0 80 80" aria-hidden="true">
-                  <circle cx="40" cy="40" r="38" stroke="currentColor" strokeWidth="4" fill="none" className="text-[#f9dc0b]" strokeDasharray="238" strokeDashoffset={238 - (progress / 100) * 238} strokeLinecap="round" />
+                  <circle cx="40" cy="40" r="38" stroke="currentColor" strokeWidth="4" fill="none" className="text-[var(--ui-accent-text)]" strokeDasharray="238" strokeDashoffset={238 - (progress / 100) * 238} strokeLinecap="round" />
                 </svg>
               </div>
               <h2 className="mt-6 text-lg font-bold">{progressMessage}</h2>
-              <p className="mt-2 font-mono text-xs font-semibold text-[#6B7280]">{Math.round(progress)}% Complete</p>
+              <p className="mt-2 font-mono text-xs font-semibold text-[var(--ui-text-muted)]">{Math.round(progress)}% Complete</p>
             </div>
           </motion.div>
         ) : null}
@@ -426,17 +426,17 @@ export function RewriterEngine({ initialTranscript = "", phases = [], onBack }: 
         {view === "editor" ? (
           <motion.div key="editor" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex min-h-0 flex-1 flex-col">
             <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_360px]">
-              <main className="min-h-0 border-b border-[#E5E7EB] lg:border-b-0 lg:border-r">
+              <main className="min-h-0 border-b border-[var(--ui-line-strong)] lg:border-b-0 lg:border-r">
                 <div className="flex h-full min-h-[540px] flex-col p-4 sm:p-6">
                   <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                    <div className="text-xs font-semibold text-[#6B7280]">{activeVersion?.wordCount || 0} words / {activeVersion?.spokenTime || "0m 0s"}</div>
+                    <div className="text-xs font-semibold text-[var(--ui-text-muted)]">{activeVersion?.wordCount || 0} words / {activeVersion?.spokenTime || "0m 0s"}</div>
                     <div className="flex flex-wrap gap-2">
-                      <button type="button" onClick={() => void handleGenerateAudio()} disabled={generatingAudio || !activeVersion?.content.trim()} className="inline-flex h-10 items-center gap-2 rounded-lg border border-[#DADDE3] bg-white px-4 text-xs font-bold transition hover:bg-[#F3F4F6] disabled:opacity-45">
-                        {generatingAudio ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mic className="h-4 w-4" />}
+                      <button type="button" onClick={() => void handleGenerateAudio()} disabled={generatingAudio || !activeVersion?.content.trim()} className="inline-flex h-10 items-center gap-2 rounded-lg border border-[var(--ui-line-strong)] bg-[var(--ui-panel)] px-4 text-xs font-bold transition hover:bg-[var(--ui-bg)] disabled:opacity-45">
+                        {generatingAudio ? <Loader2 className="h-4 w-4 ui-spin" /> : <Mic className="h-4 w-4" />}
                         Generate voice
                       </button>
-                      <button type="button" onClick={() => void handleRewrite()} disabled={isRewriting || !activeVersion?.content.trim()} className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#111827] px-4 text-xs font-bold text-white transition hover:bg-[#f9dc0b] hover:text-[#111827] disabled:opacity-45">
-                        {isRewriting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                      <button type="button" onClick={() => void handleRewrite()} disabled={isRewriting || !activeVersion?.content.trim()} className="ui-btn is-ink">
+                        {isRewriting ? <Loader2 className="h-4 w-4 ui-spin" /> : <Sparkles className="h-4 w-4" />}
                         {isRewriting ? "Rewriting" : "Rewrite"}
                       </button>
                     </div>
@@ -444,20 +444,20 @@ export function RewriterEngine({ initialTranscript = "", phases = [], onBack }: 
                   <textarea
                     value={editableContent}
                     onChange={(event) => updateCurrentVersionContent(event.target.value)}
-                    className="min-h-0 flex-1 resize-none rounded-lg border border-[#E5E7EB] bg-white p-5 text-base font-medium leading-8 text-[#111827] outline-none focus:border-[#111827]"
+                    className="min-h-0 flex-1 resize-none rounded-lg border border-[var(--ui-line-strong)] bg-[var(--ui-panel)] p-5 text-base font-medium leading-8 text-[var(--ui-text)] outline-none focus:border-[var(--ui-text)]"
                     placeholder="Your rewritten script will appear here."
                   />
                 </div>
               </main>
 
-              <aside className="min-h-0 overflow-y-auto bg-white p-4">
-                <div className="mb-4 flex gap-1 overflow-x-auto border-b border-[#E5E7EB] pb-2">
+              <aside className="min-h-0 overflow-y-auto bg-[var(--ui-panel)] p-4">
+                <div className="mb-4 flex gap-1 overflow-x-auto border-b border-[var(--ui-line-strong)] pb-2">
                   {(["script", "settings", "history", "downloads"] as EditorTab[]).map((tab) => (
                     <button
                       key={tab}
                       type="button"
                       onClick={() => setEditorTab(tab)}
-                      className={cn("h-9 shrink-0 rounded-lg px-3 text-sm font-semibold capitalize transition", editorTab === tab ? "bg-[#111827] text-white" : "text-[#6B7280] hover:bg-[#F3F4F6] hover:text-[#111827]")}
+                      className={cn("h-9 shrink-0 rounded-lg px-3 text-sm font-semibold capitalize transition", editorTab === tab ? "bg-[var(--ui-text)] text-[var(--ui-panel)]" : "text-[var(--ui-text-muted)] hover:bg-[var(--ui-bg)] hover:text-[var(--ui-text)]")}
                     >
                       {tab}
                     </button>
@@ -496,7 +496,7 @@ export function RewriterEngine({ initialTranscript = "", phases = [], onBack }: 
                 )}
               </aside>
             </div>
-            <div className="sticky bottom-0 z-10 border-t border-[#E5E7EB] bg-white px-4 py-3">
+            <div className="sticky bottom-0 z-10 border-t border-[var(--ui-line-strong)] bg-[var(--ui-panel)] px-4 py-3">
               <StickyPlayer item={selectedAudio} autoplay={!!selectedAudio && autoplayAudioId === selectedAudio.id} onAutoplayConsumed={() => setAutoplayAudioId("")} />
             </div>
           </motion.div>
@@ -516,11 +516,11 @@ function ScriptVersionsPanel({ versions, activeVersionId, onSelect }: { versions
             key={version.id}
             type="button"
             onClick={() => onSelect(version)}
-            className={cn("w-full rounded-lg border p-3 text-left transition", active ? "border-[#111827] bg-white text-[#111827]" : "border-[#E5E7EB] bg-white text-[#6B7280] hover:border-[#111827]/30")}
+            className={cn("w-full rounded-lg border p-3 text-left transition", active ? "border-[var(--ui-text)] bg-[var(--ui-panel)] text-[var(--ui-text)]" : "border-[var(--ui-line-strong)] bg-[var(--ui-panel)] text-[var(--ui-text-muted)] hover:border-[var(--ui-line-strong)]")}
           >
             <div className="flex items-center justify-between gap-2">
               <span className="truncate text-sm font-bold">{version.title}</span>
-              {version.isAudioGenerated ? <Check className="h-4 w-4 text-[#f9dc0b]" /> : null}
+              {version.isAudioGenerated ? <Check className="h-4 w-4 text-[var(--ui-accent-text)]" /> : null}
             </div>
             <div className="mt-2 flex gap-3 text-[10px] font-mono font-bold uppercase tracking-widest">
               <span className="inline-flex items-center gap-1"><AlignLeft className="h-3 w-3" />{version.wordCount} W</span>
@@ -551,9 +551,9 @@ function SettingsPanel(props: {
 }) {
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between border-b border-[#E5E7EB] pb-3">
+      <div className="flex items-center justify-between border-b border-[var(--ui-line-strong)] pb-3">
         <p className="text-sm font-semibold">Settings</p>
-        <button type="button" onClick={props.onRefresh} className="grid h-8 w-8 place-items-center rounded-lg hover:bg-[#F3F4F6]" aria-label="Refresh voices"><RotateCcw className="h-4 w-4" /></button>
+        <button type="button" onClick={props.onRefresh} className="ui-icon-btn" aria-label="Refresh voices"><RotateCcw className="h-4 w-4" /></button>
       </div>
       <div className="block">
         <span className="mb-2 block text-sm font-semibold underline decoration-dotted underline-offset-4">Voice</span>
@@ -579,8 +579,8 @@ function Range({ label, left, right, value, onChange }: { label: string; left: s
   return (
     <label className="block">
       <span className="text-sm font-semibold underline decoration-dotted underline-offset-4">{label}</span>
-      <span className="mt-1 flex justify-between text-xs font-medium text-[#6B7280]"><span>{left}</span><span>{right}</span></span>
-      <input type="range" min={0} max={100} value={value} onChange={(event) => onChange(Number(event.target.value))} className="mt-1 h-1.5 w-full accent-[#111827]" />
+      <span className="mt-1 flex justify-between text-xs font-medium text-[var(--ui-text-muted)]"><span>{left}</span><span>{right}</span></span>
+      <input type="range" min={0} max={100} value={value} onChange={(event) => onChange(Number(event.target.value))} className="ui-range mt-1" style={{ ["--fill" as string]: `${value}%` }} />
     </label>
   );
 }
@@ -589,17 +589,17 @@ function AudioHistory({ history, selectedAudioId, onSelect }: { history: AudioIt
   return (
     <div className="space-y-3">
       {history.length ? history.map((item) => (
-        <button key={item.id} type="button" onClick={() => onSelect(item.id)} className={cn("w-full rounded-lg p-3 text-left transition", selectedAudioId === item.id ? "bg-[#F3F4F6]" : "hover:bg-[#FAFAFB]")}>
+        <button key={item.id} type="button" onClick={() => onSelect(item.id)} className={cn("w-full rounded-lg p-3 text-left transition", selectedAudioId === item.id ? "bg-[var(--ui-bg)]" : "hover:bg-[var(--ui-bg)]")}>
           <div className="flex items-center justify-between gap-2">
             <p className="truncate text-sm font-semibold">{item.text}</p>
-            {item.status === "pending" ? <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[#6B7280]" /> : null}
-            {item.status === "failed" ? <span className="shrink-0 rounded-full bg-[#fff9d6] px-2 py-0.5 text-[10px] font-bold text-[#5F5300]">Failed</span> : null}
+            {item.status === "pending" ? <Loader2 className="h-4 w-4 shrink-0 ui-spin text-[var(--ui-text-muted)]" /> : null}
+            {item.status === "failed" ? <span className="shrink-0 rounded-full bg-[var(--ui-accent-soft)] px-2 py-0.5 text-[10px] font-bold text-[var(--ui-accent-text)]">Failed</span> : null}
           </div>
-          <p className="mt-1 truncate text-xs font-medium text-[#6B7280]">{item.profileName} - {item.status === "pending" ? "generating" : relativeTime(item.createdAt)}</p>
-          {item.error ? <p className="mt-1 line-clamp-2 text-xs font-medium text-[#5F5300]">{item.error}</p> : null}
+          <p className="mt-1 truncate text-xs font-medium text-[var(--ui-text-muted)]">{item.profileName} - {item.status === "pending" ? "generating" : relativeTime(item.createdAt)}</p>
+          {item.error ? <p className="mt-1 line-clamp-2 text-xs font-medium text-[var(--ui-accent-text)]">{item.error}</p> : null}
         </button>
       )) : (
-        <p className="rounded-lg border border-dashed border-[#DADDE3] p-6 text-center text-sm font-medium text-[#6B7280]">Generated audio history will appear here.</p>
+        <p className="rounded-lg border border-dashed border-[var(--ui-line-strong)] p-6 text-center text-sm font-medium text-[var(--ui-text-muted)]">Generated audio history will appear here.</p>
       )}
     </div>
   );
@@ -610,15 +610,15 @@ function DownloadsPanel({ versions, onDownload, compact = false }: { versions: S
     <div className={cn("h-full overflow-y-auto", compact ? "" : "p-5")}>
       <div className="grid gap-3">
         {versions.map((version) => (
-          <div key={version.id} className="rounded-lg border border-[#E5E7EB] bg-white p-4">
+          <div key={version.id} className="rounded-lg border border-[var(--ui-line-strong)] bg-[var(--ui-panel)] p-4">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="truncate text-sm font-bold">{version.title}</p>
-                <p className="mt-1 text-xs font-medium text-[#6B7280]">{version.wordCount} words / {version.timestamp.toLocaleString()}</p>
+                <p className="mt-1 text-xs font-medium text-[var(--ui-text-muted)]">{version.wordCount} words / {version.timestamp.toLocaleString()}</p>
               </div>
-              <button type="button" onClick={() => onDownload(version)} className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#DADDE3] px-3 text-xs font-bold hover:bg-[#F3F4F6]"><Download className="h-4 w-4" />TXT</button>
+              <button type="button" onClick={() => onDownload(version)} className="inline-flex h-9 items-center gap-2 rounded-lg border border-[var(--ui-line-strong)] px-3 text-xs font-bold hover:bg-[var(--ui-bg)]"><Download className="h-4 w-4" />TXT</button>
             </div>
-            {version.audioUrl ? <a href={version.audioUrl} className="mt-3 inline-flex h-9 items-center gap-2 rounded-lg bg-[#f9dc0b] px-3 text-xs font-bold text-[#111827]"><Volume2 className="h-4 w-4" />Download audio</a> : null}
+            {version.audioUrl ? <a href={version.audioUrl} className="ui-btn is-primary is-sm mt-3"><Volume2 className="h-4 w-4" />Download audio</a> : null}
           </div>
         ))}
       </div>
@@ -647,12 +647,12 @@ function StickyPlayer({ item, autoplay, onAutoplayConsumed }: { item: AudioItem 
   }
   return (
     <div className="flex min-h-14 items-center gap-3" role="status">
-      <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-[#F3F4F6] text-[#6B7280]">
-        {item?.status === "pending" ? <Loader2 className="h-5 w-5 animate-spin" /> : <Play className="h-5 w-5" />}
+      <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-[var(--ui-bg)] text-[var(--ui-text-muted)]">
+        {item?.status === "pending" ? <Loader2 className="h-5 w-5 ui-spin" /> : <Play className="h-5 w-5" />}
       </span>
       <div className="min-w-0">
         <p className="truncate text-sm font-semibold">{item?.text || "Ready"}</p>
-        <p className="mt-1 truncate text-xs font-medium text-[#6B7280]">
+        <p className="mt-1 truncate text-xs font-medium text-[var(--ui-text-muted)]">
           {item ? `${item.profileName} - ${item.status === "pending" ? "generating audio" : item.error || "no audio"}` : "Generate voice to preview it here"}
         </p>
       </div>

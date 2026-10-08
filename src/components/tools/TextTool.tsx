@@ -107,12 +107,12 @@ export function TextTool({ tool }: { tool: ToolDef }) {
         <>
           <label className="mt-field">
             <span className="mt-label">What is the video about?</span>
-            <input className="mt-input" value={topic} maxLength={400} onChange={(event) => setTopic(event.target.value)} placeholder="e.g. I tried every budget microphone under $50" />
+            <input className="ui-input" value={topic} maxLength={400} onChange={(event) => setTopic(event.target.value)} placeholder="e.g. I tried every budget microphone under $50" />
           </label>
           <div className="mt-field">
             <label className="mt-field">
               <span className="mt-label">Transcript, script, or article <small>optional</small></span>
-              <textarea className="mt-textarea" value={notes} maxLength={6000} rows={4} onChange={(event) => setNotes(event.target.value)} placeholder="Paste it in and the titles will match what's actually said." />
+              <textarea className="ui-textarea mt-textarea" value={notes} maxLength={6000} rows={4} onChange={(event) => setNotes(event.target.value)} placeholder="Paste it in and the titles will match what's actually said." />
             </label>
             <LinkReader label="or read an article or page from a link" onError={setError} onText={(text, pageTitle) => { setNotes(text.slice(0, 6000)); if (!topic.trim() && pageTitle) setTopic(pageTitle.slice(0, 400)); }} />
           </div>
@@ -126,18 +126,18 @@ export function TextTool({ tool }: { tool: ToolDef }) {
         <>
           <label className="mt-field">
             <span className="mt-label">Video title</span>
-            <input className="mt-input" value={topic} maxLength={200} onChange={(event) => setTopic(event.target.value)} placeholder="e.g. 7 Budget Mics That Beat the Shure SM7B" />
+            <input className="ui-input" value={topic} maxLength={200} onChange={(event) => setTopic(event.target.value)} placeholder="e.g. 7 Budget Mics That Beat the Shure SM7B" />
           </label>
           <div className="mt-field">
             <label className="mt-field">
               <span className="mt-label">Script, transcript, or notes <small>optional</small></span>
-              <textarea className="mt-textarea" value={notes} maxLength={8000} rows={5} onChange={(event) => setNotes(event.target.value)} placeholder="Paste the script, or a few bullets about what's covered. Timestamps become chapters." />
+              <textarea className="ui-textarea mt-textarea" value={notes} maxLength={8000} rows={5} onChange={(event) => setNotes(event.target.value)} placeholder="Paste the script, or a few bullets about what's covered. Timestamps become chapters." />
             </label>
             <LinkReader label="or read a page from a link" onError={setError} onText={(text, pageTitle) => { setNotes(text.slice(0, 8000)); if (!topic.trim() && pageTitle) setTopic(pageTitle.slice(0, 200)); }} />
           </div>
           <label className="mt-field">
             <span className="mt-label">Links to include <small>one per line</small></span>
-            <textarea className="mt-textarea" value={links} maxLength={1500} rows={2} onChange={(event) => setLinks(event.target.value)} placeholder={"https://...\nhttps://..."} />
+            <textarea className="ui-textarea mt-textarea" value={links} maxLength={1500} rows={2} onChange={(event) => setLinks(event.target.value)} placeholder={"https://...\nhttps://..."} />
           </label>
           <Segment<Platform> label="Platform" value={platform} options={PLATFORMS} onChange={setPlatform} />
         </>
@@ -146,7 +146,7 @@ export function TextTool({ tool }: { tool: ToolDef }) {
         <>
           <label className="mt-field">
             <span className="mt-label">Describe the post</span>
-            <textarea className="mt-textarea" value={topic} maxLength={600} rows={4} onChange={(event) => setTopic(event.target.value)} placeholder="e.g. a 30-second recap of the ending of Interstellar for a movie-recap channel" />
+            <textarea className="ui-textarea mt-textarea" value={topic} maxLength={600} rows={4} onChange={(event) => setTopic(event.target.value)} placeholder="e.g. a 30-second recap of the ending of Interstellar for a movie-recap channel" />
           </label>
           <div className="mt-row">
             <Segment<Platform> label="Platform" value={platform} options={PLATFORMS} onChange={setPlatform} />
@@ -154,7 +154,7 @@ export function TextTool({ tool }: { tool: ToolDef }) {
           </div>
         </>
       ) : null}
-      <button type="submit" className="mt-primary" disabled={!ready}>
+      <button type="submit" className="ui-btn is-primary is-lg is-block mt-primary" disabled={!ready}>
         {busy ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
         {busy ? "Writing" : tool.action}
       </button>
@@ -172,19 +172,19 @@ export function TextTool({ tool }: { tool: ToolDef }) {
         <span className="mt-meta">{stageLabel}</span>
       </div>
       <div className="mt-stage-inner">
-        {busy ? <div className="mt-skeleton" aria-hidden="true"><span /><span /><span /></div> : null}
+        {busy ? <div className="mt-skeleton" aria-hidden="true"><span className="ui-skeleton" /><span className="ui-skeleton" /><span className="ui-skeleton" /></div> : null}
         {!busy && !result ? <Empty icon={entry?.icon} heading={tool.heading} body={tool.body} /> : null}
         {!busy && result && task === "titles" ? (
           <div className="mt-section">
-            <h3>Pick one <button type="button" className="mt-ghost" onClick={() => void copy("all", (result as Titles).titles.map((t) => t.title).join("\n"))}>{done === "all" ? <Check size={14} /> : <Copy size={14} />}Copy all</button></h3>
+            <h3>Pick one <button type="button" className="ui-btn is-sm is-ghost mt-ghost" onClick={() => void copy("all", (result as Titles).titles.map((t) => t.title).join("\n"))}>{done === "all" ? <Check size={14} /> : <Copy size={14} />}Copy all</button></h3>
             <ol className="mt-list">
               {(result as Titles).titles.map((item, index) => (
                 <li key={`${item.title}-${index}`}>
                   <span>{item.title}</span>
-                  {item.angle ? <span className="mt-tag">{item.angle.replace("-", " ")}</span> : null}
+                  {item.angle ? <span className="ui-badge">{item.angle.replace("-", " ")}</span> : null}
                   <span className="mt-meta" aria-label="Length">{item.title.length}</span>
-                  <button type="button" className="mt-icon" data-done={done === item.title ? "true" : undefined} aria-label={`Copy “${item.title}”`} title="Copy" onClick={() => void copy(item.title, item.title)}>{done === item.title ? <Check size={15} /> : <Copy size={15} />}</button>
-                  <button type="button" className="mt-icon" aria-label={`Make a thumbnail with “${item.title}”`} title="Use in Thumbnail Maker" onClick={() => openToolWith("thumbnail-maker", { title: item.title.slice(0, 80) })}><ImageIcon size={15} /></button>
+                  <button type="button" className="ui-icon-btn mt-icon" data-done={done === item.title ? "true" : undefined} aria-label={`Copy “${item.title}”`} title="Copy" onClick={() => void copy(item.title, item.title)}>{done === item.title ? <Check size={15} /> : <Copy size={15} />}</button>
+                  <button type="button" className="ui-icon-btn mt-icon" aria-label={`Make a thumbnail with “${item.title}”`} title="Use in Thumbnail Maker" onClick={() => openToolWith("thumbnail-maker", { title: item.title.slice(0, 80) })}><ImageIcon size={15} /></button>
                 </li>
               ))}
             </ol>
@@ -195,12 +195,12 @@ export function TextTool({ tool }: { tool: ToolDef }) {
           return (
             <>
               <div className="mt-section">
-                <h3>Description <button type="button" className="mt-ghost" onClick={() => void copy("description", r.description)}>{done === "description" ? <Check size={14} /> : <Copy size={14} />}Copy</button></h3>
+                <h3>Description <button type="button" className="ui-btn is-sm is-ghost mt-ghost" onClick={() => void copy("description", r.description)}>{done === "description" ? <Check size={14} /> : <Copy size={14} />}Copy</button></h3>
                 <textarea className="mt-output" value={r.description} onChange={(event) => setResult({ ...r, description: event.target.value })} aria-label="Description" />
               </div>
               {r.chapters.length ? (
                 <div className="mt-section">
-                  <h3>Chapters <button type="button" className="mt-ghost" onClick={() => void copy("chapters", r.chapters.map((c) => `${c.time} ${c.title}`).join("\n"))}>{done === "chapters" ? <Check size={14} /> : <Copy size={14} />}Copy</button></h3>
+                  <h3>Chapters <button type="button" className="ui-btn is-sm is-ghost mt-ghost" onClick={() => void copy("chapters", r.chapters.map((c) => `${c.time} ${c.title}`).join("\n"))}>{done === "chapters" ? <Check size={14} /> : <Copy size={14} />}Copy</button></h3>
                   <ul className="mt-list">
                     {r.chapters.map((chapter) => <li key={`${chapter.time}-${chapter.title}`}><span><span className="mt-meta" style={{ marginRight: 10 }}>{chapter.time}</span>{chapter.title}</span></li>)}
                   </ul>
@@ -208,14 +208,14 @@ export function TextTool({ tool }: { tool: ToolDef }) {
               ) : null}
               {r.tags.length ? (
                 <div className="mt-section">
-                  <h3>Search tags <button type="button" className="mt-ghost" onClick={() => void copy("tags", r.tags.join(", "))}>{done === "tags" ? <Check size={14} /> : <Copy size={14} />}Copy as list</button></h3>
-                  <div className="mt-chips">{r.tags.map((tag) => <span key={tag} className="mt-chip">{tag}</span>)}</div>
+                  <h3>Search tags <button type="button" className="ui-btn is-sm is-ghost mt-ghost" onClick={() => void copy("tags", r.tags.join(", "))}>{done === "tags" ? <Check size={14} /> : <Copy size={14} />}Copy as list</button></h3>
+                  <div className="mt-chips">{r.tags.map((tag) => <span key={tag} className="ui-badge mt-tagchip">{tag}</span>)}</div>
                 </div>
               ) : null}
               {r.hashtags.length ? (
                 <div className="mt-section">
-                  <h3>Hashtags <button type="button" className="mt-ghost" onClick={() => void copy("hashtags", r.hashtags.join(" "))}>{done === "hashtags" ? <Check size={14} /> : <Copy size={14} />}Copy</button></h3>
-                  <div className="mt-chips">{r.hashtags.map((tag) => <span key={tag} className="mt-chip">{tag}</span>)}</div>
+                  <h3>Hashtags <button type="button" className="ui-btn is-sm is-ghost mt-ghost" onClick={() => void copy("hashtags", r.hashtags.join(" "))}>{done === "hashtags" ? <Check size={14} /> : <Copy size={14} />}Copy</button></h3>
+                  <div className="mt-chips">{r.hashtags.map((tag) => <span key={tag} className="ui-badge mt-tagchip">{tag}</span>)}</div>
                 </div>
               ) : null}
             </>
@@ -232,7 +232,7 @@ export function TextTool({ tool }: { tool: ToolDef }) {
           });
           return (
             <div className="mt-section">
-              <h3>Tap a tag to leave it out <button type="button" className="mt-secondary" disabled={!selected.length} onClick={() => void copy("selected", selected.join(" "))}>{done === "selected" ? <Check size={14} /> : <Copy size={14} />}Copy {selected.length}</button></h3>
+              <h3>Tap a tag to leave it out <button type="button" className="ui-btn is-sm mt-secondary" disabled={!selected.length} onClick={() => void copy("selected", selected.join(" "))}>{done === "selected" ? <Check size={14} /> : <Copy size={14} />}Copy {selected.length}</button></h3>
               {(["broad", "medium", "niche"] as const).map((reach) => {
                 const group = r.hashtags.filter((item) => item.reach === reach);
                 if (!group.length) return null;
@@ -240,7 +240,7 @@ export function TextTool({ tool }: { tool: ToolDef }) {
                   <div key={reach} className="mt-chip-group">
                     <span>{REACH_LABEL[reach]}</span>
                     <div className="mt-chips">
-                      {group.map((item) => <button key={item.tag} type="button" className="mt-chip" aria-pressed={!off.has(item.tag)} onClick={() => toggle(item.tag)}>{item.tag}</button>)}
+                      {group.map((item) => <button key={item.tag} type="button" className="ui-chip mt-chip" aria-pressed={!off.has(item.tag)} onClick={() => toggle(item.tag)}>{item.tag}</button>)}
                     </div>
                   </div>
                 );

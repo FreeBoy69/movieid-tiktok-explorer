@@ -427,12 +427,12 @@ function ThumbnailDownloadButton({
       aria-label="Download video"
       className={cn(
         "inline-flex h-9 min-w-9 items-center justify-center rounded-lg text-white transition-all",
-        "bg-[#1A1A1A]/75 shadow-md ring-1 ring-inset ring-white/25 backdrop-blur-sm",
-        "hover:bg-[#1A1A1A] disabled:cursor-wait disabled:opacity-70",
+        "bg-[var(--ui-text)]/75 shadow-md ring-1 ring-inset ring-white/25 backdrop-blur-sm",
+        "hover:bg-[var(--ui-text)] disabled:cursor-wait disabled:opacity-70",
         className,
       )}
     >
-      {busy ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Download className="h-4 w-4" aria-hidden />}
+      {busy ? <Loader2 className="h-4 w-4 ui-spin" aria-hidden /> : <Download className="h-4 w-4" aria-hidden />}
     </button>
   );
 }
@@ -475,7 +475,7 @@ function TikTokCoverImage({ src, fallbacks, className = "" }: { src?: string; fa
   const current = candidates[attempt] || "";
   if (!current) {
     return (
-      <div className={cn("grid place-items-center bg-[linear-gradient(145deg,#fff4b8,#f7f6f2_45%,#ffe2e8)] text-[#f9dc0b]", className)}>
+      <div className={cn("grid place-items-center bg-[linear-gradient(145deg,#fff4b8,#f7f6f2_45%,#ffe2e8)] text-[var(--ui-accent-text)]", className)}>
         <Play className="h-8 w-8 fill-current opacity-80" />
       </div>
     );
@@ -528,7 +528,7 @@ function CleanTikTokVideo({ video, onError }: { video: TikTokVideo; onError: (me
         {video.dynamicCover ? (
           <TikTokCoverImage src={video.dynamicCover} className="absolute inset-0 h-full w-full object-cover opacity-35 blur-sm" />
         ) : null}
-        <Loader2 className="relative z-10 h-8 w-8 animate-spin" />
+        <Loader2 className="relative z-10 h-8 w-8 ui-spin" />
         <p className="relative z-10 text-xs font-medium text-white/70">Loading clean video</p>
       </div>
     );
@@ -556,8 +556,8 @@ function LockedAnalysisTabs({
       <div className="p-4 md:p-6">
         {postContent}
         {loading ? (
-          <div className="mt-6 flex items-center gap-3 rounded-xl border border-[#f9dc0b]/30 bg-[#f9dc0b]/10 px-5 py-4 text-sm font-semibold text-[#6a5b00]">
-            <Loader2 className="h-4 w-4 animate-spin" />
+          <div className="mt-6 flex items-center gap-3 rounded-xl border border-[var(--ui-accent)]/30 bg-[var(--ui-accent)]/10 px-5 py-4 text-sm font-semibold text-[var(--ui-accent-text)]">
+            <Loader2 className="h-4 w-4 ui-spin" />
             Analyzing clip… fetching comments, then Movie ID.
           </div>
         ) : (
@@ -568,10 +568,10 @@ function LockedAnalysisTabs({
   }
 
   return (
-    <div className="w-full max-w-full overflow-hidden rounded-xl border shadow-sm" style={{ background: "#FDFCFA", borderColor: "rgba(28,26,22,0.08)" }}>
-      <div className="border-b p-2" style={{ background: "#F5F4F0", borderColor: "rgba(28,26,22,0.08)" }}>
+    <div className="w-full max-w-full overflow-hidden rounded-xl border shadow-sm border-[var(--ui-line)]" style={{ background: "#FDFCFA", borderColor: "rgba(28,26,22,0.08)" }}>
+      <div className="border-b p-2 border-[var(--ui-line)]" style={{ background: "#F5F4F0", borderColor: "rgba(28,26,22,0.08)" }}>
         <div className="flex gap-1 overflow-x-auto overscroll-x-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          <button type="button" className="inline-flex shrink-0 items-center gap-2 rounded-lg bg-[#1C1A16] px-3 py-2 text-xs font-semibold text-white md:px-4">
+          <button type="button" className="inline-flex shrink-0 items-center gap-2 rounded-lg bg-[var(--ui-panel)] px-3 py-2 text-xs font-semibold text-white md:px-4">
             <Film className="h-3.5 w-3.5" />
             Post
           </button>
@@ -588,19 +588,19 @@ function LockedAnalysisTabs({
             </button>
           ))}
         </div>
-        <p className="px-2 pb-1 pt-2 text-xs text-[#1A1A1A]/45">
+        <p className="px-2 pb-1 pt-2 text-xs text-[var(--ui-text)]/45">
           Analyze this post to unlock the analysis tabs.
         </p>
       </div>
       <div className="grid gap-5 p-5 md:p-7">
         {postContent}
         {loading && (
-          <div className="rounded-xl border border-[#f9dc0b]/15 bg-[#f9dc0b]/5 p-5">
-            <div className="flex items-center gap-3 text-[#f9dc0b]">
-              <Loader2 className="h-4 w-4 animate-spin" />
+          <div className="rounded-xl border border-[var(--ui-accent)]/15 bg-[var(--ui-accent)]/5 p-5">
+            <div className="flex items-center gap-3 text-[var(--ui-accent-text)]">
+              <Loader2 className="h-4 w-4 ui-spin" />
               <p className="text-sm font-semibold">Analyzing movie inside this post</p>
             </div>
-            <p className="mt-2 text-sm leading-relaxed text-[#1A1A1A]/55">Checking TikTok comments for the title first, then scanning the video if needed.</p>
+            <p className="mt-2 text-sm leading-relaxed text-[var(--ui-text)]/55">Checking TikTok comments for the title first, then scanning the video if needed.</p>
           </div>
         )}
         {!loading && (
@@ -1659,17 +1659,17 @@ export default function TikTokExplorer({
     setBatchAnalysisRunning(false);
   }, []);
   const topTabClass = (active: boolean) => cn(
-    "inline-flex min-h-11 shrink-0 items-center gap-2 border-b-2 px-1 text-xs font-black transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70 focus-visible:ring-offset-2",
-    active ? "border-[#f9dc0b]" : "border-transparent",
+    "inline-flex min-h-11 shrink-0 items-center gap-2 border-b-2 px-1 text-xs font-black transition",
+    active ? "border-[var(--ui-accent)]" : "border-transparent",
     active
-      ? isDark ? "text-white" : "text-[#1A1A1A]"
-      : isDark ? "text-white/40 hover:text-white/75" : "text-[#1A1A1A]/40 hover:text-[#1A1A1A]/75",
+      ? isDark ? "text-white" : "text-[var(--ui-text)]"
+      : isDark ? "text-white/40 hover:text-white/75" : "text-[var(--ui-text)]/40 hover:text-[var(--ui-text)]/75",
   );
   const sourceTabClass = (active: boolean) => cn(
-    "inline-flex min-h-11 items-center gap-2 rounded-md px-3 text-xs font-black transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70 disabled:pointer-events-none disabled:opacity-30",
+    "inline-flex min-h-11 items-center gap-2 rounded-md px-3 text-xs font-black transition disabled:pointer-events-none disabled:opacity-30",
     active
-      ? isDark ? "bg-white text-[#1A1A1A]" : "bg-[#1A1A1A] text-white"
-      : isDark ? "text-white/55 hover:bg-white/8 hover:text-white" : "text-[#1A1A1A]/52 hover:bg-[#1A1A1A]/6 hover:text-[#1A1A1A]",
+      ? isDark ? "bg-[var(--ui-panel)] text-[var(--ui-text)]" : "bg-[var(--ui-text)] text-[var(--ui-panel)]"
+      : isDark ? "text-white/55 hover:bg-white/8 hover:text-white" : "text-[var(--ui-text)]/52 hover:bg-[var(--ui-text)]/6 hover:text-[var(--ui-text)]",
   );
   const nestedReturnTarget = initialReturnTo || (loadedFromSaved && playlist ? "/tiktok/saved" : "");
   const nestedReturnLabel = nestedReturnTarget ? returnDestinationLabel(nestedReturnTarget) : "";
@@ -1687,7 +1687,7 @@ export default function TikTokExplorer({
   };
   const selectedPostContent = selectedVideo ? (
     <div className="grid min-w-0 items-start gap-5 overflow-x-clip lg:grid-cols-[minmax(170px,260px)_minmax(0,1fr)] xl:gap-8">
-      <div className="relative mx-auto aspect-[9/16] max-h-[72vh] w-full max-w-[260px] overflow-hidden rounded-2xl border bg-black shadow-2xl" style={{ borderColor: isDark ? "rgba(255,255,255,0.12)" : "#fff" }}>
+      <div className="relative mx-auto aspect-[9/16] max-h-[72vh] w-full max-w-[260px] overflow-hidden rounded-2xl border bg-black shadow-2xl border-[var(--ui-line)]" style={{ borderColor: isDark ? "rgba(255,255,255,0.12)" : "#fff" }}>
         <CleanTikTokVideo video={selectedVideo} onError={setError} />
         <div className="absolute right-4 top-4 z-10">
           <ThumbnailDownloadButton busy={!!downloadingIds[videoDomKey(selectedVideo)]} onClick={(e) => handleDownload(e, selectedVideo)} />
@@ -1697,10 +1697,10 @@ export default function TikTokExplorer({
       <div className="min-w-0 space-y-6 rounded-2xl p-3 md:p-5" style={{ background: bgCard, border: `1px solid ${border}`, color: text }}>
         <div className="flex min-w-0 flex-col gap-5">
           <div className="space-y-2">
-            <div className="flex items-center gap-2 text-[#f9dc0b]">
-              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[#f9dc0b]/10"><User className="h-3 w-3" /></div>
+            <div className="flex items-center gap-2 text-[var(--ui-accent-text)]">
+              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[var(--ui-accent)]/10"><User className="h-3 w-3" /></div>
               {channelListingUrl(selectedVideo) ? (
-                <button type="button" onClick={(e) => openChannel(e, selectedVideo)} disabled={loading} title="Open channel videos" className="text-left text-xs font-semibold text-[#f9dc0b] underline-offset-2 hover:underline disabled:opacity-50">
+                <button type="button" onClick={(e) => openChannel(e, selectedVideo)} disabled={loading} title="Open channel videos" className="text-left text-xs font-semibold text-[var(--ui-accent-text)] underline-offset-2 hover:underline disabled:opacity-50">
                   {selectedVideo.author} (@{selectedVideo.authorHandle})
                 </button>
               ) : (
@@ -1711,13 +1711,13 @@ export default function TikTokExplorer({
             {videoDurationSeconds(selectedVideo) ? <p className="inline-flex w-fit items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold" style={{ background: softSurface, color: muted }}><Clock3 className="h-3.5 w-3.5" />{formatVideoLength(videoDurationSeconds(selectedVideo))}</p> : null}
           </div>
 
-          <button type="button" onClick={() => analyzePostInline(selectedVideo)} disabled={selectedPostAnalyzing} className="group flex min-h-12 w-full items-center justify-center gap-3 rounded-full bg-[#f9dc0b] px-6 py-3 text-center text-xs font-bold text-[#1A1A1A] shadow-xl shadow-[#f9dc0b]/25 transition-all hover:bg-[#1A1A1A] hover:text-white sm:w-fit sm:px-8 sm:py-4">
-            {selectedPostAnalyzing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4 fill-current group-hover:animate-pulse" />}
+          <button type="button" onClick={() => analyzePostInline(selectedVideo)} disabled={selectedPostAnalyzing} className="ui-btn is-primary is-lg group w-full text-center shadow-[#f9dc0b]/25 sm:w-fit">
+            {selectedPostAnalyzing ? <Loader2 className="h-4 w-4 ui-spin" /> : <Zap className="h-4 w-4 fill-current group-hover:animate-pulse" />}
             {selectedPostAnalysis ? "Re-analyze" : "Analyze clip"}
           </button>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 border-t pt-5 sm:grid-cols-4" style={{ borderColor: border }}>
+        <div className="grid grid-cols-2 gap-3 border-t pt-5 sm:grid-cols-4 border-[var(--ui-line)]" style={{ borderColor: border }}>
           <StatItem icon={<Heart className="h-5 w-5" />} label="Likes" value={selectedVideo.stats?.diggCount || 0} />
           <StatItem icon={<MessageCircle className="h-5 w-5" />} label="Comments" value={selectedVideo.stats?.commentCount || 0} />
           <StatItem icon={<Share2 className="h-5 w-5" />} label="Shares" value={selectedVideo.stats?.shareCount || 0} />
@@ -1749,7 +1749,7 @@ export default function TikTokExplorer({
             onClick={() => {
               navigateBack(initialReturnTo, currentListHref());
             }}
-            className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-lg px-2 transition hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70"
+            className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-lg px-2 transition hover:bg-black/5"
             style={{ color: muted }}
             aria-label={initialReturnTo ? returnDestinationLabel(initialReturnTo) : focusedBackLabel}
             title={initialReturnTo ? returnDestinationLabel(initialReturnTo) : focusedBackLabel}
@@ -1790,9 +1790,9 @@ export default function TikTokExplorer({
               type="button"
               onClick={() => analyzePostInline(selectedVideo)}
               disabled={selectedPostAnalyzing}
-              className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-[#f9dc0b] px-3 text-xs font-black text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70 disabled:opacity-60 sm:px-4"
+              className="ui-btn is-primary"
             >
-              {selectedPostAnalyzing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
+              {selectedPostAnalyzing ? <Loader2 className="h-4 w-4 ui-spin" /> : <Zap className="h-4 w-4" />}
               {selectedPostAnalysis ? "Re-analyze" : "Analyze clip"}
             </button>
           </div>
@@ -1835,12 +1835,12 @@ export default function TikTokExplorer({
               {selectedPostContent}
               {/* Locked/loading state */}
               {selectedPostAnalyzing ? (
-                <div className="mt-6 flex items-center gap-3 rounded-xl border px-5 py-4 text-sm font-semibold" style={{ borderColor: `${accent}30`, background: `${accent}0d`, color: accent }}>
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                <div className="mt-6 flex items-center gap-3 rounded-xl border px-5 py-4 text-sm font-semibold border-[var(--ui-line)]" style={{ borderColor: `${accent}30`, background: `${accent}0d`, color: accent }}>
+                  <Loader2 className="h-4 w-4 ui-spin" />
                   Analyzing clip… fetching comments, then Movie ID.
                 </div>
               ) : (
-                <div className="mt-6 rounded-xl border border-dashed px-5 py-4 text-sm" style={{ borderColor: border, color: muted }}>
+                <div className="mt-6 rounded-xl border border-dashed px-5 py-4 text-sm border-[var(--ui-line)]" style={{ borderColor: border, color: muted }}>
                   Hit Analyze clip to unlock Movie ID, Transcript, Story, Visuals, Niche, Evidence, and Details.
                 </div>
               )}
@@ -1860,7 +1860,7 @@ export default function TikTokExplorer({
               <button
                 type="button"
                 onClick={() => navigateBack(nestedReturnTarget, "/tiktok/saved")}
-                className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-lg px-2 text-xs font-black transition hover:bg-black/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70"
+                className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-lg px-2 text-xs font-black transition hover:bg-black/5"
                 style={{ color: text }}
               >
                 <ArrowLeft className="h-4 w-4" />
@@ -1961,7 +1961,7 @@ export default function TikTokExplorer({
                       void runTikTokAnalyze(pasted, { forceNetwork: true });
                     }}
                     placeholder="TikTok profile, playlist, collection, or video URL"
-                    className="h-11 w-full rounded-lg border pl-9 pr-3 text-xs font-semibold outline-none transition focus:border-[#f9dc0b] focus:ring-2 focus:ring-[#f9dc0b]/20"
+                    className="h-11 w-full rounded-lg border pl-9 pr-3 text-xs font-semibold outline-none transition focus:border-[var(--ui-accent)] border-[var(--ui-line)]"
                     style={{ borderColor: border, background: bgCard, color: text }}
                     aria-label="TikTok URL"
                   />
@@ -1972,23 +1972,23 @@ export default function TikTokExplorer({
                   max={VIDEO_COUNT_MAX}
                   value={videoCount}
                   onChange={(event) => setVideoCount(clampVideoCount(Number(event.target.value)))}
-                  className="h-11 w-full rounded-lg border px-2 text-xs font-black tabular-nums outline-none focus:border-[#f9dc0b] focus:ring-2 focus:ring-[#f9dc0b]/20"
+                  className="h-11 w-full rounded-lg border px-2 text-xs font-black tabular-nums outline-none focus:border-[var(--ui-accent)] border-[var(--ui-line)]"
                   style={{ borderColor: border, background: bgCard, color: text }}
                   aria-label="Maximum videos"
                 />
-                <button type="submit" disabled={loading || !url.trim()} className="inline-flex h-11 w-11 items-center justify-center rounded-lg bg-[#f9dc0b] text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70 disabled:cursor-wait disabled:opacity-50" aria-label="Search TikTok">
-                  {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                <button type="submit" disabled={loading || !url.trim()} className="ui-btn is-primary" aria-label="Search TikTok">
+                  {loading ? <Loader2 className="h-4 w-4 ui-spin" /> : <Search className="h-4 w-4" />}
                 </button>
               </form>
 
               {playlist && !(savedCollectionView === "genres" && currentSavedCollectionKey) ? (
                 <div className="flex flex-wrap items-center gap-2 lg:ml-auto">
-                  <button type="button" onClick={batchAnalysisRunning ? stopBatchAnalysis : startBatchAnalysis} className="inline-flex min-h-11 items-center gap-2 rounded-lg px-3 text-xs font-black transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70 disabled:opacity-60" style={{ background: batchAnalysisRunning ? "rgba(239,68,68,0.12)" : accent, color: batchAnalysisRunning ? "#dc2626" : "#1A1A1A" }}>
-                    {batchAnalysisRunning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
+                  <button type="button" onClick={batchAnalysisRunning ? stopBatchAnalysis : startBatchAnalysis} className="inline-flex min-h-11 items-center gap-2 rounded-lg px-3 text-xs font-black transition disabled:opacity-60" style={{ background: batchAnalysisRunning ? "rgba(239,68,68,0.12)" : accent, color: batchAnalysisRunning ? "#dc2626" : "#1A1A1A" }}>
+                    {batchAnalysisRunning ? <Loader2 className="h-3.5 w-3.5 ui-spin" /> : <Zap className="h-3.5 w-3.5" />}
                     {batchAnalysisRunning ? "Stop scan" : "Analyze all"}
                   </button>
-                  <button type="button" onClick={saveOrUpdatePlaylist} disabled={loading} className="inline-flex min-h-11 items-center gap-2 rounded-lg border px-3 text-xs font-black transition hover:border-[#f9dc0b] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70 disabled:cursor-wait disabled:opacity-50" style={{ background: bgCard, color: text, borderColor: border }}>
-                    {loadedFromSaved && loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Bookmark className="h-3.5 w-3.5" style={{ color: accent }} />}
+                  <button type="button" onClick={saveOrUpdatePlaylist} disabled={loading} className="inline-flex min-h-11 items-center gap-2 rounded-lg border px-3 text-xs font-black transition hover:border-[var(--ui-accent)] disabled:cursor-wait disabled:opacity-50 border-[var(--ui-line)]" style={{ background: bgCard, color: text, borderColor: border }}>
+                    {loadedFromSaved && loading ? <Loader2 className="h-3.5 w-3.5 ui-spin" /> : <Bookmark className="h-3.5 w-3.5" style={{ color: accent }} />}
                     {playlistActionLabel}
                   </button>
 
@@ -1996,17 +1996,17 @@ export default function TikTokExplorer({
                     <button
                       type="button"
                       onClick={() => setFilterMenuOpen((open) => !open)}
-                      className="inline-flex min-h-11 items-center gap-2 rounded-lg border px-3 text-xs font-black transition hover:border-[#f9dc0b] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70"
+                      className="inline-flex min-h-11 items-center gap-2 rounded-lg border px-3 text-xs font-black transition hover:border-[var(--ui-accent)] border-[var(--ui-line)]"
                       style={{ background: bgCard, color: text, borderColor: filterMenuOpen ? accent : border }}
                       aria-expanded={filterMenuOpen}
                       aria-haspopup="dialog"
                     >
                       <SlidersHorizontal className="h-3.5 w-3.5" />
                       Filter & sort
-                      {(videoSortMode !== "views-desc" || videoLengthFilter !== "all" || activeVideoTags.length > 0) ? <span className="h-1.5 w-1.5 rounded-full bg-[#f9dc0b]" aria-label="Filters active" /> : null}
+                      {(videoSortMode !== "views-desc" || videoLengthFilter !== "all" || activeVideoTags.length > 0) ? <span className="h-1.5 w-1.5 rounded-full bg-[var(--ui-accent)]" aria-label="Filters active" /> : null}
                     </button>
                     {filterMenuOpen ? (
-                      <div role="dialog" aria-label="Filter and sort videos" className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-[min(19rem,calc(100vw-1.5rem))] rounded-xl border p-3" style={{ background: bgCard, borderColor: border, boxShadow: panelShadow }}>
+                      <div role="dialog" aria-label="Filter and sort videos" className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-[min(19rem,calc(100vw-1.5rem))] rounded-xl border p-3 border-[var(--ui-line)]" style={{ background: bgCard, borderColor: border, boxShadow: panelShadow }}>
                         <fieldset>
                           <legend className="px-1 text-[10px] font-black uppercase tracking-[0.16em]" style={{ color: muted }}>Sort by</legend>
                           <div className="mt-2 grid grid-cols-2 gap-1">
@@ -2018,20 +2018,20 @@ export default function TikTokExplorer({
                             ))}
                           </div>
                         </fieldset>
-                        <fieldset className="mt-4 border-t pt-3" style={{ borderColor: border }}>
+                        <fieldset className="mt-4 border-t pt-3 border-[var(--ui-line)]" style={{ borderColor: border }}>
                           <legend className="px-1 text-[10px] font-black uppercase tracking-[0.16em]" style={{ color: muted }}>Length</legend>
                           <div className="mt-2 grid gap-1">
                             {VIDEO_LENGTH_OPTIONS.map((option) => (
                               <button key={option.value} type="button" role="radio" aria-checked={videoLengthFilter === option.value} onClick={() => handleLengthChange(option.value)} className={cn(sourceTabClass(videoLengthFilter === option.value), "justify-start")}>
                                 {videoLengthFilter === option.value ? <Check className="h-3.5 w-3.5" /> : <Clock3 className="h-3.5 w-3.5 opacity-55" />}
                                 {option.label}
-                                {option.value === "longform16x9" && dimensionProbeBusy ? <Loader2 className="ml-auto h-3.5 w-3.5 animate-spin" /> : null}
+                                {option.value === "longform16x9" && dimensionProbeBusy ? <Loader2 className="ml-auto h-3.5 w-3.5 ui-spin" /> : null}
                               </button>
                             ))}
                           </div>
                         </fieldset>
                         {currentFilterTags.length ? (
-                          <fieldset className="mt-4 border-t pt-3" style={{ borderColor: border }}>
+                          <fieldset className="mt-4 border-t pt-3 border-[var(--ui-line)]" style={{ borderColor: border }}>
                             <legend className="px-1 text-[10px] font-black uppercase tracking-[0.16em]" style={{ color: muted }}>Tags</legend>
                             <div className="mt-2 max-h-48 space-y-1 overflow-y-auto pr-1">
                               {currentFilterTags.map((tag) => {
@@ -2072,7 +2072,7 @@ export default function TikTokExplorer({
       {mainTab === "saved" ? (
         <div className="space-y-6">
           {savedSummaries.length > 0 ? (
-            <div className="ui-inherit flex flex-col gap-2 rounded-xl border p-2 sm:flex-row sm:items-center" style={{ borderColor: border, background: bg, color: text }}>
+            <div className="ui-inherit flex flex-col gap-2 rounded-xl border p-2 sm:flex-row sm:items-center border-[var(--ui-line)]" style={{ borderColor: border, background: bg, color: text }}>
               <SearchField className="min-w-0 flex-1" value={savedQuery} onChange={setSavedQuery} placeholder="Search saved sources" />
               <div className="flex flex-wrap gap-2">
                 <Segmented
@@ -2094,11 +2094,11 @@ export default function TikTokExplorer({
             </div>
           ) : null}
           {savedSummaries.length === 0 ? (
-            <div className="ui-inherit rounded-xl border border-dashed" style={{ borderColor: border, color: text }}>
+            <div className="ui-inherit rounded-xl border border-dashed border-[var(--ui-line)]" style={{ borderColor: border, color: text }}>
               <EmptyState icon={<Bookmark className="h-5 w-5" />} title="No saved sources yet" body="Analyze a playlist or channel link, then save it to find it here." />
             </div>
           ) : visibleSavedSummaries.length === 0 ? (
-            <div className="ui-inherit rounded-xl border border-dashed" style={{ borderColor: border, color: text }}>
+            <div className="ui-inherit rounded-xl border border-dashed border-[var(--ui-line)]" style={{ borderColor: border, color: text }}>
               <EmptyState icon={<Search className="h-5 w-5" />} title="No matches" body="No saved sources match those filters." />
             </div>
           ) : (
@@ -2120,7 +2120,7 @@ export default function TikTokExplorer({
                           event.stopPropagation();
                           setSavedMenuKey((key) => key === s.key ? "" : s.key);
                         }}
-                        className="grid h-11 w-11 place-items-center rounded-lg border border-white/20 bg-black/60 text-white shadow-sm transition hover:bg-white hover:text-[#1A1A1A] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]"
+                        className="grid h-11 w-11 place-items-center rounded-lg border border-white/20 bg-black/60 text-white shadow-sm transition hover:bg-[var(--ui-panel)] hover:text-[var(--ui-text)]"
                         aria-label={`Actions for ${s.title}`}
                         aria-expanded={savedMenuKey === s.key}
                         aria-haspopup="menu"
@@ -2128,9 +2128,9 @@ export default function TikTokExplorer({
                         <MoreHorizontal className="h-4 w-4" />
                       </button>
                       {savedMenuKey === s.key ? (
-                        <div role="menu" className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-44 overflow-hidden rounded-xl border p-1.5" style={{ background: bgCard, borderColor: border, boxShadow: panelShadow }}>
-                          <button type="button" role="menuitem" onClick={(event) => { setSavedMenuKey(""); void reprocessSaved(event, s); }} disabled={!!reprocessingKeys[s.key]} className="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 text-left text-xs font-black transition hover:bg-[#f9dc0b]/15 disabled:opacity-45" style={{ color: text }}>
-                            <RefreshCw className={cn("h-4 w-4", reprocessingKeys[s.key] && "animate-spin")} />
+                        <div role="menu" className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-44 overflow-hidden rounded-xl border p-1.5 border-[var(--ui-line)]" style={{ background: bgCard, borderColor: border, boxShadow: panelShadow }}>
+                          <button type="button" role="menuitem" onClick={(event) => { setSavedMenuKey(""); void reprocessSaved(event, s); }} disabled={!!reprocessingKeys[s.key]} className="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 text-left text-xs font-black transition hover:bg-[var(--ui-accent)]/15 disabled:opacity-45" style={{ color: text }}>
+                            <RefreshCw className={cn("h-4 w-4", reprocessingKeys[s.key] && "ui-spin")} />
                             Update source
                           </button>
                           <button type="button" role="menuitem" onClick={(event) => void deleteSaved(event, s.key)} className="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 text-left text-xs font-black text-red-600 transition hover:bg-red-500/10">
@@ -2152,7 +2152,7 @@ export default function TikTokExplorer({
           {!loadedFromSaved && !collectionCache && !channelCache && !loadingTarget && (
             <div className="flex h-full flex-col items-center justify-center gap-5 py-10 text-center sm:py-20">
               <div className="grid h-16 w-16 place-items-center rounded-2xl" style={{ background: "#f9dc0b20" }}>
-                <Zap className="h-7 w-7 text-[#f9dc0b]" />
+                <Zap className="h-7 w-7 text-[var(--ui-accent-text)]" />
               </div>
               <div>
                 <h1 className="font-serif text-xl font-bold" style={{ color: text }}>Explore TikTok videos</h1>
@@ -2162,9 +2162,9 @@ export default function TikTokExplorer({
           )}
 
           {loadingTarget && !playlist && (
-            <div className="flex min-h-[260px] flex-col items-center justify-center gap-4 rounded-xl border border-dashed border-[#1A1A1A]/10 bg-white/90 py-16 shadow-sm">
-              <Loader2 className="h-10 w-10 animate-spin text-[#f9dc0b]" aria-hidden />
-              <p className="max-w-md text-center text-sm text-[#1A1A1A]/50">Loading {loadingTarget === "channel" ? "channel videos" : "playlist videos"}.</p>
+            <div className="flex min-h-[260px] flex-col items-center justify-center gap-4 rounded-xl border border-dashed border-[var(--ui-line)] bg-white/90 py-16 shadow-sm">
+              <Loader2 className="h-10 w-10 ui-spin text-[var(--ui-accent-text)]" aria-hidden />
+              <p className="max-w-md text-center text-sm text-[var(--ui-text)]/50">Loading {loadingTarget === "channel" ? "channel videos" : "playlist videos"}.</p>
             </div>
           )}
 
@@ -2193,14 +2193,14 @@ export default function TikTokExplorer({
                       )}
                     </motion.div>
                   ) : (
-                    <div className="flex h-[420px] flex-col items-center justify-center rounded-xl border border-dashed border-[#1A1A1A]/10 bg-white text-[#1A1A1A]/30">
+                    <div className="flex h-[420px] flex-col items-center justify-center rounded-xl border border-dashed border-[var(--ui-line)] bg-[var(--ui-panel)] text-[var(--ui-text)]/30">
                       <Play className="mb-6 h-14 w-14 opacity-20" />
                       <p className="text-sm">Select a video to analyze</p>
                     </div>
                   )
                 ) : savedCollectionView === "genres" && currentSavedCollectionKey ? (
                   <section className="space-y-5">
-                    <div className="flex flex-col gap-3 border-b pb-4 sm:flex-row sm:items-end sm:justify-between" style={{ borderColor: border }}>
+                    <div className="flex flex-col gap-3 border-b pb-4 sm:flex-row sm:items-end sm:justify-between border-[var(--ui-line)]" style={{ borderColor: border }}>
                       <div>
                         <div className="flex flex-wrap items-center gap-2 text-xs font-semibold" style={{ color: muted }}>
                           <Tags className="h-3.5 w-3.5" style={{ color: accent }} />
@@ -2225,7 +2225,7 @@ export default function TikTokExplorer({
                         className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-lg px-4 text-sm font-black transition disabled:cursor-wait disabled:opacity-55"
                         style={{ background: accent, color: "#1A1A1A" }}
                       >
-                        {genreScanBusy || genreScanLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                        {genreScanBusy || genreScanLoading ? <Loader2 className="h-4 w-4 ui-spin" /> : <RefreshCw className="h-4 w-4" />}
                         {genreScan?.summary.pending ? `Analyze ${genreScan.summary.pending} pending` : genreScan?.summary.scanned ? "Refresh pending" : "Analyze story genres"}
                       </button>
                     </div>
@@ -2265,7 +2265,7 @@ export default function TikTokExplorer({
                               key={group.genre}
                               type="button"
                               onClick={() => setActiveGenre(group.genre)}
-                              className="inline-flex h-9 shrink-0 items-center gap-2 rounded-full border px-3 text-xs font-bold transition"
+                              className="inline-flex h-9 shrink-0 items-center gap-2 rounded-full border px-3 text-xs font-bold transition border-[var(--ui-line)]"
                               style={activeGenreGroup?.genre === group.genre
                                 ? { borderColor: accent, background: accent, color: "#1A1A1A" }
                                 : { borderColor: border, background: bg, color: text }}
@@ -2306,7 +2306,7 @@ export default function TikTokExplorer({
                         </div>
                       </>
                     ) : (
-                      <div className="flex min-h-[320px] flex-col items-center justify-center rounded-xl border border-dashed px-6 py-14 text-center" style={{ borderColor: border, background: bg }}>
+                      <div className="flex min-h-[320px] flex-col items-center justify-center rounded-xl border border-dashed px-6 py-14 text-center border-[var(--ui-line)]" style={{ borderColor: border, background: bg }}>
                         <Layers3 className="h-9 w-9" style={{ color: accent }} />
                         <p className="mt-4 text-sm font-bold" style={{ color: text }}>No story genre subcollections yet</p>
                         <p className="mt-2 max-w-md text-sm" style={{ color: muted }}>
@@ -2324,7 +2324,7 @@ export default function TikTokExplorer({
                           Active filters
                         </span>
                         {activeVideoTags.map((tag) => (
-                          <button key={tag} type="button" onClick={() => setActiveVideoTags((previous) => previous.filter((item) => item.toLowerCase() !== tag.toLowerCase()))} className="inline-flex min-h-11 items-center gap-1.5 rounded-full border px-3 text-xs font-black transition" style={{ borderColor: accent, background: accent, color: "#1A1A1A" }} aria-label={`Remove ${tag} filter`}>
+                          <button key={tag} type="button" onClick={() => setActiveVideoTags((previous) => previous.filter((item) => item.toLowerCase() !== tag.toLowerCase()))} className="inline-flex min-h-11 items-center gap-1.5 rounded-full border px-3 text-xs font-black transition border-[var(--ui-line)]" style={{ borderColor: accent, background: accent, color: "#1A1A1A" }} aria-label={`Remove ${tag} filter`}>
                             {tag}
                             <X className="h-3 w-3" />
                           </button>
@@ -2363,12 +2363,12 @@ export default function TikTokExplorer({
                             </div> : undefined}
                             topRight={<ThumbnailDownloadButton busy={!!downloadingIds[videoDomKey(video, vi)]} onClick={(e) => handleDownload(e, video, vi)} />}
                             overlay={isScanning ? <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex h-full w-full flex-col items-center justify-center bg-black/70 p-3 text-center text-white backdrop-blur-xs">
-                              <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}><Loader2 className="mb-2 h-8 w-8 text-[#f9dc0b]" /></motion.div>
-                              <span className="text-xs font-black uppercase tracking-wider text-[#f9dc0b]">Scanning clip...</span>
+                              <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}><Loader2 className="mb-2 h-8 w-8 text-[var(--ui-accent-text)]" /></motion.div>
+                              <span className="text-xs font-black uppercase tracking-wider text-[var(--ui-accent-text)]">Scanning clip...</span>
                               <span className="mt-1 text-[10px] leading-normal text-white/70">{batchScanProgress?.phase === "comments" ? "Fetching comments" : "Matching comments, then scanning the video if needed"}</span>
                             </motion.div> : undefined}
                             theme={isDark ? "dark" : "light"}
-                            className={isScanning ? "ring-2 ring-[#f9dc0b] ring-offset-2" : undefined}
+                            className={isScanning ? "ring-2 ring-[var(--ui-accent)] ring-offset-2" : undefined}
                           />
                         </motion.div>
                       );
@@ -2408,7 +2408,7 @@ export default function TikTokExplorer({
                       <h4 className="text-lg font-black text-green-950">Uploaded successfully!</h4>
                       <p className="mt-2 text-sm text-green-800/80 leading-relaxed font-semibold">Your video is now live or private on your connected YouTube channel.</p>
 
-                      <div className="mt-4 p-3 bg-white rounded-xl border border-green-100 text-left font-serif text-sm font-bold text-green-900 leading-snug">
+                      <div className="mt-4 p-3 bg-[var(--ui-panel)] rounded-xl border border-green-100 text-left font-serif text-sm font-bold text-green-900 leading-snug">
                         {youtubeUploadResult.title}
                       </div>
 
@@ -2425,7 +2425,7 @@ export default function TikTokExplorer({
                         <button
                           type="button"
                           onClick={() => setYoutubeUploadResult(null)}
-                          className="inline-flex h-10 items-center justify-center rounded-xl border border-[#1A1A1A]/10 bg-white px-5 text-xs font-black text-[#1A1A1A]/70 hover:bg-[#F9F8F6] transition-all"
+                          className="ui-btn"
                         >
                           Upload Again
                         </button>
@@ -2433,9 +2433,9 @@ export default function TikTokExplorer({
                     </div>
                   ) : isUploadingToYoutube ? (
                     <div className="mx-auto max-w-md py-12 text-center">
-                      <Loader2 className="mx-auto h-12 w-12 animate-spin text-[#f9dc0b] mb-4" />
-                      <h4 className="text-base font-black text-[#1A1A1A]">{uploadProgressMessage}</h4>
-                      <p className="mt-2 text-xs font-medium text-[#1A1A1A]/45">Please keep this tab open. We are fetching the video and publishing it to YouTube.</p>
+                      <Loader2 className="mx-auto h-12 w-12 ui-spin text-[var(--ui-accent-text)] mb-4" />
+                      <h4 className="text-base font-black text-[var(--ui-text)]">{uploadProgressMessage}</h4>
+                      <p className="mt-2 text-xs font-medium text-[var(--ui-text)]/45">Please keep this tab open. We are fetching the video and publishing it to YouTube.</p>
                     </div>
                   ) : (
                     <div className="grid gap-6 lg:grid-cols-[2fr_1.3fr] items-start">
@@ -2468,10 +2468,10 @@ export default function TikTokExplorer({
                       </div>
 
                       {/* Right: Direct YouTube Upload Form */}
-                      <div id="youtube-upload-panel" className="rounded-xl border p-5 bg-[#F9F8F6] space-y-4" style={{ borderColor: "rgba(28,26,22,0.08)" }}>
+                      <div id="youtube-upload-panel" className="rounded-xl border p-5 bg-[var(--ui-bg)] space-y-4 border-[var(--ui-line)]" style={{ borderColor: "rgba(28,26,22,0.08)" }}>
                         <div>
                           <p className="text-[9px] font-black uppercase tracking-widest text-[#FF0000]">YouTube direct publishing</p>
-                          <h4 className="text-base font-black text-[#1A1A1A] mt-0.5">Publish to channel</h4>
+                          <h4 className="text-base font-black text-[var(--ui-text)] mt-0.5">Publish to channel</h4>
 
                           {auth?.activeAccount ? (
                             <div className="mt-3 flex items-center gap-2.5 rounded-lg border border-[#FF0000]/25 bg-red-50/50 p-2.5">
@@ -2598,9 +2598,9 @@ export default function TikTokExplorer({
 function StatItem({ icon, label, value }: { icon: ReactNode; label: string; value: number }) {
   return (
     <div className="space-y-1 text-center">
-      <div className="mb-1 flex justify-center text-[#1A1A1A]/20">{icon}</div>
+      <div className="mb-1 flex justify-center text-[var(--ui-text)]/20">{icon}</div>
       <div className="font-mono text-sm font-bold">{formatValue(value)}</div>
-      <div className="text-[9px] font-bold uppercase tracking-widest text-[#1A1A1A]/30">{label}</div>
+      <div className="text-[9px] font-bold uppercase tracking-widest text-[var(--ui-text)]/30">{label}</div>
     </div>
   );
 }

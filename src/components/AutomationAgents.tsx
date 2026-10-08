@@ -231,19 +231,19 @@ function getAgentTheme(theme: AgentTheme) {
   const isDark = theme === "dark";
   return {
     isDark,
-    surface: isDark ? "border-[#F8F5E8]/14 bg-[#191C18]" : "border-[#dadada] bg-white",
-    surfaceSoft: isDark ? "border-[#F8F5E8]/10 bg-[#151916]" : "border-[#dadada] bg-[#f9f9f9]",
-    highlight: isDark ? "border-[#f9dc0b]/35 bg-[#211F12]" : "border-[#f9dc0b]/40 bg-[#fffdf0]",
-    accentPanel: "border-[#f9dc0b]/30 bg-[#f9dc0b]/12",
-    text: isDark ? "text-[#F8F5E8]" : "text-[#1A1A1A]",
-    muted: isDark ? "text-[#F8F5E8]/58" : "text-[#1A1A1A]/65",
-    subtle: isDark ? "text-[#F8F5E8]/42" : "text-[#1A1A1A]/42",
-    textSoft: isDark ? "text-[#F8F5E8]/82" : "text-[#1A1A1A]/82",
-    divider: isDark ? "border-[#F8F5E8]/10" : "border-[#dadada]",
-    tabInactive: isDark ? "text-[#F8F5E8]/62 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/62 hover:text-[#1A1A1A]",
-    tabActive: isDark ? "text-[#F8F5E8]" : "text-[#1A1A1A]",
-    setupTabActive: isDark ? "bg-[#191C18] text-[#F8F5E8] shadow-sm" : "bg-white text-[#1A1A1A] shadow-sm",
-    setupTabIdle: isDark ? "text-[#F8F5E8]/55 hover:bg-[#F8F5E8]/6 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/55 hover:bg-white/80 hover:text-[#1A1A1A]",
+    surface: isDark ? "border-[var(--ui-line-strong)] bg-[var(--ui-panel)]" : "border-[var(--ui-line-strong)] bg-[var(--ui-panel)]",
+    surfaceSoft: isDark ? "border-[var(--ui-line)] bg-[var(--ui-bg)]" : "border-[var(--ui-line-strong)] bg-[var(--ui-bg)]",
+    highlight: isDark ? "border-[var(--ui-accent)]/35 bg-[var(--ui-accent-soft)]" : "border-[var(--ui-accent)]/40 bg-[var(--ui-accent-soft)]",
+    accentPanel: "border-[var(--ui-accent)]/30 bg-[var(--ui-accent)]/12",
+    text: isDark ? "text-[var(--ui-text)]" : "text-[var(--ui-text)]",
+    muted: isDark ? "text-[var(--ui-text)]/58" : "text-[var(--ui-text)]/65",
+    subtle: isDark ? "text-[var(--ui-text)]/42" : "text-[var(--ui-text)]/42",
+    textSoft: isDark ? "text-[var(--ui-text)]/82" : "text-[var(--ui-text)]/82",
+    divider: isDark ? "border-[var(--ui-line)]" : "border-[var(--ui-line-strong)]",
+    tabInactive: isDark ? "text-[var(--ui-text)]/62 hover:text-[var(--ui-text)]" : "text-[var(--ui-text)]/62 hover:text-[var(--ui-text)]",
+    tabActive: isDark ? "text-[var(--ui-text)]" : "text-[var(--ui-text)]",
+    setupTabActive: isDark ? "bg-[var(--ui-panel)] text-[var(--ui-text)] shadow-sm" : "bg-[var(--ui-panel)] text-[var(--ui-text)] shadow-sm",
+    setupTabIdle: isDark ? "text-[var(--ui-text)]/55 hover:bg-[var(--ui-text)]/6 hover:text-[var(--ui-text)]" : "text-[var(--ui-text)]/55 hover:bg-white/80 hover:text-[var(--ui-text)]",
   };
 }
 
@@ -1233,7 +1233,7 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
         <button
           type="button"
           onClick={() => writeDeepLink({ view: "channels" })}
-          className="mt-4 inline-flex h-11 items-center gap-2 rounded-xl bg-[#f9dc0b] px-5 text-sm font-black text-[#1A1A1A] shadow-sm transition hover:bg-[#1A1A1A] hover:text-white active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00]"
+          className="mt-4 inline-flex h-11 items-center gap-2 rounded-xl bg-[var(--ui-accent)] px-5 text-sm font-black text-[var(--ui-accent-ink)] shadow-sm transition hover:bg-[var(--ui-text)] hover:text-[var(--ui-panel)] active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
         >
           <Youtube className="h-4 w-4" />
           Open Channel Management
@@ -1244,20 +1244,20 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
   }
 
   return (
-    <div className={cn("relative flex h-full min-h-0 flex-col overflow-hidden", !detailOpen && "workspace-floating-shell", theme === "dark" ? "bg-[#111411] text-[#F8F5E8]" : "bg-[#f9f9f9] text-[#1A1A1A]")}>
+    <div className={cn("relative flex h-full min-h-0 flex-col overflow-hidden", !detailOpen && "workspace-floating-shell", theme === "dark" ? "bg-[var(--ui-bg)] text-[var(--ui-text)]" : "bg-[var(--ui-bg)] text-[var(--ui-text)]")}>
       {/* ── Sticky top bar ── */}
       {!detailOpen ? (
       <header className="workspace-floating-header flex min-h-12 flex-wrap items-center gap-2 px-3 py-2 sm:px-4">
-        <Bot className="h-4 w-4 text-[#f9dc0b]" />
-        <span className="text-sm font-black text-[#1A1A1A]">Automation</span>
+        <Bot className="h-4 w-4 text-[var(--ui-accent-text)]" />
+        <span className="text-sm font-black text-[var(--ui-text)]">Automation</span>
         <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-2 sm:flex-none">
           {agents.length ? (
-            <button type="button" onClick={startNewAgent} className="inline-flex h-9 min-w-0 items-center gap-2 rounded-xl bg-[#f9dc0b] px-3 text-xs font-black text-[#1A1A1A] shadow-sm transition hover:bg-[#1A1A1A] hover:text-white sm:px-4">
+            <button type="button" onClick={startNewAgent} className="ui-btn is-primary is-sm min-w-0">
               <Plus className="h-4 w-4" />
               <span className="hidden min-[390px]:inline">New agent</span>
             </button>
           ) : null}
-          <button type="button" onClick={() => void loadAll()} className="inline-flex h-9 items-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-white px-3 text-xs font-bold text-[#1A1A1A]/60 transition hover:border-[#1A1A1A]/25 hover:text-[#1A1A1A]">
+          <button type="button" onClick={() => void loadAll()} className="ui-btn is-sm">
             <RefreshCw className="h-3.5 w-3.5" />
             <span className="hidden min-[430px]:inline">Refresh</span>
           </button>
@@ -1483,16 +1483,16 @@ function AgentBoard({
       <section className="h-full overflow-y-auto p-4 md:p-5" aria-busy="true" aria-label="Loading agents">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {Array.from({ length: 8 }).map((_, index) => (
-            <div key={index} className="animate-pulse overflow-hidden rounded-[1.05rem] border border-[#1A1A1A]/8 bg-white shadow-sm" style={{ animationDelay: `${index * 90}ms` }}>
-              <div className="m-2 h-28 rounded-[0.9rem] bg-[#F9F8F6]" />
+            <div key={index} className="animate-pulse overflow-hidden rounded-[1.05rem] border border-[var(--ui-line)] bg-[var(--ui-panel)] shadow-sm" style={{ animationDelay: `${index * 90}ms` }}>
+              <div className="m-2 h-28 rounded-[0.9rem] bg-[var(--ui-bg)]" />
               <div className="space-y-2 px-3 pb-3 pt-1">
-                <div className="h-4 w-3/5 rounded-md bg-[#1A1A1A]/8" />
+                <div className="h-4 w-3/5 rounded-md bg-[var(--ui-text)]/8" />
                 <div className="grid grid-cols-3 gap-1">
-                  <div className="h-11 rounded-lg bg-[#F9F8F6]" />
-                  <div className="h-11 rounded-lg bg-[#F9F8F6]" />
-                  <div className="h-11 rounded-lg bg-[#F9F8F6]" />
+                  <div className="h-11 rounded-lg bg-[var(--ui-bg)]" />
+                  <div className="h-11 rounded-lg bg-[var(--ui-bg)]" />
+                  <div className="h-11 rounded-lg bg-[var(--ui-bg)]" />
                 </div>
-                <div className="h-9 rounded-lg bg-[#F9F8F6]" />
+                <div className="h-9 rounded-lg bg-[var(--ui-bg)]" />
               </div>
             </div>
           ))}
@@ -1576,18 +1576,18 @@ function AgentBoard({
   if (detailRequested) {
     return (
       <section className="grid h-full place-items-center overflow-y-auto p-4 md:p-5">
-        <div className="grid w-full max-w-md place-items-center rounded-2xl border border-[#1A1A1A]/8 bg-white px-6 py-12 text-center shadow-sm">
-          <div className="grid h-14 w-14 place-items-center rounded-2xl bg-[#1A1A1A]/5 text-[#1A1A1A]/45">
+        <div className="grid w-full max-w-md place-items-center rounded-2xl border border-[var(--ui-line)] bg-[var(--ui-panel)] px-6 py-12 text-center shadow-sm">
+          <div className="grid h-14 w-14 place-items-center rounded-2xl bg-[var(--ui-text)]/5 text-[var(--ui-text)]/45">
             <AlertCircle className="h-6 w-6" />
           </div>
-          <h2 className="mt-5 font-serif text-xl font-bold tracking-tight text-[#1A1A1A]">Agent not found</h2>
-          <p className="mt-2 max-w-sm text-sm font-semibold leading-6 text-[#1A1A1A]/55">This link points to an agent that was deleted or belongs to another account.</p>
+          <h2 className="mt-5 font-serif text-xl font-bold tracking-tight text-[var(--ui-text)]">Agent not found</h2>
+          <p className="mt-2 max-w-sm text-sm font-semibold leading-6 text-[var(--ui-text)]/55">This link points to an agent that was deleted or belongs to another account.</p>
           <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
-            <button type="button" onClick={onBackToAgents} className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#1A1A1A]/12 bg-white px-4 text-xs font-bold text-[#1A1A1A] transition hover:border-[#1A1A1A]/25 active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00]">
+            <button type="button" onClick={onBackToAgents} className="ui-btn">
               <ArrowLeft className="h-4 w-4" />
               Back to automation
             </button>
-            <button type="button" onClick={onCreateAgent} className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#f9dc0b] px-4 text-xs font-black text-[#1A1A1A] shadow-sm transition hover:bg-[#1A1A1A] hover:text-white active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00]">
+            <button type="button" onClick={onCreateAgent} className="ui-btn is-primary">
               <Plus className="h-4 w-4" />
               New agent
             </button>
@@ -1600,9 +1600,9 @@ function AgentBoard({
   return (
     <section className="grid h-full place-items-center overflow-y-auto p-4 md:p-5">
       {agents.length ? (
-        <div className="rounded-2xl border border-[#1A1A1A]/8 bg-white px-6 py-8 text-center shadow-sm">
-          <Loader2 className="mx-auto h-5 w-5 animate-spin text-[#f9dc0b]" />
-          <p className="mt-3 text-sm font-bold text-[#1A1A1A]/60">Opening your agent workspace</p>
+        <div className="rounded-2xl border border-[var(--ui-line)] bg-[var(--ui-panel)] px-6 py-8 text-center shadow-sm">
+          <Loader2 className="mx-auto h-5 w-5 ui-spin text-[var(--ui-accent-text)]" />
+          <p className="mt-3 text-sm font-bold text-[var(--ui-text)]/60">Opening your agent workspace</p>
         </div>
       ) : (
         <EmptyAgentCard onCreate={onCreateAgent} />
@@ -1613,7 +1613,7 @@ function AgentBoard({
 
 function EmptyAgentCard({ onCreate }: { onCreate: () => void }) {
   return (
-    <div className="col-span-full rounded-[1.35rem] border border-dashed border-[#1A1A1A]/12 bg-white shadow-sm agent-empty-card">
+    <div className="col-span-full rounded-[1.35rem] border border-dashed border-[var(--ui-line-strong)] bg-[var(--ui-panel)] shadow-sm agent-empty-card">
       <EmptyState
         icon={<Bot className="h-5 w-5" />}
         title="No agents yet"
@@ -1804,21 +1804,21 @@ function ExpandedAgentCard({
   }, [navOpen]);
 
   return (
-    <article className={cn("workspace-floating-shell relative flex h-full flex-col overflow-hidden", isDark ? "bg-[#111411] text-[#F8F5E8]" : "bg-[#f9f9f9] text-[#1A1A1A]")}>
+    <article className={cn("workspace-floating-shell relative flex h-full flex-col overflow-hidden", isDark ? "bg-[var(--ui-bg)] text-[var(--ui-text)]" : "bg-[var(--ui-bg)] text-[var(--ui-text)]")}>
       {/* ── Agent detail header ── */}
       <div className="workspace-floating-header relative px-2 py-1.5 md:px-3">
         <div className="flex min-w-0 items-center gap-1.5">
           <div className="flex min-w-0 flex-1 items-center gap-2">
             {isDraft ? (
-              <button type="button" onClick={onBackToAgents} className={cn("grid h-8 w-8 shrink-0 place-items-center rounded-lg transition active:scale-[0.98]", isDark ? "text-[#F8F5E8]/70 hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/70 hover:bg-white hover:text-[#1A1A1A]")} aria-label="Back to agents">
+              <button type="button" onClick={onBackToAgents} className={cn("grid h-8 w-8 shrink-0 place-items-center rounded-lg transition active:scale-[0.98]", isDark ? "text-[var(--ui-text)]/70 hover:bg-[var(--ui-text)]/8 hover:text-[var(--ui-text)]" : "text-[var(--ui-text)]/70 hover:bg-[var(--ui-panel)] hover:text-[var(--ui-text)]")} aria-label="Back to agents">
                 <ArrowLeft className="h-4 w-4" />
               </button>
             ) : null}
             {agent ? <AgentChannelSwitcher agents={agents} agent={agent} onSelect={onSelectAgent} theme={theme} /> : null}
             {isDraft ? (
               <div className="min-w-0">
-                <h3 className={cn("truncate text-sm font-bold leading-tight md:text-base", isDark ? "text-[#F8F5E8]" : "text-[#1A1A1A]")}>New agent</h3>
-                <p className={cn("mt-0.5 truncate text-[11px] font-semibold", isDark ? "text-[#F8F5E8]/55" : "text-[#1A1A1A]/55")}>{headerSubline}</p>
+                <h3 className={cn("truncate text-sm font-bold leading-tight md:text-base", isDark ? "text-[var(--ui-text)]" : "text-[var(--ui-text)]")}>New agent</h3>
+                <p className={cn("mt-0.5 truncate text-[11px] font-semibold", isDark ? "text-[var(--ui-text)]/55" : "text-[var(--ui-text)]/55")}>{headerSubline}</p>
               </div>
             ) : null}
             {!isDraft ? (
@@ -1831,13 +1831,13 @@ function ExpandedAgentCard({
                 disabled={statusBusy || saving || !!deleting}
                 onClick={() => agent && void onSetStatus(agent.id, agentActive ? "paused" : "active")}
                 className={cn(
-                  "inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full border px-2 text-[9px] font-black uppercase tracking-wider transition active:scale-[0.98] disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00]",
+                  "inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full border px-2 text-[9px] font-black uppercase tracking-wider transition active:scale-[0.98] disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2",
                   agentActive
-                    ? "border-[#6a5b00]/20 bg-[#f9dc0b] text-[#1A1A1A] hover:bg-[#e8cc00]"
-                    : isDark ? "border-[#F8F5E8]/15 bg-[#F8F5E8]/10 text-[#F8F5E8]/70 hover:bg-[#F8F5E8]/16" : "border-[#1A1A1A]/10 bg-[#1A1A1A]/6 text-[#1A1A1A]/60 hover:bg-[#1A1A1A]/10",
+                    ? "border-[var(--ui-accent-text)]/20 bg-[var(--ui-accent)] text-[var(--ui-accent-ink)] hover:bg-[var(--ui-accent-hover)]"
+                    : isDark ? "border-[var(--ui-line-strong)] bg-[var(--ui-text)]/10 text-[var(--ui-text)]/70 hover:bg-[var(--ui-text)]/16" : "border-[var(--ui-line)] bg-[var(--ui-text)]/6 text-[var(--ui-text)]/60 hover:bg-[var(--ui-text)]/10",
                 )}
               >
-                {statusBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <span className={cn("h-1.5 w-1.5 rounded-full", agentActive ? "bg-[#1A1A1A]" : "bg-current opacity-60")} />}
+                {statusBusy ? <Loader2 className="h-3 w-3 ui-spin" /> : <span className={cn("h-1.5 w-1.5 rounded-full", agentActive ? "bg-[var(--ui-text)]" : "bg-current opacity-60")} />}
                 {agentActive ? "Active" : "Paused"}
               </button>
             ) : null}
@@ -1851,10 +1851,10 @@ function ExpandedAgentCard({
               aria-label={navOpen ? "Close agent tools" : "Open agent tools"}
               title="Agent tools"
               className={cn(
-                "grid h-8 w-8 shrink-0 place-items-center rounded-lg border transition active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00]",
+                "grid h-8 w-8 shrink-0 place-items-center rounded-lg border transition active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2",
                 navOpen
-                  ? "border-[#f9dc0b] bg-[#f9dc0b] text-[#1A1A1A]"
-                  : isDark ? "border-[#F8F5E8]/20 text-[#F8F5E8]/70 hover:bg-[#F8F5E8]/8" : "border-[#1A1A1A]/15 text-[#1A1A1A]/60 hover:bg-white",
+                  ? "border-[var(--ui-accent)] bg-[var(--ui-accent)] text-[var(--ui-accent-ink)]"
+                  : isDark ? "border-[var(--ui-line-strong)] text-[var(--ui-text)]/70 hover:bg-[var(--ui-text)]/8" : "border-[var(--ui-line-strong)] text-[var(--ui-text)]/60 hover:bg-[var(--ui-panel)]",
               )}
             >
               <Menu className="h-4 w-4" />
@@ -1864,7 +1864,7 @@ function ExpandedAgentCard({
         </div>
         {navOpen ? (
           <nav
-            className={cn("absolute right-3 top-[calc(100%+0.25rem)] z-30 grid w-56 gap-1 rounded-lg border p-1.5 shadow-[0_18px_45px_rgba(26,26,26,0.18)]", isDark ? "border-[#F8F5E8]/12 bg-[#171B16] text-[#F8F5E8]" : "border-[#1A1A1A]/10 bg-[#FFFDF8] text-[#1A1A1A]")}
+            className={cn("absolute right-3 top-[calc(100%+0.25rem)] z-30 grid w-56 gap-1 rounded-lg border p-1.5 shadow-[0_18px_45px_rgba(26,26,26,0.18)]", isDark ? "border-[var(--ui-line-strong)] bg-[var(--ui-panel)] text-[var(--ui-text)]" : "border-[var(--ui-line)] bg-[var(--ui-panel)] text-[var(--ui-text)]")}
             aria-label="Agent tools"
           >
             {TABS.map((item, index) => {
@@ -1881,45 +1881,45 @@ function ExpandedAgentCard({
                     setNavOpen(false);
                   }}
                   className={cn(
-                    "flex h-10 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-xs font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00] disabled:cursor-not-allowed disabled:opacity-35",
-                    index === PRIMARY_TAB_COUNT && (isDark ? "mt-1 border-t border-[#F8F5E8]/10 pt-1" : "mt-1 border-t border-[#1A1A1A]/8 pt-1"),
+                    "flex h-10 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-xs font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-35",
+                    index === PRIMARY_TAB_COUNT && (isDark ? "mt-1 border-t border-[var(--ui-line)] pt-1" : "mt-1 border-t border-[var(--ui-line)] pt-1"),
                     active
-                      ? "bg-[#f9dc0b] text-[#1A1A1A]"
-                      : isDark ? "text-[#F8F5E8]/72 hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/70 hover:bg-[#1A1A1A]/5 hover:text-[#1A1A1A]",
+                      ? "bg-[var(--ui-accent)] text-[var(--ui-accent-ink)]"
+                      : isDark ? "text-[var(--ui-text)]/72 hover:bg-[var(--ui-text)]/8 hover:text-[var(--ui-text)]" : "text-[var(--ui-text)]/70 hover:bg-[var(--ui-text)]/5 hover:text-[var(--ui-text)]",
                   )}
                 >
                   {item.icon}
                   <span className="min-w-0 flex-1 truncate">{item.label}</span>
                   {typeof count === "number" && count > 0 ? (
-                    <span className={cn("rounded-full px-1.5 py-0.5 text-[10px] font-black tabular-nums", active ? "bg-[#1A1A1A]/10 text-[#1A1A1A]" : isDark ? "bg-[#F8F5E8]/10 text-[#F8F5E8]/60" : "bg-[#1A1A1A]/6 text-[#1A1A1A]/55")}>{count}</span>
+                    <span className={cn("rounded-full px-1.5 py-0.5 text-[10px] font-black tabular-nums", active ? "bg-[var(--ui-text)]/10 text-[var(--ui-text)]" : isDark ? "bg-[var(--ui-text)]/10 text-[var(--ui-text)]/60" : "bg-[var(--ui-text)]/6 text-[var(--ui-text)]/55")}>{count}</span>
                   ) : null}
                 </button>
               );
             })}
             {!isDraft ? (
-              <div className={cn("mt-1 grid gap-1 border-t pt-1", isDark ? "border-[#F8F5E8]/10" : "border-[#1A1A1A]/8")}>
-                <button type="button" onClick={() => { setNavOpen(false); onCreateAgent(); }} className={cn("flex h-10 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-xs font-bold transition", isDark ? "text-[#F8F5E8]/72 hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/70 hover:bg-[#1A1A1A]/5 hover:text-[#1A1A1A]")}>
+              <div className={cn("mt-1 grid gap-1 border-t pt-1", isDark ? "border-[var(--ui-line)]" : "border-[var(--ui-line)]")}>
+                <button type="button" onClick={() => { setNavOpen(false); onCreateAgent(); }} className={cn("flex h-10 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-xs font-bold transition", isDark ? "text-[var(--ui-text)]/72 hover:bg-[var(--ui-text)]/8 hover:text-[var(--ui-text)]" : "text-[var(--ui-text)]/70 hover:bg-[var(--ui-text)]/5 hover:text-[var(--ui-text)]")}>
                   <Plus className="h-4 w-4" />
                   <span>New agent</span>
                 </button>
-                <button type="button" onClick={() => { setNavOpen(false); if (agent) void (agentRunning ? onStop(agent.id) : onRun(agent.id)); }} disabled={saving || agentStopping} className={cn("flex h-10 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-45", agentRunning ? (isDark ? "text-red-200 hover:bg-red-500/10" : "text-red-700 hover:bg-red-50") : (isDark ? "text-[#F8F5E8]/72 hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/70 hover:bg-[#1A1A1A]/5 hover:text-[#1A1A1A]"))} aria-label={agentRunning ? "Stop candidate run" : "Run candidate"}>
-                  {agentStopping ? <Loader2 className="h-4 w-4 animate-spin" /> : agentRunning ? <Square className="h-4 w-4 fill-current" /> : <Play className="h-4 w-4" />}
+                <button type="button" onClick={() => { setNavOpen(false); if (agent) void (agentRunning ? onStop(agent.id) : onRun(agent.id)); }} disabled={saving || agentStopping} className={cn("flex h-10 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-45", agentRunning ? (isDark ? "text-red-200 hover:bg-red-500/10" : "text-red-700 hover:bg-red-50") : (isDark ? "text-[var(--ui-text)]/72 hover:bg-[var(--ui-text)]/8 hover:text-[var(--ui-text)]" : "text-[var(--ui-text)]/70 hover:bg-[var(--ui-text)]/5 hover:text-[var(--ui-text)]"))} aria-label={agentRunning ? "Stop candidate run" : "Run candidate"}>
+                  {agentStopping ? <Loader2 className="h-4 w-4 ui-spin" /> : agentRunning ? <Square className="h-4 w-4 fill-current" /> : <Play className="h-4 w-4" />}
                   <span>{agentStopping ? "Stopping" : agentRunning ? "Stop candidate run" : "Run candidate"}</span>
                 </button>
                 <button type="button" onClick={() => { setNavOpen(false); if (agent) void onDelete(agent.id); }} disabled={!!deleting || agentRunning || saving} className={cn("flex h-10 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-45", isDark ? "text-red-200 hover:bg-red-500/10" : "text-red-700 hover:bg-red-50")} aria-label="Delete agent">
-                  {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                  {deleting ? <Loader2 className="h-4 w-4 ui-spin" /> : <Trash2 className="h-4 w-4" />}
                   <span>Delete agent</span>
                 </button>
               </div>
             ) : null}
-            <div className={cn("mt-1 grid gap-1 border-t pt-1", isDark ? "border-[#F8F5E8]/10" : "border-[#1A1A1A]/8")}>
+            <div className={cn("mt-1 grid gap-1 border-t pt-1", isDark ? "border-[var(--ui-line)]" : "border-[var(--ui-line)]")}>
               <button
                 type="button"
                 onClick={() => {
                   setNavOpen(false);
                   onRefreshAgent();
                 }}
-                className={cn("flex h-10 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-xs font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00]", isDark ? "text-[#F8F5E8]/72 hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/70 hover:bg-[#1A1A1A]/5 hover:text-[#1A1A1A]")}
+                className={cn("flex h-10 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-xs font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2", isDark ? "text-[var(--ui-text)]/72 hover:bg-[var(--ui-text)]/8 hover:text-[var(--ui-text)]" : "text-[var(--ui-text)]/70 hover:bg-[var(--ui-text)]/5 hover:text-[var(--ui-text)]")}
               >
                 <RefreshCw className="h-4 w-4" />
                 <span>Refresh agent</span>
@@ -1930,7 +1930,7 @@ function ExpandedAgentCard({
                   openBackgroundProcessCenter();
                   setNavOpen(false);
                 }}
-                className={cn("flex h-10 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-xs font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00] md:hidden", isDark ? "text-[#F8F5E8]/72 hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/70 hover:bg-[#1A1A1A]/5 hover:text-[#1A1A1A]")}
+                className={cn("flex h-10 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-xs font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 md:hidden", isDark ? "text-[var(--ui-text)]/72 hover:bg-[var(--ui-text)]/8 hover:text-[var(--ui-text)]" : "text-[var(--ui-text)]/70 hover:bg-[var(--ui-text)]/5 hover:text-[var(--ui-text)]")}
               >
                 <Activity className="h-4 w-4" />
                 <span>Background activity</span>
@@ -1974,7 +1974,7 @@ function ExpandedAgentCard({
         {tab === "report" ? (
           <section className="space-y-4 pb-8">
             <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#b89f00]">Agent intelligence</p>
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--ui-accent-text)]">Agent intelligence</p>
               <h2 className={cn("mt-1 font-serif text-2xl font-bold md:text-3xl", getAgentTheme(theme).text)}>Performance report</h2>
               <p className={cn("mt-1 max-w-2xl text-sm leading-6", getAgentTheme(theme).muted)}>What the last 30 days say about this channel: which source channels earn views, which to throttle, and what the agent recommends next.</p>
             </div>
@@ -2122,34 +2122,34 @@ function OverviewPanel({ agent, uploads, runs, successfulRuns, onSetup, onUpload
         </div>
 
         <div className={cn("mt-5 flex flex-wrap items-center gap-2 border-t pt-5", tokens.divider)}>
-          <button type="button" onClick={onSetup} className="inline-flex h-9 items-center gap-2 rounded-lg bg-[#f9dc0b] px-3.5 text-xs font-black text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white"><Settings2 className="h-3.5 w-3.5" />Edit setup</button>
-          <button type="button" onClick={onUploads} className={cn("inline-flex h-9 items-center gap-2 rounded-lg border px-3.5 text-xs font-black transition", theme === "dark" ? "border-white/16 text-white/75 hover:bg-white/8" : "border-[#1A1A1A]/14 text-[#1A1A1A]/72 hover:bg-[#F9F8F6]")}><Table2 className="h-3.5 w-3.5" />Open uploads</button>
-          {!uploads.length && agent ? <button type="button" onClick={() => void onRun(agent.id)} disabled={running || stopping} className={cn("ml-auto inline-flex h-9 items-center gap-2 rounded-lg px-3.5 text-xs font-black transition disabled:opacity-50", theme === "dark" ? "text-white/75 hover:bg-white/8" : "text-[#1A1A1A]/65 hover:bg-[#F9F8F6]")}><Play className="h-3.5 w-3.5" />{stopping ? "Stopping" : running ? "Running" : "Run candidate"}</button> : null}
+          <button type="button" onClick={onSetup} className="ui-btn is-primary is-sm"><Settings2 className="h-3.5 w-3.5" />Edit setup</button>
+          <button type="button" onClick={onUploads} className={cn("inline-flex h-9 items-center gap-2 rounded-lg border px-3.5 text-xs font-black transition", theme === "dark" ? "border-white/16 text-white/75 hover:bg-white/8" : "border-[var(--ui-line-strong)] text-[var(--ui-text)]/72 hover:bg-[var(--ui-bg)]")}><Table2 className="h-3.5 w-3.5" />Open uploads</button>
+          {!uploads.length && agent ? <button type="button" onClick={() => void onRun(agent.id)} disabled={running || stopping} className={cn("ml-auto inline-flex h-9 items-center gap-2 rounded-lg px-3.5 text-xs font-black transition disabled:opacity-50", theme === "dark" ? "text-white/75 hover:bg-white/8" : "text-[var(--ui-text)]/65 hover:bg-[var(--ui-bg)]")}><Play className="h-3.5 w-3.5" />{stopping ? "Stopping" : running ? "Running" : "Run candidate"}</button> : null}
         </div>
       </section>
 
       {incomplete.length ? (
-        <section className={cn("rounded-2xl border px-5 py-4", theme === "dark" ? "border-[#f9dc0b]/22 bg-[#1f1d12]" : "border-[#f9dc0b]/70 bg-[#fffdf0]")}>
+        <section className={cn("rounded-2xl border px-5 py-4", theme === "dark" ? "border-[var(--ui-accent)]/22 bg-[var(--ui-accent-soft)]" : "border-[var(--ui-accent)]/70 bg-[var(--ui-accent-soft)]")}>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className={cn("text-xs font-black", tokens.text)}>Setup progress</p>
             <span className={cn("text-[11px] font-bold", tokens.muted)}>{gettingStarted.length - incomplete.length}/{gettingStarted.length}</span>
           </div>
           <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2">
-            {gettingStarted.map((step) => <span key={step.id} className={cn("inline-flex items-center gap-1.5 text-xs font-semibold", step.done ? tokens.muted : tokens.text)}>{step.done ? <CheckCircle2 className="h-3.5 w-3.5 text-[#8a7500]" /> : <span className="h-1.5 w-1.5 rounded-full bg-[#f9dc0b]" />}{step.label}</span>)}
+            {gettingStarted.map((step) => <span key={step.id} className={cn("inline-flex items-center gap-1.5 text-xs font-semibold", step.done ? tokens.muted : tokens.text)}>{step.done ? <CheckCircle2 className="h-3.5 w-3.5 text-[var(--ui-accent-text)]" /> : <span className="h-1.5 w-1.5 rounded-full bg-[var(--ui-accent)]" />}{step.label}</span>)}
           </div>
         </section>
       ) : null}
 
       <section className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)]">
         <section className={cn("overflow-hidden rounded-2xl border", tokens.surface)}>
-          <div className="flex items-center justify-between gap-3 border-b px-5 py-4 md:px-6">
+          <div className="flex items-center justify-between gap-3 border-b px-5 py-4 md:px-6 border-[var(--ui-line)]">
             <h3 className={cn("text-sm font-black", tokens.text)}>Recent activity</h3>
             <span className={cn("text-xs font-semibold", tokens.muted)}>{runs.length} runs · {successfulRuns} successful</span>
           </div>
           {runs.length ? runs.slice(0, 6).map((run) => {
             const success = run.status === "success";
             return <div key={run.id} className={cn("grid gap-3 border-b px-5 py-3 last:border-b-0 sm:grid-cols-[112px_minmax(0,1fr)_132px] sm:items-center md:px-6", tokens.divider)}>
-              <span className={cn("inline-flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.14em]", success ? "text-[#8a7500]" : tokens.subtle)}>{success ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Clock3 className="h-3.5 w-3.5" />}{run.status}</span>
+              <span className={cn("inline-flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.14em]", success ? "text-[var(--ui-accent-text)]" : tokens.subtle)}>{success ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Clock3 className="h-3.5 w-3.5" />}{run.status}</span>
               <p className={cn("truncate text-sm font-semibold", tokens.textSoft)}>{run.message}</p>
               <p className={cn("text-xs font-medium sm:text-right", tokens.subtle)}>{formatDate(run.startedAt)}</p>
             </div>;
@@ -2157,15 +2157,15 @@ function OverviewPanel({ agent, uploads, runs, successfulRuns, onSetup, onUpload
         </section>
 
         <section className={cn("overflow-hidden rounded-2xl border", tokens.surface)}>
-          <div className="flex items-center justify-between gap-3 border-b px-5 py-4">
+          <div className="flex items-center justify-between gap-3 border-b px-5 py-4 border-[var(--ui-line)]">
             <h3 className={cn("text-sm font-black", tokens.text)}>Latest upload</h3>
             {latestUpload ? <span className={cn("text-xs font-semibold", tokens.muted)}>{formatDate(latestUpload.createdAt)}</span> : null}
           </div>
           {latestUpload ? (
             <div className="p-5">
-              <button type="button" onClick={() => latestPreview?.playbackUrl && setPreviewOpen(true)} className={cn("group relative grid aspect-video w-full place-items-center overflow-hidden rounded-xl border", theme === "dark" ? "border-white/10 bg-[#0d0f0d]" : "border-[#1A1A1A]/8 bg-[#F4F4F2]")}>
-                {latestPreview?.thumbnailUrl ? <img src={latestPreview.thumbnailUrl} alt="" className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.02]" /> : <span className="grid h-12 w-12 place-items-center rounded-full bg-[#f9dc0b] text-[#1A1A1A]"><Play className="h-5 w-5 fill-current" /></span>}
-                {latestPreview?.playbackUrl ? <span className="absolute grid h-10 w-10 place-items-center rounded-full bg-[#f9dc0b] text-[#1A1A1A] shadow-lg"><Play className="h-4 w-4 fill-current" /></span> : null}
+              <button type="button" onClick={() => latestPreview?.playbackUrl && setPreviewOpen(true)} className={cn("group relative grid aspect-video w-full place-items-center overflow-hidden rounded-xl border", theme === "dark" ? "border-white/10 bg-[#0d0f0d]" : "border-[var(--ui-line)] bg-[var(--ui-bg)]")}>
+                {latestPreview?.thumbnailUrl ? <img src={latestPreview.thumbnailUrl} alt="" className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.02]" /> : <span className="grid h-12 w-12 place-items-center rounded-full bg-[var(--ui-accent)] text-[var(--ui-accent-ink)]"><Play className="h-5 w-5 fill-current" /></span>}
+                {latestPreview?.playbackUrl ? <span className="absolute grid h-10 w-10 place-items-center rounded-full bg-[var(--ui-accent)] text-[var(--ui-accent-ink)] shadow-lg"><Play className="h-4 w-4 fill-current" /></span> : null}
               </button>
               <h4 className={cn("mt-4 line-clamp-2 text-sm font-bold leading-5", tokens.text)}>{latestUpload.title}</h4>
               <div className={cn("mt-4 grid grid-cols-3 divide-x border-t pt-3", tokens.divider)}>
@@ -2197,7 +2197,7 @@ function AgentMetricCard({ theme, icon, label, value, highlight = false }: { the
     )}>
       <p className={cn("text-[10px] font-black uppercase tracking-[0.16em]", tokens.subtle)}>{label}</p>
       <div className="mt-3 flex items-center gap-2.5">
-        <span className="shrink-0 text-[#f9dc0b]">{icon}</span>
+        <span className="shrink-0 text-[var(--ui-accent-text)]">{icon}</span>
         <p className={cn("min-w-0 truncate text-lg font-bold leading-tight md:text-xl", tokens.text)}>{value}</p>
       </div>
     </div>
@@ -2227,12 +2227,12 @@ function AnalyticsPanel({ agent, uploads, runs, learning, theme = "light" }: { a
     <section className="space-y-4 pb-8">
       <div className={cn("flex flex-col gap-3 border-b pb-4 lg:flex-row lg:items-end lg:justify-between", tokens.divider)}>
         <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#b89f00]">Agent intelligence</p>
+          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--ui-accent-text)]">Agent intelligence</p>
           <h2 className={cn("mt-1 font-serif text-2xl font-bold md:text-3xl", tokens.text)}>Performance command center</h2>
           <p className={cn("mt-1 max-w-2xl text-sm leading-6", tokens.muted)}>Find the content, timing, and operating patterns moving this channel toward monetization.</p>
         </div>
         <div className={cn("flex w-fit items-center gap-2 rounded-lg border px-3 py-2 text-xs font-bold", tokens.surface)}>
-          <Activity className="h-4 w-4 text-[#f9dc0b]" />
+          <Activity className="h-4 w-4 text-[var(--ui-accent-text)]" />
           {viz.reliability.successRate}% run reliability
         </div>
       </div>
@@ -2254,7 +2254,7 @@ function AnalyticsPanel({ agent, uploads, runs, learning, theme = "light" }: { a
         <aside className={cn("flex min-h-72 flex-col justify-between rounded-xl border p-5", tokens.accentPanel)}>
           <div>
             <div className="flex items-center gap-2">
-              <Sparkles className="h-4 w-4 text-[#b89f00]" />
+              <Sparkles className="h-4 w-4 text-[var(--ui-accent-text)]" />
               <p className={cn("text-[10px] font-black uppercase tracking-[0.18em]", tokens.text)}>Next best move</p>
             </div>
             <p className={cn("mt-5 font-serif text-xl font-bold leading-8", tokens.text)}>{learning?.recommendation || analytics.recommendation}</p>
@@ -2367,7 +2367,7 @@ function AgentMonetizationPanel({
       <div className={cn("flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between md:px-5", tokens.divider)}>
         <div className="flex min-w-0 items-center gap-3">
           <span className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-lg border", tokens.accentPanel)}>
-            <CircleDollarSign className="h-4 w-4 text-[#b89f00]" />
+            <CircleDollarSign className="h-4 w-4 text-[var(--ui-accent-text)]" />
           </span>
           <div className="min-w-0">
             <h3 className={cn("text-sm font-bold", tokens.text)}>Channel revenue</h3>
@@ -2378,9 +2378,9 @@ function AgentMonetizationPanel({
           type="button"
           onClick={() => void load(true)}
           disabled={loading || !accountId}
-          className={cn("inline-flex h-9 items-center justify-center gap-2 rounded-lg border px-3 text-xs font-bold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00] disabled:cursor-not-allowed disabled:opacity-45", tokens.tabInactive, tokens.divider)}
+          className={cn("inline-flex h-9 items-center justify-center gap-2 rounded-lg border px-3 text-xs font-bold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-45", tokens.tabInactive, tokens.divider)}
         >
-          <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
+          <RefreshCw className={cn("h-3.5 w-3.5", loading && "ui-spin")} />
           Refresh revenue
         </button>
       </div>
@@ -2388,19 +2388,19 @@ function AgentMonetizationPanel({
       {loading && !snapshot ? (
         <div className="grid min-h-36 place-items-center px-5 py-8">
           <div className={cn("flex items-center gap-2 text-sm font-semibold", tokens.muted)}>
-            <Loader2 className="h-4 w-4 animate-spin text-[#b89f00]" />
+            <Loader2 className="h-4 w-4 ui-spin text-[var(--ui-accent-text)]" />
             Reading monetization analytics
           </div>
         </div>
       ) : null}
 
       {!loading && needsReauthorization ? (
-        <div className="flex flex-col gap-4 border-t border-[#f9dc0b]/30 bg-[#f9dc0b]/10 px-4 py-5 sm:flex-row sm:items-center sm:justify-between md:px-5">
+        <div className="flex flex-col gap-4 border-t border-[var(--ui-accent)]/30 bg-[var(--ui-accent)]/10 px-4 py-5 sm:flex-row sm:items-center sm:justify-between md:px-5">
           <div className="max-w-2xl">
             <h4 className={cn("text-sm font-bold", tokens.text)}>{status === "not_connected" ? "Reconnect channel analytics" : "Revenue permission is needed"}</h4>
             <p className={cn("mt-1 text-sm leading-6", tokens.textSoft)}>{snapshot?.message || "Reconnect Google and approve YouTube monetary analytics so this agent can use real earnings signals."}</p>
           </div>
-          <button type="button" onClick={beginReauthorization} className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg bg-[#f9dc0b] px-4 text-xs font-black text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00]">
+          <button type="button" onClick={beginReauthorization} className="ui-btn is-primary shrink-0">
             <CircleDollarSign className="h-4 w-4" />
             Reconnect Google
           </button>
@@ -2467,7 +2467,7 @@ function AgentMonetizationPanel({
                       return (
                         <span
                           key={`${day}-${index}`}
-                          className="min-w-0 flex-1 rounded-t-sm bg-[#f9dc0b] transition hover:bg-[#b89f00]"
+                          className="min-w-0 flex-1 rounded-t-sm bg-[var(--ui-accent)] transition hover:bg-[#b89f00]"
                           style={{ height: `${Math.max(3, (value / chartMax) * 100)}%` }}
                           title={`${day}: ${monetizationCurrency(value, currency)}`}
                           aria-label={`${day}: ${monetizationCurrency(value, currency)}`}
@@ -2482,7 +2482,7 @@ function AgentMonetizationPanel({
 
               <div className={cn("border-t px-4 py-5 md:px-5 xl:border-l xl:border-t-0", tokens.divider)}>
                 <h4 className={cn("text-xs font-bold", tokens.text)}>Top earning videos</h4>
-                <div className={cn("mt-3 divide-y", tokens.isDark ? "divide-[#F8F5E8]/10" : "divide-[#1A1A1A]/8")}>
+                <div className={cn("mt-3 divide-y", tokens.isDark ? "divide-[var(--ui-line)]" : "divide-[var(--ui-line)]")}>
                   {topVideos.map((video, index) => {
                     const title = String(video.title || video.videoTitle || video.video || `Video ${index + 1}`);
                     return (
@@ -2546,13 +2546,13 @@ function AnalyticsThumbnailStrip({ rows, theme, onPreview }: { rows: any[]; them
       </div>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
         {visualRows.map((row) => (
-          <button key={row.id} type="button" onClick={() => onPreview(row)} className="group relative aspect-[9/16] min-w-0 overflow-hidden rounded-xl bg-[#1A1A1A] text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#f9dc0b]">
+          <button key={row.id} type="button" onClick={() => onPreview(row)} className="group relative aspect-[9/16] min-w-0 overflow-hidden rounded-xl bg-[var(--ui-text)] text-left focus-visible:outline-2 focus-visible:outline-offset-2">
             <img src={row.thumbnailUrl} alt="" className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03] group-hover:opacity-75" />
-            <span className="absolute inset-x-0 bottom-0 bg-[#1A1A1A]/85 p-2 text-white">
+            <span className="absolute inset-x-0 bottom-0 bg-[var(--ui-text)]/85 p-2 text-white">
               <span className="line-clamp-2 text-[11px] font-bold leading-4">{row.title}</span>
-              <span className="mt-1 block text-[9px] font-bold text-[#f9dc0b]">{compact(row.views)} views</span>
+              <span className="mt-1 block text-[9px] font-bold text-[var(--ui-accent-text)]">{compact(row.views)} views</span>
             </span>
-            <span className="absolute left-2 top-2 grid h-8 w-8 place-items-center rounded-full bg-[#f9dc0b] text-[#1A1A1A] shadow-lg transition group-hover:scale-105"><Play className="h-3.5 w-3.5 fill-current" /></span>
+            <span className="absolute left-2 top-2 grid h-8 w-8 place-items-center rounded-full bg-[var(--ui-accent)] text-[var(--ui-accent-ink)] shadow-lg transition group-hover:scale-105"><Play className="h-3.5 w-3.5 fill-current" /></span>
           </button>
         ))}
       </div>
@@ -2566,7 +2566,7 @@ function AnalyticsKpi({ theme, icon, label, value, detail }: { theme: AgentTheme
     <div className={cn("min-w-0 p-4 sm:[&+&]:border-l", tokens.divider)}>
       <div className="flex items-center justify-between gap-2">
         <p className={cn("text-[10px] font-black uppercase tracking-[0.16em]", tokens.subtle)}>{label}</p>
-        <span className="text-[#b89f00]">{icon}</span>
+        <span className="text-[var(--ui-accent-text)]">{icon}</span>
       </div>
       <p className={cn("mt-3 text-2xl font-black tabular-nums", tokens.text)}>{value}</p>
       <p className={cn("mt-1 text-xs font-semibold", tokens.muted)}>{detail}</p>
@@ -2592,7 +2592,7 @@ function AnalyticsPanelHeader({ title, detail, theme }: { title: string; detail:
         <h3 className={cn("text-sm font-black", tokens.text)}>{title}</h3>
         <p className={cn("mt-1 text-xs font-semibold leading-5", tokens.muted)}>{detail}</p>
       </div>
-      <TrendingUp className="h-4 w-4 shrink-0 text-[#b89f00]" />
+      <TrendingUp className="h-4 w-4 shrink-0 text-[var(--ui-accent-text)]" />
     </div>
   );
 }
@@ -2781,10 +2781,10 @@ function RankedUploadsTable({ rows, theme, onPreview }: { rows: any[]; theme: Ag
                 <tr key={row.id} className={cn("border-b last:border-0", tokens.divider)}>
                   <td className="max-w-sm px-5 py-3">
                     <div className="flex items-center gap-3">
-                      <span className="text-xs font-black text-[#b89f00]">{String(index + 1).padStart(2, "0")}</span>
-                      <button type="button" onClick={() => onPreview(row)} disabled={!row.playbackUrl} className="group relative h-14 w-11 shrink-0 overflow-hidden rounded-md bg-[#1A1A1A] disabled:cursor-default" aria-label={`Preview ${row.title}`}>
-                        {row.thumbnailUrl ? <img src={row.thumbnailUrl} alt="" className="h-full w-full object-cover transition group-hover:opacity-65" /> : <Film className="m-auto h-full w-4 text-[#f9dc0b]" />}
-                        {row.playbackUrl ? <span className="absolute inset-0 grid place-items-center opacity-0 transition group-hover:opacity-100"><span className="grid h-6 w-6 place-items-center rounded-full bg-[#f9dc0b] text-[#1A1A1A]"><Play className="h-3 w-3 fill-current" /></span></span> : null}
+                      <span className="text-xs font-black text-[var(--ui-accent-text)]">{String(index + 1).padStart(2, "0")}</span>
+                      <button type="button" onClick={() => onPreview(row)} disabled={!row.playbackUrl} className="group relative h-14 w-11 shrink-0 overflow-hidden rounded-md bg-[var(--ui-text)] disabled:cursor-default" aria-label={`Preview ${row.title}`}>
+                        {row.thumbnailUrl ? <img src={row.thumbnailUrl} alt="" className="h-full w-full object-cover transition group-hover:opacity-65" /> : <Film className="m-auto h-full w-4 text-[var(--ui-accent-text)]" />}
+                        {row.playbackUrl ? <span className="absolute inset-0 grid place-items-center opacity-0 transition group-hover:opacity-100"><span className="grid h-6 w-6 place-items-center rounded-full bg-[var(--ui-accent)] text-[var(--ui-accent-ink)]"><Play className="h-3 w-3 fill-current" /></span></span> : null}
                       </button>
                       <div><p className={cn("line-clamp-1 text-sm font-bold", tokens.text)}>{row.title}</p><p className={cn("mt-1 text-xs font-semibold", tokens.subtle)}>{row.movie}</p></div>
                     </div>
@@ -2793,7 +2793,7 @@ function RankedUploadsTable({ rows, theme, onPreview }: { rows: any[]; theme: Ag
                   <td className={cn("px-3 py-3 text-right text-sm font-black tabular-nums", tokens.text)}>{compact(row.views)}</td>
                   <td className={cn("px-3 py-3 text-right text-sm font-bold tabular-nums", tokens.text)}>{row.engagementRate}%</td>
                   <td className={cn("px-3 py-3 text-right text-sm font-bold tabular-nums", tokens.text)}>{compact(row.comments)}</td>
-                  <td className="px-5 py-3 text-right"><span className={cn("rounded-full px-2 py-1 text-[9px] font-black uppercase", row.status === "upload_failed" ? "bg-[#f9dc0b]/15 text-[#b89f00]" : "bg-[#f9dc0b] text-[#1A1A1A]")}>{String(row.status || "pending").replace(/_/g, " ")}</span></td>
+                  <td className="px-5 py-3 text-right"><span className={cn("rounded-full px-2 py-1 text-[9px] font-black uppercase", row.status === "upload_failed" ? "bg-[var(--ui-accent)]/15 text-[var(--ui-accent-text)]" : "bg-[var(--ui-accent)] text-[var(--ui-accent-ink)]")}>{String(row.status || "pending").replace(/_/g, " ")}</span></td>
                 </tr>
               ))}
             </tbody>
@@ -2814,7 +2814,7 @@ function AgentVideoLightbox({ item, onClose }: { item: any; theme?: AgentTheme; 
       footer={item.externalUrl ? <a href={item.externalUrl} target="_blank" rel="noreferrer" className="ui-btn"><ExternalLink className="h-4 w-4" />Open original</a> : undefined}
     >
       {item.playbackUrl ? (
-        <iframe src={item.playbackUrl} title={item.title} allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowFullScreen className="aspect-video max-h-[70dvh] w-full rounded-lg border-0 bg-[#090b09]" />
+        <iframe src={item.playbackUrl} title={item.title} allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowFullScreen className="aspect-video max-h-[70dvh] w-full rounded-lg border-0 bg-[#090b09] border-[var(--ui-line)]" />
       ) : (
         <EmptyState compact icon={<Play className="h-5 w-5" />} title="Preview unavailable" body="This upload can't be played here." />
       )}
@@ -2829,7 +2829,7 @@ function AnalyticsDistribution({ title, rows, theme }: { title: string; rows: an
     <section className={cn("rounded-xl border p-4", tokens.surfaceSoft)}>
       <h3 className={cn("text-sm font-black", tokens.text)}>{title}</h3>
       <div className="mt-4 space-y-3">
-        {rows.slice(0, 5).map((row, index) => <div key={row.label}><div className="flex justify-between gap-3"><span className={cn("line-clamp-1 text-xs font-bold", tokens.textSoft)}>{row.label}</span><span className={cn("text-xs font-black", tokens.text)}>{compact(row.views)}</span></div><div className={cn("mt-2 h-1.5 overflow-hidden rounded-full", tokens.isDark ? "bg-[#F8F5E8]/8" : "bg-[#1A1A1A]/7")}><div className="h-full rounded-full bg-[#f9dc0b]" style={{ width: `${Math.max(5, (row.views / max) * 100)}%`, opacity: 1 - index * 0.1 }} /></div></div>)}
+        {rows.slice(0, 5).map((row, index) => <div key={row.label}><div className="flex justify-between gap-3"><span className={cn("line-clamp-1 text-xs font-bold", tokens.textSoft)}>{row.label}</span><span className={cn("text-xs font-black", tokens.text)}>{compact(row.views)}</span></div><div className={cn("mt-2 h-1.5 overflow-hidden rounded-full", tokens.isDark ? "bg-[var(--ui-text)]/8" : "bg-[var(--ui-text)]/7")}><div className="h-full rounded-full bg-[var(--ui-accent)]" style={{ width: `${Math.max(5, (row.views / max) * 100)}%`, opacity: 1 - index * 0.1 }} /></div></div>)}
         {!rows.length ? <p className={cn("text-sm font-semibold", tokens.muted)}>No contribution data yet.</p> : null}
       </div>
     </section>
@@ -2841,7 +2841,7 @@ function ReliabilityPanel({ analytics, reliability, agent, theme }: { analytics:
   return (
     <section className={cn("rounded-xl border p-4", tokens.surface)}>
       <div className="flex items-start justify-between gap-3"><div><h3 className={cn("text-sm font-black", tokens.text)}>Operational quality</h3><p className={cn("mt-1 text-xs font-semibold", tokens.muted)}>Run and community health.</p></div><StatusPill status={agent?.status || "draft"} /></div>
-      <div className="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-[#f9dc0b]/20 bg-[#f9dc0b]/20">
+      <div className="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-[var(--ui-accent)]/20 bg-[var(--ui-accent)]/20">
         <AnalyticsTinyStat theme={theme} label="Successful runs" value={`${reliability.success}/${reliability.total}`} />
         <AnalyticsTinyStat theme={theme} label="Failed runs" value={String(reliability.failed)} />
         <AnalyticsTinyStat theme={theme} label="Agent replies" value={compact(analytics.totalReplies)} />
@@ -3067,11 +3067,11 @@ function CreateAgentWizard({
                   aria-current={isCurrent ? "step" : undefined}
                   onClick={() => goTo(index)}
                   className={cn(
-                    "flex h-11 w-full items-center justify-center gap-2 rounded-lg px-2 text-xs font-bold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00] disabled:cursor-not-allowed disabled:opacity-45",
-                    isCurrent ? (tokens.isDark ? "bg-[#F8F5E8]/12 text-[#F8F5E8] ring-1 ring-[#F8F5E8]/15" : tokens.setupTabActive) : tokens.setupTabIdle,
+                    "flex h-11 w-full items-center justify-center gap-2 rounded-lg px-2 text-xs font-bold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-45",
+                    isCurrent ? (tokens.isDark ? "bg-[var(--ui-text)]/12 text-[var(--ui-text)] ring-1 ring-[#F8F5E8]/15" : tokens.setupTabActive) : tokens.setupTabIdle,
                   )}
                 >
-                  <span className={cn("grid h-5 w-5 shrink-0 place-items-center rounded-full text-[10px] font-black", done ? "bg-[#f9dc0b] text-[#1A1A1A]" : isCurrent ? "bg-[#1A1A1A] text-[#f9dc0b]" : tokens.isDark ? "bg-[#F8F5E8]/12 text-[#F8F5E8]/70" : "bg-[#1A1A1A]/8 text-[#1A1A1A]/60")} aria-hidden="true">
+                  <span className={cn("grid h-5 w-5 shrink-0 place-items-center rounded-full text-[10px] font-black", done ? "bg-[var(--ui-accent)] text-[var(--ui-accent-ink)]" : isCurrent ? "bg-[var(--ui-text)] text-[var(--ui-accent)]" : tokens.isDark ? "bg-[var(--ui-text)]/12 text-[var(--ui-text)]/70" : "bg-[var(--ui-text)]/8 text-[var(--ui-text)]/60")} aria-hidden="true">
                     {done ? <CheckCircle2 className="h-3.5 w-3.5" /> : index + 1}
                   </span>
                   <span className="truncate">{item.label}</span>
@@ -3082,7 +3082,7 @@ function CreateAgentWizard({
         </ol>
 
         <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[#b89f00]">Step {step + 1} of {AGENT_CREATE_STEPS.length}</p>
+          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--ui-accent-text)]">Step {step + 1} of {AGENT_CREATE_STEPS.length}</p>
           <h2 id="agent-create-heading" className={cn("mt-1 font-serif text-2xl font-bold tracking-tight md:text-3xl", tokens.text)}>
             {current.id === "source" ? "Where should clips come from?" : current.id === "publish" ? "Where and when should it post?" : "Ready to create this agent?"}
           </h2>
@@ -3115,7 +3115,7 @@ function CreateAgentWizard({
             </Field>
 
             <Field label="Niche (optional)">
-              <input value={form.settings.genreFocus || ""} onChange={(event) => updateSetting("genreFocus", event.target.value)} placeholder="Movie recaps" className="input bg-white" />
+              <input value={form.settings.genreFocus || ""} onChange={(event) => updateSetting("genreFocus", event.target.value)} placeholder="Movie recaps" className="ui-input" />
             </Field>
             <p className={cn("text-xs leading-5", tokens.subtle)}>You can add more sources to the pool later from Setup.</p>
           </section>
@@ -3125,14 +3125,14 @@ function CreateAgentWizard({
           <section className={cn("space-y-4 rounded-xl border p-4 md:p-5", tokens.surface)}>
             <div className="grid gap-4 md:grid-cols-2">
               <Field label="Agent name">
-                <input value={form.name} onChange={(event) => { const value = event.target.value; setForm((prev: any) => ({ ...prev, name: value })); if (stepError) setStepError(""); }} className="input bg-white" autoFocus />
+                <input value={form.name} onChange={(event) => { const value = event.target.value; setForm((prev: any) => ({ ...prev, name: value })); if (stepError) setStepError(""); }} className="ui-input" autoFocus />
               </Field>
               <Field label="Publish channel">
                 <SourcePicker theme={theme} label="Publish channel" value={form.youtubeAccountId} onChange={value => setForm((prev: any) => ({ ...prev, youtubeAccountId: value }))} options={accounts.map(account => ({ value: account.id, label: account.channelTitle, imageUrl: account.thumbnailUrl }))} />
               </Field>
               <VisibilityControl theme={theme} label="How posts go live" value={form.settings.publishMode} onChange={(value) => updateSetting("publishMode", value)} options={SCHEDULED_VISIBILITY_OPTIONS} />
               <Field label="Posts per day">
-                <input type="number" min={1} max={12} value={postsPerDay} onChange={(event) => updateSetting("maxPostsPerDay", Math.max(1, Math.min(12, Number(event.target.value) || 1)))} className="input bg-white" />
+                <input type="number" min={1} max={12} value={postsPerDay} onChange={(event) => updateSetting("maxPostsPerDay", Math.max(1, Math.min(12, Number(event.target.value) || 1)))} className="ui-input" />
               </Field>
             </div>
 
@@ -3146,7 +3146,7 @@ function CreateAgentWizard({
                 onChange={(next) => updateSetting("postAsShort", next)}
               />
             ) : (
-              <div className="rounded-xl border border-[#f9dc0b]/30 bg-[#fff9d6] px-4 py-3 text-xs font-semibold leading-5 text-[#6a5b00]">
+              <div className="rounded-xl border border-[var(--ui-accent)]/30 bg-[var(--ui-accent-soft)] px-4 py-3 text-xs font-semibold leading-5 text-[var(--ui-accent-text)]">
                 TikTok posts are scheduled as native TikTok videos.
               </div>
             )}
@@ -3155,7 +3155,7 @@ function CreateAgentWizard({
 
         {current.id === "confirm" ? (
           <section className="space-y-4">
-            <dl className={cn("grid gap-px overflow-hidden rounded-xl border", tokens.divider, tokens.isDark ? "bg-[#F8F5E8]/10" : "bg-[#1A1A1A]/8")}>
+            <dl className={cn("grid gap-px overflow-hidden rounded-xl border", tokens.divider, tokens.isDark ? "bg-[var(--ui-text)]/10" : "bg-[var(--ui-text)]/8")}>
               {[
                 { label: "Name", value: form.name || "Untitled agent", step: 1 },
                 { label: "Source", value: sourceSummary, step: 0 },
@@ -3171,19 +3171,19 @@ function CreateAgentWizard({
             </dl>
 
             <label className={cn("flex cursor-pointer items-start gap-3 rounded-xl border p-4 text-sm font-semibold leading-6", form.settings.rightsConfirmed ? tokens.accentPanel : tokens.surface, tokens.textSoft)}>
-              <input type="checkbox" checked={form.settings.rightsConfirmed === true} onChange={(event) => { updateSetting("rightsConfirmed", event.target.checked); if (stepError) setStepError(""); }} className="mt-1 h-4 w-4 shrink-0 accent-[#f9dc0b]" />
-              <span><ShieldCheck className="mr-2 inline h-4 w-4 text-[#b89f00]" />I will only run this on clips I own, have permission to reuse, or can lawfully transform for my channel.</span>
+              <input type="checkbox" checked={form.settings.rightsConfirmed === true} onChange={(event) => { updateSetting("rightsConfirmed", event.target.checked); if (stepError) setStepError(""); }} className="ui-check mt-1 shrink-0" />
+              <span><ShieldCheck className="mr-2 inline h-4 w-4 text-[var(--ui-accent-text)]" />I will only run this on clips I own, have permission to reuse, or can lawfully transform for my channel.</span>
             </label>
 
             <div className={cn("flex gap-3 rounded-xl border p-4", tokens.surfaceSoft)}>
-              <ListChecks className="mt-0.5 h-4 w-4 shrink-0 text-[#b89f00]" />
+              <ListChecks className="mt-0.5 h-4 w-4 shrink-0 text-[var(--ui-accent-text)]" />
               <p className={cn("text-sm leading-6", tokens.muted)}>After creating, run one test candidate and check the upload. Then activate the agent and it posts on schedule from the server.</p>
             </div>
           </section>
         ) : null}
       </div>
 
-      <div className={cn("sticky bottom-0 -mx-4 mt-auto border-t px-4 py-3 backdrop-blur md:-mx-6 md:px-6", tokens.divider, tokens.isDark ? "bg-[#111411]/92" : "bg-[#f9f9f9]/92")}>
+      <div className={cn("sticky bottom-0 -mx-4 mt-auto border-t px-4 py-3 backdrop-blur md:-mx-6 md:px-6", tokens.divider, tokens.isDark ? "bg-[var(--ui-bg)]/92" : "bg-[var(--ui-bg)]/92")}>
         {stepError ? (
           <SharedNotice tone="error" className="mb-3">{stepError}</SharedNotice>
         ) : null}
@@ -3192,8 +3192,8 @@ function CreateAgentWizard({
             <ChevronLeft className="h-4 w-4" />
             {step === 0 ? "Cancel" : "Back"}
           </button>
-          <button type="submit" disabled={saving} className="inline-flex h-11 items-center gap-2 rounded-xl bg-[#f9dc0b] px-5 text-xs font-black text-[#1A1A1A] shadow-sm transition hover:bg-[#1A1A1A] hover:text-white active:scale-[0.98] disabled:opacity-50 disabled:hover:bg-[#f9dc0b] disabled:hover:text-[#1A1A1A]">
-            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : step === lastIndex ? <CheckCircle2 className="h-4 w-4" /> : null}
+          <button type="submit" disabled={saving} className="ui-btn is-primary">
+            {saving ? <Loader2 className="h-4 w-4 ui-spin" /> : step === lastIndex ? <CheckCircle2 className="h-4 w-4" /> : null}
             {saving ? "Creating" : step === lastIndex ? "Create agent" : "Continue"}
             {step < lastIndex && !saving ? <ChevronRight className="h-4 w-4" /> : null}
           </button>
@@ -3225,9 +3225,9 @@ function ReleaseTimesEditor({ times, onSet, onAdd, onRemove, onChanged, theme }:
               value={value}
               aria-label={`Release time ${index + 1}`}
               onChange={(event) => { onSet(index, event.target.value); onChanged?.(); }}
-              className={cn("h-9 w-28 rounded-md bg-transparent px-2 text-sm font-bold outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/60", tokens.text)}
+              className={cn("h-9 w-28 rounded-md bg-transparent px-2 text-sm font-bold outline-none", tokens.text)}
             />
-            <button type="button" onClick={() => onRemove(index)} disabled={times.length <= 1} aria-label={`Remove release time ${index + 1}`} className={cn("grid h-9 w-9 place-items-center rounded-md transition hover:bg-[#fff9d6] hover:text-[#b69300] disabled:cursor-not-allowed disabled:opacity-30", tokens.subtle)}>
+            <button type="button" onClick={() => onRemove(index)} disabled={times.length <= 1} aria-label={`Remove release time ${index + 1}`} className={cn("grid h-9 w-9 place-items-center rounded-md transition hover:bg-[var(--ui-accent-soft)] hover:text-[var(--ui-accent-text)] disabled:cursor-not-allowed disabled:opacity-30", tokens.subtle)}>
               <X className="h-4 w-4" />
             </button>
           </div>
@@ -3246,14 +3246,14 @@ function SetupSection({ id, icon, title, summary, open, onToggle, theme, childre
         aria-expanded={open}
         aria-controls={`setup-${id}-body`}
         onClick={onToggle}
-        className={cn("agent-setup-section-trigger group flex min-h-[76px] w-full items-center gap-3 px-4 py-3.5 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[#b89f00] md:px-5", tokens.isDark ? "hover:bg-[#F8F5E8]/5" : "hover:bg-white/80")}
+        className={cn("agent-setup-section-trigger group flex min-h-[76px] w-full items-center gap-3 px-4 py-3.5 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 md:px-5", tokens.isDark ? "hover:bg-[var(--ui-text)]/5" : "hover:bg-white/80")}
       >
-        <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-xl transition-colors", open ? "bg-[#f9dc0b] text-[#1A1A1A]" : tokens.isDark ? "bg-[#F8F5E8]/10 text-[#F8F5E8]/75 group-hover:bg-[#F8F5E8]/15" : "bg-[#1A1A1A]/6 text-[#1A1A1A]/70 group-hover:bg-[#1A1A1A]/10")}>{icon}</span>
+        <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-xl transition-colors", open ? "bg-[var(--ui-accent)] text-[var(--ui-accent-ink)]" : tokens.isDark ? "bg-[var(--ui-text)]/10 text-[var(--ui-text)]/75 group-hover:bg-[var(--ui-text)]/15" : "bg-[var(--ui-text)]/6 text-[var(--ui-text)]/70 group-hover:bg-[var(--ui-text)]/10")}>{icon}</span>
         <span className="min-w-0 flex-1">
           <span className={cn("block text-[13px] font-black tracking-[-0.01em]", tokens.text)}>{title}</span>
           <span className={cn("mt-1 block truncate text-[11px] font-semibold", tokens.muted)}>{summary}</span>
         </span>
-        <span className={cn("agent-setup-section-chevron grid h-8 w-8 shrink-0 place-items-center rounded-full transition-colors", open ? "bg-[#f9dc0b]/20 text-[#8a7600]" : tokens.isDark ? "bg-[#F8F5E8]/8 text-[#F8F5E8]/55 group-hover:bg-[#F8F5E8]/14" : "bg-[#1A1A1A]/5 text-[#1A1A1A]/45 group-hover:bg-[#1A1A1A]/10")}>
+        <span className={cn("agent-setup-section-chevron grid h-8 w-8 shrink-0 place-items-center rounded-full transition-colors", open ? "bg-[var(--ui-accent)]/20 text-[var(--ui-accent-text)]" : tokens.isDark ? "bg-[var(--ui-text)]/8 text-[var(--ui-text)]/55 group-hover:bg-[var(--ui-text)]/14" : "bg-[var(--ui-text)]/5 text-[var(--ui-text)]/45 group-hover:bg-[var(--ui-text)]/10")}>
           <ChevronDown className={cn("h-4 w-4 transition-transform duration-200", open && "rotate-180")} aria-hidden="true" />
         </span>
       </button>
@@ -3347,7 +3347,7 @@ export function RemakePanel({ agent, form, updateSetting, saveAgent, saving, acc
   const voiceSummary = remake.profileId ? `${voice?.name || "Chosen voice"}${remake.rewrite ? " · rewritten script" : " · original words"}${remake.keepBackground ? " · keeps music" : ""}` : "No voice chosen";
   const avatarSummary = remake.avatar.enabled ? `On · ${remake.avatar.faces.length} ${remake.avatar.faces.length === 1 ? "avatar" : "avatars"} · ${AVATAR_LAYOUT_OPTIONS.find((o) => o.value === remake.avatar.layout)?.label}` : "Off · the original footage stays";
   const rightsSummary = remake.rightsConfirmed && remake.voiceConsentConfirmed ? "Confirmed" : "Needs confirmation";
-  const selectClass = cn("input", tokens.isDark ? "bg-[#1b1d1b] text-[#F8F5E8]" : "bg-white");
+  const selectClass = "ui-select";
 
   return (
     // Not a <form>: the embedded editor has its own buttons and import form.
@@ -3357,8 +3357,8 @@ export function RemakePanel({ agent, form, updateSetting, saveAgent, saving, acc
           <h2 className={cn("text-lg font-black tracking-[-0.01em]", tokens.text)}>Remake</h2>
           <p className={cn("mt-1 text-sm", tokens.muted)}>Re-voice every video this agent posts, and swap an avatar in when you want one.</p>
         </div>
-        <button type="button" disabled={saving} onClick={() => void saveAgent({ preventDefault() {} } as FormEvent)} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-[#f9dc0b] px-4 text-sm font-black text-[#1A1A1A] disabled:opacity-60">
-          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}Save remake settings
+        <button type="button" disabled={saving} onClick={() => void saveAgent({ preventDefault() {} } as FormEvent)} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-[var(--ui-accent)] px-4 text-sm font-black text-[var(--ui-accent-ink)] disabled:opacity-60">
+          {saving ? <Loader2 className="h-4 w-4 ui-spin" /> : <CheckCircle2 className="h-4 w-4" />}Save remake settings
         </button>
       </div>
       {error ? <SharedNotice tone="error">{error}</SharedNotice> : null}
@@ -3373,7 +3373,7 @@ export function RemakePanel({ agent, form, updateSetting, saveAgent, saving, acc
             </select>
           </Field>
         </div>
-        {remake.enabled && blocker ? <p className="mt-3 rounded-xl bg-[#fff7cc] px-3 py-2 text-sm font-semibold text-[#6f5e00]" role="status">{blocker}</p> : null}
+        {remake.enabled && blocker ? <p className="mt-3 rounded-xl bg-[var(--ui-accent-soft)] px-3 py-2 text-sm font-semibold text-[var(--ui-accent-text)]" role="status">{blocker}</p> : null}
       </SetupSection>
 
       <SetupSection id="remake-voice" icon={<Mic className="h-4 w-4" />} title="Voice" summary={voiceSummary} open={open.has("remake-voice")} onToggle={() => toggle("remake-voice")} theme={theme}>
@@ -3391,7 +3391,7 @@ export function RemakePanel({ agent, form, updateSetting, saveAgent, saving, acc
           <ToggleRow title="Keep the background music" body="Remove only the old voice and keep the music and effects under the new one." checked={remake.keepBackground} onChange={(keepBackground) => set({ keepBackground })} />
           {remake.keepBackground ? (
             <Field label={`Background volume · ${Math.round(remake.backgroundVolume * 100)}%`}>
-              <input type="range" min={0} max={1} step={0.05} value={remake.backgroundVolume} onChange={(e) => set({ backgroundVolume: Number(e.target.value) })} className="w-full accent-[#c9a800]" />
+              <input type="range" min={0} max={1} step={0.05} value={remake.backgroundVolume} onChange={(e) => set({ backgroundVolume: Number(e.target.value) })} className="ui-range" style={{ ["--fill" as string]: `${remake.backgroundVolume * 100}%` }} />
             </Field>
           ) : null}
         </div>
@@ -3414,7 +3414,7 @@ export function RemakePanel({ agent, form, updateSetting, saveAgent, saving, acc
                   ))}
                   {remake.avatar.faces.length < MAX_REMAKE_FACES ? (
                     <label className={cn("grid w-24 cursor-pointer place-items-center gap-1 rounded-xl border border-dashed p-3 text-center text-[11px] font-semibold", tokens.divider, tokens.muted)}>
-                      {uploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Upload className="h-5 w-5" />}
+                      {uploading ? <Loader2 className="h-5 w-5 ui-spin" /> : <Upload className="h-5 w-5" />}
                       {uploading ? "Uploading" : "Add photo"}
                       <input type="file" accept="image/jpeg,image/png,image/webp" multiple className="sr-only" disabled={uploading} onChange={(e) => { void addFaces(e.target.files); e.currentTarget.value = ""; }} />
                     </label>
@@ -3747,7 +3747,7 @@ function SetupPanel({
 
   return (
     <form id="automation-agent-form" onSubmit={saveAgent} className="mx-auto w-full max-w-5xl">
-      <nav className={cn("agent-setup-index mb-4 flex items-center gap-2 overflow-x-auto rounded-2xl p-1.5", tokens.isDark ? "bg-[#F8F5E8]/6" : "bg-[#1A1A1A]/5")} aria-label="Setup sections">
+      <nav className={cn("agent-setup-index mb-4 flex items-center gap-2 overflow-x-auto rounded-2xl p-1.5", tokens.isDark ? "bg-[var(--ui-text)]/6" : "bg-[var(--ui-text)]/5")} aria-label="Setup sections">
         <Navigation className={cn("ml-2 h-3.5 w-3.5 shrink-0", tokens.subtle)} aria-hidden="true" />
         <div className="flex min-w-max items-center gap-1.5">
           {navItems.map((item) => (
@@ -3755,11 +3755,11 @@ function SetupPanel({
               key={item.id}
               type="button"
               onClick={() => jumpToSection(item.id)}
-              className={cn("agent-setup-index-button group inline-flex min-h-8 items-center gap-1.5 rounded-xl px-2.5 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00]", openSections.has(item.id) ? tokens.isDark ? "bg-[#F8F5E8]/10 shadow-sm" : "bg-white shadow-sm" : "", tokens.isDark ? "hover:bg-[#F8F5E8]/10" : "hover:bg-white")}
+              className={cn("agent-setup-index-button group inline-flex min-h-8 items-center gap-1.5 rounded-xl px-2.5 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2", openSections.has(item.id) ? tokens.isDark ? "bg-[var(--ui-text)]/10 shadow-sm" : "bg-[var(--ui-panel)] shadow-sm" : "", tokens.isDark ? "hover:bg-[var(--ui-text)]/10" : "hover:bg-[var(--ui-panel)]")}
             >
-              <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", item.id === "rights" && !rightsConfirmed ? "bg-[#b69300]" : openSections.has(item.id) ? "bg-[#f9dc0b]" : tokens.isDark ? "bg-[#F8F5E8]/30 group-hover:bg-[#F8F5E8]/60" : "bg-[#1A1A1A]/20 group-hover:bg-[#1A1A1A]/45")} aria-hidden="true" />
+              <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", item.id === "rights" && !rightsConfirmed ? "bg-[#b69300]" : openSections.has(item.id) ? "bg-[var(--ui-accent)]" : tokens.isDark ? "bg-[var(--ui-text)]/30 group-hover:bg-[var(--ui-text)]/60" : "bg-[var(--ui-text)]/20 group-hover:bg-[var(--ui-text)]/45")} aria-hidden="true" />
               <span className={cn("text-[11px] font-black", tokens.text)}>{item.label}</span>
-              <span className={cn("text-[10px] font-semibold", item.id === "rights" && !rightsConfirmed ? "text-[#b69300]" : tokens.subtle)}>{item.state}</span>
+              <span className={cn("text-[10px] font-semibold", item.id === "rights" && !rightsConfirmed ? "text-[var(--ui-accent-text)]" : tokens.subtle)}>{item.state}</span>
             </button>
           ))}
         </div>
@@ -3773,7 +3773,7 @@ function SetupPanel({
                   <h3 className={cn("text-sm font-black", tokens.text)}>Agent</h3>
                   <div className="mt-3 grid max-w-sm gap-3">
                     <Field label="Name">
-                      <input value={form.name} onChange={(event) => { const value = event.target.value; setForm((prev: any) => ({ ...prev, name: value })); }} className="input bg-white" placeholder="Agent name" />
+                      <input value={form.name} onChange={(event) => { const value = event.target.value; setForm((prev: any) => ({ ...prev, name: value })); }} className="ui-input" placeholder="Agent name" />
                     </Field>
                     <Field label="Channel">
                       <SourcePicker theme={theme} label="Publish channel" value={form.youtubeAccountId} onChange={value => setForm((prev: any) => ({ ...prev, youtubeAccountId: value }))} options={accounts.map(account => ({ value: account.id, label: account.channelTitle, imageUrl: account.thumbnailUrl }))} />
@@ -3822,7 +3822,7 @@ function SetupPanel({
                 <div className="agent-essentials-schedule-grid mt-3">
                   <div className="agent-essentials-schedule-fields">
                     <Field label="Posts per day">
-                      <input type="number" min={1} max={12} value={form.settings.maxPostsPerDay} onChange={(e) => updateSetting("maxPostsPerDay", Math.max(1, Math.min(12, Number(e.target.value) || 1)))} className="input bg-white" />
+                      <input type="number" min={1} max={12} value={form.settings.maxPostsPerDay} onChange={(e) => updateSetting("maxPostsPerDay", Math.max(1, Math.min(12, Number(e.target.value) || 1)))} className="ui-input" />
                     </Field>
                     <VisibilityControl theme={theme} label="How posts go live" value={form.settings.publishMode} onChange={(value) => updateSetting("publishMode", value)} options={SCHEDULED_VISIBILITY_OPTIONS} />
                   </div>
@@ -3838,7 +3838,7 @@ function SetupPanel({
                     />
                   </div>
                 ) : (
-                  <div className="mt-4 rounded-xl border border-[#f9dc0b]/30 bg-[#fff9d6] px-4 py-3 text-xs font-semibold leading-5 text-[#6a5b00]">
+                  <div className="mt-4 rounded-xl border border-[var(--ui-accent)]/30 bg-[var(--ui-accent-soft)] px-4 py-3 text-xs font-semibold leading-5 text-[var(--ui-accent-text)]">
                     TikTok posts are scheduled as native TikTok videos, so Shorts trimming and playlists do not apply.
                   </div>
                 )}
@@ -3930,23 +3930,23 @@ function SetupPanel({
 
             <div className="mt-5 grid gap-4 md:grid-cols-2">
               <Field label="Rank candidates by">
-                <select value={form.settings.sourcePriority || "views"} onChange={(e) => updateSetting("sourcePriority", e.target.value)} className="input bg-white">
+                <select value={form.settings.sourcePriority || "views"} onChange={(e) => updateSetting("sourcePriority", e.target.value)} className="ui-select">
                   <option value="views">Most views</option>
                   <option value="newest">Newest video</option>
                   <option value="oldest">Oldest video</option>
                 </select>
               </Field>
               <Field label="Movie identification">
-                <select value={form.settings.movieIdEnabled === false ? "off" : "on"} onChange={(e) => updateSetting("movieIdEnabled", e.target.value === "on")} className="input bg-white">
+                <select value={form.settings.movieIdEnabled === false ? "off" : "on"} onChange={(e) => updateSetting("movieIdEnabled", e.target.value === "on")} className="ui-select">
                   <option value="on">Identify the movie in each clip</option>
                   <option value="off">Skip movie identification</option>
                 </select>
               </Field>
               <Field label="Niche">
-                <input value={form.settings.genreFocus} onChange={(e) => updateSetting("genreFocus", e.target.value)} placeholder="Movie recaps" className="input bg-white" />
+                <input value={form.settings.genreFocus} onChange={(e) => updateSetting("genreFocus", e.target.value)} placeholder="Movie recaps" className="ui-input" />
               </Field>
               <Field label="Source niche matching">
-                <select value={form.settings.sourceNicheMode || "balanced"} onChange={(e) => updateSetting("sourceNicheMode", e.target.value)} className="input bg-white">
+                <select value={form.settings.sourceNicheMode || "balanced"} onChange={(e) => updateSetting("sourceNicheMode", e.target.value)} className="ui-select">
                   <option value="balanced">Balanced</option>
                   <option value="strict">Strict niche match</option>
                   <option value="off">No niche filtering</option>
@@ -3967,10 +3967,10 @@ function SetupPanel({
               {form.settings.sourceExplorationEnabled !== false ? (
                 <>
                   <Field label="Channels sampled per run">
-                    <input type="number" min={2} max={12} value={form.settings.sourceExplorationChannels || 6} onChange={(e) => updateSetting("sourceExplorationChannels", Number(e.target.value))} className="input bg-white" />
+                    <input type="number" min={2} max={12} value={form.settings.sourceExplorationChannels || 6} onChange={(e) => updateSetting("sourceExplorationChannels", Number(e.target.value))} className="ui-input" />
                   </Field>
                   <Field label="Explore when average views fall below">
-                    <input type="number" min={100} max={100000} value={form.settings.sourceUnderperformingViewThreshold || 1000} onChange={(e) => updateSetting("sourceUnderperformingViewThreshold", Number(e.target.value))} className="input bg-white" />
+                    <input type="number" min={100} max={100000} value={form.settings.sourceUnderperformingViewThreshold || 1000} onChange={(e) => updateSetting("sourceUnderperformingViewThreshold", Number(e.target.value))} className="ui-input" />
                   </Field>
                 </>
               ) : null}
@@ -4051,7 +4051,7 @@ function SetupPanel({
             )}
             <div className="grid gap-4 md:grid-cols-2">
               <Field label="What this channel should become" wide>
-                <textarea value={form.settings.microNicheGoal} onChange={(e) => updateSetting("microNicheGoal", e.target.value)} placeholder="Example: tense thriller recaps with twist endings for a 25 to 40 audience" className="input min-h-24 bg-white py-3 leading-6" />
+                <textarea value={form.settings.microNicheGoal} onChange={(e) => updateSetting("microNicheGoal", e.target.value)} placeholder="Example: tense thriller recaps with twist endings for a 25 to 40 audience" className="ui-textarea min-h-24 py-3 leading-6" />
               </Field>
               <ToggleRow
                 title="Adaptive decision strategy"
@@ -4096,13 +4096,13 @@ function SetupPanel({
                 </>
               ) : null}
               <Field label="Check performance every (hours)">
-                <input type="number" min={1} max={24} value={form.settings.performanceCheckHours} onChange={(e) => updateSetting("performanceCheckHours", Number(e.target.value))} className="input bg-white" />
+                <input type="number" min={1} max={24} value={form.settings.performanceCheckHours} onChange={(e) => updateSetting("performanceCheckHours", Number(e.target.value))} className="ui-input" />
               </Field>
               <Field label="Call an upload stagnant after (hours)">
-                <input type="number" min={3} max={168} value={form.settings.stagnationWindowHours} onChange={(e) => updateSetting("stagnationWindowHours", Number(e.target.value))} className="input bg-white" disabled={form.settings.performanceCadenceEnabled === false} />
+                <input type="number" min={3} max={168} value={form.settings.stagnationWindowHours} onChange={(e) => updateSetting("stagnationWindowHours", Number(e.target.value))} className="ui-input" disabled={form.settings.performanceCadenceEnabled === false} />
               </Field>
               <Field label="Minimum view growth between checks (%)">
-                <input type="number" min={0} max={100} value={form.settings.minViewDeltaPercent} onChange={(e) => updateSetting("minViewDeltaPercent", Number(e.target.value))} className="input bg-white" disabled={form.settings.performanceCadenceEnabled === false} />
+                <input type="number" min={0} max={100} value={form.settings.minViewDeltaPercent} onChange={(e) => updateSetting("minViewDeltaPercent", Number(e.target.value))} className="ui-input" disabled={form.settings.performanceCadenceEnabled === false} />
               </Field>
             </div>
           </SetupSection>
@@ -4124,10 +4124,10 @@ function SetupPanel({
                     onChange={(next) => updateSetting("aiEngagementRepliesEnabled", next)}
                   />
                   <Field label="Max replies per check">
-                    <input type="number" min={1} max={25} value={form.settings.maxCommentRepliesPerCheck} onChange={(e) => updateSetting("maxCommentRepliesPerCheck", Number(e.target.value))} className="input bg-white" />
+                    <input type="number" min={1} max={25} value={form.settings.maxCommentRepliesPerCheck} onChange={(e) => updateSetting("maxCommentRepliesPerCheck", Number(e.target.value))} className="ui-input" />
                   </Field>
                   <Field label="Reply tone">
-                    <select value={form.settings.commentReplyTone} onChange={(e) => updateSetting("commentReplyTone", e.target.value)} className="input bg-white">
+                    <select value={form.settings.commentReplyTone} onChange={(e) => updateSetting("commentReplyTone", e.target.value)} className="ui-select">
                       <option value="warm-curious">Warm and curious</option>
                       <option value="hype-short">Short hype replies</option>
                       <option value="calm-helpful">Calm and helpful</option>
@@ -4136,7 +4136,7 @@ function SetupPanel({
                     </select>
                   </Field>
                   <Field label="Reply instructions" wide>
-                    <textarea value={form.settings.commentReplyInstructions} onChange={(e) => updateSetting("commentReplyInstructions", e.target.value)} placeholder="Example: never reveal the ending, keep replies under 20 words" className="input min-h-24 bg-white py-3 leading-6" />
+                    <textarea value={form.settings.commentReplyInstructions} onChange={(e) => updateSetting("commentReplyInstructions", e.target.value)} placeholder="Example: never reveal the ending, keep replies under 20 words" className="ui-textarea min-h-24 py-3 leading-6" />
                   </Field>
                 </>
               ) : null}
@@ -4155,9 +4155,9 @@ function SetupPanel({
                 <>
                   <Field label="Length (minutes)">
                     <div className="flex items-center gap-2">
-                      <input type="number" min={1} max={240} value={form.settings.compilationMinMinutes ?? 30} onChange={(e) => updateSetting("compilationMinMinutes", Number(e.target.value))} className="input bg-white" aria-label="Shortest length in minutes" />
+                      <input type="number" min={1} max={240} value={form.settings.compilationMinMinutes ?? 30} onChange={(e) => updateSetting("compilationMinMinutes", Number(e.target.value))} className="ui-input" aria-label="Shortest length in minutes" />
                       <span className={cn("text-xs font-bold", tokens.subtle)}>to</span>
-                      <input type="number" min={1} max={300} value={form.settings.compilationMaxMinutes ?? 40} onChange={(e) => updateSetting("compilationMaxMinutes", Number(e.target.value))} className="input bg-white" aria-label="Longest length in minutes" />
+                      <input type="number" min={1} max={300} value={form.settings.compilationMaxMinutes ?? 40} onChange={(e) => updateSetting("compilationMaxMinutes", Number(e.target.value))} className="ui-input" aria-label="Longest length in minutes" />
                     </div>
                   </Field>
                   <Field label="Layout">
@@ -4180,13 +4180,13 @@ function SetupPanel({
                               type="button"
                               aria-pressed={on}
                               onClick={() => setCompileSchedule({ days: on ? (compileSchedule.days.length > 1 ? compileSchedule.days.filter((d) => d !== day) : compileSchedule.days) : [...compileSchedule.days, day] })}
-                              className={cn("h-9 min-w-11 rounded-xl border px-3 text-xs font-bold capitalize transition", on ? "border-[#f9dc0b] bg-[#f9dc0b] text-[#1A1A1A]" : cn(tokens.surface, tokens.text))}
+                              className={cn("h-9 min-w-11 rounded-xl border px-3 text-xs font-bold capitalize transition", on ? "border-[var(--ui-accent)] bg-[var(--ui-accent)] text-[var(--ui-accent-ink)]" : cn(tokens.surface, tokens.text))}
                             >
                               {day}
                             </button>
                           );
                         })}
-                        <input type="time" value={compileSchedule.time} onChange={(e) => e.target.value && setCompileSchedule({ time: e.target.value })} className="input w-32 bg-white" aria-label="Compilation time" />
+                        <input type="time" value={compileSchedule.time} onChange={(e) => e.target.value && setCompileSchedule({ time: e.target.value })} className="ui-input w-32" aria-label="Compilation time" />
                       </div>
                     </Field>
                   ) : null}
@@ -4197,10 +4197,10 @@ function SetupPanel({
 
           <section id="setup-rights" className={cn("scroll-mt-4 rounded-2xl border p-4 md:p-5", rightsConfirmed ? tokens.surface : tokens.highlight)}>
             <label className="flex cursor-pointer items-start gap-3">
-              <input type="checkbox" checked={rightsConfirmed} onChange={(e) => updateSetting("rightsConfirmed", e.target.checked)} className="mt-1 h-4 w-4 shrink-0 accent-[#f9dc0b]" />
+              <input type="checkbox" checked={rightsConfirmed} onChange={(e) => updateSetting("rightsConfirmed", e.target.checked)} className="ui-check mt-1 shrink-0" />
               <span className="min-w-0">
-                <span className={cn("block text-sm font-bold leading-6", tokens.text)}><ShieldCheck className="mr-2 inline h-4 w-4 text-[#b89f00]" />I will only run this on clips I own, have permission to reuse, or can lawfully transform for my channel.</span>
-                <span className={cn("mt-1 block text-xs font-semibold", rightsConfirmed ? tokens.subtle : "text-[#8a7500]")}>{rightsConfirmed ? "Confirmed. The agent can save and run." : "Required before the agent can save or run."}</span>
+                <span className={cn("block text-sm font-bold leading-6", tokens.text)}><ShieldCheck className="mr-2 inline h-4 w-4 text-[var(--ui-accent-text)]" />I will only run this on clips I own, have permission to reuse, or can lawfully transform for my channel.</span>
+                <span className={cn("mt-1 block text-xs font-semibold", rightsConfirmed ? tokens.subtle : "text-[var(--ui-accent-text)]")}>{rightsConfirmed ? "Confirmed. The agent can save and run." : "Required before the agent can save or run."}</span>
               </span>
             </label>
           </section>
@@ -4208,17 +4208,17 @@ function SetupPanel({
 
       {dirty ? (
         <div className="sticky bottom-0 z-10 -mx-4 mt-6 px-4 pb-4 md:-mx-6 md:px-6">
-          <div className={cn("flex flex-wrap items-center justify-between gap-3 rounded-2xl border px-4 py-3 shadow-[0_18px_45px_rgba(26,26,26,0.16)] backdrop-blur", tokens.isDark ? "border-[#f9dc0b]/40 bg-[#1F1D12]/95" : "border-[#f9dc0b] bg-[#fffdf0]/95")} role="status">
+          <div className={cn("flex flex-wrap items-center justify-between gap-3 rounded-2xl border px-4 py-3 shadow-[0_18px_45px_rgba(26,26,26,0.16)] backdrop-blur", tokens.isDark ? "border-[var(--ui-accent)]/40 bg-[var(--ui-accent-soft)]/95" : "border-[var(--ui-accent)] bg-[var(--ui-accent-soft)]/95")} role="status">
             <p className={cn("inline-flex items-center gap-2 text-sm font-bold", tokens.text)}>
-              <span className="h-2 w-2 rounded-full bg-[#f9dc0b] ring-4 ring-[#f9dc0b]/25" aria-hidden="true" />
+              <span className="h-2 w-2 rounded-full bg-[var(--ui-accent)] ring-4 ring-[var(--ui-accent)]/25" aria-hidden="true" />
               Unsaved changes
             </p>
             <div className="flex gap-2">
               <button type="button" onClick={discardChanges} disabled={saving} className={cn("inline-flex h-10 items-center gap-2 rounded-xl border px-4 text-xs font-bold transition active:scale-[0.98] disabled:opacity-50", tokens.surface, tokens.text)}>
                 Discard
               </button>
-              <button type="submit" disabled={saving} className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#f9dc0b] px-5 text-xs font-black text-[#1A1A1A] shadow-sm transition hover:bg-[#1A1A1A] hover:text-white active:scale-[0.98] disabled:opacity-50 disabled:hover:bg-[#f9dc0b] disabled:hover:text-[#1A1A1A]">
-                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+              <button type="submit" disabled={saving} className="ui-btn is-primary">
+                {saving ? <Loader2 className="h-4 w-4 ui-spin" /> : <CheckCircle2 className="h-4 w-4" />}
                 {saving ? "Saving" : "Save changes"}
               </button>
             </div>
@@ -4266,7 +4266,7 @@ function UploadsPanel({
         <p className={cn("text-xs font-semibold", tokens.subtle)}>{uploads.length} uploads</p>
       </div>
       <div className={cn("-mx-4 overflow-x-auto rounded-xl border sm:mx-0", tokens.surface)}>
-        <table className={cn("min-w-[880px] w-full border-collapse text-left", tokens.isDark ? "bg-[#191C18]" : "bg-white")}>
+        <table className={cn("min-w-[880px] w-full border-collapse text-left", tokens.isDark ? "bg-[var(--ui-panel)]" : "bg-[var(--ui-panel)]")}>
           <thead className={cn("text-[10px] font-black uppercase tracking-[0.16em]", tokens.surfaceSoft, tokens.subtle)}>
             <tr>
               <th className="px-4 py-3">Video</th>
@@ -4292,15 +4292,15 @@ function UploadsPanel({
                   }
                 }}
                 aria-label={`Open upload ${upload.title}`}
-                className={cn("cursor-pointer transition focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[#f9dc0b]", tokens.isDark ? "hover:bg-[#F8F5E8]/6" : "hover:bg-[#1A1A1A]/5")}
+                className={cn("cursor-pointer transition focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2", tokens.isDark ? "hover:bg-[var(--ui-text)]/6" : "hover:bg-[var(--ui-text)]/5")}
               >
                 <td className="max-w-[300px] px-4 py-3">
                   <div className="flex items-center gap-3">
-                    <span className={cn("grid h-14 w-10 shrink-0 place-items-center overflow-hidden rounded-md", tokens.isDark ? "bg-[#0D0F0D]" : "bg-[#1A1A1A]/8")}>
+                    <span className={cn("grid h-14 w-10 shrink-0 place-items-center overflow-hidden rounded-md", tokens.isDark ? "bg-[#0D0F0D]" : "bg-[var(--ui-text)]/8")}>
                       {agentUploadMedia(upload).thumbnailUrl ? (
                         <img src={agentUploadMedia(upload).thumbnailUrl} alt="" loading="lazy" className="h-full w-full object-cover" referrerPolicy="no-referrer" />
                       ) : (
-                        <Film className="h-4 w-4 text-[#f9dc0b]" />
+                        <Film className="h-4 w-4 text-[var(--ui-accent-text)]" />
                       )}
                     </span>
                     <div className="min-w-0">
@@ -4323,11 +4323,11 @@ function UploadsPanel({
                       void onDelete(upload.id);
                     }}
                     disabled={deletingUpload === upload.id}
-                    className={cn("grid h-8 w-8 place-items-center rounded-lg transition disabled:opacity-50", tokens.isDark ? "text-[#F8F5E8]/45 hover:bg-red-500/10 hover:text-red-300" : "text-[#1A1A1A]/40 hover:bg-red-50 hover:text-red-700")}
+                    className={cn("grid h-8 w-8 place-items-center rounded-lg transition disabled:opacity-50", tokens.isDark ? "text-[var(--ui-text)]/45 hover:bg-red-500/10 hover:text-red-300" : "text-[var(--ui-text)]/40 hover:bg-red-50 hover:text-red-700")}
                     aria-label={`Delete ${upload.title} from AutoYT`}
                     title="Delete from AutoYT"
                   >
-                    {deletingUpload === upload.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                    {deletingUpload === upload.id ? <Loader2 className="h-4 w-4 ui-spin" /> : <Trash2 className="h-4 w-4" />}
                   </button>
                 </td>
               </tr>
@@ -4428,7 +4428,7 @@ function UploadDetail({
         <section className={cn("rounded-xl border p-5", tokens.surfaceSoft)}>
           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
             <div>
-              <p className="text-[11px] font-black uppercase tracking-[0.16em] text-[#f9dc0b]">Uploaded post</p>
+              <p className="text-[11px] font-black uppercase tracking-[0.16em] text-[var(--ui-accent-text)]">Uploaded post</p>
               <h2 className={cn("mt-2 text-lg font-bold leading-tight", tokens.text)}>{currentUpload.title}</h2>
               <p className={cn("mt-3 max-w-3xl text-sm leading-6", tokens.muted)}>{currentUpload.description || "No description stored for this upload."}</p>
             </div>
@@ -4436,23 +4436,23 @@ function UploadDetail({
           </div>
           <div className="mt-5 flex flex-wrap gap-2">
             {publishedUrl ? (
-              <a href={publishedUrl} target="_blank" rel="noreferrer" className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#1A1A1A] px-4 text-xs font-bold text-white transition hover:opacity-85">
+              <a href={publishedUrl} target="_blank" rel="noreferrer" className="ui-btn is-ink">
                 {publishedLabel === "Open on YouTube" ? <Youtube className="h-4 w-4" /> : <ExternalLink className="h-4 w-4" />}
                 {publishedLabel}
               </a>
             ) : null}
             {currentUpload.sourceUrl ? (
-              <a href={currentUpload.sourceUrl} target="_blank" rel="noreferrer" className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#1A1A1A]/10 bg-white px-4 text-xs font-bold text-[#1A1A1A] transition hover:border-[#1A1A1A]/25 hover:text-[#1A1A1A]">
+              <a href={currentUpload.sourceUrl} target="_blank" rel="noreferrer" className="ui-btn">
                 <ExternalLink className="h-4 w-4" />
                 Source TikTok
               </a>
             ) : null}
-            <button type="button" onClick={() => void onReupload(currentUpload.id)} disabled={reuploading === currentUpload.id} className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#f9dc0b] px-4 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white disabled:opacity-50">
-              {reuploading === currentUpload.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            <button type="button" onClick={() => void onReupload(currentUpload.id)} disabled={reuploading === currentUpload.id} className="ui-btn is-primary">
+              {reuploading === currentUpload.id ? <Loader2 className="h-4 w-4 ui-spin" /> : <RefreshCw className="h-4 w-4" />}
               Reupload HD test
             </button>
-            <button type="button" onClick={() => void onDelete(currentUpload.id)} disabled={deletingUpload === currentUpload.id} className={cn("inline-flex h-10 items-center gap-2 rounded-xl border px-4 text-xs font-bold transition disabled:opacity-50", tokens.isDark ? "border-red-300/25 text-red-200 hover:bg-red-500/10" : "border-red-200 bg-white text-red-700 hover:bg-red-50")}>
-              {deletingUpload === currentUpload.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+            <button type="button" onClick={() => void onDelete(currentUpload.id)} disabled={deletingUpload === currentUpload.id} className={cn("inline-flex h-10 items-center gap-2 rounded-xl border px-4 text-xs font-bold transition disabled:opacity-50", tokens.isDark ? "border-red-300/25 text-red-200 hover:bg-red-500/10" : "border-red-200 bg-[var(--ui-panel)] text-red-700 hover:bg-red-50")}>
+              {deletingUpload === currentUpload.id ? <Loader2 className="h-4 w-4 ui-spin" /> : <Trash2 className="h-4 w-4" />}
               Delete from AutoYT
             </button>
           </div>
@@ -4469,7 +4469,7 @@ function UploadDetail({
         <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
           <SectionTitle theme={theme} title="Manual Movie ID correction" body="Enter the right title and AutoYT will refresh the movie details, update the upload record, and make comment replies use the corrected source." />
           {movieResult.sourceVerification?.verified || movieResult.manualCorrection ? (
-            <span className="inline-flex w-fit rounded-full bg-[#fff9d6] px-3 py-1 text-[11px] font-black uppercase tracking-widest text-[#6a5b00]">Verified source</span>
+            <span className="inline-flex w-fit rounded-full bg-[var(--ui-accent-soft)] px-3 py-1 text-[11px] font-black uppercase tracking-widest text-[var(--ui-accent-text)]">Verified source</span>
           ) : null}
         </div>
         <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_120px_150px_150px]">
@@ -4477,18 +4477,18 @@ function UploadDetail({
             value={correctionTitle}
             onChange={(event) => setCorrectionTitle(event.target.value)}
             placeholder="Correct title, e.g. Classless Hero"
-            className="h-11 rounded-xl border border-[#1A1A1A]/10 bg-[#FDFCFA] px-4 text-sm font-semibold text-[#1A1A1A] outline-none transition focus:border-[#f9dc0b]"
+            className="h-11 rounded-xl border border-[var(--ui-line)] bg-[var(--ui-panel)] px-4 text-sm font-semibold text-[var(--ui-text)] outline-none transition focus:border-[var(--ui-accent)]"
           />
           <input
             value={correctionYear}
             onChange={(event) => setCorrectionYear(event.target.value)}
             placeholder="Year"
-            className="h-11 rounded-xl border border-[#1A1A1A]/10 bg-[#FDFCFA] px-4 text-sm font-semibold text-[#1A1A1A] outline-none transition focus:border-[#f9dc0b]"
+            className="h-11 rounded-xl border border-[var(--ui-line)] bg-[var(--ui-panel)] px-4 text-sm font-semibold text-[var(--ui-text)] outline-none transition focus:border-[var(--ui-accent)]"
           />
           <select
             value={correctionMediaType}
             onChange={(event) => setCorrectionMediaType(event.target.value)}
-            className="h-11 rounded-xl border border-[#1A1A1A]/10 bg-[#FDFCFA] px-4 text-sm font-semibold text-[#1A1A1A] outline-none transition focus:border-[#f9dc0b]"
+            className="h-11 rounded-xl border border-[var(--ui-line)] bg-[var(--ui-panel)] px-4 text-sm font-semibold text-[var(--ui-text)] outline-none transition focus:border-[var(--ui-accent)]"
           >
             <option value="auto">Auto</option>
             <option value="anime">Anime</option>
@@ -4496,8 +4496,8 @@ function UploadDetail({
             <option value="movie">Movie</option>
             <option value="tv">TV show</option>
           </select>
-          <button type="submit" disabled={correcting || !correctionTitle.trim()} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[#f9dc0b] px-4 text-xs font-black text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white disabled:opacity-50">
-            {correcting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+          <button type="submit" disabled={correcting || !correctionTitle.trim()} className="ui-btn is-primary">
+            {correcting ? <Loader2 className="h-4 w-4 ui-spin" /> : <ShieldCheck className="h-4 w-4" />}
             Correct record
           </button>
         </div>
@@ -4511,23 +4511,23 @@ function UploadDetail({
             <MiniStat theme={theme} label="Avg duration" value={`${compact(totals.averageViewDuration)}s`} />
             <MiniStat theme={theme} label="Subscribers" value={compact(totals.subscribersGained)} />
           </div>
-          <div className="mt-5 rounded-xl border border-[#1A1A1A]/8">
-            <div className="grid grid-cols-4 bg-[#F9F8F6] px-3 py-2 text-[11px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">
+          <div className="mt-5 rounded-xl border border-[var(--ui-line)]">
+            <div className="grid grid-cols-4 bg-[var(--ui-bg)] px-3 py-2 text-[11px] font-bold uppercase tracking-widest text-[var(--ui-text)]/35">
               <span>Day</span>
               <span className="text-right">Views</span>
               <span className="text-right">Likes</span>
               <span className="text-right">Comments</span>
             </div>
-            <div className="divide-y divide-[#1A1A1A]/8">
+            <div className="divide-y divide-[var(--ui-line)]">
               {daily.slice(-7).map((day: Record<string, number | string>, index: number) => (
-                <div key={`${day.day}-${index}`} className="grid grid-cols-4 px-3 py-2 text-xs font-semibold text-[#1A1A1A]/60">
+                <div key={`${day.day}-${index}`} className="grid grid-cols-4 px-3 py-2 text-xs font-semibold text-[var(--ui-text)]/60">
                   <span>{String(day.day || "Day")}</span>
                   <span className="text-right">{compact(day.views)}</span>
                   <span className="text-right">{compact(day.likes)}</span>
                   <span className="text-right">{compact(day.comments)}</span>
                 </div>
               ))}
-              {!daily.length ? <p className="px-3 py-4 text-sm font-semibold text-[#1A1A1A]/45">Analytics will appear after the next performance check.</p> : null}
+              {!daily.length ? <p className="px-3 py-4 text-sm font-semibold text-[var(--ui-text)]/45">Analytics will appear after the next performance check.</p> : null}
             </div>
           </div>
         </section>
@@ -4610,7 +4610,7 @@ function RunsPanel({ runs, theme = "light" }: { runs: AutomationRun[]; theme?: A
                 <p className={cn("text-sm font-semibold leading-6", tokens.text)}>{run.message}</p>
                 {run.details ? (
                   <details className="group mt-1.5">
-                    <summary className={cn("inline-flex cursor-pointer select-none list-none items-center gap-1 text-xs font-bold transition hover:text-[#b89f00] [&::-webkit-details-marker]:hidden", tokens.subtle)}>
+                    <summary className={cn("inline-flex cursor-pointer select-none list-none items-center gap-1 text-xs font-bold transition hover:text-[var(--ui-accent-text)] [&::-webkit-details-marker]:hidden", tokens.subtle)}>
                       <ArrowUpRight className="h-3 w-3 rotate-45 transition-transform group-open:rotate-[135deg]" />
                       Run details
                     </summary>
@@ -4866,15 +4866,15 @@ export function AgentVoiceWaveform({ analyser, listening, settled, isDark }: { a
     <div
       className={cn(
         "flex h-10 w-full items-center gap-3 rounded-lg px-3",
-        listening ? (isDark ? "bg-[#f9dc0b]/10" : "bg-[#fff6b8]") : isDark ? "bg-[#F8F5E8]/6" : "bg-[#1A1A1A]/[0.035]"
+        listening ? (isDark ? "bg-[var(--ui-accent)]/10" : "bg-[var(--ui-accent-soft)]") : isDark ? "bg-[var(--ui-text)]/6" : "bg-[var(--ui-text)]/[0.035]"
       )}
     >
       <span
         aria-hidden="true"
-        className={cn("h-2 w-2 shrink-0 rounded-full", listening ? "agent-voice-rec bg-[#e5484d]" : isDark ? "bg-[#F8F5E8]/30" : "bg-[#1A1A1A]/25")}
+        className={cn("h-2 w-2 shrink-0 rounded-full", listening ? "agent-voice-rec bg-[#e5484d]" : isDark ? "bg-[var(--ui-text)]/30" : "bg-[var(--ui-text)]/25")}
       />
       <canvas ref={canvasRef} aria-hidden="true" className="h-8 min-w-0 flex-1" />
-      <span className={cn("shrink-0 font-mono text-[11px] tabular-nums", isDark ? "text-[#F8F5E8]/70" : "text-[#1A1A1A]/62")} aria-label={`${elapsed} seconds recorded`}>
+      <span className={cn("shrink-0 font-mono text-[11px] tabular-nums", isDark ? "text-[var(--ui-text)]/70" : "text-[var(--ui-text)]/62")} aria-label={`${elapsed} seconds recorded`}>
         {Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, "0")}
       </span>
     </div>
@@ -5178,17 +5178,17 @@ function AgentChatHistorySidebar({ agent, conversations, activeId, theme, mobile
   };
 
   const content = (
-    <section className={cn("agent-chat-history flex h-full min-h-0 shrink-0 flex-col", embedded ? "w-full" : "w-[min(20rem,90vw)] border-r md:w-[17.5rem]", embedded ? "" : isDark ? "border-[#F8F5E8]/10 bg-[#151916]" : "border-[#1A1A1A]/8 bg-[#F9F8F6]")}>
+    <section className={cn("agent-chat-history flex h-full min-h-0 shrink-0 flex-col", embedded ? "w-full" : "w-[min(20rem,90vw)] border-r md:w-[17.5rem]", embedded ? "" : isDark ? "border-[var(--ui-line)] bg-[var(--ui-bg)]" : "border-[var(--ui-line)] bg-[var(--ui-bg)]")}>
       <div className="flex h-12 shrink-0 items-center justify-between px-3 md:h-10">
-        <p className={cn("text-[13px] font-bold", isDark ? "text-[#F8F5E8]" : "text-[#1A1A1A]")}>Chats</p>
+        <p className={cn("text-[13px] font-bold", isDark ? "text-[var(--ui-text)]" : "text-[var(--ui-text)]")}>Chats</p>
         <div className="flex items-center gap-1">
-          <button type="button" onClick={() => { onNewChat(); if (!embedded) onClose(); }} disabled={!agent} className={cn("grid h-11 w-11 shrink-0 place-items-center rounded-lg transition disabled:opacity-30 md:h-9 md:w-9", isDark ? "text-[#F8F5E8]/60 hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/52 hover:bg-[#1A1A1A]/6 hover:text-[#1A1A1A]")} aria-label="Start a new chat" title="Start a new chat">
+          <button type="button" onClick={() => { onNewChat(); if (!embedded) onClose(); }} disabled={!agent} className={cn("grid h-11 w-11 shrink-0 place-items-center rounded-lg transition disabled:opacity-30 md:h-9 md:w-9", isDark ? "text-[var(--ui-text)]/60 hover:bg-[var(--ui-text)]/8 hover:text-[var(--ui-text)]" : "text-[var(--ui-text)]/52 hover:bg-[var(--ui-text)]/6 hover:text-[var(--ui-text)]")} aria-label="Start a new chat" title="Start a new chat">
             <Plus className="h-4 w-4" />
           </button>
-          {!embedded ? <button type="button" onClick={onClose} className={cn("grid h-11 w-11 shrink-0 place-items-center rounded-lg transition md:hidden", isDark ? "text-[#F8F5E8]/60 hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/52 hover:bg-[#1A1A1A]/6 hover:text-[#1A1A1A]")} aria-label="Close chat history" title="Close chat history">
+          {!embedded ? <button type="button" onClick={onClose} className={cn("grid h-11 w-11 shrink-0 place-items-center rounded-lg transition md:hidden", isDark ? "text-[var(--ui-text)]/60 hover:bg-[var(--ui-text)]/8 hover:text-[var(--ui-text)]" : "text-[var(--ui-text)]/52 hover:bg-[var(--ui-text)]/6 hover:text-[var(--ui-text)]")} aria-label="Close chat history" title="Close chat history">
             <X className="h-4 w-4" />
           </button> : null}
-          {!embedded ? <button type="button" onClick={onToggleDesktop} className={cn("hidden h-9 w-9 shrink-0 place-items-center rounded-lg transition md:grid", isDark ? "text-[#F8F5E8]/60 hover:bg-[#F8F5E8]/8 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/52 hover:bg-[#1A1A1A]/6 hover:text-[#1A1A1A]")} aria-label="Collapse chat history" title="Collapse chat history">
+          {!embedded ? <button type="button" onClick={onToggleDesktop} className={cn("hidden h-9 w-9 shrink-0 place-items-center rounded-lg transition md:grid", isDark ? "text-[var(--ui-text)]/60 hover:bg-[var(--ui-text)]/8 hover:text-[var(--ui-text)]" : "text-[var(--ui-text)]/52 hover:bg-[var(--ui-text)]/6 hover:text-[var(--ui-text)]")} aria-label="Collapse chat history" title="Collapse chat history">
             <PanelLeftClose className="h-4 w-4" />
           </button> : null}
         </div>
@@ -5216,17 +5216,17 @@ function AgentChatHistorySidebar({ agent, conversations, activeId, theme, mobile
           <button
             type="button"
             onClick={() => setSearchOpen(true)}
-            className={cn("group flex h-11 w-full items-center gap-2 rounded-lg px-3 text-left text-xs font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#b89f00] md:h-[34px]", isDark ? "text-[#F8F5E8]/68 hover:bg-[#F8F5E8]/[0.055] hover:text-[#F8F5E8]" : "text-[#1A1A1A]/64 hover:bg-[#1A1A1A]/[0.045] hover:text-[#1A1A1A]")}
+            className={cn("group flex h-11 w-full items-center gap-2 rounded-lg px-3 text-left text-xs font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 md:h-[34px]", isDark ? "text-[var(--ui-text)]/68 hover:bg-[var(--ui-text)]/[0.055] hover:text-[var(--ui-text)]" : "text-[var(--ui-text)]/64 hover:bg-[var(--ui-text)]/[0.045] hover:text-[var(--ui-text)]")}
             aria-label="Search chat history"
           >
-            <Search className={cn("h-3.5 w-3.5 shrink-0 transition-colors", isDark ? "text-[#F8F5E8]/58 group-hover:text-[#F8F5E8]" : "text-[#1A1A1A]/52 group-hover:text-[#1A1A1A]")} aria-hidden="true" />
+            <Search className={cn("h-3.5 w-3.5 shrink-0 transition-colors", isDark ? "text-[var(--ui-text)]/58 group-hover:text-[var(--ui-text)]" : "text-[var(--ui-text)]/52 group-hover:text-[var(--ui-text)]")} aria-hidden="true" />
             <span>Search</span>
           </button>
         )}
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-1.5 py-1">
         {visible.length === 0 ? (
-          <p className={cn("px-3 py-5 text-xs font-medium leading-5", isDark ? "text-[#F8F5E8]/60" : "text-[#1A1A1A]/64")}>{query ? "No matching chats." : "No conversations yet."}</p>
+          <p className={cn("px-3 py-5 text-xs font-medium leading-5", isDark ? "text-[var(--ui-text)]/60" : "text-[var(--ui-text)]/64")}>{query ? "No matching chats." : "No conversations yet."}</p>
         ) : visible.map((conversation) => {
           const active = conversation.id === activeId;
           const lastMessage = conversation.messages[conversation.messages.length - 1];
@@ -5240,15 +5240,15 @@ function AgentChatHistorySidebar({ agent, conversations, activeId, theme, mobile
                   "agent-chat-history-item block min-h-16 w-full rounded-r-lg px-3 py-2.5 pr-12 text-left transition",
                   active && "agent-chat-history-item-active",
                   active
-                    ? isDark ? "text-[#F8F5E8]" : "text-[#1A1A1A]"
-                    : isDark ? "text-[#F8F5E8] hover:bg-[#F8F5E8]/[0.055]" : "text-[#1A1A1A] hover:bg-[#1A1A1A]/[0.045]",
+                    ? isDark ? "text-[var(--ui-text)]" : "text-[var(--ui-text)]"
+                    : isDark ? "text-[var(--ui-text)] hover:bg-[var(--ui-text)]/[0.055]" : "text-[var(--ui-text)] hover:bg-[var(--ui-text)]/[0.045]",
                 )}
               >
                 <span className="flex items-center justify-between gap-2">
                   <span className="min-w-0 truncate text-xs font-semibold">{conversation.title}</span>
-                  <span className={cn("shrink-0 text-[10px] font-medium tabular-nums", isDark ? "text-[#F8F5E8]/58" : "text-[#1A1A1A]/62")}>{agentChatTimeLabel(conversation.updatedAt)}</span>
+                  <span className={cn("shrink-0 text-[10px] font-medium tabular-nums", isDark ? "text-[var(--ui-text)]/58" : "text-[var(--ui-text)]/62")}>{agentChatTimeLabel(conversation.updatedAt)}</span>
                 </span>
-                <span className={cn("mt-1 block truncate text-[11px] font-normal", isDark ? "text-[#F8F5E8]/60" : "text-[#1A1A1A]/64")}>
+                <span className={cn("mt-1 block truncate text-[11px] font-normal", isDark ? "text-[var(--ui-text)]/60" : "text-[var(--ui-text)]/64")}>
                   {lastMessage?.content || "No messages"}
                 </span>
               </button>
@@ -5257,7 +5257,7 @@ function AgentChatHistorySidebar({ agent, conversations, activeId, theme, mobile
                 onClick={() => onDelete(conversation.id)}
                 className={cn(
                   "absolute right-0.5 top-1/2 grid h-11 w-11 -translate-y-1/2 place-items-center rounded-lg opacity-70 transition focus-visible:opacity-100 sm:opacity-0 sm:group-hover:opacity-100",
-                  isDark ? "text-[#F8F5E8]/48 hover:bg-[#F8F5E8]/10 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/44 hover:bg-[#1A1A1A]/7 hover:text-[#1A1A1A]",
+                  isDark ? "text-[var(--ui-text)]/48 hover:bg-[var(--ui-text)]/10 hover:text-[var(--ui-text)]" : "text-[var(--ui-text)]/44 hover:bg-[var(--ui-text)]/7 hover:text-[var(--ui-text)]",
                 )}
                 aria-label={`Delete "${conversation.title}"`}
                 title="Delete conversation"
@@ -5327,7 +5327,7 @@ function AgentChatRichHtml({ html, theme }: { html: string; theme: AgentTheme })
   if (!safeHtml) return null;
   return (
     <div
-      className={cn("agent-chat-canvas mt-4 rounded-lg border p-4 md:p-5", theme === "dark" ? "border-[#F8F5E8]/12 bg-[#0F130F]" : "border-[#1A1A1A]/10 bg-[#FCFBF5]")}
+      className={cn("agent-chat-canvas mt-4 rounded-lg border p-4 md:p-5", theme === "dark" ? "border-[var(--ui-line-strong)] bg-[#0F130F]" : "border-[var(--ui-line)] bg-[var(--ui-bg)]")}
       dangerouslySetInnerHTML={{ __html: safeHtml }}
     />
   );
@@ -5342,13 +5342,13 @@ function AgentChatCards({ cards, theme }: { cards?: AgentChatCard[]; theme: Agen
           key={`${index}-${card.label}`}
           className={cn(
             "rounded-lg border px-3 py-2.5",
-            theme === "dark" ? "border-[#F8F5E8]/10 bg-[#F8F5E8]/5" : "border-[#1A1A1A]/8 bg-white",
-            card.tone === "warn" && "border-[#f9dc0b]/45 bg-[#f9dc0b]/10",
+            theme === "dark" ? "border-[var(--ui-line)] bg-[var(--ui-text)]/5" : "border-[var(--ui-line)] bg-[var(--ui-panel)]",
+            card.tone === "warn" && "border-[var(--ui-accent)]/45 bg-[var(--ui-accent)]/10",
             card.tone === "good" && (theme === "dark" ? "border-[#7ed99b]/30 bg-[#7ed99b]/8" : "border-[#2f8f57]/25 bg-[#eef8f1]"),
           )}
         >
-          <p className={cn("text-[10px] font-black uppercase tracking-[0.14em]", theme === "dark" ? "text-[#F8F5E8]/42" : "text-[#1A1A1A]/42")}>{card.label}</p>
-          <p className={cn("mt-1 text-xl font-black tabular-nums", theme === "dark" ? "text-[#F8F5E8]" : "text-[#1A1A1A]")}>{card.value}</p>
+          <p className={cn("text-[10px] font-black uppercase tracking-[0.14em]", theme === "dark" ? "text-[var(--ui-text)]/42" : "text-[var(--ui-text)]/42")}>{card.label}</p>
+          <p className={cn("mt-1 text-xl font-black tabular-nums", theme === "dark" ? "text-[var(--ui-text)]" : "text-[var(--ui-text)]")}>{card.value}</p>
         </div>
       ))}
     </div>
@@ -5366,13 +5366,13 @@ function AgentChatQuickActions({ busy, theme, onSelect, onRunCandidate }: { busy
           onClick={() => type === "run_candidate" ? onRunCandidate() : onSelect(prompt)}
           disabled={busy}
           className={cn(
-            "inline-flex h-11 shrink-0 items-center gap-1.5 rounded-lg border px-3 text-[11px] font-semibold transition duration-150 hover:-translate-y-px focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00] disabled:cursor-wait disabled:opacity-45 sm:h-9 sm:px-2.5",
+            "inline-flex h-11 shrink-0 items-center gap-1.5 rounded-lg border px-3 text-[11px] font-semibold transition duration-150 hover:-translate-y-px focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-wait disabled:opacity-45 sm:h-9 sm:px-2.5",
             isDark
-              ? "border-[#F8F5E8]/10 bg-[#191C18]/72 text-[#F8F5E8]/68 hover:border-[#f9dc0b]/45 hover:text-[#F8F5E8]"
-              : "border-[#1A1A1A]/8 bg-[#F9F8F6]/92 text-[#1A1A1A]/64 hover:border-[#f9dc0b]/70 hover:text-[#1A1A1A]"
+              ? "border-[var(--ui-line)] bg-[var(--ui-panel)]/72 text-[var(--ui-text)]/68 hover:border-[var(--ui-accent)]/45 hover:text-[var(--ui-text)]"
+              : "border-[var(--ui-line)] bg-[var(--ui-bg)]/92 text-[var(--ui-text)]/64 hover:border-[var(--ui-accent)]/70 hover:text-[var(--ui-text)]"
           )}
         >
-          <ActionIcon className="h-3.5 w-3.5 shrink-0 text-[#9b8400]" aria-hidden="true" />
+          <ActionIcon className="h-3.5 w-3.5 shrink-0 text-[var(--ui-accent-text)]" aria-hidden="true" />
           <span>{label}</span>
         </button>
       ))}
@@ -5407,12 +5407,12 @@ function AgentThinkingStatus({ active, text, theme }: { active: boolean; text: s
   if (!currentText && !departingText) return null;
   return (
     <div className="agent-thinking-status flex min-h-7 items-center gap-2.5" role="status" aria-live="polite" aria-atomic="true">
-      <span className={cn("agent-thinking-mark grid h-6 w-6 shrink-0 place-items-center rounded-md", isDark ? "bg-[#f9dc0b]/12 text-[#f9dc0b]" : "bg-[#f9dc0b]/16 text-[#8a7500]")} aria-hidden="true">
+      <span className={cn("agent-thinking-mark grid h-6 w-6 shrink-0 place-items-center rounded-md", isDark ? "bg-[var(--ui-accent)]/12 text-[var(--ui-accent-text)]" : "bg-[var(--ui-accent)]/16 text-[var(--ui-accent-text)]")} aria-hidden="true">
         <Sparkles className="h-3.5 w-3.5" />
       </span>
       <span className="relative h-5 min-w-0 flex-1 overflow-hidden">
-        {departingText ? <span key={`out-${departingText}`} className={cn("agent-thinking-message agent-thinking-message-exit absolute inset-x-0 top-0 truncate text-xs font-semibold", isDark ? "text-[#F8F5E8]/42" : "text-[#1A1A1A]/42")}>{departingText}</span> : null}
-        {currentText ? <span key={`in-${currentText}`} className={cn("agent-thinking-message agent-thinking-message-enter absolute inset-x-0 top-0 truncate text-xs font-semibold", isDark ? "text-[#F8F5E8]/48" : "text-[#1A1A1A]/48")}>{currentText}</span> : null}
+        {departingText ? <span key={`out-${departingText}`} className={cn("agent-thinking-message agent-thinking-message-exit absolute inset-x-0 top-0 truncate text-xs font-semibold", isDark ? "text-[var(--ui-text)]/42" : "text-[var(--ui-text)]/42")}>{departingText}</span> : null}
+        {currentText ? <span key={`in-${currentText}`} className={cn("agent-thinking-message agent-thinking-message-enter absolute inset-x-0 top-0 truncate text-xs font-semibold", isDark ? "text-[var(--ui-text)]/48" : "text-[var(--ui-text)]/48")}>{currentText}</span> : null}
       </span>
       {currentText ? (
         <span className="agent-thinking-dots flex shrink-0 items-center gap-1" aria-hidden="true">
@@ -5668,9 +5668,9 @@ function AgentChatWorkspace({ agent, theme, compact = false, historyOpen, sideba
           onRunAgent={onRunAgent}
         />
         {recentlyDeleted ? (
-          <div role="status" className={cn("agent-chat-undo absolute bottom-3 left-1/2 z-30 flex -translate-x-1/2 items-center gap-3 rounded-full border px-4 py-2 text-xs font-semibold shadow-[0_10px_30px_rgba(0,0,0,0.18)]", theme === "dark" ? "border-[#F8F5E8]/12 bg-[#191C18] text-[#F8F5E8]" : "border-[#1A1A1A]/10 bg-[#1A1A1A] text-[#F8F5E8]")}>
+          <div role="status" className={cn("agent-chat-undo absolute bottom-3 left-1/2 z-30 flex -translate-x-1/2 items-center gap-3 rounded-full border px-4 py-2 text-xs font-semibold shadow-[0_10px_30px_rgba(0,0,0,0.18)]", theme === "dark" ? "border-[var(--ui-line-strong)] bg-[var(--ui-panel)] text-[var(--ui-text)]" : "border-[var(--ui-line)] bg-[var(--ui-text)] text-[var(--ui-panel)]")}>
             <span className="max-w-[14rem] truncate">Deleted “{recentlyDeleted.title}”</span>
-            <button type="button" onClick={undoDelete} className="rounded-full px-2 py-1 font-black text-[#f9dc0b] transition hover:bg-[#F8F5E8]/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#f9dc0b]">Undo</button>
+            <button type="button" onClick={undoDelete} className="rounded-full px-2 py-1 font-black text-[var(--ui-accent-text)] transition hover:bg-[var(--ui-text)]/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">Undo</button>
           </div>
         ) : null}
       </div>
@@ -5679,7 +5679,7 @@ function AgentChatWorkspace({ agent, theme, compact = false, historyOpen, sideba
 }
 
 function agentChatActionIcon(action: AgentChatAction, busy: boolean) {
-  if (busy) return <Loader2 className="h-3.5 w-3.5 animate-spin" />;
+  if (busy) return <Loader2 className="h-3.5 w-3.5 ui-spin" />;
   switch (action.type) {
     case "navigate": return <Navigation className="h-3.5 w-3.5" />;
     case "internal_tool": return <Sparkles className="h-3.5 w-3.5" />;
@@ -5698,21 +5698,21 @@ function AgentChatSubagentStrip({ subagents, theme }: { subagents?: AgentChatSub
   const isDark = theme === "dark";
   const failed = subagents.filter((subagent) => subagent.status === "failed").length;
   return (
-    <details className={cn("group mb-4 max-w-[76ch] text-xs", isDark ? "text-[#F8F5E8]/68" : "text-[#1A1A1A]/65")}>
+    <details className={cn("group mb-4 max-w-[76ch] text-xs", isDark ? "text-[var(--ui-text)]/68" : "text-[var(--ui-text)]/65")}>
       <summary className="flex w-fit cursor-pointer list-none items-center gap-2 py-1 font-semibold marker:hidden">
-        <Bot className="h-3.5 w-3.5 text-[#b89f00]" aria-hidden="true" />
+        <Bot className="h-3.5 w-3.5 text-[var(--ui-accent-text)]" aria-hidden="true" />
         <span>{subagents.length} specialist check{subagents.length === 1 ? "" : "s"}</span>
-        {failed > 0 && <span className={isDark ? "text-[#ffaaa4]" : "text-[#9f2118]"}>· {failed} needs review</span>}
+        {failed > 0 && <span className={isDark ? "text-[var(--ui-danger)]" : "text-[var(--ui-danger)]"}>· {failed} needs review</span>}
         <ChevronDown className="h-3.5 w-3.5 opacity-60 transition-transform group-open:rotate-180" aria-hidden="true" />
       </summary>
-      <ul className={cn("mt-2 space-y-2 border-l pl-3", isDark ? "border-[#F8F5E8]/15" : "border-[#1A1A1A]/12")}>
+      <ul className={cn("mt-2 space-y-2 border-l pl-3", isDark ? "border-[var(--ui-line-strong)]" : "border-[var(--ui-line-strong)]")}>
         {subagents.map((subagent) => (
           <li key={subagent.id} className="flex gap-2.5">
-            <span className={cn("mt-0.5 shrink-0", subagent.status === "completed" ? "text-[#b89f00]" : isDark ? "text-[#ffaaa4]" : "text-[#9f2118]")}>
+            <span className={cn("mt-0.5 shrink-0", subagent.status === "completed" ? "text-[var(--ui-accent-text)]" : isDark ? "text-[var(--ui-danger)]" : "text-[var(--ui-danger)]")}>
               {subagent.status === "completed" ? <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" /> : <AlertCircle className="h-3.5 w-3.5" aria-hidden="true" />}
             </span>
             <div className="min-w-0">
-              <p className={cn("font-semibold", isDark ? "text-[#F8F5E8]/85" : "text-[#1A1A1A]/85")}>{subagent.name}</p>
+              <p className={cn("font-semibold", isDark ? "text-[var(--ui-text)]/85" : "text-[var(--ui-text)]/85")}>{subagent.name}</p>
               <p className="mt-0.5 leading-5">{subagent.summary}</p>
             </div>
           </li>
@@ -5742,7 +5742,7 @@ const AgentChatMessageItem = memo(function AgentChatMessageItem({ message, agent
   const absoluteTime = agentChatAbsoluteTime(message.timestamp);
   const toolButtonClass = cn(
     "inline-flex h-11 items-center gap-1.5 rounded-lg px-2.5 text-[11px] font-medium transition disabled:cursor-not-allowed disabled:opacity-40 sm:h-8",
-    isDark ? "text-[#F8F5E8]/60 hover:bg-[#F8F5E8]/7 hover:text-[#F8F5E8]/78" : "text-[#1A1A1A]/64 hover:bg-[#1A1A1A]/5 hover:text-[#1A1A1A]/78",
+    isDark ? "text-[var(--ui-text)]/60 hover:bg-[var(--ui-text)]/7 hover:text-[var(--ui-text)]/78" : "text-[var(--ui-text)]/64 hover:bg-[var(--ui-text)]/5 hover:text-[var(--ui-text)]/78",
   );
   if (message.role === "user") {
     return (
@@ -5751,13 +5751,13 @@ const AgentChatMessageItem = memo(function AgentChatMessageItem({ message, agent
           title={absoluteTime || undefined}
           className={cn(
             "max-w-[90%] whitespace-pre-wrap rounded-[18px] rounded-br-md px-4 py-2.5 text-[15px] leading-7 sm:max-w-[78%]",
-            isDark ? "bg-[#F8F5E8]/[0.09] text-[#F8F5E8]" : "bg-[#1A1A1A]/[0.055] text-[#1A1A1A]"
+            isDark ? "bg-[var(--ui-text)]/[0.09] text-[var(--ui-text)]" : "bg-[var(--ui-text)]/[0.055] text-[var(--ui-text)]"
           )}
         >
           {message.content}
         </p>
         <div className="mt-1 flex items-center gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
-          {absoluteTime ? <time dateTime={new Date(message.timestamp).toISOString()} className={cn("px-1 text-[10px] font-medium tabular-nums", isDark ? "text-[#F8F5E8]/50" : "text-[#1A1A1A]/50")}>{absoluteTime}</time> : null}
+          {absoluteTime ? <time dateTime={new Date(message.timestamp).toISOString()} className={cn("px-1 text-[10px] font-medium tabular-nums", isDark ? "text-[var(--ui-text)]/50" : "text-[var(--ui-text)]/50")}>{absoluteTime}</time> : null}
           <button type="button" onClick={() => onEdit(message)} disabled={busy} className={toolButtonClass} aria-label="Edit this message and resend" title="Edit and resend">
             <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
             Edit
@@ -5770,15 +5770,15 @@ const AgentChatMessageItem = memo(function AgentChatMessageItem({ message, agent
     <article className="agent-chat-message agent-chat-message-assistant flex w-full justify-start" aria-label={agentName}>
       <div className="w-full min-w-0">
         <div className="mb-3 flex items-center gap-2">
-          <span className={cn("grid h-6 w-6 shrink-0 place-items-center rounded-md", isDark ? "bg-[#f9dc0b]/12 text-[#f9dc0b]" : "bg-[#f9dc0b]/18 text-[#8a7500]")} aria-hidden="true">
+          <span className={cn("grid h-6 w-6 shrink-0 place-items-center rounded-md", isDark ? "bg-[var(--ui-accent)]/12 text-[var(--ui-accent-text)]" : "bg-[var(--ui-accent)]/18 text-[var(--ui-accent-text)]")} aria-hidden="true">
             <Sparkles className="h-3.5 w-3.5" />
           </span>
-          <p className={cn("min-w-0 truncate text-[11px] font-semibold", isDark ? "text-[#F8F5E8]/66" : "text-[#1A1A1A]/68")}>
+          <p className={cn("min-w-0 truncate text-[11px] font-semibold", isDark ? "text-[var(--ui-text)]/66" : "text-[var(--ui-text)]/68")}>
             {agentName}
             {message.timestamp ? (
-              <time dateTime={new Date(message.timestamp).toISOString()} title={absoluteTime} className={cn("font-normal", isDark ? "text-[#F8F5E8]/58" : "text-[#1A1A1A]/62")}> · {agentChatTimeLabel(message.timestamp)}</time>
+              <time dateTime={new Date(message.timestamp).toISOString()} title={absoluteTime} className={cn("font-normal", isDark ? "text-[var(--ui-text)]/58" : "text-[var(--ui-text)]/62")}> · {agentChatTimeLabel(message.timestamp)}</time>
             ) : null}
-            {message.engine === "builtin" ? <span className={cn("ml-2 rounded-full px-1.5 py-0.5 text-[9px] font-black uppercase tracking-[0.12em]", isDark ? "bg-[#F8F5E8]/8 text-[#F8F5E8]/55" : "bg-[#1A1A1A]/6 text-[#1A1A1A]/55")} title="Answered by the built-in operator because external models were unavailable">Offline mode</span> : null}
+            {message.engine === "builtin" ? <span className={cn("ml-2 rounded-full px-1.5 py-0.5 text-[9px] font-black uppercase tracking-[0.12em]", isDark ? "bg-[var(--ui-text)]/8 text-[var(--ui-text)]/55" : "bg-[var(--ui-text)]/6 text-[var(--ui-text)]/55")} title="Answered by the built-in operator because external models were unavailable">Offline mode</span> : null}
           </p>
         </div>
         <div className="group min-w-0">
@@ -5801,12 +5801,12 @@ const AgentChatMessageItem = memo(function AgentChatMessageItem({ message, agent
                     disabled={Boolean(actionBusy) || busy}
                     aria-busy={actionBusy === key || undefined}
                     className={cn(
-                      "inline-flex h-11 items-center gap-2 rounded-lg border px-3 text-xs font-bold transition hover:-translate-y-px focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00] disabled:cursor-wait disabled:opacity-50 sm:h-9",
+                      "inline-flex h-11 items-center gap-2 rounded-lg border px-3 text-xs font-bold transition hover:-translate-y-px focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-wait disabled:opacity-50 sm:h-9",
                       action.type === "run_candidate" || action.type === "run_compilation" || action.type === "creator_stage"
-                        ? "border-[#f9dc0b] bg-[#f9dc0b] text-[#1A1A1A]"
+                        ? "border-[var(--ui-accent)] bg-[var(--ui-accent)] text-[var(--ui-accent-ink)]"
                         : action.type === "stop_candidate"
-                          ? isDark ? "border-[#ff7b72]/30 bg-[#ff7b72]/8 text-[#ffaaa4] hover:border-[#ff7b72]/55" : "border-[#b42318]/18 bg-[#fff5f3] text-[#9f2118] hover:border-[#b42318]/40"
-                        : isDark ? "border-[#F8F5E8]/14 bg-[#F8F5E8]/5 text-[#F8F5E8]/75 hover:border-[#f9dc0b]/60 hover:text-[#F8F5E8]" : "border-[#1A1A1A]/10 bg-[#FFFDF8] text-[#1A1A1A]/70 hover:border-[#f9dc0b] hover:text-[#1A1A1A]"
+                          ? isDark ? "border-[#ff7b72]/30 bg-[#ff7b72]/8 text-[var(--ui-danger)] hover:border-[#ff7b72]/55" : "border-[var(--ui-danger)]/18 bg-[#fff5f3] text-[var(--ui-danger)] hover:border-[var(--ui-danger)]/40"
+                        : isDark ? "border-[var(--ui-line-strong)] bg-[var(--ui-text)]/5 text-[var(--ui-text)]/75 hover:border-[var(--ui-accent)]/60 hover:text-[var(--ui-text)]" : "border-[var(--ui-line)] bg-[var(--ui-panel)] text-[var(--ui-text)]/70 hover:border-[var(--ui-accent)] hover:text-[var(--ui-text)]"
                     )}
                   >
                     {agentChatActionIcon(action, actionBusy === key)}
@@ -5819,7 +5819,7 @@ const AgentChatMessageItem = memo(function AgentChatMessageItem({ message, agent
           {message.applied?.length ? (
             <p className={cn(
               "mt-3 inline-flex flex-wrap items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[11px] font-bold",
-              isDark ? "border-[#f9dc0b]/30 bg-[#f9dc0b]/10 text-[#f9dc0b]" : "border-[#f9dc0b]/40 bg-[#fffdf0] text-[#8a7500]"
+              isDark ? "border-[var(--ui-accent)]/30 bg-[var(--ui-accent)]/10 text-[var(--ui-accent-text)]" : "border-[var(--ui-accent)]/40 bg-[var(--ui-accent-soft)] text-[var(--ui-accent-text)]"
             )}>
               <CheckCircle2 className="h-3.5 w-3.5" />
               Saved changes: {message.applied.join(", ")}
@@ -5828,9 +5828,9 @@ const AgentChatMessageItem = memo(function AgentChatMessageItem({ message, agent
           {message.unapplied?.length ? (
             <div className={cn(
               "mt-3 max-w-[76ch] rounded-lg border px-3 py-2 text-[11px] font-semibold leading-5",
-              isDark ? "border-[#F8F5E8]/14 bg-[#F8F5E8]/[0.04] text-[#F8F5E8]/78" : "border-[#1A1A1A]/10 bg-[#1A1A1A]/[0.03] text-[#1A1A1A]/72"
+              isDark ? "border-[var(--ui-line-strong)] bg-[var(--ui-text)]/[0.04] text-[var(--ui-text)]/78" : "border-[var(--ui-line)] bg-[var(--ui-text)]/[0.03] text-[var(--ui-text)]/72"
             )}>
-              <p className="inline-flex items-center gap-1.5 font-black"><AlertCircle className="h-3.5 w-3.5 text-[#9b8400]" aria-hidden="true" />Not applied</p>
+              <p className="inline-flex items-center gap-1.5 font-black"><AlertCircle className="h-3.5 w-3.5 text-[var(--ui-accent-text)]" aria-hidden="true" />Not applied</p>
               <ul className="mt-1 space-y-0.5">
                 {message.unapplied.map((item, index) => (
                   <li key={`${item.key}-${index}`}><code className="font-mono text-[10.5px]">{item.key}</code>{item.reason ? ` — ${item.reason}` : ""}</li>
@@ -5838,11 +5838,11 @@ const AgentChatMessageItem = memo(function AgentChatMessageItem({ message, agent
               </ul>
             </div>
           ) : null}
-          <div className={cn("agent-chat-response-actions mt-4 flex max-w-[76ch] items-center gap-0.5 border-t pt-2", isDark ? "border-[#F8F5E8]/8" : "border-[#1A1A1A]/7")}>
+          <div className={cn("agent-chat-response-actions mt-4 flex max-w-[76ch] items-center gap-0.5 border-t pt-2", isDark ? "border-[var(--ui-line)]" : "border-[var(--ui-line)]")}>
             <button
               type="button"
               onClick={() => onCopy(message.content, message.id)}
-              className={cn(toolButtonClass, copied && "text-[#9b8400]")}
+              className={cn(toolButtonClass, copied && "text-[var(--ui-accent-text)]")}
               aria-label={copied ? "Response copied" : "Copy response"}
               title={copied ? "Copied" : "Copy response"}
             >
@@ -6675,9 +6675,9 @@ function AgentChatPanel({ agent, theme, compact = false, conversationId, message
       )}
     >
       {editingMessageId ? (
-        <div className={cn("flex items-center justify-between gap-3 border-b px-5 py-2 text-[11px] font-semibold", isDark ? "border-[#F8F5E8]/10 bg-[#f9dc0b]/8 text-[#F8F5E8]/80" : "border-[#1A1A1A]/8 bg-[#fff9d6] text-[#6a5b00]")}>
+        <div className={cn("flex items-center justify-between gap-3 border-b px-5 py-2 text-[11px] font-semibold", isDark ? "border-[var(--ui-line)] bg-[var(--ui-accent)]/8 text-[var(--ui-text)]/80" : "border-[var(--ui-line)] bg-[var(--ui-accent-soft)] text-[var(--ui-accent-text)]")}>
           <span className="inline-flex items-center gap-1.5"><Pencil className="h-3 w-3" aria-hidden="true" />Editing an earlier message — sending replaces everything after it</span>
-          <button type="button" onClick={cancelEditMessage} className="rounded-md px-2 py-1 font-black transition hover:bg-black/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#b89f00]">Cancel</button>
+          <button type="button" onClick={cancelEditMessage} className="rounded-md px-2 py-1 font-black transition hover:bg-black/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1">Cancel</button>
         </div>
       ) : null}
       <div className="flex items-end gap-2 px-3 py-2">
@@ -6702,7 +6702,7 @@ function AgentChatPanel({ agent, theme, compact = false, conversationId, message
           placeholder={busy ? "Type your next message while the agent works…" : "Ask the agent anything…"}
           className={cn(
             "block max-h-[200px] min-h-[44px] min-w-0 flex-1 resize-none bg-transparent px-2.5 py-2 text-[15px] leading-6 outline-none disabled:cursor-wait disabled:opacity-65",
-            isDark ? "text-[#F8F5E8] placeholder:text-[#F8F5E8]/58" : "text-[#1A1A1A] placeholder:text-[#1A1A1A]/62"
+            isDark ? "text-[var(--ui-text)] placeholder:text-[var(--ui-text)]/58" : "text-[var(--ui-text)] placeholder:text-[var(--ui-text)]/62"
           )}
         />
         {busy ? <span id="agent-chat-busy-hint" className="sr-only">The agent is answering. Press Escape to stop.</span> : null}
@@ -6717,22 +6717,22 @@ function AgentChatPanel({ agent, theme, compact = false, conversationId, message
             className={cn(
               "grid h-10 w-10 shrink-0 place-items-center rounded-full border transition active:scale-[0.94] disabled:cursor-not-allowed",
               voiceListening
-                ? "border-[#f9dc0b] bg-[#f9dc0b] text-[#1A1A1A] shadow-[0_0_0_4px_rgba(249,220,11,0.14)]"
+                ? "border-[var(--ui-accent)] bg-[var(--ui-accent)] text-[var(--ui-accent-ink)] shadow-[0_0_0_4px_rgba(249,220,11,0.14)]"
                 : isDark
-                  ? "border-[#F8F5E8]/15 bg-[#F8F5E8]/8 text-[#F8F5E8] hover:border-[#f9dc0b]/55 hover:text-[#f9dc0b]"
-                  : "border-[#1A1A1A]/10 bg-[#F7F7F5] text-[#1A1A1A] hover:border-[#f9dc0b]",
+                  ? "border-[var(--ui-line-strong)] bg-[var(--ui-text)]/8 text-[var(--ui-text)] hover:border-[var(--ui-accent)]/55 hover:text-[var(--ui-accent-text)]"
+                  : "border-[var(--ui-line)] bg-[var(--ui-bg)] text-[var(--ui-text)] hover:border-[var(--ui-accent)]",
               !voiceSupported && !voiceListening ? "opacity-35" : "",
               busy || voiceTranscribing ? "opacity-35" : ""
             )}
           >
-            {voiceListening ? <MicOff className="h-4 w-4 stroke-[2.25]" /> : voiceTranscribing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mic className="h-4 w-4 stroke-[2.25]" />}
+            {voiceListening ? <MicOff className="h-4 w-4 stroke-[2.25]" /> : voiceTranscribing ? <Loader2 className="h-4 w-4 ui-spin" /> : <Mic className="h-4 w-4 stroke-[2.25]" />}
           </button>
           {busy ? (
-            <button type="button" onClick={() => requestAbortRef.current?.abort()} className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-full border transition active:scale-[0.94]", isDark ? "border-[#F8F5E8]/15 bg-[#F8F5E8]/8 text-[#F8F5E8]" : "border-[#1A1A1A]/10 bg-[#F7F7F5] text-[#1A1A1A]")} aria-label="Stop response (Escape)" title="Stop response (Esc)">
+            <button type="button" onClick={() => requestAbortRef.current?.abort()} className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-full border transition active:scale-[0.94]", isDark ? "border-[var(--ui-line-strong)] bg-[var(--ui-text)]/8 text-[var(--ui-text)]" : "border-[var(--ui-line)] bg-[var(--ui-bg)] text-[var(--ui-text)]")} aria-label="Stop response (Escape)" title="Stop response (Esc)">
               <Square className="h-3.5 w-3.5 fill-current" />
             </button>
           ) : (
-            <button type="submit" disabled={!input.trim() || voiceListening || voiceTranscribing} className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#f9dc0b] text-[#1A1A1A] transition duration-150 hover:bg-[#e7ca00] active:scale-[0.94] disabled:cursor-not-allowed disabled:opacity-30" aria-label="Send message" title="Send message">
+            <button type="submit" disabled={!input.trim() || voiceListening || voiceTranscribing} className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[var(--ui-accent)] text-[var(--ui-accent-ink)] transition duration-150 hover:bg-[var(--ui-accent-hover)] active:scale-[0.94] disabled:cursor-not-allowed disabled:opacity-30" aria-label="Send message" title="Send message">
               <ArrowUp className="h-4 w-4 stroke-[2.5]" />
             </button>
           )}
@@ -6744,8 +6744,8 @@ function AgentChatPanel({ agent, theme, compact = false, conversationId, message
         </div>
       ) : null}
       {voiceListening || voiceTranscribing || input.length > 1600 ? (
-        <p role="status" aria-live="polite" className={cn("truncate px-4 pb-2 text-[10px] font-medium", isDark ? "text-[#F8F5E8]/58" : "text-[#1A1A1A]/62")}>
-          {voiceListening ? <><Mic className="mr-1.5 inline h-3 w-3 text-[#9b8400]" aria-hidden="true" />{voiceInterim || "Listening"}</> : voiceTranscribing ? <><Loader2 className="mr-1.5 inline h-3 w-3 animate-spin text-[#9b8400]" aria-hidden="true" />{voiceInterim || "Transcribing voice"}</> : `${input.length}/2000`}
+        <p role="status" aria-live="polite" className={cn("truncate px-4 pb-2 text-[10px] font-medium", isDark ? "text-[var(--ui-text)]/58" : "text-[var(--ui-text)]/62")}>
+          {voiceListening ? <><Mic className="mr-1.5 inline h-3 w-3 text-[var(--ui-accent-text)]" aria-hidden="true" />{voiceInterim || "Listening"}</> : voiceTranscribing ? <><Loader2 className="mr-1.5 inline h-3 w-3 ui-spin text-[var(--ui-accent-text)]" aria-hidden="true" />{voiceInterim || "Transcribing voice"}</> : `${input.length}/2000`}
         </p>
       ) : null}
     </form>
@@ -6753,10 +6753,10 @@ function AgentChatPanel({ agent, theme, compact = false, conversationId, message
 
   const collapsedHistoryControls = !historyVisible || workspaceSidebar ? (
     <div className={cn("absolute left-3 top-2 z-20 items-center gap-1", workspaceSidebar ? "flex md:hidden" : "hidden md:flex")}>
-      <button type="button" onClick={onToggleHistory} className={cn("grid h-10 w-10 place-items-center rounded-full border shadow-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00]", isDark ? "border-[#F8F5E8]/12 bg-[#191C18] text-[#F8F5E8]/70 hover:text-[#F8F5E8]" : "border-[#1A1A1A]/10 bg-[#FFFDF8] text-[#1A1A1A]/55 hover:text-[#1A1A1A]")} aria-label="Open chat history" title="Open chat history">
+      <button type="button" onClick={onToggleHistory} className={cn("grid h-10 w-10 place-items-center rounded-full border shadow-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2", isDark ? "border-[var(--ui-line-strong)] bg-[var(--ui-panel)] text-[var(--ui-text)]/70 hover:text-[var(--ui-text)]" : "border-[var(--ui-line)] bg-[var(--ui-panel)] text-[var(--ui-text)]/55 hover:text-[var(--ui-text)]")} aria-label="Open chat history" title="Open chat history">
         <PanelLeftOpen className="h-4 w-4" />
       </button>
-      <button type="button" onClick={onNewChat} className={cn("grid h-10 w-10 place-items-center rounded-full border shadow-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00]", isDark ? "border-[#F8F5E8]/12 bg-[#191C18] text-[#F8F5E8]/70 hover:text-[#F8F5E8]" : "border-[#1A1A1A]/10 bg-[#FFFDF8] text-[#1A1A1A]/55 hover:text-[#1A1A1A]")} aria-label="Start a new chat" title="Start a new chat">
+      <button type="button" onClick={onNewChat} className={cn("grid h-10 w-10 place-items-center rounded-full border shadow-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2", isDark ? "border-[var(--ui-line-strong)] bg-[var(--ui-panel)] text-[var(--ui-text)]/70 hover:text-[var(--ui-text)]" : "border-[var(--ui-line)] bg-[var(--ui-panel)] text-[var(--ui-text)]/55 hover:text-[var(--ui-text)]")} aria-label="Start a new chat" title="Start a new chat">
         <Plus className="h-4 w-4" />
       </button>
     </div>
@@ -6769,7 +6769,7 @@ function AgentChatPanel({ agent, theme, compact = false, conversationId, message
           <button
             type="button"
             onClick={() => onSetActiveTab("chat")}
-            className={cn("mb-1 grid h-11 w-11 shrink-0 place-items-center rounded-full border shadow-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00]", isDark ? "border-[#F8F5E8]/12 bg-[#191C18] text-[#F8F5E8]/70 hover:text-[#F8F5E8]" : "border-[#1A1A1A]/10 bg-[#FFFDF8] text-[#1A1A1A]/55 hover:text-[#1A1A1A]")}
+            className={cn("mb-1 grid h-11 w-11 shrink-0 place-items-center rounded-full border shadow-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2", isDark ? "border-[var(--ui-line-strong)] bg-[var(--ui-panel)] text-[var(--ui-text)]/70 hover:text-[var(--ui-text)]" : "border-[var(--ui-line)] bg-[var(--ui-panel)] text-[var(--ui-text)]/55 hover:text-[var(--ui-text)]")}
             aria-label="Open chat history"
             title="Open chat"
           >
@@ -6788,7 +6788,7 @@ function AgentChatPanel({ agent, theme, compact = false, conversationId, message
     return (
       <div className="agent-chat-empty grid h-full place-items-center p-6">
         <div className={cn("max-w-md rounded-xl border border-dashed p-6 text-center", tokens.surfaceSoft)}>
-          <MessageSquare className="mx-auto h-8 w-8 text-[#f9dc0b]" />
+          <MessageSquare className="mx-auto h-8 w-8 text-[var(--ui-accent-text)]" />
           <p className={cn("mt-4 text-sm font-bold", tokens.text)}>Save the agent first</p>
           <p className={cn("mt-2 text-sm leading-6", tokens.muted)}>Once the agent exists, you can manage everything from this chat — ask about performance or change any setting in plain language.</p>
         </div>
@@ -6819,13 +6819,13 @@ function AgentChatPanel({ agent, theme, compact = false, conversationId, message
                   onClick={() => void send(prompt)}
                   disabled={busy}
                   className={cn(
-                    "inline-flex h-11 shrink-0 items-center gap-2 rounded-lg border border-transparent px-3 text-left text-xs font-semibold transition duration-150 hover:-translate-y-px focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00] disabled:cursor-wait disabled:opacity-45 sm:h-9",
+                    "inline-flex h-11 shrink-0 items-center gap-2 rounded-lg border border-transparent px-3 text-left text-xs font-semibold transition duration-150 hover:-translate-y-px focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-wait disabled:opacity-45 sm:h-9",
                     isDark
-                      ? "text-[#F8F5E8]/70 hover:border-[#f9dc0b]/35 hover:bg-[#F8F5E8]/[0.045] hover:text-[#F8F5E8]"
-                      : "text-[#1A1A1A]/68 hover:border-[#f9dc0b]/45 hover:bg-[#1A1A1A]/[0.035] hover:text-[#1A1A1A]"
+                      ? "text-[var(--ui-text)]/70 hover:border-[var(--ui-accent)]/35 hover:bg-[var(--ui-text)]/[0.045] hover:text-[var(--ui-text)]"
+                      : "text-[var(--ui-text)]/68 hover:border-[var(--ui-accent)]/45 hover:bg-[var(--ui-text)]/[0.035] hover:text-[var(--ui-text)]"
                   )}
                 >
-                  <SuggestionIcon className="h-3.5 w-3.5 shrink-0 text-[#9b8400]" aria-hidden="true" />
+                  <SuggestionIcon className="h-3.5 w-3.5 shrink-0 text-[var(--ui-accent-text)]" aria-hidden="true" />
                   <span>{label}</span>
                 </button>
               ))}
@@ -6863,7 +6863,7 @@ function AgentChatPanel({ agent, theme, compact = false, conversationId, message
       {/* The dock overlaps the end of the conversation so messages scroll behind the glass composer. */}
       <div className="agent-chat-composer-dock pointer-events-none relative z-10 -mt-24 shrink-0 px-3 pb-3 pt-5 sm:px-6">
         {showScrollButton ? (
-          <button type="button" onClick={scrollToLatest} className={cn("pointer-events-auto absolute -top-6 right-4 z-20 grid h-11 w-11 place-items-center rounded-full border shadow-[0_6px_20px_rgba(26,26,26,0.12)] transition hover:-translate-y-px focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b89f00] sm:right-6", isDark ? "border-[#F8F5E8]/12 bg-[#191C18] text-[#F8F5E8]" : "border-[#1A1A1A]/10 bg-[#FFFDF8] text-[#1A1A1A]")} aria-label="Scroll to latest message" title="Latest message">
+          <button type="button" onClick={scrollToLatest} className={cn("pointer-events-auto absolute -top-6 right-4 z-20 grid h-11 w-11 place-items-center rounded-full border shadow-[0_6px_20px_rgba(26,26,26,0.12)] transition hover:-translate-y-px focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 sm:right-6", isDark ? "border-[var(--ui-line-strong)] bg-[var(--ui-panel)] text-[var(--ui-text)]" : "border-[var(--ui-line)] bg-[var(--ui-panel)] text-[var(--ui-text)]")} aria-label="Scroll to latest message" title="Latest message">
             <ArrowDown className="h-4 w-4" />
           </button>
         ) : null}
@@ -6899,7 +6899,7 @@ function DurationTrimControl({ value, onChange, theme }: { value: number; onChan
     <div className={cn("overflow-hidden rounded-xl border", tokens.surface)}>
       <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 items-center gap-3">
-          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-[#f9dc0b] text-[#1A1A1A]"><Scissors className="h-4 w-4" /></span>
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-[var(--ui-accent)] text-[var(--ui-accent-ink)]"><Scissors className="h-4 w-4" /></span>
           <div className="min-w-0">
             <p className={cn("text-sm font-bold", tokens.text)}>Shorts duration target</p>
             <p className={cn("mt-0.5 text-xs font-semibold", tokens.muted)}>Transcript-scored window {formatDuration(windowStart)}–{formatDuration(windowEnd)} for complete sentences and strong story beats.</p>
@@ -6908,28 +6908,23 @@ function DurationTrimControl({ value, onChange, theme }: { value: number; onChan
         <output className={cn("shrink-0 text-2xl font-black tabular-nums", tokens.text)} aria-live="polite">{label}</output>
       </div>
       <div className={cn("border-t px-4 pb-4 pt-3", tokens.divider, tokens.surfaceSoft)}>
-        <div className="relative h-8">
-          <div className={cn("absolute left-0 right-0 top-3 h-2 overflow-hidden rounded-full", tokens.isDark ? "bg-[#F8F5E8]/12" : "bg-[#1A1A1A]/10")}>
-            <div className="h-full rounded-full bg-[#f9dc0b]" style={{ width: `${progress}%` }} />
-          </div>
-          <input
-            type="range"
-            min={60}
-            max={179}
-            step={1}
-            value={duration}
-            onChange={(event) => onChange(Number(event.target.value))}
-            className="absolute inset-0 h-8 w-full cursor-pointer opacity-0"
-            aria-label="Target video duration in seconds"
-          />
-          <span className="pointer-events-none absolute top-1.5 h-5 w-1.5 -translate-x-1/2 rounded-full bg-[#1A1A1A] ring-2 ring-[#f9dc0b]" style={{ left: `${progress}%` }} />
-        </div>
+        <input
+          type="range"
+          min={60}
+          max={179}
+          step={1}
+          value={duration}
+          onChange={(event) => onChange(Number(event.target.value))}
+          className="ui-range"
+          style={{ ["--fill" as string]: `${progress}%` }}
+          aria-label="Target video duration in seconds"
+        />
         <div className={cn("flex justify-between text-[10px] font-bold tabular-nums", tokens.subtle)}><span>1:00</span><span>2:59 maximum</span></div>
         <div className="mt-3 grid grid-cols-5 gap-1.5" role="group" aria-label="Duration presets">
           {presets.map((preset) => {
             const active = Math.abs(duration - preset) < 3;
             return (
-              <button key={preset} type="button" onClick={() => onChange(preset)} className={cn("h-8 rounded-lg text-[11px] font-bold tabular-nums transition", active ? "bg-[#f9dc0b] text-[#1A1A1A]" : tokens.isDark ? "bg-[#F8F5E8]/8 text-[#F8F5E8]/65 hover:bg-[#F8F5E8]/14" : "bg-white text-[#1A1A1A]/55 hover:text-[#1A1A1A]")}>
+              <button key={preset} type="button" onClick={() => onChange(preset)} className={cn("h-8 rounded-lg text-[11px] font-bold tabular-nums transition", active ? "bg-[var(--ui-accent)] text-[var(--ui-accent-ink)]" : tokens.isDark ? "bg-[var(--ui-text)]/8 text-[var(--ui-text)]/65 hover:bg-[var(--ui-text)]/14" : "bg-[var(--ui-panel)] text-[var(--ui-text)]/55 hover:text-[var(--ui-text)]")}>
                 {Math.floor(preset / 60)}:{String(preset % 60).padStart(2, "0")}
               </button>
             );
@@ -6943,7 +6938,7 @@ function DurationTrimControl({ value, onChange, theme }: { value: number; onChan
 function Field({ label, children, wide = false }: { label: string; children: ReactNode; wide?: boolean }) {
   return (
     <label className={cn("space-y-1.5", wide && "md:col-span-2")}>
-      <span className="agent-field-label block text-[11px] font-bold uppercase tracking-widest text-[#1A1A1A]/35">{label}</span>
+      <span className="agent-field-label block text-[11px] font-bold uppercase tracking-widest text-[var(--ui-text-muted)]">{label}</span>
       {children}
     </label>
   );
@@ -6996,7 +6991,7 @@ function StatusPill({ status }: { status: string }) {
   return (
     <span className={cn(
       "inline-flex w-fit rounded-full px-2.5 py-1 text-[10px] font-bold uppercase",
-      success ? "bg-[#fff9d6] text-[#6a5b00]" : error ? "bg-[#fff9d6] text-[#6a5b00]" : cancelled ? "bg-[#1A1A1A]/8 text-[#1A1A1A]/60" : "bg-[#1A1A1A]/5 text-[#1A1A1A]/50"
+      success ? "bg-[var(--ui-accent-soft)] text-[var(--ui-accent-text)]" : error ? "bg-[var(--ui-accent-soft)] text-[var(--ui-accent-text)]" : cancelled ? "bg-[var(--ui-text)]/8 text-[var(--ui-text)]/60" : "bg-[var(--ui-text)]/5 text-[var(--ui-text)]/50"
     )}>
       {label}
     </span>

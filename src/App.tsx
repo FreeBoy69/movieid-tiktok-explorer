@@ -551,7 +551,7 @@ function WorkspaceApp() {
   const isEdgeToEdgeView = ["movie", "downloader", "tool", "tiktok", "youtube", "niches", "compile", "tts", "prompts", "automation", "rewriter", "voiceover", "discover", "projects", "create", "styles", "drama", "products", "studio", "vibe-edit", "account"].includes(activeView) || (activeView === "channels" && channelDetailOpen);
 
   return (
-    <div ref={workspaceRootRef} className={cn("relative flex h-dvh min-w-0 flex-col overflow-hidden", isDarkMode ? "bg-[#0f1113] text-white" : "bg-[#F9F8F6] text-[#1A1A1A]")} data-build="compile-audio-20260502">
+    <div ref={workspaceRootRef} className={cn("relative flex h-dvh min-w-0 flex-col overflow-hidden", isDarkMode ? "bg-[var(--ui-bg)] text-white" : "bg-[var(--ui-bg)] text-[var(--ui-text)]")} data-build="compile-audio-20260502">
       {!focusMode ? <SiteNotice theme={channelTheme} /> : null}
       {!focusMode ? <AppHeader
         view={activeView}
@@ -588,7 +588,7 @@ function WorkspaceApp() {
       <div className="flex min-h-0 flex-1">
       {hasAutomationWorkspaceSidebar ? (
         // Agent chats get their own panel beside the conversation, like a generation page's control column.
-        <div ref={setAgentChatSidebarHost} role="complementary" className={cn("hidden w-[280px] shrink-0 overflow-hidden border-r md:block", isDarkMode ? "border-white/8 bg-[#0f1113]" : "border-[#1A1A1A]/8 bg-[#F9F8F6]")} aria-label="Chats" />
+        <div ref={setAgentChatSidebarHost} role="complementary" className={cn("hidden w-[280px] shrink-0 overflow-hidden border-r md:block", isDarkMode ? "border-white/8 bg-[var(--ui-bg)]" : "border-[var(--ui-line)] bg-[var(--ui-bg)]")} aria-label="Chats" />
       ) : null}
       <main className={cn(
         "workspace-content min-w-0 flex-1 overflow-x-clip",
@@ -660,22 +660,22 @@ function WorkspaceApp() {
                 <div className={cn(movieState.status !== "done" ? "grid min-h-[calc(100dvh-8rem)] place-items-center" : "h-full min-h-0")}>
                   {movieState.status !== "done" && (
                     <div className="w-full max-w-3xl space-y-8">
-                      <h1 className="text-center font-serif text-3xl font-bold tracking-tight text-[#1A1A1A] sm:text-4xl">Identify a movie from a clip.</h1>
-                      <form onSubmit={analyzeMovieLink} className={cn("rounded-xl border p-2 shadow-sm", isDarkMode ? "border-white/10 bg-white/[0.04]" : "border-[#E5E7EB] bg-[#FAFAFB]")}>
+                      <h1 className="text-center font-serif text-3xl font-bold tracking-tight text-[var(--ui-text)] sm:text-4xl">Identify a movie from a clip.</h1>
+                      <form onSubmit={analyzeMovieLink} className={cn("rounded-xl border p-2 shadow-sm", isDarkMode ? "border-white/10 bg-white/[0.04]" : "border-[var(--ui-line-strong)] bg-[var(--ui-bg)]")}>
                         <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_160px]">
                           <input
                             value={movieLinkInput}
                             onChange={(event) => setMovieLinkInput(event.target.value)}
                             disabled={movieState.status === "processing"}
-                            className="h-12 min-w-0 rounded-lg border border-transparent bg-white px-4 text-sm font-medium outline-none transition focus:border-[#111827]"
+                            className="h-12 min-w-0 rounded-lg border border-transparent bg-[var(--ui-panel)] px-4 text-sm font-medium outline-none transition focus:border-[var(--ui-text)]"
                             placeholder="Paste TikTok, YouTube, Instagram, Facebook, X, or direct video URL"
                           />
                           <button
                             type="submit"
                             disabled={!movieLinkInput.trim() || movieState.status === "processing"}
-                            className="inline-flex h-12 items-center justify-center gap-2 rounded-lg bg-[#111827] px-4 text-sm font-bold text-white transition hover:bg-[#f9dc0b] hover:text-[#111827] disabled:opacity-40"
+                            className="ui-btn is-ink is-lg"
                           >
-                            {movieState.status === "processing" ? <Loader2 className="h-4 w-4 animate-spin" /> : <ExternalLink className="h-4 w-4" />}
+                            {movieState.status === "processing" ? <Loader2 className="h-4 w-4 ui-spin" /> : <ExternalLink className="h-4 w-4" />}
                             Process
                           </button>
                         </div>
@@ -686,23 +686,23 @@ function WorkspaceApp() {
                         {...dropzoneRootProps}
                         className={cn(
                           "relative grid min-h-64 cursor-pointer place-items-center rounded-xl border border-dashed p-8 text-center transition",
-                          isDragActive ? "border-[#f9dc0b] bg-[#fff9d6]" : "border-[#DADDE3] bg-white hover:border-[#111827]",
+                          isDragActive ? "border-[var(--ui-accent)] bg-[var(--ui-accent-soft)]" : "border-[var(--ui-line-strong)] bg-[var(--ui-panel)] hover:border-[var(--ui-text)]",
                           movieState.status === "processing" && "pointer-events-none opacity-50",
                         )}
                       >
                         <input {...getInputProps()} />
                         <div>
-                          <span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-[#f9dc0b] text-[#111827]">
-                            {movieState.status === "processing" ? <Loader2 className="h-6 w-6 animate-spin" /> : <Upload className="h-6 w-6" />}
+                          <span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-[var(--ui-accent)] text-[var(--ui-accent-ink)]">
+                            {movieState.status === "processing" ? <Loader2 className="h-6 w-6 ui-spin" /> : <Upload className="h-6 w-6" />}
                           </span>
                           <p className="mt-4 text-sm font-bold">{movieState.status === "processing" ? movieState.message : isDragActive ? "Drop video here" : "Drag and drop a video file"}</p>
-                          <p className="mt-1 text-xs font-medium text-[#6B7280]">MP4, MOV, WebM, or direct video link</p>
+                          <p className="mt-1 text-xs font-medium text-[var(--ui-text-muted)]">MP4, MOV, WebM, or direct video link</p>
                         </div>
 
                         {movieState.status === "processing" && (
                           <div className="absolute bottom-0 left-0 right-0 p-4">
-                            <div className="h-1 w-full bg-[#f9dc0b]/10 rounded-full overflow-hidden">
-                              <motion.div className="h-full bg-[#f9dc0b]" initial={{ width: 0 }} animate={{ width: `${movieState.progress}%` }} />
+                            <div className="h-1 w-full bg-[var(--ui-accent)]/10 rounded-full overflow-hidden">
+                              <motion.div className="h-full bg-[var(--ui-accent)]" initial={{ width: 0 }} animate={{ width: `${movieState.progress}%` }} />
                             </div>
                           </div>
                         )}
@@ -810,7 +810,7 @@ function WorkspaceApp() {
               </motion.div>
             ) : (
               <motion.div key="fallback-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
-                <div className="p-8 text-center text-[#1A1A1A]/40">View not found</div>
+                <div className="p-8 text-center text-[var(--ui-text)]/40">View not found</div>
               </motion.div>
             )}
           </AnimatePresence>
@@ -879,11 +879,11 @@ function ResultDisplay({ result, onReset }: { key?: string; result: MovieResult;
   const [activeTab, setActiveTab] = useState<MovieAnalysisTab>("movie");
 
   return (
-    <motion.section initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="workspace-floating-shell relative flex h-full min-h-0 flex-col overflow-hidden bg-white text-[#1A1A1A]">
+    <motion.section initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="workspace-floating-shell relative flex h-full min-h-0 flex-col overflow-hidden bg-[var(--ui-panel)] text-[var(--ui-text)]">
       <header className="workspace-floating-header flex min-h-14 flex-col gap-2 px-4 py-2 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex min-w-0 flex-1 flex-col gap-2 lg:flex-row lg:items-center">
           <div className="flex min-w-0 shrink-0 items-center gap-3">
-            <Film className="h-4 w-4 text-[#6B7280]" />
+            <Film className="h-4 w-4 text-[var(--ui-text-muted)]" />
             <h1 className="truncate text-sm font-semibold tracking-tight">Clip analysis</h1>
           </div>
           <div className="flex min-w-0 gap-1 overflow-x-auto overscroll-x-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:ml-4">
@@ -894,7 +894,7 @@ function ResultDisplay({ result, onReset }: { key?: string; result: MovieResult;
                 onClick={() => setActiveTab(tab.id)}
                 className={cn(
                   "inline-flex h-9 shrink-0 items-center gap-2 rounded-lg px-3 text-sm font-semibold transition md:px-4",
-                  activeTab === tab.id ? "bg-[#111827] text-white" : "text-[#6B7280] hover:bg-[#F3F4F6] hover:text-[#111827]",
+                  activeTab === tab.id ? "bg-[var(--ui-text)] text-[var(--ui-panel)]" : "text-[var(--ui-text-muted)] hover:bg-[var(--ui-bg)] hover:text-[var(--ui-text)]",
                 )}
               >
                 {tab.label}
@@ -903,7 +903,7 @@ function ResultDisplay({ result, onReset }: { key?: string; result: MovieResult;
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <button onClick={onReset} className="inline-flex h-9 items-center justify-center rounded-lg bg-[#111827] px-3 text-xs font-bold text-white transition hover:bg-[#f9dc0b] hover:text-[#111827]">
+          <button onClick={onReset} className="ui-btn is-ink is-sm">
             New analysis
           </button>
         </div>

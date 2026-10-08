@@ -197,14 +197,14 @@ export function StudioTool({ tool }: { tool: ToolDef }) {
       {tool.kind === "thumbnail" ? (
         <label className="mt-field">
           <span className="mt-label">Title on the image <small>{draft.title.length}/80</small></span>
-          <input className="mt-input" value={draft.title} maxLength={80} onChange={(event) => patch({ title: event.target.value })} placeholder="e.g. I QUIT" />
+          <input className="ui-input" value={draft.title} maxLength={80} onChange={(event) => patch({ title: event.target.value })} placeholder="e.g. I QUIT" />
         </label>
       ) : null}
       {tool.prompt ? (
         <label className="mt-field">
           <span className="mt-label">{tool.prompt.label}{needsPrompt && !tool.prompt.required ? <small>Required for this edit</small> : null}</span>
           <textarea
-            className="mt-textarea"
+            className="ui-textarea mt-textarea"
             value={draft.prompt}
             maxLength={2000}
             rows={3}
@@ -225,7 +225,7 @@ export function StudioTool({ tool }: { tool: ToolDef }) {
       {catalogError ? <StudioNotice tone="error">{catalogError}</StudioNotice> : null}
       {catalog && !catalog.configured && tool.kind !== "stems" ? <GenerationUnavailable /> : null}
       {catalog && catalog.configured && !models.length && tool.kind !== "stems" ? <StudioNotice>No model can run this tool right now.</StudioNotice> : null}
-      <button type="submit" className="mt-primary" disabled={!ready}>
+      <button type="submit" className="ui-btn is-primary is-lg is-block mt-primary" disabled={!ready}>
         {submitting ? <Loader2 size={16} className="animate-spin" /> : <Wand2 size={16} />}
         {tool.action}
       </button>

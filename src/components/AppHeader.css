@@ -3,33 +3,19 @@
 .ah,
 .ah-overlay {
   --ah-bg: var(--ui-bg);
-  --ah-panel: rgb(25 27 30 / 0.92);
-  --ah-text: #f3f2ee;
-  --ah-muted: rgb(243 242 238 / 0.78);
-  --ah-nav: rgb(243 242 238 / 0.9);
-  --ah-faint: rgb(243 242 238 / 0.58);
-  --ah-line: rgb(255 255 255 / 0.08);
-  --ah-hover: rgb(255 255 255 / 0.06);
-  --ah-tile: rgb(255 255 255 / 0.06);
-  --ah-accent: #f9dc0b;
-  --ah-current: #f9dc0b;
-  --ah-shadow: 0 24px 60px -20px rgb(0 0 0 / 0.7), 0 0 0 1px rgb(255 255 255 / 0.06);
+  --ah-panel: color-mix(in srgb, var(--ui-panel) 92%, transparent);
+  --ah-text: var(--ui-text);
+  --ah-muted: color-mix(in srgb, var(--ui-text) 76%, transparent);
+  --ah-nav: color-mix(in srgb, var(--ui-text) 89%, transparent);
+  --ah-faint: color-mix(in srgb, var(--ui-text) 56%, transparent);
+  --ah-line: var(--ui-line);
+  --ah-hover: var(--ui-hover);
+  --ah-tile: var(--ui-chip);
+  --ah-accent: var(--ui-accent);
+  --ah-current: var(--ui-accent-text);
+  --ah-shadow: var(--ui-shadow-lift), 0 0 0 1px var(--ui-line);
   font-family: Inter, ui-sans-serif, system-ui, sans-serif;
   color: var(--ah-text);
-}
-.ah[data-theme="light"],
-.ah-overlay[data-theme="light"] {
-  --ah-bg: var(--ui-bg);
-  --ah-panel: rgb(250 249 247 / 0.94);
-  --ah-text: #1a1a1a;
-  --ah-muted: rgb(26 26 26 / 0.74);
-  --ah-nav: rgb(26 26 26 / 0.88);
-  --ah-faint: rgb(26 26 26 / 0.55);
-  --ah-line: rgb(26 26 26 / 0.08);
-  --ah-hover: rgb(26 26 26 / 0.05);
-  --ah-tile: #f2f0eb;
-  --ah-current: #7a6600;
-  --ah-shadow: 0 24px 60px -24px rgb(26 26 26 / 0.35), 0 0 0 1px rgb(26 26 26 / 0.06);
 }
 .ah *,
 .ah-overlay * {
@@ -40,11 +26,6 @@
   font: inherit;
   color: inherit;
   cursor: pointer;
-}
-.ah :focus-visible,
-.ah-overlay :focus-visible {
-  outline: 2px solid var(--ah-accent);
-  outline-offset: 2px;
 }
 
 .ah {
@@ -293,7 +274,7 @@
 .ah-entry:hover .ah-entry-icon,
 .ah-entry[aria-current="page"] .ah-entry-icon {
   background: var(--ah-accent);
-  color: #171717;
+  color: var(--ui-accent-ink);
 }
 .ah-entry-text {
   min-width: 0;
@@ -380,18 +361,10 @@
   padding: 0 4px;
   border-radius: 999px;
   background: var(--ah-accent);
-  color: #171717;
+  color: var(--ui-accent-ink);
   font-size: 10px;
   font-weight: 800;
   line-height: 15px;
-}
-.ah-spin {
-  animation: ah-spin 0.9s linear infinite;
-}
-@keyframes ah-spin {
-  to {
-    transform: rotate(360deg);
-  }
 }
 .ah-account {
   position: relative;
@@ -405,14 +378,14 @@
   padding: 0 13px;
   border: 0;
   border-radius: 6px;
-  background: #f9dc0b;
-  color: #171717;
+  background: var(--ui-accent);
+  color: var(--ui-accent-ink);
   font-size: 12px;
   font-weight: 800;
   white-space: nowrap;
   cursor: pointer;
 }
-.ah .ah-get-started:hover { background: #ffe95a; }
+.ah .ah-get-started:hover { background: var(--ui-accent-hover); }
 .ah .ah-avatar {
   width: 34px;
   height: 34px;
@@ -437,7 +410,7 @@
 }
 .ah-avatar-img.is-letter {
   background: var(--ah-accent);
-  color: #171717;
+  color: var(--ui-accent-ink);
   font-size: 13px;
   font-weight: 800;
 }
@@ -511,11 +484,7 @@
 }
 .ah .ah-account-panel button.ah-danger,
 .ah .ah-account-panel button.ah-danger > svg {
-  color: #ff7a6b;
-}
-.ah[data-theme="light"] .ah-account-panel button.ah-danger,
-.ah[data-theme="light"] .ah-account-panel button.ah-danger > svg {
-  color: #c0392b;
+  color: var(--ui-danger);
 }
 
 /* Overlays: quick search and the phone menu */
@@ -712,7 +681,7 @@
 .ah-m-icon.is-accent,
 .ah-m-item[aria-current="page"] .ah-m-icon {
   background: var(--ah-accent);
-  color: #171717;
+  color: var(--ui-accent-ink);
 }
 .ah-m-item-text {
   flex: 1;
@@ -846,13 +815,13 @@
 }
 /* Menus that open from the transparent header keep the page theme. */
 .ah[data-theme="light"][data-over-hero="top"] :is(.ah-panel, .ah-account-panel) {
-  --ah-text: #1a1a1a;
-  --ah-muted: rgb(26 26 26 / 0.74);
-  --ah-nav: rgb(26 26 26 / 0.88);
-  --ah-faint: rgb(26 26 26 / 0.55);
-  --ah-line: rgb(26 26 26 / 0.08);
-  --ah-hover: rgb(26 26 26 / 0.05);
-  --ah-current: #7a6600;
+  --ah-text: var(--ui-text);
+  --ah-muted: color-mix(in srgb, var(--ui-text) 76%, transparent);
+  --ah-nav: color-mix(in srgb, var(--ui-text) 89%, transparent);
+  --ah-faint: color-mix(in srgb, var(--ui-text) 56%, transparent);
+  --ah-line: var(--ui-line);
+  --ah-hover: var(--ui-hover);
+  --ah-current: var(--ui-accent-text);
   color: var(--ah-text);
 }
 

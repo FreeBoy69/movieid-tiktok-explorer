@@ -193,7 +193,7 @@ export function VoiceCloneForm({ onCreated, onCancel, defaultLanguage = "en", he
               <strong>{upload.name}</strong>
               <small>{(upload.size / 1048576).toFixed(1)} MB</small>
             </span>
-            <button type="button" className="as-icon" onClick={() => setUpload(null)} aria-label="Remove this recording" title="Remove">
+            <button type="button" className="ui-icon-btn is-bordered is-lg" onClick={() => setUpload(null)} aria-label="Remove this recording" title="Remove">
               <X className="h-4 w-4" />
             </button>
             {uploadUrl ? <AudioPlayer src={uploadUrl} label="Uploaded sample" compact className="as-file-player" /> : null}
@@ -223,8 +223,8 @@ export function VoiceCloneForm({ onCreated, onCancel, defaultLanguage = "en", he
           <label className="as-field">
             <span>Name</span>
             <span className="as-name-row">
-              <input className="as-input" value={name} onChange={(event) => setName(event.target.value)} maxLength={60} placeholder="e.g. Nora Whitfield" autoComplete="off" />
-              <button type="button" className="as-icon" onClick={() => setName(generateVoiceName([name]))} aria-label="Suggest another name" title="Suggest another name">
+              <input className="ui-input" value={name} onChange={(event) => setName(event.target.value)} maxLength={60} placeholder="e.g. Nora Whitfield" autoComplete="off" />
+              <button type="button" className="ui-icon-btn is-bordered is-lg" onClick={() => setName(generateVoiceName([name]))} aria-label="Suggest another name" title="Suggest another name">
                 <Shuffle className="h-4 w-4" />
               </button>
             </span>
@@ -236,7 +236,7 @@ export function VoiceCloneForm({ onCreated, onCancel, defaultLanguage = "en", he
         </div>
         <label className="as-field">
           <span>Notes <em>optional</em></span>
-          <textarea value={description} onChange={(event) => setDescription(event.target.value)} className="as-textarea is-short" placeholder="Tone and where you'll use it, e.g. calm recap narrator" />
+          <textarea value={description} onChange={(event) => setDescription(event.target.value)} className="ui-textarea" rows={2} style={{ minHeight: 64 }} placeholder="Tone and where you'll use it, e.g. calm recap narrator" />
         </label>
       </section>
 
@@ -247,7 +247,7 @@ export function VoiceCloneForm({ onCreated, onCancel, defaultLanguage = "en", he
         </div>
         <Switch checked={denoise} onChange={setDenoise} label="Clean up background noise" description="Filters hum, hiss and room rumble. Leave it off for studio recordings." />
         <label className="as-check">
-          <input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} />
+          <input type="checkbox" className="ui-check" checked={consent} onChange={(event) => setConsent(event.target.checked)} />
           <span><strong>I have the right to clone this voice</strong><small>It's my voice, or the speaker gave explicit permission.</small></span>
         </label>
       </section>
@@ -258,8 +258,8 @@ export function VoiceCloneForm({ onCreated, onCancel, defaultLanguage = "en", he
         {onCancel ? (
           <button type="button" className="ui-btn" onClick={onCancel} disabled={Boolean(busy)}>Cancel</button>
         ) : null}
-        <button type="submit" disabled={Boolean(busy) || recording || Boolean(missing)} className="as-primary">
-          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mic className="h-4 w-4" />}
+        <button type="submit" disabled={Boolean(busy) || recording || Boolean(missing)} className="ui-btn is-primary is-lg">
+          {busy ? <Loader2 className="h-4 w-4 ui-spin" /> : <Mic className="h-4 w-4" />}
           {busy ? "Creating voice" : "Create voice"}
         </button>
       </div>

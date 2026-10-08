@@ -523,13 +523,13 @@ export function StudioGenerator({
           <p className="cs-revising"><PenLine className="h-3.5 w-3.5" />Revising a motion graphic<button type="button" className="cs-link" onClick={() => patch({ baseFile: undefined })}>Start new</button></p>
         ) : null}
         {app === "clipping" && draft.clipSource === "link" ? (
-          <input className="cs-input" type="url" inputMode="url" value={draft.sourceUrl} onChange={(event) => patch({ sourceUrl: event.target.value })} placeholder="Paste a YouTube, TikTok, or other video link" aria-label="Video link" />
+          <input className="ui-input cs-input" type="url" inputMode="url" value={draft.sourceUrl} onChange={(event) => patch({ sourceUrl: event.target.value })} placeholder="Paste a YouTube, TikTok, or other video link" aria-label="Video link" />
         ) : null}
         {app === "ai-influencer" ? (
-          <input className="cs-input" value={draft.persona} onChange={(event) => patch({ persona: event.target.value })} maxLength={400} placeholder="Persona, e.g. 24-year-old fitness coach, upbeat, sporty style" aria-label="Persona" />
+          <input className="ui-input cs-input" value={draft.persona} onChange={(event) => patch({ persona: event.target.value })} maxLength={400} placeholder="Persona, e.g. 24-year-old fitness coach, upbeat, sporty style" aria-label="Persona" />
         ) : null}
         {app === "marketing" || (app === "workflows" && draft.workflow === "product-ad") ? (
-          <input className="cs-input" value={draft.product} onChange={(event) => patch({ product: event.target.value })} maxLength={120} placeholder="Product name, e.g. Aurora wireless earbuds" aria-label="Product name" />
+          <input className="ui-input cs-input" value={draft.product} onChange={(event) => patch({ product: event.target.value })} maxLength={120} placeholder="Product name, e.g. Aurora wireless earbuds" aria-label="Product name" />
         ) : null}
 
         {frameModes.length > 1 ? (
@@ -559,13 +559,13 @@ export function StudioGenerator({
           />
         </div>
         {app === "workflows" && draft.workflow === "talking-avatar" ? (
-          <textarea className="cs-textarea cs-lyrics" value={draft.script} onChange={(event) => patch({ script: event.target.value })} rows={3} maxLength={3000} placeholder="Script the presenter will speak" aria-label="Script" />
+          <textarea className="ui-textarea cs-lyrics" value={draft.script} onChange={(event) => patch({ script: event.target.value })} rows={3} maxLength={3000} placeholder="Script the presenter will speak" aria-label="Script" />
         ) : null}
         {app === "workflows" && draft.workflow === "image-to-video" ? (
-          <input className="cs-input" value={draft.motion} onChange={(event) => patch({ motion: event.target.value })} maxLength={400} placeholder="Motion, e.g. slow push in, hair moving in the wind" aria-label="Motion" />
+          <input className="ui-input cs-input" value={draft.motion} onChange={(event) => patch({ motion: event.target.value })} maxLength={400} placeholder="Motion, e.g. slow push in, hair moving in the wind" aria-label="Motion" />
         ) : null}
         {app === "music" && draft.audioMode === "music" && !draft.instrumental ? (
-          <textarea className="cs-textarea cs-lyrics" value={draft.lyrics} onChange={(event) => patch({ lyrics: event.target.value })} rows={3} maxLength={3000} placeholder="Lyrics (optional)" aria-label="Lyrics" />
+          <textarea className="ui-textarea cs-lyrics" value={draft.lyrics} onChange={(event) => patch({ lyrics: event.target.value })} rows={3} maxLength={3000} placeholder="Lyrics (optional)" aria-label="Lyrics" />
         ) : null}
     </>
   );
@@ -583,7 +583,7 @@ export function StudioGenerator({
             ) : null}
             {app === "music" && draft.audioMode === "music" ? (
               <>
-                <span className="cs-chip cs-chip-static"><Music className="h-3.5 w-3.5" />{catalog?.music.name || "Music"}</span>
+                <span className="ui-chip cs-chip cs-chip-static"><Music className="h-3.5 w-3.5" />{catalog?.music.name || "Music"}</span>
                 <Toggle label="Instrumental" value={draft.instrumental} onChange={(instrumental) => patch({ instrumental })} />
               </>
             ) : null}
@@ -621,7 +621,7 @@ export function StudioGenerator({
     </>
   );
   const submitButton = (
-    <button type="submit" className="cs-submit" disabled={!ready}>
+    <button type="submit" className="ui-btn is-primary cs-submit" disabled={!ready}>
       {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
       {actionLabel}
     </button>

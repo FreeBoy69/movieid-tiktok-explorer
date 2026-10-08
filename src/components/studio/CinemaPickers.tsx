@@ -126,7 +126,7 @@ export function CinemaLookPicker({ label, icon, value, options, kind, onChange, 
   const current = options.find((o) => o.id === value) || options[0];
   return (
     <div className="cns-pop" ref={ref}>
-      <button type="button" className="cns-look" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(!open)}>
+      <button type="button" className="ui-chip cns-look" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(!open)}>
         {icon}
         <span className="cns-look-label">{label}:</span>
         <span>{current.name}</span>

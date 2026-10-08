@@ -1,27 +1,28 @@
 /* Creator workspace: TubeGen-style workflow in the AutoYT palette.
    Paper background, white cards, charcoal ink, yellow for the one active thing. */
 .maker-workspace {
-  --mk-bg: #f9f8f6;
-  --mk-surface: #fff;
-  --mk-sunken: #f2f0eb;
-  --mk-text: #1a1a1a;
-  --mk-muted: #5f5d58;
-  --mk-faint: #8b8983;
-  --mk-line: #e4e1da;
-  --mk-line-strong: #cfcbc1;
-  --mk-accent: #f9dc0b;
-  --mk-accent-hover: #ecd00a;
-  --mk-accent-ink: #171717;
-  --mk-accent-soft: #fdf5c2;
-  --mk-accent-text: #7a6600;
-  --mk-ok: #3f7a3a;
-  --mk-ok-soft: #e6f1e3;
-  --mk-bad: #a13a2a;
-  --mk-bad-soft: #fbe9e5;
-  --mk-shadow: 0 1px 2px rgb(26 26 26 / 0.04), 0 4px 14px -8px rgb(26 26 26 / 0.12);
-  --mk-shadow-lift: 0 2px 4px rgb(26 26 26 / 0.05), 0 14px 32px -16px rgb(26 26 26 / 0.22);
-  --mk-radius: 10px;
-  --mk-radius-sm: 7px;
+  /* The maker palette is the site palette (src/index.css --ui-*); names kept for layout rules. */
+  --mk-bg: var(--ui-bg);
+  --mk-surface: var(--ui-panel);
+  --mk-sunken: var(--ui-sunken);
+  --mk-text: var(--ui-text);
+  --mk-muted: var(--ui-text-muted);
+  --mk-faint: var(--ui-text-faint);
+  --mk-line: var(--ui-line);
+  --mk-line-strong: var(--ui-line-strong);
+  --mk-accent: var(--ui-accent);
+  --mk-accent-hover: var(--ui-accent-hover);
+  --mk-accent-ink: var(--ui-accent-ink);
+  --mk-accent-soft: var(--ui-accent-soft);
+  --mk-accent-text: var(--ui-accent-text);
+  --mk-ok: var(--ui-success);
+  --mk-ok-soft: color-mix(in srgb, var(--ui-success) 14%, transparent);
+  --mk-bad: var(--ui-danger);
+  --mk-bad-soft: color-mix(in srgb, var(--ui-danger) 12%, transparent);
+  --mk-shadow: var(--ui-shadow-soft);
+  --mk-shadow-lift: var(--ui-shadow-lift);
+  --mk-radius: var(--ui-radius-md);
+  --mk-radius-sm: var(--ui-radius-sm);
   --mk-column: 760px;
   display: flex;
   flex-direction: column;
@@ -34,22 +35,6 @@
   letter-spacing: 0;
 }
 .maker-workspace[data-theme="dark"] {
-  --mk-bg: #111214;
-  --mk-surface: #1a1b1e;
-  --mk-sunken: #151619;
-  --mk-text: #f0efec;
-  --mk-muted: #aeada8;
-  --mk-faint: #85847f;
-  --mk-line: #2e2f33;
-  --mk-line-strong: #45464b;
-  --mk-accent-soft: #3a3410;
-  --mk-accent-text: #f2d63a;
-  --mk-ok: #8fc987;
-  --mk-ok-soft: #1f2e1d;
-  --mk-bad: #f09b8b;
-  --mk-bad-soft: #3a1d18;
-  --mk-shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 6px 18px -10px rgb(0 0 0 / 0.6);
-  --mk-shadow-lift: 0 2px 4px rgb(0 0 0 / 0.35), 0 16px 36px -18px rgb(0 0 0 / 0.8);
   color-scheme: dark;
 }
 .maker-workspace * {
@@ -60,21 +45,17 @@
   background: var(--mk-accent);
   color: var(--mk-accent-ink);
 }
-.maker-workspace :focus-visible {
-  outline: 2px solid var(--mk-accent-text);
-  outline-offset: 2px;
-}
 
-/* ---------- Buttons ---------- */
-.maker-workspace button,
-.maker-workspace .mk-btn,
-.maker-workspace .maker-actions > a {
-  min-height: 36px;
+/* ---------- Buttons ----------
+   Base layout for any button in the workspace, at zero specificity so the shared
+   ui-* controls and component classes always win. Skins match src/components/ui/ui.css. */
+:where(.maker-workspace) :where(button, .mk-btn, .maker-actions > a) {
+  min-height: var(--ui-control-sm);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 7px;
-  border-radius: var(--mk-radius-sm);
+  border-radius: var(--ui-radius-sm);
   padding: 7px 12px;
   font: inherit;
   font-size: 13px;
@@ -82,46 +63,55 @@
   color: inherit;
   text-decoration: none;
   cursor: pointer;
-  transition: background 0.16s, color 0.16s, border-color 0.16s, box-shadow 0.2s;
+  transition: background-color var(--ui-duration) ease, color var(--ui-duration) ease, border-color var(--ui-duration) ease, box-shadow var(--ui-duration) ease;
 }
-.maker-workspace button:hover,
-.maker-workspace .maker-actions > a:hover {
-  background: color-mix(in srgb, var(--mk-text) 6%, transparent);
+:where(.maker-workspace) :where(button, .maker-actions > a):hover {
+  background: var(--ui-hover);
 }
-.maker-workspace button:disabled {
+:where(.maker-workspace) :where(button):disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
+/* Same values as .ui-btn.is-primary / .ui-btn. */
 .maker-workspace .maker-primary {
-  background: var(--mk-accent);
-  color: var(--mk-accent-ink);
-  font-weight: 650;
+  min-height: var(--ui-control);
+  padding: 0 16px;
+  background: var(--ui-accent);
+  color: var(--ui-accent-ink);
+  font-size: 14px;
+  font-weight: 600;
 }
 .maker-workspace .maker-primary:hover:not(:disabled) {
-  background: var(--mk-accent-hover);
+  background: var(--ui-accent-hover);
 }
 .maker-workspace .maker-outline {
-  background: var(--mk-surface);
-  border: 1px solid var(--mk-line);
-  box-shadow: 0 1px 1px rgb(26 26 26 / 0.03);
+  min-height: var(--ui-control);
+  padding: 0 16px;
+  border: 1px solid var(--ui-line-strong);
+  background: transparent;
+  font-size: 14px;
+  font-weight: 600;
 }
 .maker-workspace .maker-outline:hover:not(:disabled) {
-  border-color: var(--mk-line-strong);
-  background: var(--mk-surface);
+  background: var(--ui-hover);
 }
 .maker-workspace .maker-block {
   width: 100%;
 }
 .maker-workspace .maker-lg {
-  min-height: 44px;
-  font-size: 14px;
-  padding: 10px 18px;
+  min-height: var(--ui-control-lg);
+  font-size: 15px;
+  padding: 0 22px;
 }
+/* Same as .ui-icon-btn. */
 .maker-workspace .maker-icon {
-  width: 34px;
-  min-height: 34px;
+  width: var(--ui-control-sm);
+  min-height: var(--ui-control-sm);
   padding: 0;
-  color: var(--mk-muted);
+  color: var(--ui-text-muted);
+}
+.maker-workspace .maker-icon:hover:not(:disabled) {
+  color: var(--ui-text);
 }
 .maker-workspace .maker-danger {
   color: var(--mk-bad);
@@ -132,89 +122,49 @@
   flex-shrink: 0;
 }
 
-/* Shared segmented controls and tabs keep their own metrics inside the workspace. */
-.maker-workspace .ui-seg > button {
-  min-height: 32px;
-  padding: 0 12px;
-  font-size: 13px;
-  font-weight: 600;
-}
-.maker-workspace .ui-seg-sm > button {
-  min-height: 28px;
-  padding: 0 10px;
-  font-size: 12px;
-}
-.maker-workspace .ui-seg > button:hover:not([aria-checked="true"]),
-.maker-workspace .ui-tabs > button:hover {
-  background: transparent;
-}
-.maker-workspace .ui-tabs > button {
-  min-height: 0;
-  padding: 10px 0;
-  border-radius: 0;
-  font-size: 14px;
-  font-weight: 600;
-}
 .ui-tabs.dr-tabs {
   margin: 0 0 22px;
 }
 
-/* The shared SearchField's input must beat the workspace-wide input rule. */
-.maker-workspace .ui-search input[type="search"]:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
-.maker-workspace .ui-search input[type="search"]:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):focus {
-  height: auto;
-  min-height: 0;
-  padding: 6px 0;
-  border: 0;
-  outline: 0;
-  background: none;
-  box-shadow: none;
-}
-
-/* ---------- Form controls ---------- */
-.maker-workspace input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
-.maker-workspace textarea,
-.maker-workspace select {
+/* ---------- Form controls ----------
+   Bare fields in the workspace get the canonical .ui-input look at zero specificity. */
+:where(.maker-workspace) :where(input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="color"]), textarea, select) {
   width: 100%;
   max-width: 100%;
   min-width: 0;
-  background: var(--mk-surface);
-  border: 1px solid var(--mk-line);
-  color: var(--mk-text);
-  border-radius: var(--mk-radius-sm);
+  min-height: var(--ui-field-height);
   padding: 9px 12px;
+  border: 1px solid var(--ui-line-strong);
+  border-radius: var(--ui-radius-control);
+  background: var(--ui-input);
+  box-shadow: var(--ui-shadow-soft);
+  color: var(--ui-text);
   font: inherit;
   font-size: 14px;
-  transition: border-color 0.16s, box-shadow 0.16s;
+  caret-color: var(--ui-accent-text);
+  transition: border-color var(--ui-duration) ease, box-shadow var(--ui-duration) ease;
 }
-.maker-workspace input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):focus,
-.maker-workspace textarea:focus,
-.maker-workspace select:focus {
+:where(.maker-workspace) :where(input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="color"]), textarea, select):hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--ui-text) 32%, transparent);
+}
+:where(.maker-workspace) :where(input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="color"]), textarea, select):focus {
   outline: none;
-  border-color: var(--mk-accent-text);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--mk-accent) 35%, transparent);
+  border-color: var(--ui-focus);
+  box-shadow: 0 0 0 3px var(--ui-ring);
 }
-.maker-workspace textarea {
+:where(.maker-workspace) :where(textarea) {
   resize: vertical;
   line-height: 1.65;
 }
-.maker-workspace input::placeholder,
-.maker-workspace textarea::placeholder {
-  color: var(--mk-faint);
+:where(.maker-workspace) :where(input, textarea)::placeholder {
+  color: var(--ui-text-faint);
 }
-.maker-workspace input,
-.maker-workspace textarea,
-.maker-workspace select {
-  accent-color: var(--mk-accent);
-  caret-color: var(--mk-accent-text);
-}
-.maker-workspace input[type="range"] {
+:where(.maker-workspace) :where(input[type="range"]) {
   width: 100%;
-  accent-color: var(--mk-text);
 }
-.maker-workspace input[type="file"] {
+:where(.maker-workspace) :where(input[type="file"]) {
   font-size: 12px;
-  color: var(--mk-muted);
+  color: var(--ui-text-muted);
   max-width: 100%;
 }
 .maker-field {
@@ -241,6 +191,7 @@
 .maker-check input {
   width: 16px;
   height: 16px;
+  margin: 0;
 }
 .maker-grid-2,
 .maker-grid-3,
@@ -467,11 +418,11 @@
   box-shadow: var(--mk-shadow-lift);
 }
 .maker-option:has(input:checked) {
-  border-color: var(--mk-text);
-  box-shadow: 0 0 0 1px var(--mk-text), var(--mk-shadow);
+  border-color: var(--ui-accent);
+  box-shadow: 0 0 0 2px var(--ui-accent);
 }
 .maker-option:has(input:focus-visible) {
-  outline: 2px solid var(--mk-accent-text);
+  outline: 2px solid var(--ui-focus);
   outline-offset: 2px;
 }
 .maker-option > input {
@@ -506,14 +457,15 @@
   transition: border-color 0.16s;
 }
 .maker-option:has(input:checked) .maker-radio {
-  border-color: var(--mk-text);
+  border-color: var(--ui-accent);
+  background: var(--ui-accent);
 }
 .maker-option:has(input:checked) .maker-radio::after {
   content: "";
-  width: 9px;
-  height: 9px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  background: var(--mk-text);
+  background: var(--ui-accent-ink);
 }
 .maker-option-extra {
   margin: -4px 0 4px;
@@ -579,11 +531,14 @@
 }
 .maker-tag {
   display: inline-flex;
-  padding: 3px 9px;
+  align-items: center;
+  min-height: 20px;
+  padding: 0 8px;
   border-radius: 999px;
-  background: var(--mk-sunken);
-  font-size: 12px;
-  color: var(--mk-muted);
+  background: var(--ui-chip);
+  color: var(--ui-text-muted);
+  font-size: 11px;
+  font-weight: 650;
 }
 .maker-pill-status {
   display: inline-flex;
@@ -768,11 +723,12 @@
   flex-shrink: 0;
 }
 .maker-workspace .maker-searchbar input {
-  border: 0 !important;
-  box-shadow: none !important;
-  background: transparent !important;
-  padding: 8px 4px !important;
-  font-size: 15px !important;
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+  padding: 8px 4px;
+  font-size: 15px;
+  min-height: 0;
 }
 .maker-filterbar {
   display: flex;
@@ -783,7 +739,7 @@
   flex-wrap: wrap;
 }
 .maker-filterbar select {
-  width: auto !important;
+  width: auto;
   min-width: 190px;
 }
 .maker-filters {
@@ -1064,7 +1020,7 @@
   text-underline-offset: 3px;
 }
 .maker-reference-row select {
-  width: 150px !important;
+  width: 150px;
 }
 
 /* ---------- Drawer / modal ---------- */
@@ -1114,9 +1070,9 @@
 }
 .maker-script-editor {
   min-height: 420px;
-  font-size: 15.5px !important;
-  line-height: 1.85 !important;
-  padding: 18px 20px !important;
+  font-size: 15.5px;
+  line-height: 1.85;
+  padding: 18px 20px;
 }
 .maker-meta-row {
   display: flex;
@@ -1229,17 +1185,18 @@
   flex-wrap: wrap;
 }
 .maker-workspace .maker-presets button {
-  min-height: 30px;
-  padding: 4px 12px;
-  border: 1px solid var(--mk-line);
-  background: var(--mk-surface);
-  font-size: 12.5px;
-  color: var(--mk-muted);
+  min-height: var(--ui-control-sm);
+  padding: 0 12px;
+  border: 1px solid var(--ui-line);
+  background: var(--ui-panel);
+  color: var(--ui-text);
+  font-size: 13px;
+  font-weight: 600;
 }
 .maker-workspace .maker-presets button[aria-pressed="true"] {
-  background: var(--mk-text);
-  border-color: var(--mk-text);
-  color: var(--mk-bg);
+  border-color: color-mix(in srgb, var(--ui-accent) 70%, transparent);
+  background: var(--ui-accent-soft);
+  color: var(--ui-text);
 }
 .maker-setting-tile {
   display: flex;
@@ -1263,7 +1220,7 @@
   margin-top: 2px;
 }
 .maker-setting-tile select {
-  width: auto !important;
+  width: auto;
 }
 .maker-timeline-head {
   display: flex;
@@ -1293,7 +1250,7 @@
   letter-spacing: 0.04em;
 }
 .maker-zoom input {
-  width: 90px !important;
+  width: 90px;
 }
 .maker-timeline-viewport {
   overflow-x: auto;
@@ -1390,19 +1347,18 @@
   margin-top: 12px;
 }
 .maker-workspace .maker-seg-chips button {
-  min-height: 26px;
-  padding: 2px 9px;
-  border: 1px solid var(--mk-line);
-  background: var(--mk-surface);
-  border-radius: 6px;
-  font-size: 11.5px;
-  font-weight: 550;
-  color: var(--mk-muted);
+  min-height: var(--ui-control-sm);
+  padding: 0 12px;
+  border: 1px solid var(--ui-line);
+  background: var(--ui-panel);
+  color: var(--ui-text);
+  font-size: 13px;
+  font-weight: 600;
 }
 .maker-workspace .maker-seg-chips button[aria-pressed="true"] {
-  border-color: var(--mk-accent-text);
-  background: var(--mk-accent-soft);
-  color: var(--mk-accent-text);
+  border-color: color-mix(in srgb, var(--ui-accent) 70%, transparent);
+  background: var(--ui-accent-soft);
+  color: var(--ui-text);
 }
 .maker-scenes {
   display: flex;
@@ -1459,10 +1415,10 @@
   flex-wrap: wrap;
 }
 .maker-scene-row select {
-  width: auto !important;
+  width: auto;
   min-height: 32px;
-  padding: 4px 10px !important;
-  font-size: 12.5px !important;
+  padding: 4px 10px;
+  font-size: 12.5px;
 }
 .maker-scene-row .maker-mono {
   width: auto;
@@ -1495,8 +1451,8 @@
   text-align: left;
 }
 .maker-workspace .maker-thumbnail-grid button[aria-pressed="true"] {
-  border-color: var(--mk-text);
-  box-shadow: 0 0 0 2px var(--mk-accent);
+  border-color: var(--ui-accent);
+  box-shadow: 0 0 0 2px var(--ui-accent);
 }
 .maker-thumbnail-grid img {
   display: block;
@@ -2137,8 +2093,8 @@
   text-align: left;
 }
 .maker-workspace .maker-style-picker > button[aria-pressed="true"] {
-  border-color: var(--mk-text);
-  box-shadow: 0 0 0 1px var(--mk-text);
+  border-color: var(--ui-accent);
+  box-shadow: 0 0 0 2px var(--ui-accent);
 }
 .maker-style-picker img,
 .maker-style-picker .maker-cover-fallback {
@@ -2313,7 +2269,7 @@
   white-space: nowrap;
 }
 .maker-sort select {
-  width: auto !important;
+  width: auto;
   min-width: 180px;
 }
 .maker-channel-grid {
@@ -2722,7 +2678,7 @@
     flex-wrap: wrap;
   }
   .maker-reference-row select {
-    width: 100% !important;
+    width: 100%;
   }
   .maker-filterbar select {
     min-width: 0;
@@ -2827,14 +2783,18 @@
   flex: 1;
 }
 .maker-workspace .maker-range-row button {
-  min-height: 30px;
-  padding: 4px 12px;
-  font-size: 12.5px;
+  min-height: var(--ui-control-sm);
+  padding: 0 12px;
+  border: 1px solid var(--ui-line);
+  background: var(--ui-panel);
+  color: var(--ui-text);
+  font-size: 13px;
+  font-weight: 600;
 }
 .maker-workspace .maker-range-row button[aria-pressed="true"] {
-  background: var(--mk-text);
-  border-color: var(--mk-text);
-  color: var(--mk-bg);
+  border-color: color-mix(in srgb, var(--ui-accent) 70%, transparent);
+  background: var(--ui-accent-soft);
+  color: var(--ui-text);
   opacity: 1;
 }
 .maker-tag.is-accent {
@@ -2874,8 +2834,8 @@
   background: var(--mk-surface);
 }
 .maker-workspace .maker-art-tile[aria-checked="true"] {
-  border-color: var(--mk-text);
-  box-shadow: 0 0 0 2px var(--mk-accent);
+  border-color: var(--ui-accent);
+  box-shadow: 0 0 0 2px var(--ui-accent);
 }
 .maker-art-tile strong {
   margin-top: 6px;
@@ -3169,21 +3129,22 @@
   font-weight: 600;
 }
 .maker-scene-cast button {
-  min-height: 30px;
+  min-height: var(--ui-control-sm);
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 3px 9px 3px 4px;
-  border: 1px solid var(--mk-line);
+  padding: 0 12px 0 4px;
+  border: 1px solid var(--ui-line);
   border-radius: 999px;
-  color: var(--mk-muted);
-  background: transparent;
-  font-size: 12px;
+  color: var(--ui-text);
+  background: var(--ui-panel);
+  font-size: 13px;
+  font-weight: 600;
 }
 .maker-scene-cast button[aria-pressed="true"] {
-  border-color: var(--mk-text);
-  color: var(--mk-text);
-  background: var(--mk-accent-soft);
+  border-color: color-mix(in srgb, var(--ui-accent) 70%, transparent);
+  background: var(--ui-accent-soft);
+  color: var(--ui-text);
 }
 .maker-scene-cast img {
   width: 22px;
@@ -3332,8 +3293,8 @@
   background: var(--mk-surface);
 }
 .maker-workspace .maker-source-option[aria-checked="true"] {
-  border-color: var(--mk-text);
-  box-shadow: 0 0 0 2px var(--mk-accent);
+  border-color: var(--ui-accent);
+  box-shadow: 0 0 0 2px var(--ui-accent);
 }
 .maker-source-option[data-busy="true"] {
   pointer-events: none;
@@ -3451,18 +3412,18 @@
   margin-right: 4px;
 }
 .maker-workspace input.maker-time-input {
-  width: 76px !important;
+  width: 76px;
   min-height: 30px;
-  padding: 3px 8px !important;
-  font-size: 12.5px !important;
+  padding: 3px 8px;
+  font-size: 12.5px;
   font-variant-numeric: tabular-nums;
 }
 .maker-workspace input.maker-music-mood {
   flex: 1;
   min-width: 120px;
   min-height: 30px;
-  padding: 3px 10px !important;
-  font-size: 12.5px !important;
+  padding: 3px 10px;
+  font-size: 12.5px;
 }
 .maker-music-row-head .maker-actions {
   gap: 2px;
@@ -3729,7 +3690,6 @@
   width: 16px;
   height: 16px;
   margin: 0;
-  accent-color: #171717;
   cursor: pointer;
 }
 .maker-workspace .maker-yt-bookmark {
@@ -4095,8 +4055,8 @@
   text-align: left;
 }
 .maker-workspace .maker-thumb-picks button[aria-pressed="true"] {
-  border-color: var(--mk-text);
-  box-shadow: 0 0 0 2px var(--mk-accent);
+  border-color: var(--ui-accent);
+  box-shadow: 0 0 0 2px var(--ui-accent);
 }
 .maker-workspace .maker-thumb-picks button:disabled {
   opacity: 0.4;
@@ -4418,7 +4378,6 @@
   width: 16px;
   height: 16px;
   margin: 0;
-  accent-color: var(--mk-accent);
   cursor: pointer;
 }
 .maker-channel-tile-tag {
@@ -4720,11 +4679,7 @@
   inset: 0;
   background: linear-gradient(100deg, transparent 30%, color-mix(in srgb, var(--mk-text) 8%, transparent) 50%, transparent 70%);
   background-size: 250% 100%;
-  animation: sb-shimmer 1.6s linear infinite;
-}
-@keyframes sb-shimmer {
-  from { background-position: 120% 0; }
-  to { background-position: -120% 0; }
+  animation: ui-shimmer 1.4s ease-in-out infinite;
 }
 .sb-busy {
   position: absolute;

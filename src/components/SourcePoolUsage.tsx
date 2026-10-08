@@ -29,7 +29,7 @@ function hasActiveDeepScan(scans: DeepScan[] | undefined) {
 export function SourceUsageRow({ source, usage, issue, deepScan, dark = false, onRemove }: {
   source: PoolSource; usage?: PoolUsage; issue?: boolean; deepScan?: DeepScan | null; dark?: boolean; onRemove?: (url: string) => void;
 }) {
-  const secondary = dark ? "text-[#F8F5E8]/70" : "text-[#1A1A1A]/70";
+  const secondary = dark ? "text-[var(--ui-text)]/70" : "text-[var(--ui-text)]/70";
   const scanning = deepScan && ["queued", "running"].includes(String(deepScan.status || ""));
   const status = scanning
     ? (deepScan.message || `Scanning full catalog${deepScan.videoCount ? ` · ${Number(deepScan.videoCount).toLocaleString()} so far` : ""}`)
@@ -41,7 +41,7 @@ export function SourceUsageRow({ source, usage, issue, deepScan, dark = false, o
   const label = usage?.total ? `${usage.used.toLocaleString()} / ${usage.total.toLocaleString()} used` : scanning ? "Quick load · full scan" : "No scanned videos";
   return <div className="source-pool-row-wrap overflow-x-auto">
     <div className="source-pool-row flex min-w-0 items-center gap-2 py-2.5 sm:min-w-[680px] sm:gap-3">
-      <div className={`grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-full ${dark ? "bg-[#F8F5E8]/10" : "bg-[#1A1A1A]/6"}`}>
+      <div className={`grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-full ${dark ? "bg-[var(--ui-text)]/10": "bg-[var(--ui-text)]/6"}`}>
         {source.imageUrl ? <img src={source.imageUrl} alt="" className="h-full w-full object-cover" /> : <span className="text-xs font-black" aria-hidden="true">{source.title.slice(0, 1).toUpperCase()}</span>}
       </div>
       <div className="source-pool-source-identity min-w-0 max-w-[7.5rem] shrink-0 sm:min-w-[9.5rem] sm:max-w-[14rem]">
@@ -57,8 +57,8 @@ export function SourceUsageRow({ source, usage, issue, deepScan, dark = false, o
       <span className={`source-pool-source-status w-[8.5rem] shrink-0 truncate text-xs font-semibold tabular-nums ${secondary}`} title={status}>{status}</span>
       <span className={`source-pool-source-count w-[11rem] shrink-0 truncate text-right text-xs font-semibold tabular-nums ${secondary}`}>{usage ? `${label} · ${usage.remaining.toLocaleString()} left` : label}</span>
       <div className="flex shrink-0 items-center gap-0.5">
-        <a href={source.url} target="_blank" rel="noreferrer" aria-label={`Open ${source.title}`} className="inline-flex h-8 w-8 items-center justify-center rounded-lg hover:bg-[#f9dc0b]/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"><ExternalLink className="h-4 w-4" /></a>
-        {!source.primary && onRemove && <button type="button" aria-label={`Remove ${source.title}`} onClick={() => onRemove(source.url)} className="inline-flex h-8 w-8 items-center justify-center rounded-lg hover:bg-[#f9dc0b]/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"><Trash2 className="h-4 w-4" /></button>}
+        <a href={source.url} target="_blank" rel="noreferrer" aria-label={`Open ${source.title}`} className="inline-flex h-8 w-8 items-center justify-center rounded-lg hover:bg-[var(--ui-accent)]/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"><ExternalLink className="h-4 w-4" /></a>
+        {!source.primary && onRemove && <button type="button" aria-label={`Remove ${source.title}`} onClick={() => onRemove(source.url)} className="inline-flex h-8 w-8 items-center justify-center rounded-lg hover:bg-[var(--ui-accent)]/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"><Trash2 className="h-4 w-4" /></button>}
       </div>
     </div>
   </div>;
@@ -132,10 +132,10 @@ export function SourcePoolUsage({ agentId, sources, dark, active, revision, tagg
     })).values()]
     : sources;
   const scanning = hasActiveDeepScan(current?.deepScans);
-  return <div className={`mt-3 min-w-0 ${dark ? "text-[#F8F5E8]" : "text-[#1A1A1A]"}`}>
+  return <div className={`mt-3 min-w-0 ${dark ? "text-[var(--ui-text)]": "text-[var(--ui-text)]"}`}>
     <div className="flex items-center justify-between gap-3 text-xs">
       <span role="status">{error || (loading && !current ? "Loading usage…" : scanning ? "Full catalog scanning in background" : "Source usage")}</span>
-      {agentId && <button type="button" onClick={() => setRefresh((n) => n + 1)} disabled={loading} aria-label="Refresh source usage" className="inline-flex h-9 w-9 items-center justify-center rounded-lg hover:bg-[#f9dc0b]/20 disabled:opacity-40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"><RefreshCw className="h-4 w-4" /></button>}
+      {agentId && <button type="button" onClick={() => setRefresh((n) => n + 1)} disabled={loading} aria-label="Refresh source usage" className="inline-flex h-9 w-9 items-center justify-center rounded-lg hover:bg-[var(--ui-accent)]/20 disabled:opacity-40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"><RefreshCw className="h-4 w-4" /></button>}
     </div>
     {visible.map((source) => <SourceUsageRow key={poolSourceIdentity(source.url)} source={source}
       usage={current?.sources.find((row) => row.key === poolSourceIdentity(source.url))}

@@ -1,13 +1,13 @@
 /* Site-wide toasts (src/utils/toast.ts). Dark-first, AutoYT yellow only for actions. */
 .toaster {
-  --toast-bg: #1b1d21;
-  --toast-line: rgb(255 255 255 / 0.1);
-  --toast-text: #f2f1ee;
-  --toast-muted: #b4b2ad;
-  --toast-error: #ff8a7a;
-  --toast-success: #7fd8a2;
-  --toast-info: #9cc3ff;
-  --toast-shadow: 0 18px 40px -12px rgb(0 0 0 / 0.6), 0 4px 12px -4px rgb(0 0 0 / 0.45);
+  --toast-bg: var(--ui-raised);
+  --toast-line: var(--ui-line);
+  --toast-text: var(--ui-text);
+  --toast-muted: var(--ui-text-muted);
+  --toast-error: var(--ui-danger);
+  --toast-success: var(--ui-success);
+  --toast-info: #6b9cff;
+  --toast-shadow: var(--ui-shadow-lift);
   /* Bottom-left: stays out of the header and stays dismissible by hand. */
   position: fixed;
   left: max(16px, env(safe-area-inset-left));
@@ -19,16 +19,6 @@
   gap: 8px;
   width: min(400px, calc(100vw - 32px));
   pointer-events: none;
-}
-:root[data-theme="light"] .toaster {
-  --toast-bg: #ffffff;
-  --toast-line: rgb(26 26 26 / 0.1);
-  --toast-text: #1a1a1a;
-  --toast-muted: #5c5a55;
-  --toast-error: #c0392b;
-  --toast-success: #1e7a47;
-  --toast-info: #2a5cb8;
-  --toast-shadow: 0 18px 40px -14px rgb(26 26 26 / 0.22), 0 4px 12px -4px rgb(26 26 26 / 0.12);
 }
 .toast {
   position: relative;
@@ -86,13 +76,13 @@
   padding: 5px 12px;
   border: 0;
   border-radius: 8px;
-  background: #f9dc0b;
-  color: #1a1a1a;
+  background: var(--ui-accent);
+  color: var(--ui-accent-ink);
   font: 700 13px/1.3 Inter, ui-sans-serif, system-ui, sans-serif;
   cursor: pointer;
   transition: background-color 150ms ease;
 }
-.toast-action:hover { background: #ffe53d; }
+.toast-action:hover { background: var(--ui-accent-hover); }
 .toast-close {
   display: grid;
   place-items: center;
@@ -109,10 +99,6 @@
 .toast-close:hover {
   background: var(--toast-line);
   color: var(--toast-text);
-}
-.toast :focus-visible {
-  outline: 2px solid #f9dc0b;
-  outline-offset: 2px;
 }
 /* A hairline that drains while the toast is on screen; hovering pauses it. */
 .toast-timer {

@@ -2,17 +2,18 @@
    popup anchored to it (bottom sheet on phones). Uses creator workspace tokens. */
 .mk-suggest,
 .mk-suggest-panel {
-  --sg-surface: var(--mk-surface, #fff);
-  --sg-sunken: var(--mk-sunken, #f2f0eb);
-  --sg-text: var(--mk-text, #1a1a1a);
-  --sg-muted: var(--mk-muted, #5f5d58);
-  --sg-faint: var(--mk-faint, #8b8983);
-  --sg-line: var(--mk-line, #e4e1da);
-  --sg-line-strong: var(--mk-line-strong, #cfcbc1);
-  --sg-accent: var(--mk-accent, #f9dc0b);
-  --sg-accent-soft: var(--mk-accent-soft, #fdf5c2);
-  --sg-accent-text: var(--mk-accent-text, #7a6600);
-  --sg-bad: var(--mk-bad, #a13a2a);
+  /* The site tokens (index.css). */
+  --sg-surface: var(--ui-panel);
+  --sg-sunken: var(--ui-sunken);
+  --sg-text: var(--ui-text);
+  --sg-muted: var(--ui-text-muted);
+  --sg-faint: var(--ui-text-faint);
+  --sg-line: var(--ui-line);
+  --sg-line-strong: var(--ui-line-strong);
+  --sg-accent: var(--ui-accent);
+  --sg-accent-soft: var(--ui-accent-soft);
+  --sg-accent-text: var(--ui-accent-text);
+  --sg-bad: var(--ui-danger);
 }
 .mk-suggest {
   display: flex;
@@ -36,17 +37,17 @@
 }
 .maker-workspace .mk-suggest .mk-suggest-chip,
 .mk-suggest .mk-suggest-chip {
+  /* The .ui-chip look (the maker page's button base needs the longer selector). */
   min-height: 28px;
   max-width: 220px;
-  padding: 4px 10px;
+  padding: 4px 12px;
   line-height: 18px;
-  border: 1px solid var(--glass-input-line);
-  border-top-color: var(--glass-input-edge);
+  border: 1px solid var(--ui-line);
   border-radius: 999px;
-  background: var(--glass-input-bg);
-  color: var(--sg-text);
+  background: var(--ui-panel);
+  color: var(--ui-text);
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -56,8 +57,8 @@
 }
 .maker-workspace .mk-suggest .mk-suggest-chip:hover,
 .mk-suggest .mk-suggest-chip:hover {
-  border-color: var(--sg-line-strong);
-  background: var(--sg-surface);
+  border-color: var(--ui-line-strong);
+  background: var(--ui-hover);
 }
 .mk-suggest-thumb {
   width: 20px;
@@ -145,23 +146,15 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid var(--glass-input-line);
-  border-top-color: var(--glass-input-edge);
-  border-radius: 12px;
-  background: var(--glass-panel-bg);
-  color: var(--sg-text);
-  box-shadow: var(--glass-input-shadow);
-  -webkit-backdrop-filter: blur(22px) saturate(1.6);
-  backdrop-filter: blur(22px) saturate(1.6);
+  /* The .ui-menu surface. */
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-raised);
+  color: var(--ui-text);
+  box-shadow: var(--ui-shadow-lift);
   font-family: Inter, ui-sans-serif, system-ui, sans-serif;
   font-size: 14px;
-  animation: mk-suggest-in 0.18s cubic-bezier(0.16, 1, 0.3, 1);
-}
-@keyframes mk-suggest-in {
-  from {
-    opacity: 0;
-    transform: translateY(-4px);
-  }
+  animation: ui-menu-in 140ms var(--ui-ease);
 }
 .mk-suggest-panel-head {
   display: flex;
@@ -184,20 +177,23 @@
   min-height: 32px;
   padding: 0;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--ui-radius-sm);
   background: transparent;
-  color: var(--sg-muted);
+  color: var(--ui-text-muted);
   display: grid;
   place-items: center;
   cursor: pointer;
+}
+.mk-suggest-panel .mk-suggest-panel-head button:hover,
+.mk-suggest-panel .mk-suggest-fav:hover {
+  background: var(--ui-hover);
+  color: var(--ui-text);
 }
 .mk-suggest-list {
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 2px 6px 8px;
-  scrollbar-width: thin;
-  scrollbar-color: var(--sg-line-strong) transparent;
 }
 .mk-suggest-item {
   display: grid;
@@ -278,9 +274,9 @@
   min-height: 32px;
   padding: 0;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--ui-radius-sm);
   background: transparent;
-  color: var(--sg-faint);
+  color: var(--ui-text-faint);
   display: grid;
   place-items: center;
   cursor: pointer;
@@ -291,17 +287,21 @@
 .mk-suggest-panel .mk-suggest-fav[aria-pressed="true"] svg {
   fill: currentColor;
 }
+/* The .ui-btn.is-primary.is-sm look. */
 .mk-suggest-panel .mk-suggest-use {
-  min-height: 32px;
-  padding: 5px 12px;
+  min-height: var(--ui-control-sm);
+  padding: 0 12px;
   border: 0;
-  border-radius: 8px;
-  background: var(--sg-accent);
-  color: #171717;
+  border-radius: 999px;
+  background: var(--ui-accent);
+  color: var(--ui-accent-ink);
   font: inherit;
-  font-size: 12.5px;
-  font-weight: 650;
+  font-size: 13px;
+  font-weight: 600;
   cursor: pointer;
+}
+.mk-suggest-panel .mk-suggest-use:hover {
+  background: var(--ui-accent-hover);
 }
 .mk-suggest-error {
   margin: 6px 8px;
@@ -320,18 +320,13 @@
   color: var(--sg-faint);
 }
 .mk-suggest-spin {
-  animation: mk-suggest-spin 0.9s linear infinite;
-}
-@keyframes mk-suggest-spin {
-  to {
-    transform: rotate(360deg);
-  }
+  animation: ui-spin 0.8s linear infinite;
 }
 .mk-suggest-scrim {
   position: fixed;
   inset: 0;
   z-index: 1099;
-  background: rgb(17 18 20 / 0.36);
+  background: var(--ui-scrim);
 }
 .mk-suggest-panel.is-sheet {
   inset: auto 0 0 0;

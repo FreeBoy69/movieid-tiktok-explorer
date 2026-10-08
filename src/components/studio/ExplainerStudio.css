@@ -31,56 +31,45 @@
 .exs-link:hover {
   color: var(--mks-text);
 }
-.exs-ghost,
-.exs-primary {
+/* Same values as .ui-btn. */
+.exs-ghost {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 7px;
-  min-height: 40px;
+  gap: 8px;
+  min-height: var(--ui-control);
   padding: 0 16px;
-  border-radius: 10px;
+  border: 1px solid var(--ui-line-strong);
+  background: transparent;
+  color: var(--ui-text);
   font-size: 14px;
   font-weight: 600;
-  transition: background-color 160ms, border-color 160ms, opacity 160ms;
-}
-.exs-ghost {
-  border: 1px solid var(--mks-line);
-  background: var(--mks-fill);
-  color: var(--mks-text);
+  transition: background-color var(--ui-duration) ease, border-color var(--ui-duration) ease;
 }
 .exs-ghost:hover:not(:disabled) {
-  background: var(--mks-fill-strong);
+  background: var(--ui-hover);
 }
-.exs-primary {
-  border: 0;
-  background: var(--mks-pink);
-  color: var(--mks-on-accent);
-}
-.exs-primary:hover:not(:disabled) {
-  background: var(--mks-pink-hover);
-}
-.exs-primary:disabled,
 .exs-ghost:disabled {
-  opacity: 0.45;
+  opacity: 0.5;
 }
+/* Same values as .ui-icon-btn. */
 .exs-icon {
   display: grid;
   place-items: center;
-  width: 30px;
-  height: 30px;
+  width: var(--ui-control-sm);
+  height: var(--ui-control-sm);
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--ui-radius-sm);
   background: transparent;
-  color: var(--mks-muted);
-  transition: background-color 160ms, color 160ms;
+  color: var(--ui-text-muted);
+  transition: background-color var(--ui-duration) ease, color var(--ui-duration) ease;
 }
 .exs-icon:hover:not(:disabled) {
-  background: var(--mks-fill-strong);
-  color: var(--mks-text);
+  background: var(--ui-hover);
+  color: var(--ui-text);
 }
 .exs-icon:disabled {
-  opacity: 0.3;
+  opacity: 0.5;
 }
 
 /* Drafted scripts */
@@ -194,9 +183,11 @@
   outline: none;
   transition: border-color 160ms;
 }
-.exs-title input:hover,
-.exs-title input:focus {
-  border-bottom-color: var(--mks-line-strong);
+.exs-title input:hover {
+  border-bottom-color: var(--ui-line-strong);
+}
+.exs-title input:focus-visible {
+  border-bottom-color: var(--ui-focus);
 }
 .exs-summary {
   max-width: 70ch;
@@ -272,9 +263,11 @@
   font-weight: 700;
   outline: none;
 }
-.exs-chapter-title:hover,
-.exs-chapter-title:focus {
-  border-bottom-color: var(--mks-line-strong);
+.exs-chapter-title:hover {
+  border-bottom-color: var(--ui-line-strong);
+}
+.exs-chapter-title:focus-visible {
+  border-bottom-color: var(--ui-focus);
 }
 .exs-count {
   flex-shrink: 0;
@@ -386,7 +379,7 @@ button.exs-visual:focus-visible .exs-visual-x {
   transition: border-color 160ms;
 }
 .exs-lines li:focus-within {
-  border-left-color: var(--mks-pink);
+  border-left-color: var(--ui-focus);
 }
 .exs-lines textarea {
   display: block;
@@ -519,162 +512,6 @@ button.exs-visual:focus-visible .exs-visual-x {
 .exs-clone .prs-sheet-sub {
   margin: -6px 0 0;
 }
-.exs-field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-size: 13px;
-  font-weight: 600;
-}
-.exs-field input {
-  height: 42px;
-  padding: 0 12px;
-  border: 1px solid var(--mks-line);
-  border-radius: 10px;
-  background: var(--mks-fill);
-  color: var(--mks-text);
-  font: inherit;
-  font-size: 15px;
-  font-weight: 500;
-  outline: none;
-}
-.exs-field input:focus {
-  border-color: var(--mks-line-strong);
-}
-.exs-name-row {
-  position: relative;
-}
-.exs-name-row input {
-  width: 100%;
-  padding-right: 48px;
-}
-.exs-name-shuffle {
-  position: absolute;
-  top: 50%;
-  right: 5px;
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  border: 0;
-  background: transparent;
-  color: var(--mks-muted);
-  transform: translateY(-50%);
-  cursor: pointer;
-  transition: background-color 160ms ease-out, color 160ms ease-out;
-}
-.exs-name-shuffle:hover:not(:disabled) {
-  background: var(--mks-line);
-  color: var(--mks-text);
-}
-.exs-name-shuffle:focus-visible {
-  outline: 2px solid var(--mks-line-strong);
-  outline-offset: 1px;
-}
-.exs-name-shuffle svg {
-  transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-.exs-name-shuffle:active:not(:disabled) svg {
-  transform: rotate(-20deg) scale(0.92);
-}
-@media (prefers-reduced-motion: reduce) {
-  .exs-name-shuffle, .exs-name-shuffle svg { transition: none; }
-}
-.exs-clone-tabs button {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-.exs-record {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.exs-passage {
-  margin: 0;
-  padding: 14px 16px;
-  border-radius: 12px;
-  background: var(--mks-fill);
-  font-size: 16px;
-  line-height: 1.6;
-}
-.exs-record-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-}
-.exs-record-row audio {
-  flex: 1;
-  min-width: 200px;
-  height: 40px;
-}
-.exs-rec {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 42px;
-  padding: 0 16px;
-  border: 1px solid var(--mks-line);
-  border-radius: 999px;
-  background: var(--mks-fill);
-  font-size: 14px;
-  font-weight: 700;
-}
-.exs-rec:hover:not(:disabled) {
-  background: var(--mks-fill-strong);
-}
-.exs-rec.is-live {
-  border-color: transparent;
-  background: var(--cs-bad);
-  color: #fff;
-}
-.exs-rec:disabled {
-  opacity: 0.45;
-}
-.exs-drop {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 64px;
-  padding: 12px 16px;
-  border: 1px dashed var(--mks-line-strong);
-  border-radius: 12px;
-  color: var(--mks-muted);
-  font-size: 14px;
-  cursor: pointer;
-}
-.exs-drop:focus-within {
-  outline: 2px solid var(--mks-focus);
-  outline-offset: 2px;
-}
-.exs-drop input {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  cursor: pointer;
-}
-.exs-check {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  font-size: 14px;
-  line-height: 1.45;
-  cursor: pointer;
-}
-.exs-check input {
-  flex-shrink: 0;
-  width: 18px;
-  height: 18px;
-  margin: 1px 0 0;
-  accent-color: var(--cs-accent);
-}
-.exs-sheet-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-}
 
 @media (max-width: 960px) {
   .exs-layout {
@@ -725,12 +562,6 @@ button.exs-visual:focus-visible .exs-visual-x {
     flex-wrap: wrap;
     gap: 8px 14px;
     min-height: 56px;
-  }
-  .exs-sheet-actions {
-    flex-direction: column-reverse;
-  }
-  .exs-sheet-actions button {
-    width: 100%;
   }
   .exs-visual-menu {
     position: fixed;

@@ -7,8 +7,6 @@
   min-height: 0;
   height: 100%;
   overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: var(--cs-line-strong) transparent;
 }
 .mt-inner {
   width: 100%;
@@ -124,8 +122,6 @@
     flex: 1;
     min-height: 0;
     overflow-y: auto;
-    scrollbar-width: thin;
-    scrollbar-color: var(--cs-line-strong) transparent;
   }
   .mt-panel-scroll .mt-primary {
     position: sticky;
@@ -133,9 +129,7 @@
     z-index: 2;
     flex-shrink: 0;
     margin-top: auto;
-    height: 50px;
-    border-radius: 14px;
-    font-size: 15px;
+    min-height: 50px;
     box-shadow: 0 0 0 16px var(--cs-surface);
   }
   .mt-stage {
@@ -145,8 +139,6 @@
   .mt-stage-inner {
     min-height: 0;
     overflow-y: auto;
-    scrollbar-width: thin;
-    scrollbar-color: var(--cs-line-strong) transparent;
   }
 }
 .mt-field {
@@ -167,43 +159,33 @@
   color: var(--cs-faint);
   font-weight: 500;
 }
-.mt-input,
-.mt-textarea {
-  width: 100%;
-  min-width: 0;
-  padding: 10px 12px;
-  border: 1px solid var(--cs-line);
-  border-radius: var(--cs-radius-sm);
-  background: var(--cs-bg);
-  color: var(--cs-text);
-  font: inherit;
-  font-size: 14px;
-  line-height: 1.45;
-  transition: border-color 160ms, box-shadow 160ms;
-}
+/* Fields are .ui-input / .ui-textarea. .mt-textarea only sizes the box; the
+   :not() rules keep Movie Recap's older .mt-input on the canonical look until
+   it moves to .ui-input. */
 .mt-textarea {
   min-height: 84px;
-  resize: vertical;
-  field-sizing: content;
   max-height: 320px;
+  field-sizing: content;
 }
-.mt-input:hover,
-.mt-textarea:hover {
-  border-color: var(--cs-line-strong);
+.mt-input:not(.ui-input) {
+  width: 100%;
+  min-height: var(--ui-field-height);
+  padding: 9px 12px;
+  border: 1px solid var(--ui-line-strong);
+  border-radius: var(--ui-radius-control);
+  background: var(--ui-input);
+  box-shadow: var(--ui-shadow-soft);
+  color: var(--ui-text);
+  font: inherit;
+  font-size: 14px;
 }
-.mt-input:focus,
-.mt-textarea:focus {
+.mt-input:not(.ui-input):focus {
+  border-color: var(--ui-focus);
+  box-shadow: 0 0 0 3px var(--ui-ring);
   outline: none;
-  border-color: var(--cs-line-strong);
-  box-shadow: 0 0 0 3px var(--cs-accent-soft);
 }
-.mt-input::placeholder,
-.mt-textarea::placeholder {
-  color: var(--cs-faint);
-}
-.mt-input:disabled,
-.mt-textarea:disabled {
-  opacity: 0.6;
+.mt-input:not(.ui-input)::placeholder {
+  color: var(--ui-text-faint);
 }
 .mt-row {
   display: flex;
@@ -244,7 +226,7 @@
 }
 /* Option cards are cards, not pills, whatever the global small-control rule says. */
 .mt-panel .cs-option {
-  border-radius: var(--cs-radius-sm) !important;
+  border-radius: var(--ui-radius-control) !important;
 }
 .mt-panel .cs-slot:not(.cs-slot-compact) .cs-slot-filled img,
 .mt-panel .cs-slot:not(.cs-slot-compact) .cs-slot-filled video {
@@ -258,73 +240,52 @@
   gap: 8px;
   margin-top: 8px;
 }
-.mt-link .mt-input {
+.mt-link :is(.ui-input, .mt-input) {
   font-size: 13px;
 }
 .mt-link .mt-secondary {
-  height: 40px;
+  min-height: var(--ui-field-height);
 }
-.mt-primary {
+/* Buttons are .ui-btn (primary = .is-primary.is-lg.is-block). The :not() rules
+   give Movie Recap's older markup the same look until it moves over. */
+.mt-primary:not(.ui-btn) {
   display: inline-flex;
+  width: 100%;
+  min-height: var(--ui-control-lg);
   align-items: center;
   justify-content: center;
   gap: 8px;
-  width: 100%;
-  height: 44px;
-  padding: 0 18px;
+  padding: 0 22px;
   border: 0;
-  border-radius: var(--cs-radius-sm);
-  background: var(--cs-accent);
-  color: var(--cs-accent-ink);
-  font-size: 14px;
-  font-weight: 700;
-  transition: background-color 160ms, color 160ms, transform 120ms;
+  background: var(--ui-accent);
+  color: var(--ui-accent-ink);
+  font-size: 15px;
+  font-weight: 600;
 }
-.mt-primary:hover:not(:disabled) {
-  background: var(--cs-text);
-  color: var(--cs-bg);
+.mt-primary:not(.ui-btn):hover:not(:disabled) {
+  background: var(--ui-accent-hover);
 }
-.mt-primary:active:not(:disabled) {
-  transform: scale(0.985);
+.mt-primary:not(.ui-btn):disabled {
+  opacity: 0.5;
 }
-.mt-primary:disabled {
-  background: var(--cs-sunken);
-  color: var(--cs-faint);
-}
-.mt-secondary,
-.mt-ghost {
+:is(.mt-secondary, .mt-ghost):not(.ui-btn) {
   display: inline-flex;
+  min-height: var(--ui-control-sm);
   align-items: center;
   gap: 6px;
-  height: 34px;
   padding: 0 12px;
-  border: 1px solid var(--cs-line);
-  border-radius: var(--cs-radius-sm);
-  background: var(--cs-surface);
-  color: var(--cs-text);
+  border: 1px solid var(--ui-line-strong);
+  background: transparent;
+  color: var(--ui-text);
   font-size: 13px;
   font-weight: 600;
   white-space: nowrap;
-  transition: border-color 160ms, background-color 160ms, color 160ms;
 }
-.mt-secondary:hover:not(:disabled),
-.mt-ghost:hover:not(:disabled) {
-  border-color: var(--cs-line-strong);
-  background: var(--cs-bg);
-}
-.mt-secondary:disabled,
-.mt-ghost:disabled {
-  color: var(--cs-faint);
-  cursor: not-allowed;
-}
-.mt-ghost {
+.mt-ghost:not(.ui-btn) {
   border-color: transparent;
-  background: transparent;
-  color: var(--cs-muted);
 }
-.mt-ghost:hover:not(:disabled) {
-  border-color: transparent;
-  color: var(--cs-text);
+:is(.mt-secondary, .mt-ghost):not(.ui-btn):hover:not(:disabled) {
+  background: var(--ui-hover);
 }
 .mt-stage {
   display: flex;
@@ -456,8 +417,8 @@
 }
 .mt-output:focus {
   outline: none;
-  border-color: var(--cs-line-strong);
-  box-shadow: 0 0 0 3px var(--cs-accent-soft);
+  border-color: var(--ui-focus);
+  box-shadow: 0 0 0 3px var(--ui-ring);
 }
 .mt-section {
   display: flex;
@@ -503,67 +464,24 @@
   font-weight: 500;
   overflow-wrap: anywhere;
 }
-.mt-tag {
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--cs-sunken);
-  color: var(--cs-faint);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  white-space: nowrap;
-}
-.mt-icon {
-  display: inline-grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  flex-shrink: 0;
-  border: 1px solid transparent;
-  border-radius: var(--cs-radius-sm);
-  background: transparent;
-  color: var(--cs-muted);
-  transition: background-color 140ms, color 140ms, border-color 140ms;
-}
-.mt-icon:hover {
-  border-color: var(--cs-line);
-  background: var(--cs-bg);
-  color: var(--cs-text);
-}
 .mt-icon[data-done="true"] {
-  color: var(--cs-accent-text);
+  color: var(--ui-accent-text);
 }
 .mt-chips {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
 }
-.mt-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 32px;
-  padding: 0 12px;
-  border: 1px solid var(--cs-line);
-  border-radius: 999px;
-  background: var(--cs-surface);
-  color: var(--cs-text);
-  font-size: 13px;
-  font-weight: 500;
-  transition: border-color 140ms, background-color 140ms, color 140ms;
-}
-.mt-chip:hover {
-  border-color: var(--cs-line-strong);
-}
-.mt-chip[aria-pressed="true"] {
-  border-color: var(--cs-text);
-  background: var(--cs-text);
-  color: var(--cs-bg);
-}
+/* Tag toggles are .ui-chip; an excluded tag reads struck through. */
 .mt-chip[aria-pressed="false"] {
-  color: var(--cs-muted);
+  color: var(--ui-text-muted);
   text-decoration: line-through;
-  text-decoration-color: var(--cs-faint);
+  text-decoration-color: var(--ui-text-faint);
+}
+.mt-tagchip {
+  min-height: 26px;
+  padding: 0 10px;
+  font-size: 12px;
 }
 .mt-chip-group {
   display: flex;
@@ -773,20 +691,11 @@
 .mt-skeleton span {
   display: block;
   height: 14px;
-  border-radius: 6px;
-  background: linear-gradient(90deg, var(--cs-line) 0%, var(--cs-surface) 50%, var(--cs-line) 100%);
-  background-size: 200% 100%;
-  animation: mt-shimmer 1.4s ease-in-out infinite;
 }
 .mt-skeleton span:nth-child(2) { width: 82%; }
 .mt-skeleton span:nth-child(3) { width: 64%; }
-@keyframes mt-shimmer {
-  from { background-position: 200% 0; }
-  to { background-position: -200% 0; }
-}
 @media (prefers-reduced-motion: reduce) {
-  .mt-progress-bar[data-indeterminate="true"] > span,
-  .mt-skeleton span {
+  .mt-progress-bar[data-indeterminate="true"] > span {
     animation: none;
   }
 }
@@ -795,7 +704,7 @@
     padding: 16px 16px 28px;
   }
   /* Narrow rows keep the title readable; the angle tag goes, the count and actions stay. */
-  .mt-list .mt-tag {
+  .mt-list .ui-badge {
     display: none;
   }
   .mt-list li {
@@ -818,7 +727,7 @@
 .mt .sl-inner { padding-top: 24px; }
 .mt-box.mt-panel { display: block; padding: 0; border-color: var(--ui-line-strong); border-radius: 20px; background: var(--ui-input); box-shadow: var(--ui-shadow-soft); overflow: visible; }
 .mt-box .mt-panel-scroll { flex: none; min-height: 0; overflow: visible; padding: 18px 20px; }
-.mt-box .mt-panel-scroll .mt-primary { position: static; justify-self: end; align-self: flex-end; width: auto; min-width: 160px; margin-top: 4px; padding: 0 22px; height: 44px; border-radius: 999px; box-shadow: none; }
+.mt-box .mt-panel-scroll .mt-primary { position: static; justify-self: end; align-self: flex-end; width: auto; min-width: 160px; margin-top: 4px; box-shadow: none; }
 .mt-results.mt-stage { min-height: 320px; margin-top: 22px; border-radius: 20px; }
 @media (min-width: 1024px) {
   .mt-results.mt-stage { min-height: 420px; }

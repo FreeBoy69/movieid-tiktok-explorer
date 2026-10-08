@@ -9,7 +9,7 @@ import { toast } from "../utils/toast";
 import { DeleteAccountDialog, openBilling, SupportDialog, type BillingOffer } from "./AccountServices";
 import { PlatformGrid, socialPlatform } from "./SocialPlatforms";
 import { useChannels } from "./useChannels";
-import { Meter } from "./ui/controls";
+import { Meter, Segmented } from "./ui/controls";
 import "./AccountPage.css";
 import { confirm } from "./ui/Dialog";
 
@@ -152,7 +152,7 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 function Pending({ error, onRetry }: { error: string; onRetry: () => void }) {
   return error
     ? <p className="acp-note is-error" role="alert">{error} <button type="button" className="acp-link" onClick={onRetry}>Try again</button></p>
-    : <p className="acp-note"><Loader2 size={15} className="acp-spin" aria-hidden="true" /> Loading</p>;
+    : <p className="acp-note"><Loader2 size={15} className="ui-spin" aria-hidden="true" /> Loading</p>;
 }
 
 function CreditMeter({ value, max, low }: { value: number; max: number; low?: boolean }) {
@@ -178,10 +178,16 @@ function ProfileSection({ auth, theme, onThemeChange, onSection }: { auth: AuthS
         </div>
       </Panel>
       <Panel title="Appearance">
-        <div className="acp-segmented" role="radiogroup" aria-label="Theme">
-          <button type="button" role="radio" aria-checked={theme === "light"} onClick={() => onThemeChange("light")}><Sun size={16} aria-hidden="true" />Light</button>
-          <button type="button" role="radio" aria-checked={theme === "dark"} onClick={() => onThemeChange("dark")}><Moon size={16} aria-hidden="true" />Dark</button>
-        </div>
+        <Segmented
+          label="Theme"
+          className="acp-theme"
+          value={theme === "light" ? "light" : "dark"}
+          onChange={(next) => onThemeChange(next)}
+          options={[
+            { value: "light", label: "Light", icon: <Sun size={16} aria-hidden="true" /> },
+            { value: "dark", label: "Dark", icon: <Moon size={16} aria-hidden="true" /> },
+          ]}
+        />
       </Panel>
       <div className="acp-grid">
         <button type="button" className="acp-tile" onClick={() => onSection("billing")}>
@@ -251,9 +257,9 @@ function BillingSection() {
         )}
         {canBuy ? (
           <div className="acp-actions">
-            <button type="button" className="acp-btn is-primary" onClick={() => openBilling("plans")}>{hasPlan ? "Change plan" : "Choose a plan"}</button>
-            {hasPlan && !billing.unlimited ? <button type="button" className="acp-btn" onClick={() => openBilling("packs")}>Buy credits</button> : null}
-            {hasPlan ? <button type="button" className="acp-btn is-ghost" disabled={portalBusy} onClick={() => void openPortal()}>{portalBusy ? <Loader2 size={15} className="acp-spin" aria-hidden="true" /> : null}Manage subscription</button> : null}
+            <button type="button" className="ui-btn is-primary" onClick={() => openBilling("plans")}>{hasPlan ? "Change plan" : "Choose a plan"}</button>
+            {hasPlan && !billing.unlimited ? <button type="button" className="ui-btn" onClick={() => openBilling("packs")}>Buy credits</button> : null}
+            {hasPlan ? <button type="button" className="ui-btn is-ghost" disabled={portalBusy} onClick={() => void openPortal()}>{portalBusy ? <Loader2 size={15} className="ui-spin" aria-hidden="true" /> : null}Manage subscription</button> : null}
           </div>
         ) : <p className="acp-note">Manage your plan on autoyt.cc in a browser.</p>}
       </Panel>
@@ -379,12 +385,12 @@ function ChannelsSection({ auth, onRefresh }: { auth: AuthSessionPayload; onRefr
                 <li key={account.id}>
                   <Avatar src={account.thumbnailUrl || ""} name={account.channelTitle} size={40} />
                   <span className="acp-list-main">
-                    <strong>{account.channelTitle}{active ? <span className="acp-chip">Active</span> : null}</strong>
+                    <strong>{account.channelTitle}{active ? <span className="ui-badge is-accent acp-chip">Active</span> : null}</strong>
                     <small>{platformName(account.platform)}{account.channelHandle ? ` · ${account.channelHandle}` : ""}</small>
                   </span>
                   <span className="acp-list-actions">
-                    {!active ? <button type="button" className="acp-btn is-small" disabled={Boolean(busy)} onClick={() => void select(account)}>{busy === `select:${account.id}` ? <Loader2 size={14} className="acp-spin" aria-hidden="true" /> : null}Make active</button> : null}
-                    <button type="button" className="acp-btn is-small is-ghost" disabled={Boolean(busy)} onClick={() => void disconnect(account)} aria-label={`Disconnect ${account.channelTitle}`}>{busy === `remove:${account.id}` ? <Loader2 size={14} className="acp-spin" aria-hidden="true" /> : null}Disconnect</button>
+                    {!active ? <button type="button" className="ui-btn is-sm" disabled={Boolean(busy)} onClick={() => void select(account)}>{busy === `select:${account.id}` ? <Loader2 size={14} className="ui-spin" aria-hidden="true" /> : null}Make active</button> : null}
+                    <button type="button" className="ui-btn is-sm is-ghost" disabled={Boolean(busy)} onClick={() => void disconnect(account)} aria-label={`Disconnect ${account.channelTitle}`}>{busy === `remove:${account.id}` ? <Loader2 size={14} className="ui-spin" aria-hidden="true" /> : null}Disconnect</button>
                   </span>
                 </li>
               );
@@ -455,8 +461,8 @@ function TelegramSection() {
               <Row label="Linked">{day(data.linked.linkedAt)}</Row>
             </Rows>
             <div className="acp-actions">
-              <a className="acp-btn is-primary" href={`https://t.me/${data.botUsername}`} target="_blank" rel="noreferrer"><Send size={15} aria-hidden="true" />Open Telegram</a>
-              <button type="button" className="acp-btn is-ghost" disabled={Boolean(busy)} onClick={() => void unlink()}>{busy === "unlink" ? <Loader2 size={15} className="acp-spin" aria-hidden="true" /> : null}Unlink</button>
+              <a className="ui-btn is-primary" href={`https://t.me/${data.botUsername}`} target="_blank" rel="noreferrer"><Send size={15} aria-hidden="true" />Open Telegram</a>
+              <button type="button" className="ui-btn is-ghost" disabled={Boolean(busy)} onClick={() => void unlink()}>{busy === "unlink" ? <Loader2 size={15} className="ui-spin" aria-hidden="true" /> : null}Unlink</button>
             </div>
           </>
         ) : (
@@ -467,7 +473,7 @@ function TelegramSection() {
               <li>Message the bot. It answers as your agent.</li>
             </ol>
             <div className="acp-actions">
-              <button type="button" className="acp-btn is-primary" disabled={Boolean(busy)} onClick={() => void link()}>{busy === "link" ? <Loader2 size={15} className="acp-spin" aria-hidden="true" /> : <Link2 size={15} aria-hidden="true" />}Link Telegram</button>
+              <button type="button" className="ui-btn is-primary" disabled={Boolean(busy)} onClick={() => void link()}>{busy === "link" ? <Loader2 size={15} className="ui-spin" aria-hidden="true" /> : <Link2 size={15} aria-hidden="true" />}Link Telegram</button>
             </div>
           </>
         )}
@@ -512,19 +518,19 @@ function SecuritySection({ auth, theme, onLogout }: { auth: AuthSessionPayload; 
           <Row label="Signed in on">{overview.data ? `${overview.data.sessions} ${overview.data.sessions === 1 ? "device" : "devices"}` : "…"}</Row>
         </Rows>
         <div className="acp-actions">
-          <button type="button" className="acp-btn" disabled={busy || !others} onClick={() => void signOutOthers()}>{busy ? <Loader2 size={15} className="acp-spin" aria-hidden="true" /> : null}Sign out of other devices</button>
-          <button type="button" className="acp-btn is-ghost" onClick={onLogout}><LogOut size={15} aria-hidden="true" />Log out</button>
+          <button type="button" className="ui-btn" disabled={busy || !others} onClick={() => void signOutOthers()}>{busy ? <Loader2 size={15} className="ui-spin" aria-hidden="true" /> : null}Sign out of other devices</button>
+          <button type="button" className="ui-btn is-ghost" onClick={onLogout}><LogOut size={15} aria-hidden="true" />Log out</button>
         </div>
         <p className="acp-note">A linked Telegram chat counts as a device and reconnects by itself.</p>
       </Panel>
       <Panel title="Help">
         <div className="acp-actions">
-          <button type="button" className="acp-btn" onClick={() => setSupportOpen(true)}><LifeBuoy size={15} aria-hidden="true" />Help & support</button>
+          <button type="button" className="ui-btn" onClick={() => setSupportOpen(true)}><LifeBuoy size={15} aria-hidden="true" />Help & support</button>
         </div>
       </Panel>
       <Panel title="Delete account" description="Deletes your account, projects, agents and connected channels for good. This can't be undone.">
         <div className="acp-actions">
-          <button type="button" className="acp-btn is-danger" onClick={() => setDeleteOpen(true)}><Trash2 size={15} aria-hidden="true" />Delete account</button>
+          <button type="button" className="ui-btn is-danger" onClick={() => setDeleteOpen(true)}><Trash2 size={15} aria-hidden="true" />Delete account</button>
         </div>
       </Panel>
       <SupportDialog open={supportOpen} onClose={() => setSupportOpen(false)} theme={theme} />
