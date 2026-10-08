@@ -661,7 +661,17 @@
 .ve-ov-audio { top: 8px; background: color-mix(in srgb, var(--ve-voice) 70%, var(--ve-text)); }
 .ve-ov-marker { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--ve-marker); }
 .ve-ov-playhead { position: absolute; top: -2px; bottom: -2px; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--ve-accent); }
+/* The overview strip is the horizontal scroll indicator, so the native bar is
+   hidden: it would run the full width, under the track headers too. The app
+   sets the standard scrollbar-width/-color on every element, and any non-auto
+   value makes Chrome and Safari skip the ::-webkit-scrollbar rules, so put
+   those back to auto here. Browsers without ::-webkit-scrollbar (Firefox) hide
+   both bars; the tracks still scroll with the wheel, trackpad, and overview. */
+.ve-tl-scroll { scrollbar-width: auto; scrollbar-color: auto; }
 .ve-tl-scroll::-webkit-scrollbar:horizontal { height: 0; }
+@supports not selector(::-webkit-scrollbar) {
+  .ve-tl-scroll { scrollbar-width: none; }
+}
 .ve-ov-window { position: absolute; top: 0; bottom: 0; max-width: 100%; border-radius: 5px; background: color-mix(in srgb, var(--ve-text) 7%, transparent); box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--ve-text) 55%, transparent) inset; cursor: grab; transition: box-shadow 0.16s ease; }
 .ve-overview:hover .ve-ov-window { box-shadow: 0 0 0 1.5px var(--ve-text) inset; }
 .ve-timeline:has(.ve-overview) .ve-tl-scroll { border-radius: 0; }
