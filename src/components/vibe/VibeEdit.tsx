@@ -2,8 +2,8 @@
 // after Donkey Cut (Apache-2.0, github.com/donkeycut/donkey). The home lists
 // your edits; the editor is a full-screen workspace: tool rail and panel on
 // the left, preview in the middle, assistant on the right, timeline below.
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Check, ChevronDown, Clapperboard, CloudOff, Download, Film, Loader2, Plus, SlidersHorizontal, Square, Trash2, Upload, WandSparkles, ChevronLeft, Link2, PanelBottomClose, PanelBottomOpen, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Pencil } from "lucide-react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { Check, ChevronDown, Clapperboard, CloudOff, Download, Film, Loader2, Plus, SlidersHorizontal, Square, Trash2, Upload, WandSparkles, ChevronLeft, Link2, LayoutGrid, PanelBottomClose, PanelBottomOpen, Search, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Pencil } from "lucide-react";
 import { toast } from "../../utils/toast";
 import { writeDeepLink } from "../../utils/tiktokRoute";
 import { loadVoiceProfiles } from "../../utils/voiceProfiles";
@@ -276,7 +276,7 @@ function StatusStrip() {
 
 // Which cards a viewer keeps open, remembered in this browser only.
 const LAYOUT_KEY = "vibe-edit-layout";
-type Layout = { chat?: boolean; panel?: boolean; timeline?: boolean };
+type Layout = { chat?: boolean; panel?: boolean; timeline?: boolean; nav?: boolean };
 function readLayout(): Layout {
   try {
     return JSON.parse(localStorage.getItem(LAYOUT_KEY) || "{}") as Layout;
@@ -321,7 +321,112 @@ function SaveBadge() {
   );
 }
 
-function Editor({ onBack }: { onBack: () => void }) {
+// The workspace sidebar: a slim icon column, or open, a card listing your edits
+// with the layout toggles at its foot.
+type SideItemProps = { icon: ReactNode; label: string; on?: boolean; onClick: () => void; className?: string };
+function SideItem({ icon, label, on, onClick, className = "" }: SideItemProps) {
+  return (
+    <button type="button" className={`ve-nav-item${on ? " is-on" : ""}${className ? ` ${className}` : ""}`} onClick={onClick} aria-pressed={on === undefined ? undefined : on} aria-label={label} title={label}>
+      {icon}
+      <span>{label}</span>
+    </button>
+  );
+}
+
+function Cover({ cover }: { cover?: ProjectSummary["cover"] }) {
+  return (
+    <span className="ve-nav-cover" aria-hidden="true">
+      {cover?.kind === "image" ? <img src={cover.url} alt="" loading="lazy" /> : cover?.kind === "video" ? <video src={`${cover.url}#t=0.5`} preload="metadata" muted /> : <Clapperboard size={13} strokeWidth={1.75} />}
+    </span>
+  );
+}
+
+function Sidebar({ open, onToggle, onAll, onOpenEdit, onNew, children }: { open: boolean; onToggle: () => void; onAll: () => void; onOpenEdit: (id: string) => void; onNew: () => void; children: ReactNode }) {
+  const currentId = useVibe((s) => s.project.id);
+  const currentName = useVibe((s) => s.project.name);
+  const [edits, setEdits] = useState<ProjectSummary[] | null>(null);
+  const [query, setQuery] = useState("");
+  const search = useRef<HTMLInputElement>(null);
+  const wantSearch = useRef(false);
+
+  // The list refreshes each time the sidebar opens, so a rename elsewhere shows.
+  useEffect(() => {
+    if (!open && edits) return;
+    let live = true;
+    listProjects().then((list) => live && setEdits(list), () => live && setEdits((e) => e || []));
+    return () => {
+      live = false;
+    };
+  }, [open]);
+  useEffect(() => {
+    if (open && wantSearch.current) {
+      wantSearch.current = false;
+      search.current?.focus();
+    }
+  }, [open]);
+
+  const q = query.trim().toLowerCase();
+  const others = (edits || []).filter((e) => e.id !== currentId && (!q || e.name.toLowerCase().includes(q))).slice(0, 8);
+  const current = (edits || []).find((e) => e.id === currentId);
+  const showCurrent = !q || currentName.toLowerCase().includes(q);
+
+  return (
+    <nav className={`ve-nav${open ? " is-open" : ""}`} aria-label="Edits">
+      <div className="ve-nav-head">
+        <button type="button" className="ve-nav-toggle" onClick={onToggle} aria-expanded={open} aria-label={open ? "Collapse sidebar" : "Expand sidebar"} title={open ? "Collapse sidebar" : "Expand sidebar"}>
+          {open ? <PanelLeftClose size={18} strokeWidth={1.75} /> : <PanelLeftOpen size={18} strokeWidth={1.75} />}
+        </button>
+        {open ? (
+          <>
+            <strong>Edits</strong>
+            <button type="button" className="ve-nav-link" onClick={onAll}>
+              See all
+            </button>
+          </>
+        ) : null}
+      </div>
+      {open ? (
+        <label className="ve-nav-search">
+          <Search size={15} strokeWidth={1.75} aria-hidden="true" />
+          <input ref={search} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search edits" aria-label="Search edits" spellCheck={false} />
+        </label>
+      ) : (
+        <SideItem
+          icon={<Search size={18} strokeWidth={1.75} />}
+          label="Search edits"
+          className="ve-nav-wide"
+          onClick={() => {
+            wantSearch.current = true;
+            onToggle();
+          }}
+        />
+      )}
+      <SideItem icon={<Plus size={18} strokeWidth={1.75} />} label="New edit" onClick={onNew} />
+      <div className="ve-nav-list">
+        {showCurrent ? (
+          <button type="button" className="ve-nav-item ve-nav-edit is-current" aria-current="page" title={currentName} aria-label={currentName}>
+            <Cover cover={current?.cover} />
+            <span>{currentName}</span>
+          </button>
+        ) : null}
+        {open
+          ? others.map((e) => (
+              <button key={e.id} type="button" className="ve-nav-item ve-nav-edit" onClick={() => onOpenEdit(e.id)} title={e.name}>
+                <Cover cover={e.cover} />
+                <span>{e.name}</span>
+                <small>{ago(e.updatedAt)}</small>
+              </button>
+            ))
+          : null}
+        {open && q && !showCurrent && !others.length ? <p className="ve-nav-empty">No edit is called “{query.trim()}”.</p> : null}
+      </div>
+      <SideItem icon={<LayoutGrid size={18} strokeWidth={1.75} />} label={`All edits${edits ? ` (${edits.length})` : ""}`} className="ve-nav-wide" onClick={onAll} />
+      <div className="ve-nav-foot">{children}</div>
+    </nav>
+  );
+}
+
+function Editor({ onBack, onOpenEdit, onNew }: { onBack: () => void; onOpenEdit: (id: string) => void; onNew: () => void }) {
   const name = useVibe((s) => s.project.name);
   const aspect = useVibe((s) => s.project.aspect);
   // The assistant is the card on the left; the right card holds the tool panels and the
@@ -330,8 +435,9 @@ function Editor({ onBack }: { onBack: () => void }) {
   const [chatOpen, setChatOpen] = useState(saved.chat ?? true);
   const [tab, setTab] = useState<PanelId | "props" | null>(saved.panel === false ? null : "media");
   const [timelineOpen, setTimelineOpen] = useState(saved.timeline ?? true);
+  const [navOpen, setNavOpen] = useState(saved.nav ?? false);
   // Remember which cards this viewer keeps open.
-  useEffect(() => writeLayout({ chat: chatOpen, panel: Boolean(tab), timeline: timelineOpen }), [chatOpen, tab, timelineOpen]);
+  useEffect(() => writeLayout({ chat: chatOpen, panel: Boolean(tab), timeline: timelineOpen, nav: navOpen }), [chatOpen, tab, timelineOpen, navOpen]);
   const importer = useRef<HTMLInputElement>(null);
   const [snapping, setSnapping] = useState(true);
   const [voicesLoading, setVoicesLoading] = useState(true);
@@ -358,6 +464,7 @@ function Editor({ onBack }: { onBack: () => void }) {
     if (window.matchMedia("(max-width: 900px)").matches) {
       setTab(null);
       setChatOpen(false);
+      setNavOpen(false);
     }
   }, []);
 
@@ -395,7 +502,7 @@ function Editor({ onBack }: { onBack: () => void }) {
 
   return (
     <div
-      className="ve-editor"
+      className={`ve-editor${navOpen ? " has-nav" : ""}`}
       onDragOver={(e) => {
         if (e.dataTransfer.types.includes("Files")) {
           e.preventDefault();
@@ -440,23 +547,13 @@ function Editor({ onBack }: { onBack: () => void }) {
         </div>
       </header>
 
-      <nav className="ve-rail" aria-label="Workspace">
-        <button type="button" className={`ve-rail-btn${chatOpen ? " is-on" : ""}`} onClick={() => setChatOpen((o) => !o)} aria-pressed={chatOpen} aria-label={chatOpen ? "Hide assistant" : "Show assistant"} title={chatOpen ? "Hide assistant" : "Show assistant"}>
-          {chatOpen ? <PanelLeftClose size={18} strokeWidth={1.75} /> : <PanelLeftOpen size={18} strokeWidth={1.75} />}
-        </button>
-        <button type="button" className={`ve-rail-btn${tab ? " is-on" : ""}`} onClick={() => setTab(tab ? null : "media")} aria-pressed={Boolean(tab)} aria-label={tab ? "Hide tools" : "Show tools"} title={tab ? "Hide tools" : "Show media, captions, and more"}>
-          {tab ? <PanelRightClose size={18} strokeWidth={1.75} /> : <PanelRightOpen size={18} strokeWidth={1.75} />}
-        </button>
-        <button type="button" className={`ve-rail-btn${timelineOpen ? " is-on" : ""}`} onClick={() => setTimelineOpen((o) => !o)} aria-pressed={timelineOpen} aria-label={timelineOpen ? "Hide timeline" : "Show timeline"} title={timelineOpen ? "Hide timeline" : "Show timeline"}>
-          {timelineOpen ? <PanelBottomClose size={18} strokeWidth={1.75} /> : <PanelBottomOpen size={18} strokeWidth={1.75} />}
-        </button>
-        <span className="ve-rail-sep" aria-hidden="true" />
-        <button type="button" className="ve-rail-btn" onClick={() => importer.current?.click()} aria-label="Import files" title="Import files">
-          <Plus size={18} strokeWidth={1.75} />
-        </button>
-        <button type="button" className={`ve-rail-btn${tab === "auto" ? " is-on" : ""}`} onClick={() => setTab(tab === "auto" ? "media" : "auto")} aria-pressed={tab === "auto"} aria-label="Auto edit" title="Auto edit">
-          <WandSparkles size={18} strokeWidth={1.75} />
-        </button>
+      <Sidebar open={navOpen} onToggle={() => setNavOpen((o) => !o)} onAll={onBack} onOpenEdit={onOpenEdit} onNew={onNew}>
+        <SideItem icon={<Upload size={18} strokeWidth={1.75} />} label="Import files" onClick={() => importer.current?.click()} />
+        <SideItem icon={<WandSparkles size={18} strokeWidth={1.75} />} label="Auto edit" on={tab === "auto"} onClick={() => setTab(tab === "auto" ? "media" : "auto")} />
+        <span className="ve-nav-sep" aria-hidden="true" />
+        <SideItem icon={chatOpen ? <PanelLeftClose size={18} strokeWidth={1.75} /> : <PanelLeftOpen size={18} strokeWidth={1.75} />} label="Assistant" on={chatOpen} onClick={() => setChatOpen((o) => !o)} />
+        <SideItem icon={tab ? <PanelRightClose size={18} strokeWidth={1.75} /> : <PanelRightOpen size={18} strokeWidth={1.75} />} label="Tools" on={Boolean(tab)} onClick={() => setTab(tab ? null : "media")} />
+        <SideItem icon={timelineOpen ? <PanelBottomClose size={18} strokeWidth={1.75} /> : <PanelBottomOpen size={18} strokeWidth={1.75} />} label="Timeline" on={timelineOpen} onClick={() => setTimelineOpen((o) => !o)} />
         <input
           ref={importer}
           type="file"
@@ -472,7 +569,7 @@ function Editor({ onBack }: { onBack: () => void }) {
             }
           }}
         />
-      </nav>
+      </Sidebar>
 
       <div className={`ve-body${chatOpen ? " has-chat" : ""}${tab ? " has-panel" : ""}${timelineOpen ? "" : " is-tall"}`}>
         {chatOpen ? (
@@ -610,17 +707,28 @@ export default function VibeEdit({ theme, projectId }: { theme: "light" | "dark"
     [open],
   );
 
-  const back = async () => {
+  const flush = async () => {
     vibe.play(false);
     if (vibe.get().save !== "saved") await saveProject(vibe.get().project).catch(() => {});
+  };
+  const back = async () => {
+    await flush();
     setOpenId(undefined);
     writeDeepLink({ view: "vibe-edit" });
+  };
+  const switchTo = async (id: string) => {
+    await flush();
+    open(id);
+  };
+  const startNew = async () => {
+    await flush();
+    await create(vibe.get().project.aspect);
   };
 
   return (
     <div className="ve-root" data-theme={theme}>
       {editing ? (
-        <Editor onBack={() => void back()} />
+        <Editor onBack={() => void back()} onOpenEdit={(id) => void switchTo(id)} onNew={() => void startNew()} />
       ) : openId ? (
         <div className="ve-loading">
           <Loader2 size={20} className="ve-spin" /> Opening your edit…
