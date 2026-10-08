@@ -1,5 +1,5 @@
 // Shared data, API helpers, and controls for Creator Studio apps.
-import { type KeyboardEvent as ReactKeyboardEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type KeyboardEvent as ReactKeyboardEvent, ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, AudioLines, Check, ChevronDown, Download, Film, Link2, Loader2, Plus, Sparkles, Upload, Video, X } from "lucide-react";
 import { confirm } from "../ui/Dialog";
 import { EmptyState, Notice, SearchField, Segmented, Switch, Tabs as UiTabs } from "../ui/controls";
@@ -106,7 +106,80 @@ export function usePopover() {
       document.removeEventListener("keydown", onKey);
     };
   }, [open]);
+  usePopoverPlacement(open, ref);
   return { open, setOpen, ref };
+}
+
+const EDGE = 8;
+const GAP = 8;
+
+// Bottom of the app's fixed header (or any fixed/sticky bar at the top), so panels never open behind it.
+function topLimit() {
+  let limit = EDGE;
+  for (const bar of document.querySelectorAll<HTMLElement>("header.ah, [data-fixed-header]")) {
+    const rect = bar.getBoundingClientRect();
+    if (rect.top <= 0 && rect.bottom > limit) limit = rect.bottom + EDGE;
+  }
+  return limit;
+}
+
+/**
+ * Keeps an open popover panel on screen: it opens below its trigger when it fits (or when
+ * there is more room below), otherwise above; its height is capped to the room it has, with
+ * its own scroll; and it shifts sideways to stay inside the viewport. The panel is any
+ * absolutely positioned child of the popover root other than the trigger. Phone bottom
+ * sheets (position: fixed) are left alone.
+ */
+export function usePopoverPlacement(open: boolean, root: { current: HTMLElement | null }) {
+  useLayoutEffect(() => {
+    if (!open) return;
+    let first = true;
+    const place = () => {
+      const box = root.current;
+      if (!box) return;
+      const trigger = box.firstElementChild as HTMLElement | null;
+      const panel = [...box.children].find((el) => el !== trigger && getComputedStyle(el).position === "absolute") as HTMLElement | undefined;
+      if (!trigger || !panel) return;
+      Object.assign(panel.style, { top: "", bottom: "", maxHeight: "", overflowY: "", translate: "" });
+      const anchor = trigger.getBoundingClientRect();
+      const natural = panel.scrollHeight;
+      const below = window.innerHeight - anchor.bottom - GAP - EDGE;
+      const above = anchor.top - GAP - topLimit();
+      // Below when it fits, else above when that fits; when neither does, open below at full
+      // size and scroll the page just enough to show it (a tall panel squeezed into a small
+      // scroll box is harder to use than a short page scroll).
+      const down = natural <= below || natural > above;
+      panel.style.top = down ? `calc(100% + ${GAP}px)` : "auto";
+      panel.style.bottom = down ? "auto" : `calc(100% + ${GAP}px)`;
+      const viewport = window.innerHeight - topLimit() - EDGE;
+      if (natural > viewport) {
+        panel.style.maxHeight = `${Math.max(200, viewport)}px`;
+        panel.style.overflowY = "auto";
+      }
+      panel.dataset.place = down ? "below" : "above";
+      if (first && down && natural > below) panel.scrollIntoView({ block: "nearest" });
+      first = false;
+      // Last resort when the page can't scroll far enough: cap to what is visible.
+      const placed = panel.getBoundingClientRect();
+      const visible = down ? window.innerHeight - EDGE - placed.top : placed.bottom - topLimit();
+      if (placed.height > visible + 1) {
+        panel.style.maxHeight = `${Math.max(160, Math.floor(visible))}px`;
+        panel.style.overflowY = "auto";
+      }
+      const rect = panel.getBoundingClientRect();
+      const shift = rect.right > window.innerWidth - EDGE ? window.innerWidth - EDGE - rect.right : rect.left < EDGE ? EDGE - rect.left : 0;
+      if (shift) panel.style.translate = `${Math.round(shift)}px 0`;
+    };
+    place();
+    const frame = requestAnimationFrame(place);
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [open, root]);
 }
 
 // The one setting dropdown: a chip that opens a listbox. Skins dress it for each surface
