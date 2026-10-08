@@ -72,6 +72,7 @@ html[data-theme="dark"],
   --ui-accent-hover: #ffe53a;
   --ui-accent-soft: rgb(249 220 11 / 0.18);
   --ui-focus: transparent;
+  --ui-kbd-ring: rgb(27 27 24 / 0.55);
   --ui-danger: #c53b3b;
   --ui-success: #1e7a47;
   --ui-warning: #a66f00;
@@ -84,6 +85,7 @@ html[data-theme="dark"],
 [data-theme="dark"] {
   --ui-accent-soft: rgb(249 220 11 / 0.14);
   --ui-focus: transparent;
+  --ui-kbd-ring: rgb(236 234 227 / 0.6);
   --ui-danger: #ff7b6e;
   --ui-success: #7fd8a2;
   --ui-warning: #f2c14e;
@@ -144,11 +146,18 @@ html[data-theme="dark"],
 
 
 
-  /* No focus indicators anywhere: no outline, ring or border change when an element is clicked, tabbed to or typed in. */
+  /* No focus indicators after a click, tap or typing. While the person navigates with the
+     keyboard (html[data-input="keyboard"], set by src/utils/inputModality.ts), the focused
+     element gets one neutral ring. */
   *:focus,
   *:focus-visible,
   *:focus-within {
     outline: none !important;
+  }
+
+  html[data-input="keyboard"] :focus-visible {
+    outline: 2px solid var(--ui-kbd-ring) !important;
+    outline-offset: 2px !important;
   }
 
   /* One accent for native controls. */
