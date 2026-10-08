@@ -1,5 +1,5 @@
 import { AlertCircle, ArrowLeft, BarChart3, CheckCircle2, ChevronLeft, ChevronRight, Download, ExternalLink, FileText, FileVideo, Film, ImageUp, Loader2, MessageCircle, PlaySquare, RefreshCw, Search, Send, Sparkles, Trash2, Trophy, UploadCloud, Wand2, X, Youtube } from "lucide-react";
-import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, ReactNode, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { AuthSessionPayload, ChannelStyleProfile, ConnectedYouTubeAccount, CreatorProject, FeedInsight, MovieResult, YouTubeCaptionTrack, YouTubeChannelDashboard, YouTubeCommentsResponse, YouTubeDashboardVideo, YouTubePlaylistSummary, YouTubeUploadResult, YouTubeVideoAnalytics, YouTubeVideoOptimization } from "../types";
 import { type PlaylistMode, playlistModeOf, YouTubePublishFields } from "./YouTubePublishForm";
 import { cn } from "../lib/utils";
@@ -7,6 +7,12 @@ import { toast, useErrorToast } from "../utils/toast";
 import { shouldPrefetchChannelVideoPage } from "../utils/channelVideoPaging.js";
 import { writeDeepLink } from "../utils/tiktokRoute";
 import { StandardChannelCard, StandardVideoCard } from "./StandardCards";
+import { confirm, Dialog } from "./ui/Dialog";
+import { FileDrop } from "./FileDrop";
+import { SourcePicker } from "./SourcePicker";
+import { EmptyState, Notice as SharedNotice, Segmented } from "./ui/controls";
+import { connectHref, PlatformIcon } from "./SocialPlatforms";
+import "./uiInherit.css";
 
 function compactNumber(value: number): string {
   return new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(value || 0);
@@ -834,7 +840,8 @@ export function ChannelManagement({
   }
 
   async function deleteComment(commentId: string) {
-    if (!active?.id || !selectedVideo?.id || !window.confirm("Delete this YouTube comment permanently?")) return;
+    if (!active?.id || !selectedVideo?.id) return;
+    if (!(await confirm({ title: "Delete this comment?", body: "It is deleted from YouTube permanently.", confirmLabel: "Delete comment", danger: true }))) return;
     setCommentActionBusy(`delete:${commentId}`);
     setCommentsError("");
     try {
@@ -852,7 +859,7 @@ export function ChannelManagement({
   async function moderateComment(commentId: string, moderationStatus: "heldForReview" | "published" | "rejected") {
     if (!active?.id || !selectedVideo?.id) return;
     const action = moderationStatus === "heldForReview" ? "hold" : moderationStatus === "rejected" ? "remove" : "publish";
-    if (moderationStatus === "rejected" && !window.confirm("Remove this comment from YouTube?")) return;
+    if (moderationStatus === "rejected" && !(await confirm({ title: "Remove this comment from YouTube?", body: "Viewers will no longer see it.", confirmLabel: "Remove comment", danger: true }))) return;
     setCommentActionBusy(`${action}:${commentId}`);
     setCommentsError("");
     try {
@@ -897,7 +904,7 @@ export function ChannelManagement({
 
   async function deleteLiveVideo(video: YouTubeDashboardVideo) {
     if (!active?.id || !video.id) return;
-    if (!window.confirm(`Delete "${video.title}" from YouTube permanently? This cannot be undone.`)) return;
+    if (!(await confirm({ title: `Delete "${video.title}"?`, body: "The video is deleted from YouTube permanently. This can't be undone.", confirmLabel: "Delete video", danger: true }))) return;
     setPlatformActionBusy("delete-video");
     setPlatformActionNotice("");
     try {
@@ -1265,22 +1272,14 @@ export function ChannelManagement({
             </div>
           ) : null}
 
-          <div className={cn("mt-4 grid grid-cols-2 gap-1 rounded-xl p-1", isDark ? "bg-white/[0.06]" : "bg-[#F2F0EB]")} role="radiogroup" aria-label="Posting mode">
-            {([[true, "Review first"], [false, "Post right away"]] as const).map(([value, label]) => (
-              <button
-                key={label}
-                type="button"
-                role="radio"
-                aria-checked={dryRun === value}
-                onClick={() => setDryRun(value)}
-                className={cn(
-                  "h-9 rounded-lg text-sm font-bold transition",
-                  dryRun === value ? (isDark ? "bg-white text-[#1A1A1A]" : "bg-[#1A1A1A] text-white") : isDark ? "text-white/60 hover:text-white" : "text-[#1A1A1A]/60 hover:text-[#1A1A1A]",
-                )}
-              >
-                {label}
-              </button>
-            ))}
+          <div className={cn("ui-inherit mt-4", isDark ? "text-white" : "text-[#1A1A1A]")}>
+            <Segmented
+              block
+              label="Posting mode"
+              value={dryRun ? "review" : "post"}
+              onChange={(next) => setDryRun(next === "review")}
+              options={[{ value: "review", label: "Review first" }, { value: "post", label: "Post right away" }]}
+            />
           </div>
 
           <div className="mt-4 grid grid-cols-2 gap-3">
@@ -1393,24 +1392,25 @@ function InlineStatus({ message }: { message: string }) {
 
 function InlineError({ message }: { message: string }) {
   return (
-    <div className="rounded-2xl border border-[#f9dc0b]/35 bg-[#fff9d6] px-4 py-3 text-sm font-bold text-[#6a5b00]">
-      {message}
+    <div className="ui-inherit">
+      <SharedNotice tone="error">{message}</SharedNotice>
     </div>
   );
 }
 
+// Channel tools read YouTube data, so this connects a YouTube channel.
 function ConnectChannelCard() {
   return (
-    <div className="rounded-2xl border border-dashed border-[#1A1A1A]/12 bg-white p-6 shadow-sm">
-      <div className="grid h-11 w-11 place-items-center rounded-2xl bg-[#f9dc0b]/10 text-[#f9dc0b]">
-        <Youtube className="h-5 w-5" />
-      </div>
-      <h2 className="mt-4 font-serif text-2xl font-bold text-[#1A1A1A]">Connect a YouTube channel</h2>
-      <p className="mt-2 max-w-lg text-sm font-medium leading-6 text-[#1A1A1A]/55">Open Account, then Switch channel to add or select a channel. Your feed, optimize tabs, and comment agent will load after a channel is connected.</p>
-      <a href="/api/auth/google?mode=connect&next=/channels" className="mt-5 inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[#f9dc0b] px-5 text-sm font-black text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white">
-        <Youtube className="h-4 w-4" />
-        Add YouTube channel
-      </a>
+    <div className="ui-inherit rounded-2xl border border-dashed border-[#1A1A1A]/12 bg-white text-[#1A1A1A] shadow-sm">
+      <EmptyState
+        icon={<PlatformIcon id="youtube" size={44} />}
+        title="Connect a YouTube channel"
+        body="Your feed, optimize tabs, and comment agent load once a channel is connected."
+      >
+        <a href={connectHref("youtube")} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[#f9dc0b] px-5 text-sm font-black text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white">
+          Add YouTube channel
+        </a>
+      </EmptyState>
     </div>
   );
 }
@@ -1668,12 +1668,20 @@ function ProjectCommandBar({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {projects.length > 1 ? (
-            <select value={project?.id || ""} onChange={(event) => {
-              const picked = projects.find((item) => item.id === event.target.value);
-              if (picked) onSelect(picked);
-            }} className={cn("h-10 rounded-xl border px-3 text-xs font-bold outline-none", isDark ? "border-white/10 bg-[#151923] text-white" : "border-[#1A1A1A]/10 bg-white text-[#1A1A1A]")}>
-              {projects.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
-            </select>
+            <SourcePicker
+              compact
+              label="Project"
+              ariaLabel="Creator project"
+              placeholder="Choose project"
+              sourcesTabLabel="Projects"
+              theme={isDark ? "dark" : "light"}
+              value={project?.id || ""}
+              options={projects.map((item) => ({ value: item.id, label: item.title, kind: "collection" as const }))}
+              onChange={(id) => {
+                const picked = projects.find((item) => item.id === id);
+                if (picked) onSelect(picked);
+              }}
+            />
           ) : null}
           {stage ? (
             <button type="button" onClick={() => onGenerate(stage)} disabled={!project || busy} className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-[#f9dc0b] px-3 text-xs font-black text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white disabled:opacity-45">
@@ -1802,28 +1810,38 @@ function UploadModal({
   onSubmit: (event: FormEvent) => void;
 }) {
   const [playlistMode, setPlaylistMode] = useState<PlaylistMode>(() => playlistModeOf(playlistId, newPlaylistTitle));
+  const formId = useId();
+  const rootTheme = document.documentElement.dataset.theme === "light" ? "light" : "dark";
   return (
-    <div className="fixed inset-0 z-[95] flex items-start justify-center overflow-y-auto bg-[#1A1A1A]/35 px-3 py-4 backdrop-blur-sm sm:px-4 md:py-10">
-      <button type="button" className="absolute inset-0 cursor-default" aria-label="Close upload modal" onClick={onClose} />
-      <form onSubmit={onSubmit} className="relative w-full max-w-2xl overflow-hidden rounded-2xl border border-[#1A1A1A]/10 bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-[#1A1A1A]/8 bg-[#FDFCFA] px-5 py-4">
-          <div>
-            <h2 className="text-base font-bold text-[#1A1A1A]">Upload video</h2>
-            <p className="mt-1 text-xs font-medium text-[#1A1A1A]/45">Choose file, details, visibility, then publish to the selected channel.</p>
-          </div>
-          <button type="button" onClick={onClose} className="grid h-9 w-9 place-items-center rounded-lg border border-[#1A1A1A]/10 text-[#1A1A1A]/55 transition hover:text-[#1A1A1A]" aria-label="Close upload modal">
-            <X className="h-4 w-4" />
+    <Dialog
+      title="Upload video"
+      description="Choose a file, add the details, then publish to the selected channel."
+      size="lg"
+      onClose={onClose}
+      footer={
+        <>
+          <button type="button" className="ui-btn" onClick={onClose}>Cancel</button>
+          <button type="submit" form={formId} className="ui-btn is-primary" disabled={!canUpload || !file || !title.trim() || uploading}>
+            {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
+            {uploading ? "Uploading" : "Upload"}
           </button>
-        </div>
-        <div className="max-h-[calc(100dvh-150px)] overflow-y-auto p-4 sm:p-5">
-          <label className="group grid cursor-pointer place-items-center rounded-xl border border-dashed border-[#f9dc0b]/35 bg-[#F9F8F6] px-4 py-8 text-center transition hover:bg-[#1A1A1A]/5">
-            <input type="file" accept="video/*" className="sr-only" onChange={(event) => onFileChange(event.target.files?.[0] || null)} />
-            <FileVideo className="mb-3 h-8 w-8 text-[#f9dc0b]" />
-            <span className="max-w-full truncate text-sm font-bold text-[#1A1A1A]">{selectedFileLabel}</span>
-            <span className="mt-1 text-xs font-medium text-[#1A1A1A]/42">MP4, MOV, WebM, or any YouTube-supported video.</span>
-          </label>
+        </>
+      }
+    >
+      <form id={formId} onSubmit={onSubmit}>
+        <FileDrop
+          accept="video/*"
+          onFiles={([next]) => onFileChange(next)}
+          title="Drop a video here"
+          hint="MP4, MOV, WebM, or any YouTube-supported video."
+          icon={<FileVideo className="h-7 w-7" />}
+          file={file}
+          onClear={() => onFileChange(null)}
+          size="roomy"
+        />
           <YouTubePublishFields
             className="mt-5"
+            theme={rootTheme}
             title={title}
             onTitleChange={onTitleChange}
             description={description}
@@ -1855,29 +1873,21 @@ function UploadModal({
             }}
           />
           {uploadResult ? <div className="mt-4 rounded-xl border border-[#f9dc0b]/35 bg-[#fff9d6] p-4 text-sm text-[#2d2700]"><div className="flex items-center gap-2 font-bold"><CheckCircle2 className="h-4 w-4" /> Uploaded successfully</div><a href={uploadResult.url} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1.5 text-xs font-bold text-[#6a5b00] underline">Open on YouTube <ExternalLink className="h-3.5 w-3.5" /></a></div> : null}
-        </div>
-        <div className="flex items-center justify-end gap-2 border-t border-[#1A1A1A]/8 bg-[#FDFCFA] px-5 py-4">
-          <button type="button" onClick={onClose} className="inline-flex h-10 items-center justify-center rounded-xl border border-[#1A1A1A]/10 bg-white px-4 text-xs font-bold text-[#1A1A1A]/60 transition hover:text-[#1A1A1A]">Cancel</button>
-          <button disabled={!canUpload || !file || !title.trim() || uploading} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[#f9dc0b] px-4 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white disabled:cursor-not-allowed disabled:opacity-45">{uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}{uploading ? "Uploading" : "Upload"}</button>
-        </div>
       </form>
-    </div>
+    </Dialog>
   );
 }
 
 function Notice({ tone, title, body, action, className }: { tone: "warn" | "error"; title: string; body: string; action?: ReactNode; className?: string }) {
-  const error = tone === "error";
   return (
-    <div className={cn("flex flex-col gap-3 rounded-xl border p-4 text-sm sm:flex-row sm:items-center sm:justify-between", error ? "border-[#f9dc0b]/18 bg-[#fff9d6] text-[#2d2700]" : "border-[#f9dc0b]/35 bg-[#fff9d6] text-[#2d2700]", className)}>
-      <div className="flex gap-3"><AlertCircle className={cn("mt-0.5 h-4 w-4 shrink-0", error ? "text-[#b69300]" : "text-[#6a5b00]")} /><div><p className="font-bold">{title}</p><p className="mt-1 leading-6 opacity-75">{body}</p></div></div>
-      {action}
+    <div className={cn("ui-inherit", className)}>
+      <SharedNotice tone={tone === "error" ? "error" : "warning"} title={title} action={action}>{body}</SharedNotice>
     </div>
   );
 }
 
 function ThumbnailManagementPanel({ video, canManage, busy, notice, onUpload }: { video: YouTubeDashboardVideo; canManage: boolean; busy: boolean; notice: string; onUpload: (file: File) => void }) {
   const [file, setFile] = useState<File | null>(null);
-  const fileTooLarge = Boolean(file && file.size > 2 * 1024 * 1024);
   useEffect(() => setFile(null), [video.id]);
   return <div className="grid gap-4 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)]">
     <div className="overflow-hidden rounded-xl border border-[#1A1A1A]/8 bg-[#F9F8F6] p-3"><ThumbPreview video={video} /><p className="mt-3 text-xs font-bold text-[#1A1A1A]/55">Current YouTube thumbnail</p></div>
@@ -1885,14 +1895,20 @@ function ThumbnailManagementPanel({ video, canManage, busy, notice, onUpload }: 
       <div className="flex items-center gap-2"><ImageUp className="h-4 w-4 text-[#f9dc0b]" /><h3 className="text-sm font-bold text-[#1A1A1A]">Replace thumbnail</h3></div>
       <p className="mt-1 text-xs leading-5 text-[#1A1A1A]/50">Upload a JPEG or PNG, up to 2MB. YouTube replaces the live thumbnail immediately.</p>
       {canManage ? <>
-        <label className="mt-4 flex min-h-24 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-[#1A1A1A]/15 bg-[#FDFCFA] px-4 text-center transition hover:border-[#f9dc0b]/60">
-          <ImageUp className="h-5 w-5 text-[#f9dc0b]" />
-          <span className="mt-2 max-w-full truncate text-xs font-bold text-[#1A1A1A]">{file ? file.name : "Choose thumbnail image"}</span>
-          <span className="mt-1 text-[11px] font-semibold text-[#1A1A1A]/42">JPEG or PNG · 2MB maximum</span>
-          <input type="file" accept="image/jpeg,image/png" className="sr-only" onChange={(event) => setFile(event.target.files?.[0] || null)} />
-        </label>
-        {fileTooLarge ? <p className="mt-2 text-xs font-bold text-red-600">This image is larger than YouTube’s 2MB limit.</p> : null}
-        <button type="button" onClick={() => file && onUpload(file)} disabled={!file || fileTooLarge || busy} className="mt-3 inline-flex h-10 items-center gap-2 rounded-lg bg-[#f9dc0b] px-3 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white disabled:opacity-45">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}{busy ? "Publishing thumbnail" : "Publish thumbnail"}</button>
+        <div className="ui-inherit mt-4">
+          <FileDrop
+            accept="image/jpeg,image/png"
+            maxBytes={2 * 1024 * 1024}
+            onError={(message) => toast.error(message)}
+            onFiles={([next]) => setFile(next)}
+            title="Drop a thumbnail image"
+            hint="JPEG or PNG · 2MB maximum"
+            icon={<ImageUp className="h-5 w-5" />}
+            file={file}
+            onClear={() => setFile(null)}
+          />
+        </div>
+        <button type="button" onClick={() => file && onUpload(file)} disabled={!file || busy} className="mt-3 inline-flex h-10 items-center gap-2 rounded-lg bg-[#f9dc0b] px-3 text-xs font-bold text-[#1A1A1A] transition hover:bg-[#1A1A1A] hover:text-white disabled:opacity-45">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}{busy ? "Publishing thumbnail" : "Publish thumbnail"}</button>
       </> : <Notice className="mt-4" tone="warn" title="Direct Google access needed" body="Reconnect this channel with Google to upload a custom YouTube thumbnail." action={<a href={GOOGLE_READ_CONNECT_URL} className="inline-flex h-9 items-center justify-center rounded-lg bg-[#f9dc0b] px-3 text-xs font-bold text-[#1A1A1A]">Reconnect Google</a>} />}
       {notice ? <p className="mt-3 text-xs font-semibold leading-5 text-[#6a5b00]">{notice}</p> : null}
     </div>
@@ -1952,7 +1968,7 @@ function CaptionTracksPanel({ videoId, accountId, canManage, isDark }: { videoId
     } catch (err) { setError(err instanceof Error ? err.message : "Could not update caption track"); } finally { setBusy(""); }
   }
   async function deleteCaption(caption: YouTubeCaptionTrack) {
-    if (!window.confirm(`Delete the ${caption.language || ""} caption track permanently?`)) return;
+    if (!(await confirm({ title: `Delete the ${caption.language || ""} caption track?`.replace("  ", " "), body: "The track is deleted from YouTube permanently.", confirmLabel: "Delete track", danger: true }))) return;
     setBusy(`delete:${caption.id}`); setError("");
     try {
       const response = await fetch(`/api/youtube/videos/${encodeURIComponent(videoId)}/captions/${encodeURIComponent(caption.id)}?accountId=${encodeURIComponent(accountId)}`, { method: "DELETE" });

@@ -4,6 +4,8 @@ import { normalizeSubtitleSettings } from "../utils/voiceoverSubtitles.js";
 import type { SubtitleSettings } from "./SubtitleSettingsPanel";
 import { VoicePicker } from "./VoicePicker";
 import type { VoiceProfile } from "../utils/voiceProfiles";
+import { FileDrop } from "./FileDrop";
+import { Segmented } from "./ui/controls";
 
 export type AvatarRemakeSettings = {
   layout: "split" | "full" | "smart";
@@ -114,21 +116,35 @@ export function VoiceoverAvatarPanel({
         </label>
         {subtitles.enabled ? (
           <>
-            <div className="voice-segmented" aria-label="Cover original captions">
-              <button type="button" aria-pressed={subtitles.treatment === "strip"} disabled={disabled} onClick={() => patchSubtitles({ treatment: "strip" })}>Strip</button>
-              <button type="button" aria-pressed={subtitles.treatment === "blur"} disabled={disabled} onClick={() => patchSubtitles({ treatment: "blur" })}>Blur</button>
-            </div>
+            <Segmented
+              label="Cover original captions"
+              size="sm"
+              value={subtitles.treatment}
+              onChange={(treatment) => patchSubtitles({ treatment: treatment as typeof subtitles.treatment })}
+              options={[
+                { value: "strip", label: "Strip", disabled },
+                { value: "blur", label: "Blur", disabled },
+              ]}
+            />
             <p className="voice-notice" role="status">New captions are timed to the narration and matched to the source's caption style.</p>
           </>
         ) : null}
       </fieldset>
 
       <div className="voice-avatar-placeholders">
-        <label>
+        <div className="voice-avatar-face">
           <span>Face</span>
-          <input type="file" accept="image/png,image/jpeg,image/webp" disabled={disabled} aria-label="Client face photo" onChange={(e) => onFaceFile(e.target.files?.[0] || null)} />
-          <em>{faceFile?.name || value.faceName || "PNG / JPG · 12 MB max"}</em>
-        </label>
+          <FileDrop
+            accept="image/png,image/jpeg,image/webp"
+            maxBytes={12 * 1024 * 1024}
+            disabled={disabled}
+            onFiles={([file]) => onFaceFile(file)}
+            title="Add a face photo"
+            hint="PNG or JPG · up to 12 MB"
+            file={faceFile ? { name: faceFile.name, size: faceFile.size } : value.faceName ? { name: value.faceName } : null}
+            onClear={() => onFaceFile(null)}
+          />
+        </div>
         <label>
           <span>Voice</span>
           <VoicePicker voices={voices as VoiceProfile[]} value={profileId} disabled={disabled} onChange={onProfileId} noneLabel="Voiceover narrator" />

@@ -152,93 +152,6 @@
   display: grid;
   gap: 14px;
 }
-.plib-search {
-  position: relative;
-  display: flex;
-  align-items: center;
-  max-width: 640px;
-}
-.plib-search > svg {
-  position: absolute;
-  left: 14px;
-  color: var(--pl-faint);
-  pointer-events: none;
-}
-.plib-search input {
-  width: 100%;
-  min-height: 46px;
-  padding: 10px 40px 10px 42px;
-  border: 0;
-  border-radius: 12px;
-  background: var(--pl-surface);
-  color: var(--pl-text);
-  font: inherit;
-  font-size: 15px;
-  box-shadow: 0 1px 2px rgb(26 26 26 / 0.06), inset 0 0 0 1px var(--pl-line);
-  transition: box-shadow 0.2s;
-}
-.plib-search input::placeholder {
-  color: var(--pl-faint);
-}
-.plib-search input:focus {
-  outline: none;
-  box-shadow: inset 0 0 0 1px var(--pl-line-strong), 0 0 0 3px color-mix(in srgb, var(--pl-accent) 38%, transparent);
-}
-.plib-search button {
-  position: absolute;
-  right: 8px;
-  width: 30px;
-  height: 30px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--pl-muted);
-  display: grid;
-  place-items: center;
-}
-.plib-tabs {
-  display: flex;
-  gap: 4px;
-  overflow-x: auto;
-  scrollbar-width: none;
-  padding-bottom: 2px;
-}
-.plib-tabs::-webkit-scrollbar {
-  display: none;
-}
-.plib-tabs button {
-  flex-shrink: 0;
-  min-height: 34px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  font-size: 13px;
-  font-weight: 550;
-  color: var(--pl-muted);
-  transition: background 0.16s, color 0.16s;
-}
-.plib-tabs button:hover {
-  color: var(--pl-text);
-  background: color-mix(in srgb, var(--pl-text) 6%, transparent);
-}
-.plib-tabs button[aria-selected="true"] {
-  background: var(--pl-text);
-  color: var(--pl-bg);
-}
-.plib-tabs button span {
-  font-family: "JetBrains Mono", ui-monospace, monospace;
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-  opacity: 0.65;
-}
-.plib-tabs .plib-tab-saved[aria-selected="true"] {
-  background: var(--pl-accent);
-  color: #171717;
-}
 
 .plib-error {
   margin-top: 16px;
@@ -958,3 +871,5 @@
     transition: none;
   }
 }
+.plib-search-field { min-width: 0; flex: 1 1 280px; }
+.plib-seg { flex: 0 1 auto; }

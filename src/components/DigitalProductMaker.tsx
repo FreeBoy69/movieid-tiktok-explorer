@@ -4,6 +4,7 @@ import { creatorApi } from "./CreatorWorkspace";
 import { toast } from "../utils/toast";
 import { writeDeepLink } from "../utils/tiktokRoute";
 import "./DigitalProductMaker.css";
+import { confirm } from "./ui/Dialog";
 
 type Chapter = { n: number; title: string; body: string };
 type DigitalBook = {
@@ -75,25 +76,36 @@ export function DigitalProductMaker({ theme, initialProductId, initialTab }: { t
     const targetTab = initialTab || "write";
     const previous = routeSelection.current;
     if (previous.productId === targetId && previous.tab === targetTab) return;
-    if (dirty && !window.confirm("Discard unsaved edits and open this product page?")) {
-      writeDeepLink({ view: "products", productId: selectedId || undefined, productTab: tab }, true);
+    let cancelled = false;
+    const go = () => {
+      routeSelection.current = { productId: targetId, tab: targetTab };
+      setTab(targetTab);
+      if (targetId !== selectedId) {
+        const product = products.find((item) => item.id === targetId);
+        if (product) {
+          setSelectedId(product.id);
+          setDraft(product.data);
+          setChapterIndex(0);
+          setDirty(false);
+        }
+      }
+    };
+    if (!dirty) {
+      go();
       return;
     }
-    routeSelection.current = { productId: targetId, tab: targetTab };
-    setTab(targetTab);
-    if (targetId !== selectedId) {
-      const product = products.find((item) => item.id === targetId);
-      if (product) {
-        setSelectedId(product.id);
-        setDraft(product.data);
-        setChapterIndex(0);
-        setDirty(false);
-      }
-    }
+    void confirm({ title: "Discard unsaved edits?", body: "Your changes to this product haven't been saved.", confirmLabel: "Discard and open", danger: true }).then((ok) => {
+      if (cancelled) return;
+      if (ok) go();
+      else writeDeepLink({ view: "products", productId: selectedId || undefined, productTab: tab }, true);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [dirty, initialProductId, initialTab, products, selectedId, tab]);
 
-  function pick(item: Product) {
-    if (dirty && !window.confirm("Discard unsaved edits and open another product?")) return;
+  async function pick(item: Product) {
+    if (dirty && !(await confirm({ title: "Discard unsaved edits?", body: "Your changes to this product haven't been saved.", confirmLabel: "Discard and open", danger: true }))) return;
     setSelectedId(item.id);
     setDraft(item.data);
     setChapterIndex(0);
@@ -178,7 +190,7 @@ export function DigitalProductMaker({ theme, initialProductId, initialTab }: { t
   }
 
   async function removeBook() {
-    if (!selectedId || !window.confirm(`Delete “${draft.title}” and its manuscript? This cannot be undone.`)) return;
+    if (!selectedId || !(await confirm({ title: `Delete ${draft.title}?`, body: "The product and its manuscript are removed. This can't be undone.", confirmLabel: "Delete product", danger: true }))) return;
     try {
       await creatorApi(`/api/digital-products/${encodeURIComponent(selectedId)}`, undefined, "DELETE");
       await refresh("");

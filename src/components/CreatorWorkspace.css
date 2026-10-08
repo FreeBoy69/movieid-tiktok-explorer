@@ -131,8 +131,44 @@
 .maker-workspace .mk-btn svg {
   flex-shrink: 0;
 }
-.maker-workspace .maker-segmented button {
-  white-space: nowrap;
+
+/* Shared segmented controls and tabs keep their own metrics inside the workspace. */
+.maker-workspace .ui-seg > button {
+  min-height: 32px;
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.maker-workspace .ui-seg-sm > button {
+  min-height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+.maker-workspace .ui-seg > button:hover:not([aria-checked="true"]),
+.maker-workspace .ui-tabs > button:hover {
+  background: transparent;
+}
+.maker-workspace .ui-tabs > button {
+  min-height: 0;
+  padding: 10px 0;
+  border-radius: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+.ui-tabs.dr-tabs {
+  margin: 0 0 22px;
+}
+
+/* The shared SearchField's input must beat the workspace-wide input rule. */
+.maker-workspace .ui-search input[type="search"]:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+.maker-workspace .ui-search input[type="search"]:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):focus {
+  height: auto;
+  min-height: 0;
+  padding: 6px 0;
+  border: 0;
+  outline: 0;
+  background: none;
+  box-shadow: none;
 }
 
 /* ---------- Form controls ---------- */
@@ -218,45 +254,34 @@
 .maker-span { grid-column: 1 / -1; }
 
 /* Switch (TubeGen-style toggle) */
-.maker-switch {
-  display: inline-flex;
-  align-items: center;
+/* Switches are the shared ui Switch; these place it in maker layouts. */
+.maker-workspace .ui-switch input {
+  width: 1px;
+  height: 1px;
+}
+.maker-tile-switch .ui-switch,
+.ui-switch.maker-tile-switch {
+  border: 0;
+  border-radius: var(--mk-radius-sm);
+  background: var(--mk-sunken);
+}
+.maker-tile-switch .ui-switch-label,
+.ui-switch.maker-tile-switch .ui-switch-label {
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.maker-switch-row.ui-switch,
+.maker-switch-row > .ui-switch {
+  width: fit-content;
+  max-width: 100%;
+  justify-content: flex-end;
+  flex-direction: row-reverse;
   gap: 10px;
+}
+.maker-switch-row .ui-switch-label {
   font-size: 13px;
   font-weight: 550;
-  cursor: pointer;
-  user-select: none;
-}
-.maker-switch input {
-  appearance: none;
-  width: 34px;
-  height: 20px;
-  border-radius: 999px;
-  background: var(--mk-line-strong);
-  position: relative;
-  cursor: pointer;
-  transition: background 0.2s;
-  flex-shrink: 0;
-  margin: 0;
-}
-.maker-switch input::after {
-  content: "";
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.25);
-  transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
-}
-.maker-switch input:checked {
-  background: var(--mk-text);
-}
-.maker-switch input:checked::after {
-  transform: translateX(14px);
-  background: var(--mk-accent);
 }
 
 /* ---------- Page chrome ---------- */
@@ -578,24 +603,6 @@
 .maker-pill-status.is-stale { background: var(--mk-accent-soft); color: var(--mk-accent-text); }
 
 /* Segmented control (tabs inside a page) */
-.maker-segmented {
-  display: inline-flex;
-  gap: 2px;
-  padding: 3px;
-  border: 1px solid var(--mk-line);
-  border-radius: 10px;
-  background: var(--mk-surface);
-}
-.maker-workspace .maker-segmented button {
-  min-height: 30px;
-  padding: 5px 12px;
-  border-radius: 7px;
-  color: var(--mk-muted);
-}
-.maker-workspace .maker-segmented button[aria-pressed="true"] {
-  background: var(--mk-text);
-  color: var(--mk-bg);
-}
 
 /* ---------- Stage bar (pill tabs) ---------- */
 .maker-stagebar {
@@ -644,31 +651,12 @@
 }
 
 /* ---------- States ---------- */
-.maker-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
+/* Empty states use the shared EmptyState, framed as a dashed panel here. */
+.ui-empty.maker-empty {
   min-height: 220px;
-  padding: 36px 20px;
-  color: var(--mk-muted);
-  text-align: center;
+  align-content: center;
   border: 1px dashed var(--mk-line-strong);
   border-radius: var(--mk-radius);
-}
-.maker-empty h2 {
-  color: var(--mk-text);
-  font-size: 16px;
-}
-.maker-empty p {
-  max-width: 44ch;
-  line-height: 1.55;
-  margin: 0;
-}
-.maker-empty .maker-actions {
-  justify-content: center;
-  margin-top: 6px;
 }
 .maker-loading {
   display: flex;
@@ -710,17 +698,17 @@
   margin-top: 1px;
 }
 .maker-progress {
-  display: flex;
-  align-items: center;
-  gap: 12px;
   padding: 12px 14px;
   margin: 0 0 16px;
   border: 1px solid var(--mk-line);
   border-radius: var(--mk-radius-sm);
   background: var(--mk-surface);
-  color: var(--mk-muted);
   font-size: 13px;
-  flex-wrap: wrap;
+}
+.maker-progress .ui-progress-copy > span:first-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 .maker-progress-track {
   flex: 1;
@@ -1080,81 +1068,29 @@
 }
 
 /* ---------- Drawer / modal ---------- */
-.maker-modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgb(17 17 17 / 0.45);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  padding: 20px;
-  -webkit-backdrop-filter: blur(12px);
-  backdrop-filter: blur(12px);
-  animation: mk-fade 0.18s ease-out;
+/* Create Video dialogs: the shared ui Dialog with the maker glass panel. */
+.maker-scope.maker-workspace {
+  display: contents;
 }
-.maker-workspace[data-theme="light"] .maker-modal-backdrop {
-  background: rgb(20 19 17 / 0.24);
-}
-.maker-modal {
-  width: 440px;
-  max-width: 100%;
-  max-height: calc(100vh - 40px);
-  overflow: auto;
-  border: 1px solid var(--glass-input-line);
-  border-top-color: var(--glass-input-edge);
-  background: var(--glass-panel-bg);
-  color: var(--mk-text);
-  padding: 24px;
-  border-radius: 14px;
-  box-shadow: var(--glass-input-shadow);
-  -webkit-backdrop-filter: blur(22px) saturate(1.6);
-  backdrop-filter: blur(22px) saturate(1.6);
-  animation: mk-rise 0.24s cubic-bezier(0.22, 1, 0.36, 1);
-}
-.maker-modal.is-wide {
-  width: 640px;
-  padding: 0;
-}
-.maker-modal.is-wide > header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 18px 20px;
-  border-bottom: 1px solid var(--mk-line);
-  position: sticky;
-  top: 0;
-  background: rgb(255 255 255 / 0.16);
-  -webkit-backdrop-filter: blur(22px) saturate(1.6);
-  backdrop-filter: blur(22px) saturate(1.6);
-  z-index: 1;
-}
-.maker-modal.is-wide > .maker-modal-body {
-  padding: 20px;
-}
-.maker-modal.is-wide > footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  padding: 14px 20px;
-  border-top: 1px solid var(--mk-line);
-  position: sticky;
-  bottom: 0;
-  background: rgb(255 255 255 / 0.16);
+.ui-dialog.maker-dialog {
+  border-color: var(--glass-input-line, var(--ui-line));
+  border-top-color: var(--glass-input-edge, var(--ui-line));
+  background: var(--glass-panel-bg, var(--ui-root-bg));
+  box-shadow: var(--glass-input-shadow, var(--ui-root-shadow));
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
   -webkit-backdrop-filter: blur(22px) saturate(1.6);
   backdrop-filter: blur(22px) saturate(1.6);
 }
-.maker-workspace[data-theme="dark"] .maker-modal.is-wide > :is(header, footer) {
-  background: rgb(30 32 36 / 0.2);
+.ui-dialog-lg.maker-dialog {
+  max-width: 640px;
 }
-.maker-modal p {
+.maker-dialog :where(.maker-scope) p {
+  margin: 0 0 16px;
   color: var(--mk-muted);
-  margin: 12px 0 20px;
   line-height: 1.6;
 }
-.maker-modal > .maker-actions {
-  justify-content: flex-end;
+.maker-dialog .ui-dialog-foot {
+  align-items: center;
 }
 @keyframes mk-fade {
   from { opacity: 0; }
@@ -1908,15 +1844,6 @@
   font-weight: 450;
   color: var(--mk-muted);
 }
-.maker-switch > span {
-  display: flex;
-  flex-direction: column;
-}
-.maker-switch small {
-  font-weight: 400;
-  color: var(--mk-muted);
-  font-size: 12px;
-}
 .maker-rotate {
   transform: rotate(180deg);
 }
@@ -2525,7 +2452,7 @@
 .maker-visual-settings .maker-field > span:first-child {
   font-weight: 600;
 }
-.maker-visual-settings .maker-switch {
+.maker-visual-settings .maker-switch-row {
   min-height: 40px;
 }
 .maker-scene-head {
@@ -2661,7 +2588,7 @@
   font-style: normal;
   font-weight: 700;
 }
-.maker-scene-row .maker-switch {
+.maker-scene-row .maker-switch-row {
   font-size: 12.5px;
   margin-left: 4px;
 }
@@ -2833,10 +2760,6 @@
   .maker-sort select {
     min-width: 0;
   }
-  .maker-filterbar .maker-segmented {
-    max-width: 100%;
-    overflow-x: auto;
-  }
   .maker-history-thumb {
     width: 72px;
   }
@@ -2869,14 +2792,9 @@
   .maker-timeline-head .maker-actions {
     margin-left: 0;
   }
-  .maker-modal.is-wide > footer {
-    flex-wrap: wrap;
-  }
 }
 @media (prefers-reduced-motion: reduce) {
-  .maker-workspace *,
-  .maker-modal-backdrop,
-  .maker-modal {
+  .maker-workspace * {
     animation: none !important;
     transition: none !important;
   }
@@ -2923,10 +2841,6 @@
   background: var(--mk-accent-soft);
   color: var(--mk-accent-text);
   font-weight: 600;
-}
-.maker-advanced-toggle small {
-  color: var(--mk-muted);
-  font-size: 12px;
 }
 
 /* Drop zones: uploads for thumbnails, art styles, and soundtrack sources */
@@ -3147,30 +3061,6 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
   gap: 24px;
-}
-.maker-art-source-tabs {
-  display: inline-grid;
-  grid-template-columns: 1fr 1fr;
-  align-self: flex-start;
-  padding: 3px;
-  border-radius: 9px;
-  background: var(--mk-sunken);
-}
-.maker-art-source-tabs button {
-  min-height: 34px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  padding: 0 14px;
-  border-radius: 7px;
-  color: var(--mk-muted);
-  background: transparent;
-}
-.maker-art-source-tabs button[aria-selected="true"] {
-  color: var(--mk-text);
-  background: var(--mk-surface);
-  box-shadow: 0 1px 3px rgb(0 0 0 / 0.12);
 }
 .maker-style-capture-flow {
   min-height: 148px;
@@ -3584,9 +3474,6 @@
 /* ---------- Thumbnail ---------- */
 .maker-thumb-mode {
   margin-bottom: 18px;
-}
-.maker-thumb-mode button {
-  gap: 7px;
 }
 .maker-thumb-source {
   display: grid;
@@ -4285,48 +4172,6 @@
 .maker-split.is-wrap > small {
   flex-shrink: 0;
 }
-.maker-vtabs {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 4px;
-  padding: 4px;
-  border-radius: var(--mk-radius);
-  background: var(--mk-sunken);
-}
-.maker-workspace .maker-vtab {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  min-height: 52px;
-  padding: 8px 12px;
-  border: 0;
-  border-radius: var(--mk-radius-sm);
-  background: transparent;
-  color: var(--mk-muted);
-  text-align: left;
-  transition: background-color 160ms, color 160ms, box-shadow 160ms;
-}
-.maker-workspace .maker-vtab:hover {
-  color: var(--mk-text);
-}
-.maker-workspace .maker-vtab[aria-selected="true"] {
-  background: var(--mk-surface);
-  color: var(--mk-text);
-  box-shadow: var(--mk-shadow);
-}
-.maker-vtab strong {
-  font-size: 13px;
-  font-weight: 600;
-}
-.maker-vtab small {
-  max-width: 100%;
-  overflow: hidden;
-  color: var(--mk-faint);
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .maker-visual-summary {
   position: sticky;
   bottom: 12px;
@@ -4365,34 +4210,6 @@
   justify-content: space-between;
   gap: 12px;
   margin: 16px 0 12px;
-}
-.maker-board-filter {
-  display: flex;
-  gap: 4px;
-  padding: 3px;
-  border-radius: 999px;
-  background: var(--mk-sunken);
-}
-.maker-workspace .maker-board-filter button {
-  display: inline-flex;
-  gap: 6px;
-  min-height: 30px;
-  padding: 4px 12px;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--mk-muted);
-  font-size: 12px;
-  font-weight: 600;
-}
-.maker-workspace .maker-board-filter button[aria-selected="true"] {
-  background: var(--mk-surface);
-  color: var(--mk-text);
-  box-shadow: var(--mk-shadow);
-}
-.maker-board-filter button span {
-  color: var(--mk-faint);
-  font-variant-numeric: tabular-nums;
 }
 .maker-preview-row {
   display: flex;
@@ -4445,14 +4262,6 @@
   grid-column: 1 / -1;
 }
 @media (max-width: 650px) {
-  .maker-vtabs {
-    grid-template-columns: 1fr 1fr;
-  }
-  .maker-board-filter {
-    max-width: 100%;
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
   .maker-visual-summary {
     flex-wrap: wrap;
   }
@@ -4826,65 +4635,8 @@
   border-bottom: 1px solid var(--mk-line);
 }
 .sb-search {
-  display: flex;
   flex: 1 1 220px;
-  align-items: center;
-  gap: 8px;
   max-width: 360px;
-  min-height: 36px;
-  padding: 0 12px;
-  border: 1px solid var(--mk-line);
-  border-radius: 999px;
-  background: var(--mk-sunken);
-  color: var(--mk-faint);
-  transition: border-color 150ms ease;
-}
-.sb-search:focus-within {
-  border-color: var(--mk-accent);
-}
-/* Repeated class outranks the workspace-wide input rule, including its :focus state. */
-.maker-workspace .sb-search .sb-q.sb-q.sb-q.sb-q.sb-q.sb-q {
-  flex: 1;
-  min-width: 0;
-  height: 34px;
-  padding: 0;
-  border: 0;
-  outline: 0;
-  appearance: none;
-  background: none;
-  box-shadow: none;
-  color: var(--mk-text);
-  font-size: 13px;
-}
-.sb-search input::placeholder {
-  color: var(--mk-faint);
-}
-.sb-size {
-  display: inline-flex;
-  gap: 2px;
-  padding: 3px;
-  border-radius: 10px;
-  background: var(--mk-sunken);
-}
-.maker-workspace .sb-size button {
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  padding: 0;
-  border: 0;
-  border-radius: 8px;
-  background: none;
-  color: var(--mk-faint);
-  transition: background-color 150ms ease, color 150ms ease;
-}
-.maker-workspace .sb-size button:hover {
-  color: var(--mk-text);
-}
-.maker-workspace .sb-size button[aria-checked="true"] {
-  background: var(--mk-surface);
-  color: var(--mk-text);
-  box-shadow: var(--mk-shadow);
 }
 
 .sb-grid {
@@ -5570,35 +5322,6 @@
   line-height: 1.55;
   resize: vertical;
 }
-.sce-seg {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px;
-  padding: 3px;
-  border-radius: 11px;
-  background: var(--mk-sunken);
-}
-.maker-workspace .sce-seg button {
-  flex: 1 1 auto;
-  min-height: 32px;
-  padding: 0 12px;
-  border: 0;
-  border-radius: 8px;
-  background: none;
-  color: var(--mk-muted);
-  font-size: 13px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-.maker-workspace .sce-seg button:hover {
-  background: none;
-  color: var(--mk-text);
-}
-.maker-workspace .sce-seg button[aria-checked="true"] {
-  background: var(--mk-surface);
-  color: var(--mk-text);
-  box-shadow: var(--mk-shadow);
-}
 .sce-cast {
   display: flex;
   flex-wrap: wrap;
@@ -5748,9 +5471,6 @@
 }
 
 /* Dialogue: script format, character voices, speaker labels */
-.maker-format-pick {
-  align-self: flex-start;
-}
 .maker-voice-cast {
   display: grid;
   gap: 12px;

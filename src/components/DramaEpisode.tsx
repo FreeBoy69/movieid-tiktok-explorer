@@ -31,6 +31,8 @@ import { toast } from "../utils/toast";
 import { VideoPlayer } from "./VideoPlayer";
 import { ProductionPreflight, type ProductionReview } from "./ProductionPreflight";
 import { usdToCredits } from "../utils/credits";
+import { confirm as confirmDialog } from "./ui/Dialog";
+import { Segmented } from "./ui/controls";
 
 type Beat = { id: string; cam: string; shot?: string; angle?: string; perspective?: string; motion?: string; move: string; speaker: string; emotion: string; line: string };
 type Scene = { id: string; title: string; locationId: string; summary: string; beats: Beat[]; start?: number; end?: number; bars?: number; lyrics?: LyricLine[] };
@@ -225,8 +227,8 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
         <div className="maker-topbar-left">
           <button
             className="maker-ghost"
-            onClick={() => {
-              if (!dirty || window.confirm("Leave without saving your screenplay edits?")) filmLink({ seriesId }, formatOfRoute(episode?.format));
+            onClick={async () => {
+              if (!dirty || (await confirmDialog({ title: "Leave without saving?", body: "Your screenplay edits will be lost.", confirmLabel: "Leave", danger: true }))) filmLink({ seriesId }, formatOfRoute(episode?.format));
             }}
           >
             <ArrowLeft size={16} />
@@ -234,14 +236,13 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
           </button>
         </div>
         <div className="maker-actions">
-          <div className="dr-segmented dr-quality" role="radiogroup" aria-label="Render quality">
-            {(["draft", "final"] as const).map((key) => (
-              <button key={key} type="button" role="radio" aria-checked={quality === key} onClick={() => void setSetting({ quality: key })} title={DRAMA_MODELS.video[key].label}>
-                {key === "draft" ? "Draft" : "Final"}
-                <small>{DRAMA_MODELS.video[key].resolution}</small>
-              </button>
-            ))}
-          </div>
+          <Segmented
+            label="Render quality"
+            className="dr-quality"
+            value={quality}
+            onChange={(next) => void setSetting({ quality: next as typeof quality })}
+            options={(["draft", "final"] as const).map((key) => ({ value: key, label: key === "draft" ? "Draft" : "Final", hint: DRAMA_MODELS.video[key].resolution, title: DRAMA_MODELS.video[key].label }))}
+          />
         </div>
       </div>
       <div className="maker-scroll">
@@ -379,7 +380,7 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
                               className="maker-icon"
                               aria-label={`Delete scene ${sceneIndex + 1}`}
                               title="Delete scene"
-                              onClick={() => window.confirm("Delete this scene?") && edit(scenes.filter((item) => item.id !== scene.id))}
+                              onClick={async () => (await confirmDialog({ title: `Delete scene ${sceneIndex + 1}?`, confirmLabel: "Delete scene", danger: true })) && edit(scenes.filter((item) => item.id !== scene.id))}
                             >
                               <Trash2 size={15} />
                             </button>

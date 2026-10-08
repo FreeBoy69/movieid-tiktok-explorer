@@ -2,12 +2,14 @@
 // location's look, once. Every episode draws its storyboards and clips from
 // these locked sheets and voices.
 import { useEffect, useRef, useState } from "react";
-import { AlertCircle, Check, Image as ImageIcon, Loader2, Lock, MapPin, Mic, Pause, Play, Plus, RotateCcw, Sparkles, Upload, Wand2 } from "lucide-react";
+import { AlertCircle, Check, Image as ImageIcon, Loader2, Lock, MapPin, Mic, Pause, Play, Plus, RotateCcw, Sparkles, Wand2 } from "lucide-react";
 import { creatorApi } from "./CreatorWorkspace";
 import { VoicePicker } from "./VoicePicker";
 import { MAX_DRAMA_CAST, speakerName } from "../utils/dramaTemplates";
 import { toast } from "../utils/toast";
+import { togglePreview, usePreview } from "../utils/voicePreview";
 import { Lightbox } from "./studio/studioShared";
+import { SheetPhotoButton, SheetViewer, TakeCount } from "./castSheets";
 
 export type DramaCharacter = { id: string; name: string; role: string; appearance: string; outfit: string; voice?: string };
 export type DramaLocation = { id: string; name: string; description: string };
@@ -39,33 +41,21 @@ export function useSeriesProduction(seriesId: string, onError: (e: string) => vo
   return { production, loaded, refresh };
 }
 
-// One shared <audio> so previews never talk over each other.
-let player: HTMLAudioElement | null = null;
+// Plays through the app's one shared preview player, so previews never talk over
+// each other or over any other player.
 export function PlayButton({ src, label }: { src: string; label: string }) {
-  const [playing, setPlaying] = useState(false);
-  useEffect(() => () => {
-    if (playing) player?.pause();
-  }, [playing]);
+  const { state, toggle } = usePreview();
+  const mine = state?.key === src ? state.status : null;
+  const playing = mine === "playing" || mine === "loading";
   return (
     <button
       type="button"
       className="maker-icon dr-play"
       aria-label={playing ? `Stop ${label}` : `Play ${label}`}
-      title={playing ? "Stop" : "Play"}
-      onClick={() => {
-        if (playing) {
-          player?.pause();
-          setPlaying(false);
-          return;
-        }
-        player?.pause();
-        player = new Audio(src);
-        player.onended = () => setPlaying(false);
-        player.onpause = () => setPlaying(false);
-        void player.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
-      }}
+      title={mine === "error" ? "Couldn't play this" : playing ? "Stop" : "Play"}
+      onClick={() => void toggle(src, src)}
     >
-      {playing ? <Pause size={15} /> : <Play size={15} />}
+      {mine === "loading" ? <Loader2 size={15} className="animate-spin" /> : playing ? <Pause size={15} /> : <Play size={15} />}
     </button>
   );
 }
@@ -180,8 +170,8 @@ function CharacterCard({
     [description, setDescription] = useState(voice.description || character.voice || ""),
     [pick, setPick] = useState(""),
     [preview, setPreview] = useState<{ voiceId: string; asset: string } | null>(null),
-    [zoom, setZoom] = useState("");
-  const upload = useRef<HTMLInputElement>(null);
+    [viewing, setViewing] = useState(-1),
+    [count, setCount] = useState(2);
   const voiceName = voiceProfiles.find((profile) => profile.id === voiceId)?.name || (voiceId ? "Custom voice" : "");
   async function call(label: string, url: string, body: Record<string, unknown> = {}) {
     setBusy(label);
@@ -196,6 +186,9 @@ function CharacterCard({
     }
   }
   const candidates: string[] = sheet.candidates || [];
+  // Everything viewable full screen: the takes, plus a locked sheet that is not among them.
+  const gallery = sheet.locked && !candidates.includes(sheet.locked) ? [sheet.locked, ...candidates] : candidates;
+  const view = (asset: string) => setViewing(Math.max(0, gallery.indexOf(asset)));
   const designed: Array<{ asset: string; voice: string }> = voice.candidates || [];
   return (
     <li className="dr-member">
@@ -212,7 +205,7 @@ function CharacterCard({
         <p className="dr-look">{[character.appearance, character.outfit].filter(Boolean).join(" · ")}</p>
         <div className="dr-sheet">
           {sheet.locked ? (
-            <button type="button" className="dr-sheet-main" onClick={() => setZoom(sheet.locked!)} aria-label={`View ${character.name}'s locked sheet`}>
+            <button type="button" className="dr-sheet-main" onClick={() => view(sheet.locked!)} aria-label={`View ${character.name}'s locked sheet`}>
               <img src={sheet.locked} alt="" loading="lazy" />
               <span className="dr-badge is-ok">
                 <Lock size={12} /> Locked
@@ -228,7 +221,7 @@ function CharacterCard({
             <div className="dr-takes" role="list" aria-label="Sheet options">
               {candidates.slice(0, 6).map((asset) => (
                 <div role="listitem" key={asset} className={`dr-take ${asset === sheet.locked ? "is-on" : ""}`}>
-                  <button type="button" onClick={() => setZoom(asset)} aria-label="View this sheet">
+                  <button type="button" onClick={() => view(asset)} aria-label="View this sheet">
                     <img src={asset} alt="" loading="lazy" />
                   </button>
                   {asset !== sheet.locked && (
@@ -246,24 +239,17 @@ function CharacterCard({
             </p>
           )}
           <div className="dr-row">
-            <button type="button" className={sheet.locked ? "maker-outline" : "maker-primary"} disabled={running(sheet) || Boolean(busy)} onClick={() => void call("sheet", `${base}/sheet`, { count: 2 })}>
+            <TakeCount value={count} onChange={setCount} counts={[1, 2]} />
+            <button type="button" className={sheet.locked ? "maker-outline" : "maker-primary"} disabled={running(sheet) || Boolean(busy)} onClick={() => void call("sheet", `${base}/sheet`, { count })}>
               {running(sheet) || busy === "sheet" ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
-              {candidates.length ? "Draw 2 more" : "Draw 2 sheets"}
+              {candidates.length ? `Draw ${count} more` : `Draw ${count} ${count === 1 ? "sheet" : "sheets"}`}
             </button>
-            <button type="button" className="maker-outline" disabled={Boolean(busy)} onClick={() => upload.current?.click()} title="Use a photo of a real person you have permission to use">
-              <Upload size={15} />
-              {sheet.photo ? "Replace photo" : "From a photo"}
-            </button>
-            <input
-              ref={upload}
-              type="file"
-              accept="image/png,image/jpeg,image/webp"
-              hidden
-              onChange={async (event) => {
-                const file = event.target.files?.[0];
-                event.target.value = "";
-                if (!file) return;
-                if (file.size > 12 * 1024 * 1024) return onError("Choose a photo smaller than 12 MB");
+            <SheetPhotoButton
+              name={character.name}
+              hasPhoto={Boolean(sheet.photo)}
+              disabled={Boolean(busy)}
+              onError={onError}
+              onFile={async (file) => {
                 const saved = await call("photo", `${base}/photo`, { image: await readFile(file), mediaType: file.type });
                 if (saved) toast.success(`Photo added. Draw sheets to build ${character.name} from it.`);
               }}
@@ -344,9 +330,7 @@ function CharacterCard({
                 const data = await call("preview", `${base}/voice-preview`, { voiceId: id });
                 if (data?.asset) {
                   setPreview({ voiceId: id, asset: data.asset });
-                  player?.pause();
-                  player = new Audio(data.asset);
-                  void player.play().catch(() => {});
+                  void togglePreview(data.asset, data.asset);
                 }
               }}
             >
@@ -363,7 +347,18 @@ function CharacterCard({
         </div>
       </div>
       )}
-      {zoom && <Lightbox src={zoom} onClose={() => setZoom("")} />}
+      {viewing >= 0 && gallery.length ? (
+        <SheetViewer
+          name={character.name}
+          images={gallery}
+          locked={sheet.locked || ""}
+          index={Math.min(viewing, gallery.length - 1)}
+          busy={Boolean(busy)}
+          onIndex={setViewing}
+          onClose={() => setViewing(-1)}
+          onLock={(asset) => void call("lock", `${base}/lock`, { asset })}
+        />
+      ) : null}
     </li>
   );
 }

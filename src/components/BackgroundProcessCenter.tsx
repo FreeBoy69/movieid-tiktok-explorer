@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AnimatePresence, motion } from "motion/react";
 import { Activity, AudioLines, Bot, Check, ChevronRight, Clock3, Film, Layers3, TriangleAlert, X } from "lucide-react";
 import { cn } from "../lib/utils";
 import { BACKGROUND_PROCESS_EVENT } from "../utils/backgroundProcesses";
+import { Dialog } from "./ui/Dialog";
+import { Progress } from "./ui/controls";
+import "./BackgroundProcessCenter.css";
 
 export type BackgroundProcess = {
   id: string;
@@ -153,13 +155,7 @@ function ProcessRow({ process, darkMode, now, onOpen, onDismiss }: {
           ) : null}
 
           {active ? (
-            <div className={cn("mt-3 h-1 overflow-hidden rounded-full", darkMode ? "bg-white/10" : "bg-[#1A1A1A]/8")}>
-              {progress !== null ? (
-                <motion.div className="h-full rounded-full bg-[#f9dc0b]" animate={{ width: `${Math.max(progress, 3)}%` }} transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }} />
-              ) : (
-                <motion.div className="h-full w-1/3 rounded-full bg-[#f9dc0b]" animate={{ x: ["-110%", "310%"] }} transition={{ duration: 1.3, ease: "easeInOut", repeat: Infinity }} />
-              )}
-            </div>
+            <Progress className="bpc-row-progress" label="Progress" value={progress === null ? null : Math.max(progress, 3) / 100} showPercent={false} />
           ) : null}
 
           <button type="button" onClick={onOpen} className={cn("mt-3 inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[11px] font-bold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#f9dc0b]", darkMode ? "bg-white/8 text-[#F8F5E8] hover:bg-white/12" : "bg-[#1A1A1A]/6 text-[#1A1A1A] hover:bg-[#1A1A1A]/10")}>
@@ -228,15 +224,6 @@ export function BackgroundProcessCenter({ darkMode = false, onOpenProcess }: {
   }, [loadProcesses]);
 
   useEffect(() => {
-    if (!open) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [open]);
-
-  useEffect(() => {
     const openCenter = () => setOpen(true);
     window.addEventListener(OPEN_BACKGROUND_PROCESS_CENTER_EVENT, openCenter);
     return () => window.removeEventListener(OPEN_BACKGROUND_PROCESS_CENTER_EVENT, openCenter);
@@ -267,78 +254,58 @@ export function BackgroundProcessCenter({ darkMode = false, onOpenProcess }: {
   return (
     <>
 
-      <AnimatePresence>
-        {open ? (
-          <motion.div className="fixed inset-0 z-[140]" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            <button type="button" className="absolute inset-0 cursor-default bg-[#1A1A1A]/24 backdrop-blur-[2px]" onClick={() => setOpen(false)} aria-label="Close background activity" />
-            <motion.aside
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="background-activity-title"
-              initial={{ x: "100%" }}
-              animate={{ x: 0 }}
-              exit={{ x: "100%" }}
-              transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
-              className={cn("absolute inset-y-0 right-0 flex w-full max-w-[420px] flex-col border-l shadow-[-16px_0_40px_rgba(26,26,26,0.14)]", darkMode ? "border-white/10 bg-[#111411] text-[#F8F5E8]" : "border-[#1A1A1A]/10 bg-[#FDFCFA] text-[#1A1A1A]")}
-            >
-              <header className={cn("flex min-h-16 items-center justify-between border-b px-5", darkMode ? "border-white/8" : "border-[#1A1A1A]/8")}>
-                <div className="min-w-0">
-                  <h2 id="background-activity-title" className="text-base font-bold">Background activity</h2>
-                  <p className={cn("mt-0.5 text-xs font-semibold", darkMode ? "text-[#F8F5E8]/45" : "text-[#1A1A1A]/45")} aria-live="polite">
-                    {active.length ? `${active.length} process${active.length === 1 ? "" : "es"} running` : "All caught up"}
-                  </p>
-                </div>
-                <button type="button" onClick={() => setOpen(false)} className={cn("grid h-9 w-9 place-items-center rounded-lg transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#f9dc0b]", darkMode ? "hover:bg-white/8" : "hover:bg-[#1A1A1A]/6")} aria-label="Close background activity">
-                  <X className="h-4 w-4" />
-                </button>
-              </header>
+      {open ? (
+        <Dialog
+          title="Background activity"
+          description={<span aria-live="polite">{active.length ? `${active.length} process${active.length === 1 ? "" : "es"} running` : "All caught up"}</span>}
+          placement="right"
+          className="bpc-sheet"
+          onClose={() => setOpen(false)}
+        >
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+          {error ? (
+            <div className={cn("mx-5 mt-5 flex items-start gap-2 rounded-lg px-3 py-2.5 text-xs font-semibold", darkMode ? "bg-red-400/10 text-red-200" : "bg-red-50 text-red-700")}>
+              <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>{error}</span>
+            </div>
+          ) : null}
 
-              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-                {error ? (
-                  <div className={cn("mx-5 mt-5 flex items-start gap-2 rounded-lg px-3 py-2.5 text-xs font-semibold", darkMode ? "bg-red-400/10 text-red-200" : "bg-red-50 text-red-700")}>
-                    <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
-                    <span>{error}</span>
-                  </div>
-                ) : null}
-
-                {!visibleProcesses.length && !error ? (
-                  <div className="grid min-h-[52vh] place-items-center px-8 text-center">
-                    <div>
-                      <span className={cn("mx-auto grid h-11 w-11 place-items-center rounded-xl", darkMode ? "bg-white/8 text-[#F8F5E8]/55" : "bg-[#1A1A1A]/6 text-[#1A1A1A]/50")}><Activity className="h-5 w-5" /></span>
-                      <p className="mt-4 text-sm font-bold">No background activity</p>
-                      <p className={cn("mt-1 text-xs font-medium", darkMode ? "text-[#F8F5E8]/45" : "text-[#1A1A1A]/45")}>New compilations and media jobs will appear here.</p>
-                    </div>
-                  </div>
-                ) : null}
-
-                {active.length ? (
-                  <section aria-labelledby="active-processes-title">
-                    <div className="flex items-center justify-between px-5 pb-2 pt-5">
-                      <h3 id="active-processes-title" className="text-xs font-black uppercase text-[#9a8500]">In progress</h3>
-                      <span className={cn("text-[11px] font-bold tabular-nums", darkMode ? "text-[#F8F5E8]/40" : "text-[#1A1A1A]/40")}>{active.length}</span>
-                    </div>
-                    <div className={cn("border-y", darkMode ? "border-white/8" : "border-[#1A1A1A]/8")}>
-                      {active.map((process) => <ProcessRow key={process.id} process={process} darkMode={darkMode} now={now} onOpen={() => { onOpenProcess(process); setOpen(false); }} onDismiss={() => dismiss(process.id)} />)}
-                    </div>
-                  </section>
-                ) : null}
-
-                {recent.length ? (
-                  <section aria-labelledby="recent-processes-title">
-                    <div className="flex items-center justify-between px-5 pb-2 pt-5">
-                      <h3 id="recent-processes-title" className={cn("text-xs font-black uppercase", darkMode ? "text-[#F8F5E8]/45" : "text-[#1A1A1A]/45")}>Recent</h3>
-                      <button type="button" onClick={clearRecent} className={cn("rounded-md px-2 py-1 text-[11px] font-bold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#f9dc0b]", darkMode ? "text-[#F8F5E8]/55 hover:bg-white/8 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/50 hover:bg-[#1A1A1A]/6 hover:text-[#1A1A1A]")}>Clear</button>
-                    </div>
-                    <div className={cn("border-y", darkMode ? "border-white/8" : "border-[#1A1A1A]/8")}>
-                      {recent.map((process) => <ProcessRow key={process.id} process={process} darkMode={darkMode} now={now} onOpen={() => { onOpenProcess(process); setOpen(false); }} onDismiss={() => dismiss(process.id)} />)}
-                    </div>
-                  </section>
-                ) : null}
+          {!visibleProcesses.length && !error ? (
+            <div className="grid min-h-[52vh] place-items-center px-8 text-center">
+              <div>
+                <span className={cn("mx-auto grid h-11 w-11 place-items-center rounded-xl", darkMode ? "bg-white/8 text-[#F8F5E8]/55" : "bg-[#1A1A1A]/6 text-[#1A1A1A]/50")}><Activity className="h-5 w-5" /></span>
+                <p className="mt-4 text-sm font-bold">No background activity</p>
+                <p className={cn("mt-1 text-xs font-medium", darkMode ? "text-[#F8F5E8]/45" : "text-[#1A1A1A]/45")}>New compilations and media jobs will appear here.</p>
               </div>
-            </motion.aside>
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
+            </div>
+          ) : null}
+
+          {active.length ? (
+            <section aria-labelledby="active-processes-title">
+              <div className="flex items-center justify-between px-5 pb-2 pt-5">
+                <h3 id="active-processes-title" className="text-xs font-black uppercase text-[#9a8500]">In progress</h3>
+                <span className={cn("text-[11px] font-bold tabular-nums", darkMode ? "text-[#F8F5E8]/40" : "text-[#1A1A1A]/40")}>{active.length}</span>
+              </div>
+              <div className={cn("border-y", darkMode ? "border-white/8" : "border-[#1A1A1A]/8")}>
+                {active.map((process) => <ProcessRow key={process.id} process={process} darkMode={darkMode} now={now} onOpen={() => { onOpenProcess(process); setOpen(false); }} onDismiss={() => dismiss(process.id)} />)}
+              </div>
+            </section>
+          ) : null}
+
+          {recent.length ? (
+            <section aria-labelledby="recent-processes-title">
+              <div className="flex items-center justify-between px-5 pb-2 pt-5">
+                <h3 id="recent-processes-title" className={cn("text-xs font-black uppercase", darkMode ? "text-[#F8F5E8]/45" : "text-[#1A1A1A]/45")}>Recent</h3>
+                <button type="button" onClick={clearRecent} className={cn("rounded-md px-2 py-1 text-[11px] font-bold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#f9dc0b]", darkMode ? "text-[#F8F5E8]/55 hover:bg-white/8 hover:text-[#F8F5E8]" : "text-[#1A1A1A]/50 hover:bg-[#1A1A1A]/6 hover:text-[#1A1A1A]")}>Clear</button>
+              </div>
+              <div className={cn("border-y", darkMode ? "border-white/8" : "border-[#1A1A1A]/8")}>
+                {recent.map((process) => <ProcessRow key={process.id} process={process} darkMode={darkMode} now={now} onOpen={() => { onOpenProcess(process); setOpen(false); }} onDismiss={() => dismiss(process.id)} />)}
+              </div>
+            </section>
+          ) : null}
+        </div>
+        </Dialog>
+      ) : null}
     </>
   );
 }

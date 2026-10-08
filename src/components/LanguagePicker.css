@@ -222,3 +222,8 @@ html[data-theme="dark"] .lang-pick-panel {
     transition: none;
   }
 }
+/* FieldPicker without badges (e.g. engines): name and chevron only. */
+.lang-pick-trigger.is-plain {
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding-left: 12px;
+}

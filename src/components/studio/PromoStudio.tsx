@@ -1,11 +1,12 @@
 // Promo Studio: a link, images, or a brief in; a motion-graphics film out.
 // Opus 5.5 writes the film as code, checks its frames, and it is rendered
 // with a music bed (server/promoStudio.js). Shares Marketing Studio's styles.
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, ExternalLink, Film, ImagePlus, Link2, Loader2, Music, Palette, Play, RectangleHorizontal, Shapes, SlidersHorizontal, Sparkles, X, Zap } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ArrowLeft, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, ExternalLink, Film, Link2, Loader2, Music, Palette, Play, RectangleHorizontal, Shapes, SlidersHorizontal, Sparkles, X, Zap } from "lucide-react";
 import { PROMO_ASPECTS, PROMO_DURATIONS, PROMO_SUBJECTS, PROMO_TEMPLATES, findPromoSubject, findPromoTemplate, promoPreview } from "../../utils/promoPresets";
 import { PROMO_STYLES, PROMO_STYLE_SPRITE, findPromoStyle, promoStyleTile } from "../../utils/promoStyles";
-import { type Asset, type Catalog, type Generation, readJson, uploadAsset, usePopover } from "./studioShared";
+import { AspectPicker, type Asset, type Catalog, Choice, type Generation, GenerationUnavailable, readJson, ReferenceTray, Segment, Toggle, usePopover } from "./studioShared";
+import { SheetChip, StudioSheet } from "./MarketingStudio";
 import { type GalleryHandlers, StudioGallery } from "./StudioGallery";
 import { clearPendingTemplate, peekPendingTemplate } from "../../utils/promptTemplates";
 import { useErrorToast } from "../../utils/toast";
@@ -42,11 +43,9 @@ export function PromoStudio({ generations, now, handlers, onCreated, catalog }: 
   // The template sheet opens on the grid, or straight onto one template's preview.
   const [modal, setModal] = useState<null | { preview: string }>(null);
   const [busy, setBusy] = useState(false);
-  const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
   useErrorToast(error, () => setError(""));
   const pricing = useStudioPricing();
-  const file = useRef<HTMLInputElement>(null);
   const brief = useRef<HTMLTextAreaElement>(null);
   const patch = (changes: Partial<Draft>) => setDraft((current) => ({ ...current, ...changes }));
 
@@ -63,7 +62,7 @@ export function PromoStudio({ generations, now, handlers, onCreated, catalog }: 
   const films = useMemo(() => generations.filter((item) => item.tab === "promo"), [generations]);
   const configured = catalog?.configured !== false;
   const hasMaterial = Boolean(draft.url.trim() || draft.uploads.length || draft.brief.trim());
-  const ready = configured && !busy && !uploading && (revision ? Boolean(draft.brief.trim()) : hasMaterial);
+  const ready = configured && !busy && (revision ? Boolean(draft.brief.trim()) : hasMaterial);
   const duration = revision ? Number(revision.settings.duration) || draft.duration : draft.duration;
   const credits = providerCreditEstimate(estimateUsd(duration), pricing);
   const missing = revision ? (draft.brief.trim() ? "" : "Say what to change") : hasMaterial ? "" : "Add a link, images, or a description";
@@ -72,22 +71,6 @@ export function PromoStudio({ generations, now, handlers, onCreated, catalog }: 
     // The template's own shape is the default; a length or aspect chosen by hand wins until the next pick.
     patch({ template: item.id, aspect: item.aspect, duration: item.duration });
     setModal(null);
-  }
-
-  async function addFiles(files: File[]) {
-    const room = MAX_UPLOADS - draft.uploads.length;
-    if (!room) return;
-    setUploading(true);
-    try {
-      const added: Asset[] = [];
-      for (const f of files.filter((f) => /^image\/(png|jpeg|webp)$/.test(f.type)).slice(0, room)) added.push(await uploadAsset(f, f.name.replace(/\.[^.]+$/, "")));
-      if (!added.length && files.length) throw new Error("Use PNG, JPG, or WebP images");
-      setDraft((current) => ({ ...current, uploads: [...current.uploads, ...added].slice(0, MAX_UPLOADS) }));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Upload failed");
-    } finally {
-      setUploading(false);
-    }
   }
 
   async function generate() {
@@ -177,32 +160,33 @@ export function PromoStudio({ generations, now, handlers, onCreated, catalog }: 
                   maxLength={4000}
                 />
                 <div className="mks-row">
-                  <button type="button" className="mks-plus" aria-label="Add images" title="Add images: logo, screenshots, product photos" disabled={uploading || draft.uploads.length >= MAX_UPLOADS} onClick={() => file.current?.click()}>
-                    {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
-                  </button>
-                  {draft.uploads.map((asset) => (
-                    <span key={asset.file} className="mks-tag prs-thumb">
-                      <img src={asset.url} alt="" />
-                      <span>{asset.name || "Image"}</span>
-                      <button type="button" aria-label={`Remove ${asset.name || "image"}`} onClick={() => patch({ uploads: draft.uploads.filter((u) => u.file !== asset.file) })}><X className="h-3 w-3" /></button>
-                    </span>
-                  ))}
-                  {!draft.uploads.length ? <span className="prs-drop-hint">Logo, screenshots, product photos</span> : null}
-                  <input ref={file} type="file" accept="image/png,image/jpeg,image/webp" multiple hidden onChange={(event) => { const files = Array.from(event.target.files || []); event.target.value = ""; void addFiles(files); }} />
+                  <ReferenceTray
+                    className="prs-uploads"
+                    assets={draft.uploads}
+                    max={MAX_UPLOADS}
+                    label="images"
+                    onChange={(uploads) => patch({ uploads })}
+                    onError={setError}
+                    empty="Logo, screenshots, product photos"
+                  />
                 </div>
                 <div className="mks-row">
                   {!revision ? (
                     <>
-                      <Chip icon={<Film className="h-3.5 w-3.5" />} label={template.name} onClick={() => setModal({ preview: "" })} />
+                      <SheetChip icon={<Film className="h-3.5 w-3.5" />} label={template.name} onClick={() => setModal({ preview: "" })} />
                       <StyleChip value={style?.id || ""} onPick={(id) => patch({ style: id })} />
-                      <SubjectChip value={subject.id} onPick={(id) => patch({ subject: id })} />
+                      <Choice
+                        skin="mks"
+                        label="What you're promoting"
+                        icon={<Shapes className="h-3.5 w-3.5" />}
+                        value={subject.id}
+                        onChange={(id) => patch({ subject: id })}
+                        options={PROMO_SUBJECTS.map((item) => (item.id === "auto" ? { value: item.id, label: "Any subject", hint: "Worked out from your link, images, and notes" } : { value: item.id, label: item.name, hint: item.hint }))}
+                      />
                     </>
                   ) : null}
                   <FormatPopover draft={draft} patch={patch} locked={Boolean(revision)} />
-                  <button type="button" className={`mks-chip prs-toggle${draft.music ? " is-on" : ""}`} aria-pressed={draft.music} onClick={() => patch({ music: !draft.music })}>
-                    <Music className="h-3.5 w-3.5" />
-                    <span>{draft.music ? "Music" : "Silent"}</span>
-                  </button>
+                  <Toggle className="mks-toggle" icon={<Music className="h-3.5 w-3.5" />} label="Music" value={draft.music} onChange={(music) => patch({ music })} />
                 </div>
               </div>
               <div className="mks-cluster">
@@ -219,7 +203,7 @@ export function PromoStudio({ generations, now, handlers, onCreated, catalog }: 
           </div>
         </div>
         {missing && !busy ? <p className="mks-hint">{missing}</p> : null}
-        {!configured ? <p className="mks-error">Generation isn't set up on this server yet.</p> : catalog?.promo && !catalog.promo.renderer ? <p className="mks-hint">This server can't render video yet, so films come back as live HTML you can play and revise.</p> : null}
+        {!configured ? <GenerationUnavailable className="mks-notice" /> : catalog?.promo && !catalog.promo.renderer ? <p className="mks-hint">This server can't render video yet, so films come back as live HTML you can play and revise.</p> : null}
       </section>
 
       <section className="mks-results" aria-label={films.length ? "Your films" : "Templates"}>
@@ -249,18 +233,6 @@ export function PromoStudio({ generations, now, handlers, onCreated, catalog }: 
 
       {modal ? <TemplateModal selected={draft.template} initialPreview={modal.preview} onPick={pickTemplate} onClose={() => setModal(null)} /> : null}
     </div>
-  );
-}
-
-function Chip({ icon, label, onClick }: { icon: ReactNode; label: string; onClick: () => void }) {
-  return (
-    <span className="mks-chip">
-      <button type="button" onClick={onClick}>
-        {icon}
-        <span>{label}</span>
-        <ChevronDown className="h-3 w-3" />
-      </button>
-    </span>
   );
 }
 
@@ -325,35 +297,6 @@ function StyleChip({ value, onPick }: { value: string; onPick: (id: string) => v
   );
 }
 
-function SubjectChip({ value, onPick }: { value: string; onPick: (id: string) => void }) {
-  const { open, setOpen, ref } = usePopover();
-  const current = findPromoSubject(value);
-  return (
-    <div className="mks-pop" ref={ref}>
-      <span className="mks-chip">
-        <button type="button" aria-expanded={open} aria-haspopup="listbox" onClick={() => setOpen(!open)}>
-          <Shapes className="h-3.5 w-3.5" />
-          <span>{current.id === "auto" ? "Any subject" : current.name}</span>
-          <ChevronDown className="h-3 w-3" />
-        </button>
-      </span>
-      {open ? (
-        <div className="mks-tech prs-subjects" role="listbox" aria-label="What you're promoting">
-          {PROMO_SUBJECTS.map((item) => (
-            <button key={item.id} type="button" role="option" aria-selected={item.id === value} className="prs-subject" onClick={() => { onPick(item.id); setOpen(false); }}>
-              <span>
-                <strong>{item.id === "auto" ? "Work it out" : item.name}</strong>
-                <small>{item.id === "auto" ? "From your link, images, and notes" : item.hint}</small>
-              </span>
-              {item.id === value ? <Check className="h-3.5 w-3.5" /> : null}
-            </button>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 function FormatPopover({ draft, patch, locked }: { draft: Draft; patch: (changes: Partial<Draft>) => void; locked: boolean }) {
   const { open, setOpen, ref } = usePopover();
   return (
@@ -370,24 +313,11 @@ function FormatPopover({ draft, patch, locked }: { draft: Draft; patch: (changes
           {locked ? <p className="prs-format-note">A revision keeps the film's size and length.</p> : null}
           <fieldset disabled={locked}>
             <legend><RectangleHorizontal className="h-3.5 w-3.5" />Aspect ratio</legend>
-            <div className="prs-seg">
-              {PROMO_ASPECTS.map((value) => (
-                <button key={value} type="button" aria-pressed={draft.aspect === value} onClick={() => patch({ aspect: value })}>
-                  <span className="prs-shape" data-aspect={value} aria-hidden="true" />
-                  <span className="prs-num">{value}</span>
-                </button>
-              ))}
-            </div>
+            <AspectPicker value={draft.aspect} options={PROMO_ASPECTS} onChange={(aspect) => patch({ aspect })} disabled={locked} />
           </fieldset>
           <fieldset disabled={locked}>
             <legend><Clock className="h-3.5 w-3.5" />Length</legend>
-            <div className="prs-seg">
-              {PROMO_DURATIONS.map((value) => (
-                <button key={value} type="button" aria-pressed={draft.duration === value} onClick={() => patch({ duration: value })}>
-                  <span className="prs-num">{value}s</span>
-                </button>
-              ))}
-            </div>
+            <Segment className="cs-tile-seg" label="Length" value={String(draft.duration)} options={PROMO_DURATIONS.map((value) => ({ value: String(value), label: <span className="prs-num">{value}s</span>, disabled: locked }))} onChange={(value) => patch({ duration: Number(value) })} />
           </fieldset>
         </div>
       ) : null}
@@ -473,7 +403,6 @@ function TemplateModal({ selected, initialPreview, onPick, onClose }: { selected
   const [preview, setPreview] = useState(initialPreview);
   // Opened straight onto a preview, Escape closes; opened from the grid, it goes back there.
   const [fromGrid, setFromGrid] = useState(!initialPreview);
-  const close = useRef<HTMLButtonElement>(null);
   const current = preview ? findPromoTemplate(preview) : null;
   const step = (direction: number) => {
     const index = PROMO_TEMPLATES.findIndex((item) => item.id === preview);
@@ -483,17 +412,10 @@ function TemplateModal({ selected, initialPreview, onPick, onClose }: { selected
     setFromGrid(true);
     setPreview("");
   };
-  useEffect(() => {
-    close.current?.focus();
-    const overflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = overflow;
-    };
-  }, []);
+  // Escape (and the backdrop) step back to the grid from a preview opened there; otherwise they close.
+  const dismiss = () => (preview && fromGrid ? setPreview("") : onClose());
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") return preview && fromGrid ? setPreview("") : onClose();
       // Arrow keys on the player seek; everywhere else in the preview they browse templates.
       if (!preview || (event.target as HTMLElement)?.tagName === "VIDEO") return;
       if (event.key === "ArrowLeft") step(-1);
@@ -504,9 +426,7 @@ function TemplateModal({ selected, initialPreview, onPick, onClose }: { selected
   });
   const shown = PROMO_TEMPLATES.filter((item) => tab === "all" || item.group === tab);
   return (
-    <div className="mks-modal" onClick={onClose}>
-      <div className="mks-sheet is-wide" role="dialog" aria-modal="true" aria-label={current ? `Preview: ${current.name}` : "Pick a template"} onClick={(event) => event.stopPropagation()}>
-        <button ref={close} type="button" className="mks-close" aria-label="Close" onClick={onClose}><X className="h-4 w-4" /></button>
+    <StudioSheet wide scope="prs" label={current ? `Preview: ${current.name}` : "Pick a template"} onClose={dismiss}>
         {current ? (
           <TemplatePreview item={current} selected={selected === current.id} onUse={() => onPick(current)} onStep={step} onBack={back} />
         ) : (
@@ -514,11 +434,7 @@ function TemplateModal({ selected, initialPreview, onPick, onClose }: { selected
             <h2 className="prs-sheet-title">Pick a template</h2>
             <p className="prs-sheet-sub">Each one sets the pacing and structure. The words, colors, and images come from your material.</p>
             <div className="mks-sheet-bar">
-              <div className="mks-tabs" role="tablist" aria-label="Template type">
-                {[["all", "All"], ["launch", "Launch"], ["explain", "Explain"], ["social", "Social"]].map(([value, label]) => (
-                  <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)}>{label}</button>
-                ))}
-              </div>
+              <Segment className="mks-tabs" label="Template type" value={tab} onChange={setTab} options={[{ value: "all", label: "All" }, { value: "launch", label: "Launch" }, { value: "explain", label: "Explain" }, { value: "social", label: "Social" }]} />
             </div>
             <div className="prs-cards">
               {shown.map((item) => (
@@ -527,8 +443,7 @@ function TemplateModal({ selected, initialPreview, onPick, onClose }: { selected
             </div>
           </>
         )}
-      </div>
-    </div>
+    </StudioSheet>
   );
 }
 

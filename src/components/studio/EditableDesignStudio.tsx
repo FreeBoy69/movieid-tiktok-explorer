@@ -6,7 +6,7 @@
 import { type FormEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, Check, Download, FileCode2, Info, Layers, Loader2, PenLine, RotateCcw, Save, Sparkles, Square, Trash2, Undo2, Wand2, X } from "lucide-react";
 import { domToPng } from "modern-screenshot";
-import { type Asset, type Catalog, Choice, type Generation, ModelPicker, readJson, ReferenceTray, Segment, timeAgo } from "./studioShared";
+import { AspectPicker, type Asset, type Catalog, Choice, type Generation, GenerationUnavailable, ModelPicker, readJson, ReferenceTray, Segment, timeAgo, useDeleteGeneration } from "./studioShared";
 import { CREDIT_ESTIMATE_TITLE, creditEstimateLabel, fallbackCreditEstimate, useStudioPricing } from "./studioPricing";
 import { useErrorToast, toast } from "../../utils/toast";
 import { fitDesign } from "./designFit";
@@ -407,12 +407,11 @@ export function EditableDesignStudio({ theme, catalog, generations, now, onCreat
     await fetch(`/api/studio/generations/${encodeURIComponent(item.id)}/stop`, { method: "POST" }).catch(() => undefined);
     onRefresh();
   }
-  async function remove(item: Item) {
-    if (!window.confirm("Delete this design and its files?")) return;
-    onRemoved(item.id);
-    if (item.id === selected?.id) setSelectedId("");
-    await fetch(`/api/studio/generations/${encodeURIComponent(item.id)}`, { method: "DELETE" }).catch(() => undefined);
-  }
+  const deleteDesign = useDeleteGeneration(useCallback((id: string) => {
+    onRemoved(id);
+    setSelectedId((current) => (current === id ? "" : current));
+  }, [onRemoved]), "design");
+  const remove = (item: Item) => deleteDesign(item);
 
   // Scale the canvas to the stage: full width on phones, the visible height on desktop.
   const canvas = design?.canvas || { width: 1200, height: 1600, id: draft.canvas };
@@ -447,15 +446,7 @@ export function EditableDesignStudio({ theme, catalog, generations, now, onCreat
         </label>
         <div className="eds-field">
           <span className="eds-label">Canvas</span>
-          <div className="eds-canvases" role="radiogroup" aria-label="Canvas">
-            {CANVASES.map((option) => (
-              <button key={option.id} type="button" role="radio" aria-checked={draft.canvas === option.id} className="eds-canvas" onClick={() => patch({ canvas: option.id })}>
-                <span className="eds-canvas-glyph" style={{ aspectRatio: `${option.w} / ${option.h}` }} aria-hidden="true" />
-                <strong>{option.label}</strong>
-                <span>{option.hint}</span>
-              </button>
-            ))}
-          </div>
+          <AspectPicker variant="cards" label="Canvas" value={draft.canvas} onChange={(canvas) => patch({ canvas: canvas as CanvasId })} options={CANVASES.map((option) => ({ value: option.id, label: option.label, hint: option.hint, ratio: [option.w, option.h] }))} />
         </div>
         <div className="eds-field">
           <span className="eds-label">Artwork</span>
@@ -471,7 +462,7 @@ export function EditableDesignStudio({ theme, catalog, generations, now, onCreat
           <ModelPicker models={models} value={draft.model} onChange={(id) => patch({ model: id })} loading={!catalog} pricing={pricing} />
           {estimate !== null ? <span className="cs-cost" title={CREDIT_ESTIMATE_TITLE}>{creditEstimateLabel(estimate)}</span> : null}
         </div>
-        {catalog && !catalog.configured ? <p className="eds-error" role="alert"><AlertCircle size={16} />Generation isn't set up on this server yet.</p> : null}
+        {catalog && !catalog.configured ? <GenerationUnavailable /> : null}
         </div>
         <div className="eds-composer-foot">
           <button type="submit" className="eds-primary" disabled={!ready}>

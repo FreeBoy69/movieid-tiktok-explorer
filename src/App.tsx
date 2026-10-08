@@ -32,6 +32,7 @@ import { AuthSessionPayload, ConnectedYouTubeAccount, ExtractionState, MovieResu
 import { cn } from "./lib/utils";
 import { PickerDialog } from "./components/SourcePicker";
 import { PlatformGrid, socialPlatform } from "./components/SocialPlatforms";
+import { useChannels } from "./components/useChannels";
 import { toast } from "./utils/toast";
 import TikTokExplorer from "./components/TikTokExplorer";
 import { MovieAnalysisTabs, type MainTab as MovieAnalysisTab } from "./components/MovieAnalysisTabs";
@@ -97,7 +98,6 @@ function WorkspaceApp() {
   const [agentChatSidebarHost, setAgentChatSidebarHost] = useState<HTMLDivElement | null>(null);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
-  const [channelMenuAnchor, setChannelMenuAnchor] = useState<DOMRect | null>(null);
   const [channelTheme, setChannelTheme] = useState<"light" | "dark">(() => {
     if (typeof window === "undefined") return "light";
     // Dark is the default; light is an explicit choice.
@@ -571,14 +571,13 @@ function WorkspaceApp() {
         onNavigate={handleNavigate}
         onThemeChange={setChannelTheme}
         onOpenActivity={openBackgroundProcessCenter}
-        onOpenChannels={(anchor) => { setChannelMenuAnchor(anchor); setIsAccountMenuOpen(true); }}
+        onOpenChannels={() => setIsAccountMenuOpen(true)}
         onLogout={() => void logout()}
       /> : null}
 
       {!isGuest && <AccountSwitcherModal
         auth={session}
         open={isAccountMenuOpen}
-        anchor={channelMenuAnchor}
         onClose={() => setIsAccountMenuOpen(false)}
         onRefresh={refreshAuth}
         darkMode={isDarkMode}
@@ -822,46 +821,9 @@ function WorkspaceApp() {
   );
 }
 
-function channelMenuPosition(rect: DOMRect | null) {
-  return {
-    left: Math.max(12, Math.min(rect?.left ?? 16, window.innerWidth - 304)),
-    top: (rect?.bottom ?? 56) + 8,
-  };
-}
-
-function AccountSwitcherModal({ auth, open, anchor, onClose, onRefresh, darkMode }: { auth: AuthSessionPayload; open: boolean; anchor: DOMRect | null; onClose: () => void; onRefresh: () => Promise<void>; darkMode: boolean }) {
-  const [busy, setBusy] = useState("");
+function AccountSwitcherModal({ auth, open, onClose, onRefresh, darkMode }: { auth: AuthSessionPayload; open: boolean; onClose: () => void; onRefresh: () => Promise<void>; darkMode: boolean }) {
   const accounts = auth.accounts || [];
-
-  async function switchAccount(account: ConnectedYouTubeAccount) {
-    setBusy(account.id);
-    try {
-      const response = await fetch(`/api/youtube/accounts/${encodeURIComponent(account.id)}/select`, { method: "POST" });
-      if (!response.ok) throw new Error("Could not switch account");
-      await onRefresh();
-      onClose();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not switch account");
-    } finally {
-      setBusy("");
-    }
-  }
-
-  async function disconnectAccount(account: ConnectedYouTubeAccount) {
-    setBusy(account.id);
-    try {
-      const response = await fetch(`/api/youtube/accounts/${encodeURIComponent(account.id)}`, { method: "DELETE" });
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(data.error || "Could not disconnect account");
-      }
-      await onRefresh();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not disconnect account");
-    } finally {
-      setBusy("");
-    }
-  }
+  const channels = useChannels(onRefresh);
 
   // The same grid pop-up every channel choice in the app uses.
   return (
@@ -871,7 +833,7 @@ function AccountSwitcherModal({ auth, open, anchor, onClose, onRefresh, darkMode
       title="Your channels"
       theme={darkMode ? "dark" : "light"}
       value={auth.activeAccount?.id || ""}
-      busyValue={busy}
+      busyValue={channels.busyId}
       emptyText="No channels connected yet. Connect one below."
       items={accounts.map((account) => ({
         value: account.id,
@@ -883,7 +845,7 @@ function AccountSwitcherModal({ auth, open, anchor, onClose, onRefresh, darkMode
       }))}
       onChoose={(item) => {
         const account = accounts.find((entry) => entry.id === item.value);
-        if (account && item.value !== auth.activeAccount?.id) void switchAccount(account);
+        if (account && item.value !== auth.activeAccount?.id) void channels.select(account).then((ok) => ok && onClose());
         else onClose();
       }}
       action={(item) => (
@@ -893,7 +855,7 @@ function AccountSwitcherModal({ auth, open, anchor, onClose, onRefresh, darkMode
           aria-label={`Disconnect ${item.label}`}
           onClick={() => {
             const account = accounts.find((entry) => entry.id === item.value);
-            if (account && window.confirm(`Disconnect ${account.channelTitle}? Agents posting to it will stop until you connect it again.`)) void disconnectAccount(account);
+            if (account) void channels.disconnect(account);
           }}
         >
           <Trash2 className="h-4 w-4" />

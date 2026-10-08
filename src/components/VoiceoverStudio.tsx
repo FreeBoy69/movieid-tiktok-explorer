@@ -15,6 +15,7 @@ import { MusicLibrary, type LibraryTrack } from "./MusicLibrary";
 import { useErrorToast } from "../utils/toast";
 import { isVoiceReady, loadVoiceProfiles } from "../utils/voiceProfiles";
 import { VoicePicker } from "./VoicePicker";
+import { Progress, Segmented } from "./ui/controls";
 import type { VoiceProfile } from "../utils/voiceProfiles";
 
 type Agent = { id: string; name: string; youtubeAccountId?: string; channelTitle?: string; channelThumbnailUrl?: string };
@@ -435,10 +436,16 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId, embedded 
         </div>
       </div>
       <div className="vs-topbar-center">
-        <div className="voice-segmented" aria-label="Preview version">
-          <button aria-pressed={playback === "source"} onClick={() => compare("source")} disabled={!source}>Original</button>
-          <button aria-pressed={playback === "result"} onClick={() => compare("result")} disabled={!outputVideo}>Result</button>
-        </div>
+        <Segmented
+          label="Preview version"
+          size="sm"
+          value={playback}
+          onChange={(next) => compare(next as typeof playback)}
+          options={[
+            { value: "source", label: "Original", disabled: !source },
+            { value: "result", label: "Result", disabled: !outputVideo },
+          ]}
+        />
         {selected?.youtubeUrl && <a className="voice-icon" href={selected.youtubeUrl} target="_blank" rel="noreferrer" title="Open original upload" aria-label="Open original upload"><ExternalLink size={16} /></a>}
       </div>
       <div className="vs-topbar-right">
@@ -451,7 +458,7 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId, embedded 
     </header>
 
     {showImport && <form className="voice-import-form vs-import" onSubmit={(e) => { e.preventDefault(); void importSource(); }}><input type="url" aria-label="Video URL" placeholder="https://youtube.com/watch?v=..." value={sourceUrl} onChange={(e) => setSourceUrl(e.target.value)} required /><button className="voice-button" disabled={!rights || !agentId || submitting}>Import video</button></form>}
-    {running && <div className="vs-progress-line" role="status" aria-live="polite"><progress value={job?.progress || 0} max="100" /><span>{job?.message || "Working"} · {Math.round(job?.progress || 0)}%{eta > 0 ? ` · ~${duration(eta)} left` : ""}</span></div>}
+    {running && <div className="vs-progress-line" role="status" aria-live="polite"><Progress label="Voiceover progress" value={(job?.progress || 0) / 100} message={`${job?.message || "Working"}${eta > 0 ? ` · ~${duration(eta)} left` : ""}`} /></div>}
 
     <div className="vs-main">
       <section className="vs-canvas" aria-label="Video canvas">

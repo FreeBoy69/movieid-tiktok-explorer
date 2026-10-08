@@ -1,10 +1,9 @@
 // Marketing Studio, rebuilt after Higgsfield's: one floating control bar with
 // product, presenter, format, hook, and setting; modal pickers with previews;
 // and a technical popover. Generation runs through /api/studio (runAd).
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import {
   AppWindow,
-  Check,
   ChevronDown,
   Clock,
   Film,
@@ -15,18 +14,18 @@ import {
   Pin,
   Plus,
   RectangleHorizontal,
-  Search,
   SlidersHorizontal,
   Sparkles,
   Trash2,
-  Upload,
   User,
   Users,
   X,
   Zap,
 } from "lucide-react";
 import { AD_ASPECTS, AD_FORMATS, AD_HOOKS, AD_QUALITIES, AD_SETTINGS, findFormat, findHook, findSetting, presetImage } from "../../utils/marketingPresets";
-import { type Asset, type Generation, readJson, uploadAsset, usePopover } from "./studioShared";
+import { AspectPicker, type Asset, type Generation, GenerationUnavailable, IMAGE_TYPES, MediaSlot, ModelPicker, readJson, ReferenceTray, Segment, usePopover, type VideoModel as CatalogVideoModel } from "./studioShared";
+import { confirm, Dialog } from "../ui/Dialog";
+import { SearchField } from "../ui/controls";
 import { type GalleryHandlers, StudioGallery } from "./StudioGallery";
 import { clearPendingTemplate, peekPendingTemplate } from "../../utils/promptTemplates";
 import { useErrorToast } from "../../utils/toast";
@@ -132,17 +131,16 @@ export function MarketingStudio({ generations, now, handlers, onCreated, configu
         </h1>
 
         <div className="mks-dock">
-          <div className="mks-modes" role="tablist" aria-label="What you're advertising">
-            {([
-              ["product", "Product", <Package key="p" className="h-4 w-4" />],
-              ["app", "App", <AppWindow key="a" className="h-4 w-4" />],
-            ] as const).map(([value, label, icon]) => (
-              <button key={value} type="button" role="tab" aria-selected={draft.mode === value} onClick={() => patch({ mode: value })}>
-                {icon}
-                <span>{label}</span>
-              </button>
-            ))}
-          </div>
+          <Segment
+            className="mks-modes"
+            label="What you're advertising"
+            value={draft.mode}
+            onChange={(mode) => patch({ mode })}
+            options={[
+              { value: "product", label: "Product", icon: <Package className="h-4 w-4" /> },
+              { value: "app", label: "App", icon: <AppWindow className="h-4 w-4" /> },
+            ]}
+          />
 
           <div className="mks-bar">
             {hook && draft.mode === "product" ? (
@@ -179,11 +177,11 @@ export function MarketingStudio({ generations, now, handlers, onCreated, configu
                   ) : null}
                 </div>
                 <div className="mks-row">
-                  <Chip icon={<Film className="h-3.5 w-3.5" />} label={format.name} onClick={() => setModal("format")} />
+                  <SheetChip icon={<Film className="h-3.5 w-3.5" />} label={format.name} onClick={() => setModal("format")} />
                   {draft.mode === "product" ? (
                     <>
-                      <Chip tone="hook" icon={<Zap className="h-3.5 w-3.5" />} label={hook?.name || "Hook"} active={Boolean(hook)} onClick={() => setModal("hook")} onClear={hook ? () => patch({ hook: "", hookPrompt: "" }) : undefined} />
-                      <Chip tone="setting" icon={<Sparkles className="h-3.5 w-3.5" />} label={setting?.name || "Setting"} active={Boolean(setting)} onClick={() => setModal("setting")} onClear={setting ? () => patch({ setting: "" }) : undefined} />
+                      <SheetChip tone="hook" icon={<Zap className="h-3.5 w-3.5" />} label={hook?.name || "Hook"} active={Boolean(hook)} onClick={() => setModal("hook")} onClear={hook ? () => patch({ hook: "", hookPrompt: "" }) : undefined} />
+                      <SheetChip tone="setting" icon={<Sparkles className="h-3.5 w-3.5" />} label={setting?.name || "Setting"} active={Boolean(setting)} onClick={() => setModal("setting")} onClear={setting ? () => patch({ setting: "" }) : undefined} />
                     </>
                   ) : null}
                   <TechPopover draft={draft} patch={patch} models={models} model={model} auto={!chosen} durations={durations} duration={duration} />
@@ -209,7 +207,7 @@ export function MarketingStudio({ generations, now, handlers, onCreated, configu
           </div>
         </div>
         {missing && !busy ? <p className="mks-hint">{missing}</p> : null}
-        {!configured ? <p className="mks-error">Generation isn't set up on this server yet.</p> : null}
+        {!configured ? <GenerationUnavailable className="mks-notice" /> : null}
       </section>
 
       <section className="mks-results" aria-label={ads.length ? "Your ads" : "Formats"}>
@@ -284,10 +282,11 @@ export function MarketingStudio({ generations, now, handlers, onCreated, configu
   );
 }
 
-function Chip({ icon, label, onClick, onClear, active, tone }: { icon: ReactNode; label: string; onClick: () => void; onClear?: () => void; active?: boolean; tone?: "hook" | "setting" }) {
+/** A dock chip that opens one of the studio's picker sheets (Marketing and Promo). */
+export function SheetChip({ icon, label, onClick, onClear, active, tone }: { icon: ReactNode; label: string; onClick: () => void; onClear?: () => void; active?: boolean; tone?: "hook" | "setting" }) {
   return (
     <span className={`mks-chip${active ? ` is-${tone}` : ""}`}>
-      <button type="button" onClick={onClick}>
+      <button type="button" onClick={onClick} aria-haspopup="dialog">
         {icon}
         <span>{label}</span>
         {!onClear ? <ChevronDown className="h-3 w-3" /> : null}
@@ -299,73 +298,54 @@ function Chip({ icon, label, onClick, onClear, active, tone }: { icon: ReactNode
 
 function TechPopover({ draft, patch, models, model, auto, durations, duration }: { draft: Draft; patch: (changes: Partial<Draft>) => void; models: VideoModel[]; model?: VideoModel; auto: boolean; durations: number[]; duration: number }) {
   const { open, setOpen, ref } = usePopover();
-  const [flyout, setFlyout] = useState<"" | "aspect" | "quality" | "model">("");
   const qualities = AD_QUALITIES.filter((q) => !model?.resolutions?.length || model.resolutions.includes(q));
   const aspects = AD_ASPECTS.filter((a) => a === "auto" || !model?.aspectRatios?.length || model.aspectRatios.includes(a));
   const min = durations[0], max = durations[durations.length - 1];
+  // The shared model list wants provider and frame facts the marketing endpoint leaves out.
+  const pickerModels = useMemo<CatalogVideoModel[]>(() => models.map((m) => ({ ...m, provider: m.id.split("/")[0], description: "", frames: [], audio: false })), [models]);
   return (
     <div className="mks-pop" ref={ref}>
       <button type="button" className="mks-chip-icon" aria-label="Aspect ratio, quality, duration, and model" aria-expanded={open} onClick={() => setOpen(!open)}>
         <SlidersHorizontal className="h-4 w-4" />
       </button>
       {open ? (
-        <div className="mks-tech" role="dialog" aria-label="Technical settings">
-          <button type="button" className="mks-tech-row" onClick={() => setFlyout(flyout === "aspect" ? "" : "aspect")}>
-            <RectangleHorizontal className="h-4 w-4" /><span>Aspect ratio</span><strong>{draft.aspect === "auto" ? "Auto" : draft.aspect}</strong>
-          </button>
-          <button type="button" className="mks-tech-row" onClick={() => setFlyout(flyout === "quality" ? "" : "quality")}>
-            <Sparkles className="h-4 w-4" /><span>Quality</span><strong>{draft.quality}</strong>
-          </button>
+        <div className="mks-tech mks-tech-settings" role="dialog" aria-label="Technical settings">
+          <div className="mks-tech-group">
+            <p><RectangleHorizontal className="h-4 w-4" />Aspect ratio</p>
+            <AspectPicker value={draft.aspect} options={aspects} onChange={(aspect) => patch({ aspect })} />
+          </div>
+          {qualities.length > 1 ? (
+            <div className="mks-tech-group">
+              <p><Sparkles className="h-4 w-4" />Quality</p>
+              <Segment className="cs-tile-seg" label="Quality" value={draft.quality} options={qualities.map((q) => ({ value: q, label: q }))} onChange={(quality) => patch({ quality })} />
+            </div>
+          ) : null}
           <label className="mks-tech-row is-slider">
             <Clock className="h-4 w-4" /><span>Duration</span><strong>{duration}s</strong>
             <input type="range" min={min} max={max} step={1} value={duration} onChange={(event) => patch({ duration: Number(event.target.value) })} aria-label="Duration in seconds" style={{ ["--fill" as string]: `${((duration - min) / Math.max(1, max - min)) * 100}%` }} />
           </label>
-          <button type="button" className="mks-tech-row" onClick={() => setFlyout(flyout === "model" ? "" : "model")}>
-            <Film className="h-4 w-4" /><span>Model</span><strong>{auto ? "Auto" : model?.name}</strong>
-          </button>
-          {flyout ? (
-            <div className="mks-flyout">
-              <p>{flyout === "aspect" ? "Aspect ratio" : flyout === "quality" ? "Quality" : "Video model"}</p>
-              <div className={flyout === "aspect" ? "mks-flyout-grid" : "mks-flyout-list"}>
-                {(flyout === "aspect" ? aspects : flyout === "quality" ? qualities : ["", ...models.map((m) => m.id)]).map((value) => {
-                  const label = flyout === "model" ? (value ? models.find((m) => m.id === value)?.name || value : "Auto (recommended)") : value === "auto" ? "Auto" : value;
-                  const current = flyout === "aspect" ? draft.aspect : flyout === "quality" ? draft.quality : auto ? "" : model?.id;
-                  return (
-                    <button key={value} type="button" aria-pressed={current === value} onClick={() => { patch(flyout === "aspect" ? { aspect: value } : flyout === "quality" ? { quality: value } : { model: value }); setFlyout(""); }}>
-                      {label}
-                      {current === value ? <Check className="h-3.5 w-3.5" /> : null}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          ) : null}
+          <div className="mks-tech-group">
+            <p><Film className="h-4 w-4" />Video model</p>
+            <ModelPicker models={pickerModels} value={auto ? "" : model?.id || ""} onChange={(id) => patch({ model: id })} loading={!models.length} auto={{ label: "Auto (recommended)", description: "Veo first, then Wan, then Seedance if a model refuses." }} />
+          </div>
         </div>
       ) : null}
     </div>
   );
 }
 
-function Modal({ label, onClose, children, wide }: { label: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
-  const close = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    close.current?.focus();
-    const onKey = (event: KeyboardEvent) => event.key === "Escape" && onClose();
-    document.addEventListener("keydown", onKey);
-    const overflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = overflow;
-    };
-  }, [onClose]);
+/** The studio's picker sheet: the shared Dialog (focus trap, Escape, scroll lock) in Marketing's skin. Promo and Explainer use it too. */
+export function StudioSheet({ label, onClose, children, wide, scope = "", className = "" }: { label: string; onClose: () => void; children: ReactNode; wide?: boolean; scope?: string; className?: string }) {
+  const theme = document.documentElement.dataset.theme === "light" ? "light" : "dark";
   return (
-    <div className="mks-modal" onClick={onClose}>
-      <div className={wide ? "mks-sheet is-wide" : "mks-sheet"} role="dialog" aria-modal="true" aria-label={label} onClick={(event) => event.stopPropagation()}>
-        <button ref={close} type="button" className="mks-close" aria-label="Close" onClick={onClose}><X className="h-4 w-4" /></button>
-        {children}
+    <Dialog title={label} onClose={onClose} bare size="xl" className={`mks-dialog${wide ? " is-wide" : ""}`}>
+      <div className={`cstudio mks-scope${scope ? ` ${scope}` : ""}`} data-theme={theme}>
+        <div className={`mks-sheet${wide ? " is-wide" : ""}${className ? ` ${className}` : ""}`}>
+          <button type="button" className="mks-close" aria-label="Close" onClick={onClose}><X className="h-4 w-4" /></button>
+          {children}
+        </div>
       </div>
-    </div>
+    </Dialog>
   );
 }
 
@@ -374,17 +354,11 @@ function PickerModal({ title, tabs, items, selected, onPick, onClose, search }: 
   const [query, setQuery] = useState("");
   const shown = items.filter((item) => (tab === "all" || item.group === tab) && (!query || `${item.name} ${item.text}`.toLowerCase().includes(query.toLowerCase())));
   return (
-    <Modal label={title} onClose={onClose} wide>
+    <StudioSheet label={title} onClose={onClose} wide>
       <p className="mks-tagline">{title}</p>
       <div className="mks-sheet-bar">
-        <div className="mks-tabs" role="tablist" aria-label="Categories">
-          {tabs.map(([value, label]) => (
-            <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => setTab(value)}>{label}</button>
-          ))}
-        </div>
-        {search ? (
-          <label className="mks-search"><Search className="h-4 w-4" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search" /></label>
-        ) : null}
+        <Segment className="mks-tabs" label="Categories" value={tab} onChange={setTab} options={tabs.map(([value, label]) => ({ value, label }))} />
+        {search ? <SearchField className="mks-search" size="sm" value={query} onChange={setQuery} placeholder={`Search ${title.toLowerCase().startsWith("hooks") ? "hooks" : "settings"}`} /> : null}
       </div>
       <div className="mks-cards">
         {shown.map((item) => (
@@ -396,7 +370,7 @@ function PickerModal({ title, tabs, items, selected, onPick, onClose, search }: 
         ))}
         {!shown.length ? <p className="mks-empty">Nothing matches “{query}”.</p> : null}
       </div>
-    </Modal>
+    </StudioSheet>
   );
 }
 
@@ -409,7 +383,6 @@ function ProductModal({ mode, products, selected, onMode, onPick, onClose, onCha
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   useErrorToast(error, () => setError(""));
-  const file = useRef<HTMLInputElement>(null);
   const shown = products.filter((item) => item.kind === mode);
 
   async function importUrl() {
@@ -438,15 +411,24 @@ function ProductModal({ mode, products, selected, onMode, onPick, onClose, onCha
       setBusy("");
     }
   }
-  async function remove(id: string) {
-    await fetch(`/api/studio/marketing/products/${encodeURIComponent(id)}`, { method: "DELETE" }).catch(() => undefined);
+  async function remove(item: Product) {
+    if (!(await confirm({ title: `Delete ${item.name}?`, body: "Ads you already made keep it; it won't be offered for new ones.", confirmLabel: "Delete", danger: true }))) return;
+    await fetch(`/api/studio/marketing/products/${encodeURIComponent(item.id)}`, { method: "DELETE" }).catch(() => undefined);
     await onChange();
   }
   return (
-    <Modal label="Add your product" onClose={onClose} wide>
-      <div className="mks-tabs is-center" role="tablist" aria-label="Product type">
-        <button type="button" role="tab" aria-selected={mode === "product"} onClick={() => onMode("product")}><Package className="h-3.5 w-3.5" />Product</button>
-        <button type="button" role="tab" aria-selected={mode === "app"} onClick={() => onMode("app")}><AppWindow className="h-3.5 w-3.5" />App</button>
+    <StudioSheet label="Add your product" onClose={onClose} wide>
+      <div className="mks-tabs-row">
+        <Segment
+          className="mks-tabs"
+          label="Product type"
+          value={mode}
+          onChange={onMode}
+          options={[
+            { value: "product", label: "Product", icon: <Package className="h-3.5 w-3.5" /> },
+            { value: "app", label: "App", icon: <AppWindow className="h-3.5 w-3.5" /> },
+          ]}
+        />
       </div>
       <div className="mks-add">
         <div>
@@ -467,31 +449,7 @@ function ProductModal({ mode, products, selected, onMode, onPick, onClose, onCha
           <div className="mks-manual">
             <input value={name} onChange={(event) => setName(event.target.value)} placeholder={mode === "app" ? "App name" : "Product name"} aria-label="Name" maxLength={80} />
             <textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={2} placeholder="What it is and why people love it (optional)" aria-label="Description" maxLength={600} />
-            <div className="mks-uploads">
-              {images.map((img) => (
-                <span key={img.file} className="mks-upload"><img src={img.url} alt="" /><button type="button" aria-label="Remove image" onClick={() => setImages(images.filter((i) => i.file !== img.file))}><X className="h-3 w-3" /></button></span>
-              ))}
-              {images.length < 5 ? (
-                <button type="button" className="mks-upload is-add" onClick={() => file.current?.click()} disabled={busy === "upload"}>
-                  {busy === "upload" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-                  <span>{images.length ? "Add" : "Upload up to 5"}</span>
-                </button>
-              ) : null}
-              <input ref={file} type="file" accept="image/png,image/jpeg,image/webp" multiple hidden onChange={async (event) => {
-                const files = Array.from(event.target.files || []).slice(0, 5 - images.length);
-                event.target.value = "";
-                setBusy("upload");
-                try {
-                  const added: Asset[] = [];
-                  for (const f of files) added.push(await uploadAsset(f, f.name));
-                  setImages((current) => [...current, ...added].slice(0, 5));
-                } catch (err) {
-                  setError(err instanceof Error ? err.message : "Upload failed");
-                } finally {
-                  setBusy("");
-                }
-              }} />
-            </div>
+            <ReferenceTray className="mks-uploads" assets={images} max={5} label="product photos" onChange={setImages} onError={setError} empty={images.length ? null : "Up to 5 photos of the product"} />
             <div className="mks-manual-actions">
               <button type="button" className="mks-ghost" onClick={() => setManual(false)}>Back</button>
               <button type="button" className="mks-pink" disabled={!name.trim() || !images.length || Boolean(busy)} onClick={() => void save()}>{busy === "save" ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save"}</button>
@@ -507,12 +465,12 @@ function ProductModal({ mode, products, selected, onMode, onPick, onClose, onCha
                 <span className="mks-product-media">{item.images[0] ? <img src={item.images[0].url} alt="" /> : <Package className="h-6 w-6" />}</span>
                 <span className="mks-product-name">{item.name}</span>
               </button>
-              <button type="button" className="mks-product-del" aria-label={`Delete ${item.name}`} onClick={() => void remove(item.id)}><Trash2 className="h-3.5 w-3.5" /></button>
+              <button type="button" className="mks-product-del" aria-label={`Delete ${item.name}`} onClick={() => void remove(item)}><Trash2 className="h-3.5 w-3.5" /></button>
             </div>
           ))}
         </div>
       ) : null}
-    </Modal>
+    </StudioSheet>
   );
 }
 
@@ -526,12 +484,13 @@ function AvatarModal({ avatars, selected, onPick, onClose, onChange }: { avatars
     await fetch(`/api/studio/marketing/avatars/${encodeURIComponent(id)}/pin`, { method: "POST" }).catch(() => undefined);
     await onChange();
   }
-  async function remove(id: string) {
-    await fetch(`/api/studio/marketing/avatars/${encodeURIComponent(id)}`, { method: "DELETE" }).catch(() => undefined);
+  async function remove(item: Avatar) {
+    if (!(await confirm({ title: `Delete ${item.name}?`, body: "This avatar is removed from your presenters.", confirmLabel: "Delete", danger: true }))) return;
+    await fetch(`/api/studio/marketing/avatars/${encodeURIComponent(item.id)}`, { method: "DELETE" }).catch(() => undefined);
     await onChange();
   }
   return (
-    <Modal label="Select avatar" onClose={onClose} wide>
+    <StudioSheet label="Select avatar" onClose={onClose} wide>
       <div className="mks-avatars">
         <aside>
           <h2>Select avatar</h2>
@@ -548,7 +507,7 @@ function AvatarModal({ avatars, selected, onPick, onClose, onChange }: { avatars
           ))}
         </aside>
         <div className="mks-avatars-main">
-          <label className="mks-search is-wide"><Search className="h-4 w-4" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search..." /></label>
+          <SearchField className="mks-search is-wide" size="sm" value={query} onChange={setQuery} placeholder="Search avatars" />
           <div className="mks-faces">
             {filter !== "pinned" ? (
               <button type="button" className="mks-face is-create" onClick={() => setCreating(true)}>
@@ -562,14 +521,14 @@ function AvatarModal({ avatars, selected, onPick, onClose, onChange }: { avatars
                 <span className="mks-face-name">{item.name}</span>
                 <button type="button" className="mks-face-select" onClick={() => onPick(item.id)}>Select avatar</button>
                 <button type="button" className="mks-face-pin" aria-pressed={item.pinned} aria-label={item.pinned ? `Unpin ${item.name}` : `Pin ${item.name}`} onClick={() => void pin(item.id)}><Pin className="h-3.5 w-3.5" /></button>
-                {!item.builtIn ? <button type="button" className="mks-face-del" aria-label={`Delete ${item.name}`} onClick={() => void remove(item.id)}><Trash2 className="h-3.5 w-3.5" /></button> : null}
+                {!item.builtIn ? <button type="button" className="mks-face-del" aria-label={`Delete ${item.name}`} onClick={() => void remove(item)}><Trash2 className="h-3.5 w-3.5" /></button> : null}
               </div>
             ))}
           </div>
         </div>
       </div>
       {creating ? <CreateAvatar onClose={() => setCreating(false)} onCreated={async (id) => { await onChange(); setCreating(false); onPick(id); }} /> : null}
-    </Modal>
+    </StudioSheet>
   );
 }
 
@@ -581,7 +540,6 @@ function CreateAvatar({ onClose, onCreated }: { onClose: () => void; onCreated: 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   useErrorToast(error, () => setError(""));
-  const file = useRef<HTMLInputElement>(null);
   async function create() {
     setBusy(true);
     setError("");
@@ -597,25 +555,9 @@ function CreateAvatar({ onClose, onCreated }: { onClose: () => void; onCreated: 
     <div className="mks-create" role="dialog" aria-label="Create avatar">
       <h3>Create avatar</h3>
       <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Name" aria-label="Avatar name" maxLength={40} />
-      <div className="mks-tabs">
-        {(["female", "male"] as const).map((value) => (
-          <button key={value} type="button" role="tab" aria-selected={gender === value} onClick={() => setGender(value)}>{value === "female" ? "Female" : "Male"}</button>
-        ))}
-      </div>
+      <Segment<"female" | "male"> className="mks-tabs" label="Gender" value={gender} onChange={setGender} options={[{ value: "female", label: "Female" }, { value: "male", label: "Male" }]} />
       <div className="mks-create-body">
-        <button type="button" className="mks-upload is-add is-tall" onClick={() => file.current?.click()}>
-          {photo ? <img src={photo.url} alt="" /> : <><Upload className="h-4 w-4" /><span>Upload a photo you have rights to</span></>}
-        </button>
-        <input ref={file} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={async (event) => {
-          const f = event.target.files?.[0];
-          event.target.value = "";
-          if (!f) return;
-          try {
-            setPhoto(await uploadAsset(f, f.name));
-          } catch (err) {
-            setError(err instanceof Error ? err.message : "Upload failed");
-          }
-        }} />
+        <MediaSlot label="Photo you have rights to" accept={IMAGE_TYPES} asset={photo || undefined} onChange={(asset) => setPhoto(asset || null)} onError={setError} />
         <textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={4} placeholder="…or describe them: 28-year-old runner with a buzz cut and a warm smile" aria-label="Describe the presenter" disabled={Boolean(photo)} maxLength={400} />
       </div>
       <div className="mks-manual-actions">

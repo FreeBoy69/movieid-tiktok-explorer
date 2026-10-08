@@ -1,11 +1,6 @@
 /* Explainer Studio: Promo Studio's page (.mks .prs) plus the script editor and voice cloning. */
-.exs .exs-tag-icon {
-  flex-shrink: 0;
-  margin-left: 4px;
-  color: var(--mks-muted);
-}
-.exs .exs-seg-4 {
-  grid-template-columns: repeat(4, 1fr);
+.exs-material {
+  align-items: flex-start;
 }
 .exs-note {
   margin: 0;
@@ -479,9 +474,9 @@ button.exs-visual:focus-visible .exs-visual-x {
   width: 100%;
 }
 .exs-toggles {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
   gap: 8px;
+  margin-top: 12px;
 }
 .exs-stats {
   display: grid;

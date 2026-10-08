@@ -1,6 +1,8 @@
 // Shared data, API helpers, and controls for Creator Studio apps.
 import { type KeyboardEvent as ReactKeyboardEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AudioLines, Check, ChevronDown, Download, Film, Link2, Loader2, Plus, Search, Sparkles, Upload, X } from "lucide-react";
+import { AlertCircle, AudioLines, Check, ChevronDown, Download, Film, Link2, Loader2, Plus, Sparkles, Upload, Video, X } from "lucide-react";
+import { confirm } from "../ui/Dialog";
+import { EmptyState, Notice, SearchField, Segmented, Switch, Tabs as UiTabs } from "../ui/controls";
 import { VideoPlayer } from "../VideoPlayer";
 import "./Lightbox.css";
 import { CREDIT_ESTIMATE_TITLE, creditEstimateLabel, providerCreditEstimate, type StudioPricing } from "./studioPricing";
@@ -110,12 +112,14 @@ export function usePopover() {
 // The one setting dropdown: a chip that opens a listbox. Skins dress it for each surface
 // (studio prompt bars, the Create Drama composer, Cinema Studio's dock) with the same
 // behaviour everywhere: Escape and outside-click close, arrow keys move, the pick is focused.
-export type ChoiceOption = { value: string; label: string; hint?: string };
+export type ChoiceOption = { value: string; label: string; hint?: string; icon?: ReactNode };
 const CHOICE_SKINS = {
   studio: { root: "cs-pop", chip: "cs-chip", label: "cs-chip-label", value: "", menu: "cs-menu", item: "cs-menu-item" },
   drama: { root: "dr-pop", chip: "dr-composer-chip is-choice", label: "dr-chip-label", value: "dr-composer-chip-text", menu: "dr-menu", item: "dr-menu-item" },
   cinema: { root: "cns-pop", chip: "cns-look", label: "cns-look-label", value: "", menu: "cns-panel cns-listpanel", item: "" },
   "cinema-mini": { root: "cns-pop", chip: "cns-chip", label: "", value: "", menu: "cns-panel cns-mini", item: "" },
+  // Marketing, Promo, and Explainer: the dock's pill chips and their stacked option lists.
+  mks: { root: "mks-pop", chip: "", label: "", value: "", menu: "mks-tech prs-subjects", item: "prs-subject" },
 } as const;
 export function Choice({
   label,
@@ -125,6 +129,8 @@ export function Choice({
   empty,
   icon,
   skin = "studio",
+  note,
+  disabled,
 }: {
   label: string;
   value: string;
@@ -133,6 +139,9 @@ export function Choice({
   empty?: string;
   icon?: ReactNode;
   skin?: keyof typeof CHOICE_SKINS;
+  /** A line under the options, e.g. what the setting doesn't control. */
+  note?: ReactNode;
+  disabled?: boolean;
 }) {
   const { open, setOpen, ref } = usePopover();
   const menu = useRef<HTMLDivElement>(null);
@@ -141,7 +150,9 @@ export function Choice({
   const current = options.find((option) => option.value === value);
   const shown = current?.label || empty || (skin === "drama" ? value : "None");
   const hinted = skin === "cinema" && options.some((option) => option.hint);
+  const stacked = skin === "mks";
   const chip = useRef<HTMLButtonElement>(null);
+  const wrapChip = (button: ReactNode) => (stacked ? <span className="mks-chip">{button}</span> : button);
   useEffect(() => {
     if (!open) return;
     const items = menu.current?.querySelectorAll<HTMLButtonElement>('[role="option"]');
@@ -161,21 +172,23 @@ export function Choice({
   };
   return (
     <div className={css.root} ref={ref}>
-      <button
-        ref={chip}
-        type="button"
-        className={css.chip}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        aria-label={mini ? `${label}: ${shown}` : undefined}
-        onClick={() => setOpen(!open)}
-        disabled={mini ? options.length < 2 : !options.length}
-      >
-        {icon}
-        {!mini && css.label ? <span className={css.label}>{skin === "cinema" ? `${label}:` : label}</span> : null}
-        <span className={css.value || undefined}>{shown}</span>
-        {skin === "studio" || skin === "drama" ? <ChevronDown className="h-3 w-3" aria-hidden="true" /> : null}
-      </button>
+      {wrapChip(
+        <button
+          ref={chip}
+          type="button"
+          className={css.chip || undefined}
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          aria-label={mini || stacked ? `${label}: ${shown}` : undefined}
+          onClick={() => setOpen(!open)}
+          disabled={disabled || (mini ? options.length < 2 : !options.length)}
+        >
+          {current?.icon && !icon ? current.icon : icon}
+          {!mini && css.label ? <span className={css.label}>{skin === "cinema" ? `${label}:` : label}</span> : null}
+          <span className={css.value || undefined}>{shown}</span>
+          {skin === "studio" || skin === "drama" || stacked ? <ChevronDown className="h-3 w-3" aria-hidden="true" /> : null}
+        </button>,
+      )}
       {open ? (
         <div className={css.menu} role="listbox" aria-label={label} ref={menu} onKeyDown={onMenuKey}>
           {mini ? <p>{label}</p> : null}
@@ -183,14 +196,23 @@ export function Choice({
             const on = option.value === value;
             const check = on ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : null;
             return (
-              <button key={option.value} type="button" role="option" aria-selected={on} className={css.item || undefined} title={hinted ? undefined : option.hint} onClick={() => { onChange(option.value); setOpen(false); chip.current?.focus(); }}>
-                {hinted ? (
+              <button key={option.value} type="button" role="option" aria-selected={on} className={css.item || undefined} title={hinted || stacked ? undefined : option.hint} onClick={() => { onChange(option.value); setOpen(false); chip.current?.focus(); }}>
+                {stacked ? (
+                  <>
+                    <span>
+                      <strong>{option.label}</strong>
+                      {option.hint ? <small>{option.hint}</small> : null}
+                    </span>
+                    {check}
+                  </>
+                ) : hinted ? (
                   <>
                     <strong>{option.label}{check}</strong>
                     {option.hint ? <span>{option.hint}</span> : null}
                   </>
                 ) : (
                   <>
+                    {option.icon}
                     <span>{option.label}</span>
                     {check}
                   </>
@@ -198,36 +220,24 @@ export function Choice({
               </button>
             );
           })}
+          {note ? <p className={stacked ? "prs-format-note" : "cs-choice-note"}>{note}</p> : null}
         </div>
       ) : null}
     </div>
   );
 }
 
-export function Toggle({ label, value, onChange }: { label: string; value: boolean; onChange: (value: boolean) => void }) {
-  return (
-    <button type="button" className="cs-chip" role="switch" aria-checked={value} onClick={() => onChange(!value)}>
-      <span className="cs-switch" aria-hidden="true" />
-      {label}
-    </button>
-  );
+// On/off setting shaped as a chip for composer bars; the switch itself is the shared ui Switch.
+export function Toggle({ label, value, onChange, icon, className }: { label: ReactNode; value: boolean; onChange: (value: boolean) => void; icon?: ReactNode; className?: string }) {
+  return <Switch compact className={`cs-toggle${className ? ` ${className}` : ""}`} checked={value} onChange={onChange} label={icon ? <>{icon}{label}</> : label} />;
 }
 
-export function Segment<T extends string>({ label, value, options, onChange }: { label: string; value: T; options: Array<{ value: T; label: string; icon?: ReactNode }>; onChange: (value: T) => void }) {
-  return (
-    <div className="cs-segment" role="radiogroup" aria-label={label}>
-      {options.map((option) => (
-        <button key={option.value} type="button" role="radio" aria-checked={option.value === value} onClick={() => onChange(option.value)}>
-          {option.icon}
-          {option.label}
-        </button>
-      ))}
-    </div>
-  );
+export function Segment<T extends string>({ label, value, options, onChange, className, block }: { label: string; value: T; options: Array<{ value: T; label: ReactNode; icon?: ReactNode; hint?: string; disabled?: boolean }>; onChange: (value: T) => void; className?: string; block?: boolean }) {
+  return <Segmented label={label} value={value} options={options} onChange={onChange} className={className} block={block} />;
 }
 
 // Searchable model list with provider filters, like the Open Generative AI picker.
-export function ModelPicker({ models, value, onChange, loading, pricing }: { models: AnyModel[]; value: string; onChange: (id: string) => void; loading: boolean; pricing?: StudioPricing | null }) {
+export function ModelPicker({ models, value, onChange, loading, pricing, auto }: { models: AnyModel[]; value: string; onChange: (id: string) => void; loading: boolean; pricing?: StudioPricing | null; /** Offer "let the server choose" as the empty value. */ auto?: { label: string; description?: string } }) {
   const { open, setOpen, ref } = usePopover();
   const [query, setQuery] = useState("");
   const [providerFilter, setProviderFilter] = useState("");
@@ -241,15 +251,12 @@ export function ModelPicker({ models, value, onChange, loading, pricing }: { mod
     <div className="cs-pop" ref={ref}>
       <button type="button" className="cs-chip cs-chip-model" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(!open)} disabled={!models.length}>
         {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-        <span className="cs-truncate">{current?.name || (loading ? "Loading models" : "No models available")}</span>
+        <span className="cs-truncate">{current?.name || (auto && !value && models.length ? auto.label : loading ? "Loading models" : "No models available")}</span>
         <ChevronDown className="h-3 w-3" />
       </button>
       {open ? (
         <div className="cs-menu cs-model-menu" role="dialog" aria-label="Choose a model">
-          <label className="cs-search">
-            <Search className="h-3.5 w-3.5" />
-            <input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`Search ${models.length} models`} />
-          </label>
+          <SearchField size="sm" autoFocus value={query} onChange={setQuery} placeholder={`Search ${models.length} models`} />
           {providers.length > 1 ? (
             <div className="cs-providers">
               <button type="button" aria-pressed={!providerFilter} onClick={() => setProviderFilter("")}>All</button>
@@ -259,6 +266,12 @@ export function ModelPicker({ models, value, onChange, loading, pricing }: { mod
             </div>
           ) : null}
           <div className="cs-model-list" role="listbox" aria-label="Models">
+            {auto && !query && !providerFilter ? (
+              <button type="button" role="option" aria-selected={!value} className="cs-model" onClick={() => { onChange(""); setOpen(false); }}>
+                <span className="cs-model-name">{auto.label}{!value ? <Check className="h-3.5 w-3.5" /> : null}</span>
+                {auto.description ? <span className="cs-model-desc">{auto.description}</span> : null}
+              </button>
+            ) : null}
             {shown.length ? shown.map((m) => (
               <button key={m.id} type="button" role="option" aria-selected={m.id === value} className="cs-model" onClick={() => { onChange(m.id); setOpen(false); }}>
                 <span className="cs-model-name">{m.name}{m.id === value ? <Check className="h-3.5 w-3.5" /> : null}</span>
@@ -273,12 +286,13 @@ export function ModelPicker({ models, value, onChange, loading, pricing }: { mod
   );
 }
 function modelFacts(m: AnyModel, pricing: StudioPricing | null) {
-  const facts = [m.provider];
+  const facts = [m.provider || m.id.split("/")[0]];
   if ("maxReferences" in m) facts.push(m.maxReferences ? `up to ${m.maxReferences} references` : "text only");
   if ("durations" in m) {
     if (m.durations.length) facts.push(`${m.durations[0]}–${m.durations[m.durations.length - 1]}s`);
-    if (m.frames.includes("first_frame") && m.frames.includes("last_frame")) facts.push("start + end frame");
-    else if (m.frames.includes("first_frame")) facts.push("start frame");
+    const frames = m.frames || [];
+    if (frames.includes("first_frame") && frames.includes("last_frame")) facts.push("start + end frame");
+    else if (frames.includes("first_frame")) facts.push("start frame");
     if (m.audio) facts.push("sound");
     const creditsPerSecond = providerCreditEstimate(m.pricePerSecond, pricing);
     if (creditsPerSecond !== null) facts.push(`${creditEstimateLabel(creditsPerSecond)}/s`);
@@ -288,10 +302,10 @@ function modelFacts(m: AnyModel, pricing: StudioPricing | null) {
 
 function useUpload(onError: (message: string) => void) {
   const [busy, setBusy] = useState(false);
-  const upload = useCallback(async (file: File) => {
+  const upload = useCallback(async (file: File, name = file.name) => {
     setBusy(true);
     try {
-      return await uploadAsset(file, file.name);
+      return await uploadAsset(file, name);
     } catch (err) {
       onError(err instanceof Error ? err.message : "Upload failed");
       return null;
@@ -346,107 +360,328 @@ export async function importLinkAsset(url: string, kind: "image" | "video" = "im
 }
 export const LINK_PATTERN = /^(https?:\/\/)?[^\s]+\.[^\s]+/;
 
-/** Opens under a reference tray (or above it in a prompt bar) for pasting a link instead of uploading. */
-function ReferenceLinkBox({ onAdd, onClose, onError }: { onAdd: (asset: Asset) => void; onClose: () => void; onError: (message: string) => void }) {
+// One paste-a-link field: the reference tray's link box, the tools' "or paste a link" row,
+// and the text tools' page reader. `onSubmit` does the work; the field shows the busy state.
+export function LinkField({
+  label,
+  placeholder,
+  action = "Import",
+  busyAction = "Fetching",
+  onSubmit,
+  onError,
+  skin = "studio",
+  autoFocus,
+  onCancel,
+}: {
+  label: string;
+  placeholder?: string;
+  action?: string;
+  busyAction?: string;
+  onSubmit: (url: string) => Promise<void>;
+  onError: (message: string) => void;
+  skin?: "studio" | "tool";
+  autoFocus?: boolean;
+  onCancel?: () => void;
+}) {
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);
-  const box = useRef<HTMLDivElement>(null);
   const ready = LINK_PATTERN.test(url.trim()) && !busy;
-  useEffect(() => {
-    const away = (event: PointerEvent) => {
-      const target = event.target as Element | null;
-      if (!busy && box.current && !box.current.contains(target) && !target?.closest?.(".cs-ref-link")) onClose();
-    };
-    document.addEventListener("pointerdown", away);
-    return () => document.removeEventListener("pointerdown", away);
-  }, [busy, onClose]);
-  async function add() {
+  async function go() {
     if (!ready) return;
     setBusy(true);
     try {
-      onAdd(await importLinkAsset(url));
-      onClose();
+      await onSubmit(url.trim());
+      setUrl("");
     } catch (err) {
-      onError(err instanceof Error ? err.message : "Could not import that link");
+      onError(err instanceof Error ? err.message : "Could not use that link");
     } finally {
       setBusy(false);
     }
   }
+  const tool = skin === "tool";
   return (
-    <div ref={box} className="cs-ref-linkbox" role="dialog" aria-label="Add a reference from a link">
-      <input
-        className="cs-input"
-        type="url"
-        inputMode="url"
-        autoFocus
-        value={url}
-        disabled={busy}
-        aria-label="Image, YouTube, or video link"
-        placeholder="Image, YouTube, or video link"
-        onChange={(event) => setUrl(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") {
-            event.preventDefault();
-            void add();
-          }
-          if (event.key === "Escape" && !busy) onClose();
-        }}
-      />
-      <button type="button" className="cs-ghost" disabled={!ready} onClick={() => void add()}>
+    <div className={tool ? "mt-link cs-linkfield" : "cs-linkfield"}>
+      <span className="cs-linkfield-input">
+        <Link2 size={15} aria-hidden="true" />
+        <input
+          className={tool ? "mt-input" : "cs-input"}
+          type="url"
+          inputMode="url"
+          autoFocus={autoFocus}
+          value={url}
+          disabled={busy}
+          aria-label={label}
+          placeholder={placeholder || label}
+          onChange={(event) => setUrl(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              void go();
+            }
+            if (event.key === "Escape" && !busy && onCancel) onCancel();
+          }}
+        />
+      </span>
+      <button type="button" className={tool ? "mt-secondary" : "cs-ghost"} disabled={!ready} onClick={() => void go()}>
         {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : null}
-        {busy ? "Fetching" : "Add"}
+        {busy ? busyAction : action}
       </button>
     </div>
   );
 }
 
-export function ReferenceTray({ assets, max, onChange, onError }: { assets: Asset[]; max: number; onChange: (assets: Asset[]) => void; onError: (message: string) => void }) {
-  const input = useRef<HTMLInputElement>(null);
-  const { busy, upload } = useUpload(onError);
-  const [linking, setLinking] = useState(false);
-  const closeLink = useCallback(() => setLinking(false), []);
+/** Paste a link instead of uploading. Images: a direct image, a page's preview image, or a video link's thumbnail. Video: a link the server downloads. */
+export function LinkImport({ kind, onImport, onError, skin = "tool", autoFocus, onCancel }: { kind: "image" | "video"; onImport: (asset: Asset) => void; onError: (message: string) => void; skin?: "studio" | "tool"; autoFocus?: boolean; onCancel?: () => void }) {
   return (
-    <div className="cs-refs">
-      <input ref={input} type="file" accept={IMAGE_TYPES} multiple hidden onChange={async (event) => {
-        const files = Array.from(event.target.files || []).slice(0, max - assets.length);
-        event.target.value = "";
-        const added: Asset[] = [];
-        for (const file of files) {
-          const uploaded = await upload(file);
-          if (uploaded) added.push(uploaded);
-        }
-        if (added.length) onChange([...assets, ...added].slice(0, max));
-      }} />
-      {assets.map((asset) => (
-        <div key={asset.file} className="cs-ref">
-          <img src={asset.url} alt="Reference" />
-          <button type="button" className="cs-slot-clear" onClick={() => onChange(assets.filter((a) => a.file !== asset.file))} aria-label="Remove reference"><X className="h-3 w-3" /></button>
-        </div>
-      ))}
-      {assets.length < max ? (
-        <>
-          <button type="button" className="cs-ref-add" onClick={() => input.current?.click()} disabled={busy} aria-label={`Upload reference images (up to ${max})`} title={`Upload reference images, up to ${max}`}>
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-          </button>
-          <button type="button" className="cs-ref-add cs-ref-link" onClick={() => setLinking((open) => !open)} aria-expanded={linking} aria-label="Add a reference from a link" title="Paste an image, YouTube, or video link">
-            <Link2 className="h-4 w-4" />
-          </button>
-        </>
-      ) : null}
-      {linking && assets.length < max ? <ReferenceLinkBox onAdd={(asset) => onChange([...assets, asset].slice(0, max))} onClose={closeLink} onError={onError} /> : null}
+    <LinkField
+      skin={skin}
+      autoFocus={autoFocus}
+      onCancel={onCancel}
+      label={kind === "video" ? "Video link" : "Image, YouTube, or video link"}
+      placeholder={kind === "video" ? "or paste a video link" : skin === "studio" ? "Image, YouTube, or video link" : "or paste an image or video link"}
+      action={skin === "studio" ? "Add" : "Import"}
+      busyAction={kind === "video" ? "Downloading" : "Fetching"}
+      onError={onError}
+      onSubmit={async (url) => onImport(await importLinkAsset(url, kind))}
+    />
+  );
+}
+
+/** Opens under a reference tray for pasting a link instead of uploading. */
+function ReferenceLinkBox({ kind, onAdd, onClose, onError }: { kind: "image" | "video"; onAdd: (asset: Asset) => void; onClose: () => void; onError: (message: string) => void }) {
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const away = (event: PointerEvent) => {
+      const target = event.target as Element | null;
+      if (box.current && !box.current.contains(target) && !target?.closest?.(".cs-ref-link")) onClose();
+    };
+    document.addEventListener("pointerdown", away);
+    return () => document.removeEventListener("pointerdown", away);
+  }, [onClose]);
+  return (
+    <div ref={box} className="cs-ref-linkbox" role="dialog" aria-label="Add from a link">
+      <LinkImport skin="studio" kind={kind} autoFocus onCancel={onClose} onError={onError} onImport={(asset) => { onAdd(asset); onClose(); }} />
     </div>
   );
 }
 
-export function Empty({ icon, heading, body, children }: { icon: ReactNode; heading: string; body: string; children?: ReactNode }) {
+const stripExtension = (name: string) => name.replace(/\.[^.]+$/, "");
+
+/**
+ * The one strip of uploaded files: thumbnails with remove buttons, an add button, and
+ * paste-a-link. Images by default; pass VIDEO_TYPES for recordings.
+ */
+export function ReferenceTray({
+  assets,
+  max,
+  onChange,
+  onError,
+  accept = IMAGE_TYPES,
+  link = true,
+  label = "reference images",
+  tagFor,
+  maxBytes,
+  empty,
+  className,
+}: {
+  assets: Asset[];
+  max: number;
+  onChange: (assets: Asset[]) => void;
+  onError: (message: string) => void;
+  accept?: string;
+  /** Offer paste-a-link (images and video links). */
+  link?: boolean;
+  /** What the files are, for the add button's label: "screenshots", "product photos". */
+  label?: string;
+  /** A tag over one thumbnail, e.g. "Start frame" on the first. */
+  tagFor?: (index: number) => string | undefined;
+  maxBytes?: number;
+  /** Shown beside the add button while the tray is empty. */
+  empty?: ReactNode;
+  className?: string;
+}) {
+  const input = useRef<HTMLInputElement>(null);
+  const { busy, upload } = useUpload(onError);
+  const [linking, setLinking] = useState(false);
+  const closeLink = useCallback(() => setLinking(false), []);
+  const video = accept.startsWith("video");
+  const kinds = accept.split(",").map((type) => type.trim());
   return (
-    <div className="cs-empty">
-      <span className="cs-empty-mark">{icon}</span>
-      <h2>{heading}</h2>
-      <p>{body}</p>
-      {children}
+    <div className={className ? `cs-refs ${className}` : "cs-refs"}>
+      <input ref={input} type="file" accept={accept} multiple={max - assets.length > 1} hidden onChange={async (event) => {
+        const picked = Array.from(event.target.files || []);
+        event.target.value = "";
+        const files = picked.filter((file) => kinds.includes(file.type)).slice(0, max - assets.length);
+        if (picked.length && !files.length) return onError(video ? "Use an MP4, MOV, or WebM video" : "Use PNG, JPG, or WebP images");
+        const added: Asset[] = [];
+        for (const file of files) {
+          if (maxBytes && file.size > maxBytes) {
+            onError(`${file.name} is over ${Math.round(maxBytes / 1024 / 1024)} MB`);
+            continue;
+          }
+          const uploaded = await upload(file, stripExtension(file.name));
+          if (uploaded) added.push(uploaded);
+        }
+        if (added.length) onChange([...assets, ...added].slice(0, max));
+      }} />
+      {assets.map((asset, index) => {
+        const tag = tagFor?.(index);
+        return (
+          <div key={asset.file} className="cs-ref" title={asset.name || undefined}>
+            {String(asset.type || "").startsWith("video") || video ? <video src={asset.url} muted playsInline preload="metadata" /> : <img src={asset.url} alt={asset.name || "Reference"} />}
+            {tag ? <span className="cs-ref-tag">{tag}</span> : null}
+            <button type="button" className="cs-slot-clear" onClick={() => onChange(assets.filter((a) => a.file !== asset.file))} aria-label={`Remove ${asset.name || tag || "this file"}`}><X className="h-3 w-3" /></button>
+          </div>
+        );
+      })}
+      {assets.length < max ? (
+        <>
+          <button type="button" className="cs-ref-add" onClick={() => input.current?.click()} disabled={busy} aria-label={`Upload ${label} (up to ${max})`} title={`Upload ${label}, up to ${max}`}>
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : video ? <Video className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+          </button>
+          {link ? (
+            <button type="button" className="cs-ref-add cs-ref-link" onClick={() => setLinking((open) => !open)} aria-expanded={linking} aria-label={`Add ${label} from a link`} title={video ? "Paste a video link" : "Paste an image, YouTube, or video link"}>
+              <Link2 className="h-4 w-4" />
+            </button>
+          ) : null}
+          {!assets.length && empty ? <span className="cs-refs-empty">{empty}</span> : null}
+        </>
+      ) : null}
+      {linking && assets.length < max ? <ReferenceLinkBox kind={video ? "video" : "image"} onAdd={(asset) => onChange([...assets, asset].slice(0, max))} onClose={closeLink} onError={onError} /> : null}
     </div>
   );
+}
+
+// Big radio cards for a short list of named choices with a line of detail each.
+export function OptionCards({ label, options, value, onChange, className }: { label: string; options: Array<{ value: string; label: string; hint?: string; icon?: ReactNode }>; value: string; onChange: (value: string) => void; className?: string }) {
+  const refs = useRef<Array<HTMLButtonElement | null>>([]);
+  const selected = Math.max(0, options.findIndex((option) => option.value === value));
+  const move = (from: number, step: number) => {
+    const next = (from + step + options.length) % options.length;
+    onChange(options[next].value);
+    refs.current[next]?.focus();
+  };
+  return (
+    <div className={className ? `cs-options ${className}` : "cs-options"} role="radiogroup" aria-label={label}>
+      {options.map((option, index) => (
+        <button
+          key={option.value}
+          ref={(node) => { refs.current[index] = node; }}
+          type="button"
+          role="radio"
+          aria-checked={value === option.value}
+          tabIndex={index === selected ? 0 : -1}
+          className="cs-option"
+          onClick={() => onChange(option.value)}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowRight" || event.key === "ArrowDown") { event.preventDefault(); move(index, 1); }
+            if (event.key === "ArrowLeft" || event.key === "ArrowUp") { event.preventDefault(); move(index, -1); }
+          }}
+        >
+          {option.icon}
+          <strong>{option.label}</strong>
+          {option.hint ? <span>{option.hint}</span> : null}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ---------- Aspect ratio ----------
+export type AspectOption = string | { value: string; label?: string; hint?: string; ratio?: [number, number] };
+function aspectParts(option: AspectOption) {
+  const value = typeof option === "string" ? option : option.value;
+  const custom = typeof option === "string" ? undefined : option.ratio;
+  const [w, h] = custom || value.split(":").map(Number);
+  return {
+    value,
+    label: (typeof option === "string" ? undefined : option.label) || (value === "auto" ? "Auto" : value),
+    hint: typeof option === "string" ? undefined : option.hint,
+    w: Number.isFinite(w) && w > 0 ? w : 1,
+    h: Number.isFinite(h) && h > 0 ? h : 1,
+    auto: value === "auto",
+  };
+}
+/** The frame's shape, drawn to scale inside a small box. */
+export function AspectGlyph({ ratio }: { ratio: string | [number, number] }) {
+  const { w, h, auto } = aspectParts(Array.isArray(ratio) ? { value: "custom", ratio } : ratio);
+  return <span className={auto ? "cs-aspect-glyph is-auto" : "cs-aspect-glyph"} style={{ aspectRatio: `${w} / ${h}`, [w >= h ? "width" : "height"]: "100%" }} aria-hidden="true" />;
+}
+
+/**
+ * The one aspect-ratio picker. Pass only what the chosen model supports (filter the
+ * model's aspectRatios); "auto" in the list lets the server decide. Variants:
+ * "segment" (inline glyph buttons), "chip" (a dropdown for composer bars), "cards" (named canvases).
+ */
+export function AspectPicker({
+  value,
+  onChange,
+  options,
+  variant = "segment",
+  label = "Aspect ratio",
+  skin = "studio",
+  disabled,
+  className,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  options: AspectOption[];
+  variant?: "segment" | "chip" | "cards";
+  label?: string;
+  /** Chip variant only: the Choice skin for the surface it sits on. */
+  skin?: keyof typeof CHOICE_SKINS;
+  disabled?: boolean;
+  className?: string;
+}) {
+  const parts = options.map(aspectParts);
+  const icon = (part: ReturnType<typeof aspectParts>) => <span className="cs-aspect-box"><AspectGlyph ratio={part.auto ? "auto" : [part.w, part.h]} /></span>;
+  if (variant === "chip") {
+    return <Choice skin={skin} label={label} value={value} disabled={disabled} options={parts.map((part) => ({ value: part.value, label: part.label, hint: part.hint, icon: icon(part) }))} onChange={onChange} />;
+  }
+  if (variant === "cards") {
+    return <OptionCards className={className ? `cs-aspect-cards ${className}` : "cs-aspect-cards"} label={label} value={value} onChange={onChange} options={parts.map((part) => ({ value: part.value, label: part.label, hint: part.hint, icon: icon(part) }))} />;
+  }
+  return (
+    <Segmented
+      label={label}
+      value={value}
+      onChange={onChange}
+      className={className ? `cs-aspect-seg ${className}` : "cs-aspect-seg"}
+      options={parts.map((part) => ({ value: part.value, label: <span className="prs-num">{part.label}</span>, icon: icon(part), disabled, title: part.hint }))}
+    />
+  );
+}
+
+/** The notice every generator shows when this server has no generation provider. */
+export function GenerationUnavailable({ className, children }: { className?: string; children?: ReactNode }) {
+  return (
+    <Notice tone="warning" className={className ? `cs-unavailable ${className}` : "cs-unavailable"} title="Generation isn't set up on this server yet">
+      {children || "Generating needs a model provider. An admin can add one in the server settings."}
+    </Notice>
+  );
+}
+/** A persistent studio problem (catalog failed, no model fits) in the same notice style. */
+export function StudioNotice({ tone = "warning", children, className }: { tone?: "warning" | "error" | "info"; children: ReactNode; className?: string }) {
+  return (
+    <Notice tone={tone} className={className ? `cs-unavailable ${className}` : "cs-unavailable"}>
+      <span className="cs-notice-line"><AlertCircle className="h-4 w-4" aria-hidden="true" />{children}</span>
+    </Notice>
+  );
+}
+
+/** Confirm, remove from the list, and delete a generation and its files. Resolves true when deleted. */
+export function useDeleteGeneration(onRemoved: (id: string) => void, noun = "generation") {
+  return useCallback(async (item: { id: string }) => {
+    const ok = await confirm({ title: `Delete this ${noun}?`, body: "Its files are deleted too. This can't be undone.", confirmLabel: "Delete", danger: true });
+    if (!ok) return false;
+    onRemoved(item.id);
+    await fetch(`/api/studio/generations/${encodeURIComponent(item.id)}`, { method: "DELETE" }).catch(() => undefined);
+    return true;
+  }, [onRemoved, noun]);
+}
+
+export function Empty({ icon, heading, body, children }: { icon: ReactNode; heading: string; body: string; children?: ReactNode }) {
+  return <EmptyState className="cs-empty" icon={icon} title={heading} body={body}>{children}</EmptyState>;
 }
 
 export function Lightbox({ src, onClose }: { src: string; onClose: () => void }) {
@@ -476,38 +711,7 @@ export function Lightbox({ src, onClose }: { src: string; onClose: () => void })
   );
 }
 
-// Tab bar used inside apps to split long option sets into groups.
+// Tab bar used inside apps to split long option sets into groups (the shared ui Tabs).
 export function Tabs<T extends string>({ label, value, options, onChange, compact }: { label: string; value: T; options: Array<{ value: T; label: string; hint?: string; icon?: ReactNode }>; onChange: (value: T) => void; compact?: boolean }) {
-  const refs = useRef<Array<HTMLButtonElement | null>>([]);
-  const move = (index: number) => {
-    const next = (index + options.length) % options.length;
-    onChange(options[next].value);
-    refs.current[next]?.focus();
-  };
-  return (
-    <div className={compact ? "cs-tabs cs-tabs-compact" : "cs-tabs"} role="tablist" aria-label={label}>
-      {options.map((option, index) => (
-        <button
-          key={option.value}
-          ref={(node) => {
-            refs.current[index] = node;
-          }}
-          type="button"
-          role="tab"
-          aria-selected={option.value === value}
-          tabIndex={option.value === value ? 0 : -1}
-          className="cs-tab"
-          onClick={() => onChange(option.value)}
-          onKeyDown={(event) => {
-            if (event.key === "ArrowRight") move(index + 1);
-            if (event.key === "ArrowLeft") move(index - 1);
-          }}
-        >
-          {option.icon}
-          <span>{option.label}</span>
-          {option.hint ? <span className="cs-tab-hint">{option.hint}</span> : null}
-        </button>
-      ))}
-    </div>
-  );
+  return <UiTabs label={label} value={value} options={options} onChange={onChange} className={compact ? "cs-tabs-compact" : undefined} />;
 }

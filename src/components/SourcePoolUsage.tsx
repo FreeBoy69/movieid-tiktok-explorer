@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ExternalLink, RefreshCw, Trash2 } from "lucide-react";
 import { poolSourceIdentity } from "../utils/automationSourcePool.js";
+import { Meter } from "./ui/controls";
 
 export type PoolSource = { url: string; title: string; primary?: boolean; imageUrl?: string };
 export type PoolUsage = PoolSource & {
@@ -50,9 +51,7 @@ export function SourceUsageRow({ source, usage, issue, deepScan, dark = false, o
         </div>
       </div>
       <div className="source-pool-source-bar flex min-w-[4rem] flex-1 items-center gap-1.5 sm:min-w-[11rem] sm:gap-2">
-        <div role="progressbar" aria-label={`${source.title} usage`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={scanning ? scanProgress : usage?.total ? percent : undefined} aria-valuetext={label} className={`h-1.5 min-w-0 flex-1 overflow-hidden rounded-full ${dark ? "bg-[#F8F5E8]/15" : "bg-[#1A1A1A]/10"}`}>
-          <div className={`h-full origin-left rounded-full bg-[#f9dc0b] ${scanning ? "animate-pulse" : ""}`} style={{ width: `${scanning ? scanProgress : percent}%` }} />
-        </div>
+        <Meter className={`min-w-0 flex-1 ${scanning ? "animate-pulse" : ""}`} value={(scanning ? scanProgress : percent) / 100} label={`${source.title} usage: ${label}`} />
         <span className={`w-9 shrink-0 text-right text-xs font-bold tabular-nums ${secondary}`}>{usage?.total ? `${percent}%` : scanning ? `${scanProgress}%` : "—"}</span>
       </div>
       <span className={`source-pool-source-status w-[8.5rem] shrink-0 truncate text-xs font-semibold tabular-nums ${secondary}`} title={status}>{status}</span>

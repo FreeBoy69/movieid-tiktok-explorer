@@ -1,5 +1,6 @@
 /* Marketing Studio: Higgsfield-style stage with one floating control bar, in the AutoYT palette. */
-.mks {
+.mks,
+.mks-scope {
   /* AutoYT palette via the Creator Studio theme tokens (light and dark). */
   --mks-bg: var(--cs-bg);
   --mks-panel: color-mix(in srgb, var(--cs-surface) 90%, transparent);
@@ -20,40 +21,52 @@
   --mks-ease: cubic-bezier(0.22, 1, 0.36, 1);
   --mks-focus: color-mix(in srgb, var(--cs-text) 40%, transparent);
   --mks-check: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23171717' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
+  color: var(--mks-text);
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+}
+.mks {
   position: relative;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  color: var(--mks-text);
   background: transparent;
-  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+}
+/* A sheet portalled out of .mks (StudioSheet) carries the same tokens without the page layout. */
+.mks-scope {
+  display: contents;
 }
 .mks *,
 .mks *::before,
-.mks *::after {
+.mks *::after,
+.mks-scope *,
+.mks-scope *::before,
+.mks-scope *::after {
   box-sizing: border-box;
 }
-:where(.mks) button {
+:where(.mks, .mks-scope) button {
   font: inherit;
   color: inherit;
   cursor: pointer;
 }
-.mks button:disabled {
+:is(.mks, .mks-scope) button:disabled {
   cursor: not-allowed;
 }
 /* Keyboard focus is a quiet neutral ring; text fields show focus on their card instead. */
-:root .mks :focus-visible {
+:root :is(.mks, .mks-scope) :focus-visible {
   outline: 2px solid var(--mks-focus);
   outline-offset: 2px;
 }
-:root .mks :is(textarea, input):focus-visible {
+:root :is(.mks, .mks-scope) :is(textarea, input):focus-visible {
   outline: none;
 }
-.mks ::selection {
+:is(.mks, .mks-scope) ::selection {
   background: var(--mks-pink);
   color: var(--mks-on-accent);
 }
 .mks-hero {
+  /* Above the results, so dock popovers open over the strip below. */
+  position: relative;
+  z-index: 2;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -75,11 +88,12 @@
   gap: 10px;
   width: min(100%, 980px);
 }
-.mks-modes {
+.ui-seg.mks-modes {
   display: flex;
   flex-direction: column;
   gap: 6px;
   padding: 6px;
+  overflow: visible;
   border-radius: 16px;
   align-self: center;
   /* Frosted glass, shared with the other chat inputs (see --glass-input-* in index.css). */
@@ -90,24 +104,24 @@
   -webkit-backdrop-filter: blur(22px) saturate(1.6);
   backdrop-filter: blur(22px) saturate(1.6);
 }
-.mks-modes button {
+.ui-seg.mks-modes > button {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 3px;
   width: 58px;
+  min-height: 0;
   padding: 9px 4px;
-  border: 0;
   border-radius: 11px;
-  background: transparent;
   color: var(--mks-faint);
   font-size: 11px;
   font-weight: 600;
   transition: background-color 160ms, color 160ms;
 }
-.mks-modes button[aria-selected="true"] {
+.ui-seg.mks-modes > button[aria-checked="true"] {
   background: var(--mks-fill-strong);
   color: var(--mks-text);
+  box-shadow: none;
 }
 .mks-bar {
   flex: 1;
@@ -376,16 +390,15 @@
   text-transform: none;
   opacity: 0.85;
 }
-.mks-hint,
-.mks-error {
+.mks-hint {
   margin: 12px 0 0;
+  color: var(--mks-muted);
   font-size: 13px;
 }
-.mks-hint {
-  color: var(--mks-muted);
-}
-.mks-error {
-  color: var(--cs-bad);
+.ui-notice.mks-notice {
+  width: min(100%, 560px);
+  margin-top: 12px;
+  text-align: left;
 }
 
 /* Technical popover */
@@ -456,56 +469,52 @@
 .mks-tech-row.is-slider:has(input:focus-visible) {
   outline: 2px solid var(--mks-focus);
 }
-.mks-flyout {
-  position: absolute;
-  top: 0;
-  left: calc(100% + 8px);
-  width: 220px;
-  padding: 10px;
-  border: 1px solid var(--mks-line);
-  border-radius: 14px;
-  background: var(--mks-panel-solid);
-  box-shadow: var(--cs-shadow-lift);
-  animation: mks-in 160ms var(--mks-ease);
-}
-.mks-flyout p {
-  margin: 0 0 8px 4px;
-  color: var(--mks-faint);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-.mks-flyout-grid {
+.mks-tech.mks-tech-settings {
   display: grid;
-  grid-template-columns: 1fr 1fr;
   gap: 4px;
+  width: 300px;
+  padding: 8px;
 }
-.mks-flyout-list {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  max-height: 260px;
-  overflow-y: auto;
+.mks-tech-group {
+  display: grid;
+  gap: 8px;
+  padding: 8px 10px 10px;
 }
-.mks-flyout button {
+.mks-tech-group > p {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 10px;
+  margin: 0;
+  color: var(--mks-muted);
+  font-size: 13px;
+}
+.mks-tech-group .ui-seg {
+  flex-wrap: wrap;
+}
+.mks-tech-group .cs-pop {
+  width: 100%;
+}
+.mks-tech-group .cs-chip-model {
+  display: flex;
+  align-items: center;
   gap: 8px;
-  padding: 8px 10px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
+  width: 100%;
+  height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--mks-line);
+  background: var(--mks-fill);
   font-size: 13px;
   text-align: left;
 }
-.mks-flyout button:hover {
+.mks-tech-group .cs-chip-model > .cs-truncate {
+  flex: 1;
+}
+.mks-tech-group .cs-chip-model:hover {
   background: var(--mks-fill-strong);
 }
-.mks-flyout button[aria-pressed="true"] {
-  background: var(--cs-accent-soft);
-  color: var(--cs-accent-text);
+.mks-tech-group .cs-model-menu {
+  top: calc(100% + 6px);
+  bottom: auto;
 }
 
 /* Results */
@@ -592,17 +601,6 @@
 }
 
 /* Modals */
-.mks-modal {
-  position: fixed;
-  inset: 0;
-  z-index: 150;
-  display: grid;
-  place-items: center;
-  padding: 24px;
-  background: rgb(12 12 14 / 0.55);
-  backdrop-filter: blur(6px);
-  animation: mks-fade 180ms ease-out;
-}
 @keyframes mks-fade {
   from { opacity: 0; }
 }
@@ -654,57 +652,37 @@
   margin-bottom: 16px;
   padding-right: 44px;
 }
-.mks-tabs {
-  display: inline-flex;
+.ui-seg.mks-tabs {
   gap: 4px;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
 }
-.mks-tabs.is-center {
+.mks-tabs-row {
   display: flex;
   justify-content: center;
   margin-bottom: 18px;
 }
-.mks-tabs button {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+.ui-seg.mks-tabs > button {
   height: 32px;
+  min-height: 0;
   padding: 0 14px;
-  border: 0;
   border-radius: 999px;
-  background: transparent;
   color: var(--mks-muted);
   font-size: 13px;
   font-weight: 600;
 }
-.mks-tabs button[aria-selected="true"] {
+.ui-seg.mks-tabs > button[aria-checked="true"] {
   background: var(--mks-fill-strong);
   color: var(--mks-text);
+  box-shadow: none;
 }
-.mks-search {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.ui-search.mks-search {
   width: 240px;
-  height: 36px;
-  padding: 0 12px;
-  border: 1px solid var(--mks-line);
-  border-radius: 10px;
-  background: var(--mks-fill);
-  color: var(--mks-faint);
 }
-.mks-search.is-wide {
+.ui-search.mks-search.is-wide {
   width: calc(100% - 48px);
   margin-bottom: 14px;
-}
-.mks-search input {
-  flex: 1;
-  min-width: 0;
-  border: 0;
-  background: transparent;
-  color: var(--mks-text);
-  font: inherit;
-  font-size: 13px;
-  outline: none;
 }
 .mks-cards {
   display: grid;
@@ -877,49 +855,19 @@
 .mks-create textarea:focus {
   border-color: var(--mks-line-strong);
 }
-.mks-uploads {
-  display: flex;
+.cs-refs.mks-uploads {
   flex-wrap: wrap;
-  gap: 8px;
 }
-.mks-upload {
-  position: relative;
-  display: grid;
-  place-items: center;
+.cs-refs.mks-uploads .cs-ref,
+.cs-refs.mks-uploads .cs-ref-add {
   width: 84px;
   height: 84px;
-  overflow: hidden;
-  border: 1px dashed var(--mks-line-strong);
   border-radius: 12px;
-  background: var(--mks-fill);
-  color: var(--mks-faint);
-  font-size: 11px;
-  text-align: center;
 }
-.mks-upload img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-.mks-upload.is-add {
-  gap: 4px;
-  padding: 8px;
-}
-.mks-upload.is-tall {
+.mks-create-body .cs-slot {
+  flex: none;
   width: 150px;
   height: 200px;
-}
-.mks-upload button {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  display: grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  border: 0;
-  border-radius: 999px;
-  background: rgb(0 0 0 / 0.6);
 }
 .mks-manual-actions {
   display: flex;
@@ -1145,18 +1093,48 @@
   flex: 1;
 }
 
+/* StudioSheet: the shared Dialog's behaviour with this sheet's look. */
+.ui-dialog.mks-dialog {
+  width: min(100%, 640px);
+  max-width: none;
+  max-height: none;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  animation: none;
+}
+.ui-dialog.mks-dialog.is-wide {
+  width: min(100%, 1000px);
+}
+.ui-dialog.mks-dialog > .ui-dialog-body {
+  padding: 0;
+  overflow: visible;
+}
+.mks-dialog .mks-sheet {
+  width: 100%;
+}
+
 @media (max-width: 860px) {
+  .ui-dialog-layer:has(> .mks-dialog) {
+    align-items: end;
+    padding: 0;
+  }
+  .ui-dialog.mks-dialog {
+    width: 100%;
+  }
   .mks-hero {
     padding: 72px 12px 16px;
   }
   .mks-dock {
     flex-direction: column;
   }
-  .mks-modes {
+  .ui-seg.mks-modes {
     flex-direction: row;
     align-self: center;
   }
-  .mks-modes button {
+  .ui-seg.mks-modes > button {
     flex-direction: row;
     width: auto;
     padding: 8px 14px;
@@ -1184,11 +1162,6 @@
     right: 16px;
     width: auto;
   }
-  .mks-flyout {
-    position: static;
-    width: auto;
-    margin-top: 6px;
-  }
   .mks-cards {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1203,15 +1176,11 @@
   .mks-avatars aside p {
     width: 100%;
   }
-  .mks-modal {
-    align-items: end;
-    padding: 0;
-  }
   .mks-sheet {
     max-height: 92dvh;
     border-radius: 20px 20px 0 0;
   }
-  .mks-search {
+  .ui-search.mks-search {
     width: 100%;
   }
 }

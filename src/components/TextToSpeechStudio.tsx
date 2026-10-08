@@ -1,4 +1,4 @@
-import React, { ChangeEvent, type DragEvent, FormEvent, useEffect, useRef, useState } from "react";
+import React, { FormEvent, useEffect, useRef, useState } from "react";
 import {
   BookOpen,
   Check,
@@ -21,16 +21,18 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "../lib/utils";
-import { useErrorToast } from "../utils/toast";
+import { toast, useErrorToast } from "../utils/toast";
 import { isVoiceReady, VOICE_NAME_OVERRIDES_KEY, VOICE_PROFILES_ROUTE } from "../utils/voiceProfiles";
 import { CREDIT_ESTIMATE_TITLE, creditEstimateLabel, fallbackCreditEstimate, useStudioPricing } from "./studio/studioPricing";
-import { generateVoiceName } from "../utils/voiceNames.js";
-import { canRecord, clockOf, MIN_RECORD_SECONDS, useVoiceRecorder, VOICE_PASSAGE } from "./studio/voiceRecorder";
+import { VoiceCloneForm } from "./studio/VoiceCloneForm";
 import "./CreatorStudio.css";
 import "./AudioStudio.css";
 import { VoicePicker } from "./VoicePicker";
 import { AudioPlayer } from "./AudioPlayer";
-import { LanguagePicker, languageName, VOICEBOX_LANGUAGES } from "./LanguagePicker";
+import { FieldPicker, LanguagePicker, languageName, VOICEBOX_LANGUAGES } from "./LanguagePicker";
+import { VOICE_ENGINES } from "../utils/voiceEngines";
+import { confirm } from "./ui/Dialog";
+import { SearchField, Segmented, Tabs } from "./ui/controls";
 
 type StudioTab = "generate" | "voices" | "clone";
 type RightRailTab = "settings" | "history";
@@ -64,30 +66,11 @@ const FALLBACK_VOICES: VoiceProfile[] = [
   { id: "demo-energy", name: "Momentum", description: "Fast short-form delivery", language: "en", voiceType: "preset", defaultEngine: "kokoro" },
 ];
 
-const ENGINES = [
-  ["kokoro", "Kokoro"],
-  ["qwen", "Qwen3-TTS 1.7B"],
-  ["qwen-0.6b", "Qwen3-TTS 0.6B"],
-  ["qwen_custom_voice", "Qwen Custom Voice"],
-  ["chatterbox_turbo", "Chatterbox Turbo"],
-  ["chatterbox", "Chatterbox Multilingual"],
-  ["luxtts", "LuxTTS"],
-  ["tada", "TADA"],
-];
 const STUDIO_TABS: Array<{ id: StudioTab; label: string; icon: typeof Volume2 }> = [
   { id: "generate", label: "Generate", icon: Volume2 },
   { id: "voices", label: "Voices", icon: BookOpen },
   { id: "clone", label: "Clone", icon: Mic },
 ];
-
-function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || "").split(",")[1] || "");
-    reader.onerror = () => reject(reader.error || new Error("Could not read file"));
-    reader.readAsDataURL(file);
-  });
-}
 
 function relativeTime(value: string) {
   const time = new Date(value).getTime();
@@ -119,23 +102,14 @@ export function TextToSpeechStudio({ theme = "light", initialText = "" }: { them
   const [selectedVoiceId, setSelectedVoiceId] = useState("");
   const [text, setText] = useState("Jack entered the arena knowing one mistake would end the duel.");
   const [language, setLanguage] = useState("en");
-  const [cloneLanguage, setCloneLanguage] = useState("en");
   const [engine, setEngine] = useState("kokoro");
   const [loadingVoices, setLoadingVoices] = useState(true);
   const [generating, setGenerating] = useState(false);
-  const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   useErrorToast(error, () => setError(""));
   const [history, setHistory] = useState<Generation[]>([]);
   const [selectedGenerationId, setSelectedGenerationId] = useState("");
   const [autoplayGenerationId, setAutoplayGenerationId] = useState("");
-  const [cloneFile, setCloneFile] = useState<File | null>(null);
-  const [cloneName, setCloneName] = useState("");
-  const [cloneDescription, setCloneDescription] = useState("");
-  const [cloneConsent, setCloneConsent] = useState(false);
-  const [cloneDenoise, setCloneDenoise] = useState(false);
-  const [cloning, setCloning] = useState(false);
-  const [cloneDragActive, setCloneDragActive] = useState(false);
   const [voiceNameOverrides, setVoiceNameOverrides] = useState<Record<string, string>>(() => {
     if (typeof window === "undefined") return {};
     try {
@@ -226,7 +200,6 @@ export function TextToSpeechStudio({ theme = "light", initialText = "" }: { them
     }
     setGenerating(true);
     setError("");
-    setNotice("");
     try {
       const response = await fetch("/api/voicebox/generate", {
         method: "POST",
@@ -257,68 +230,6 @@ export function TextToSpeechStudio({ theme = "light", initialText = "" }: { them
       setError(err instanceof Error ? err.message : "Speech generation failed");
     } finally {
       setGenerating(false);
-    }
-  }
-
-  async function cloneVoice(event: FormEvent) {
-    event.preventDefault();
-    if (!cloneConsent) {
-      setError("Confirm you have permission to use this voice sample.");
-      return;
-    }
-    if (!cloneFile) {
-      setError("Add a voice sample first.");
-      return;
-    }
-    setCloning(true);
-    setError("");
-    setNotice("");
-    let createdProfileId = "";
-    try {
-      const createResponse = await fetch(VOICE_PROFILES_ROUTE, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: cloneName.trim() || generateVoiceName(), description: cloneDescription, language: cloneLanguage, voiceType: "cloned", defaultEngine: "qwen" }),
-      });
-      const created = await readJson(createResponse, "Voice profile creation failed");
-      createdProfileId = String(created.profile?.id || "");
-      const audioBase64 = await fileToBase64(cloneFile);
-      const sampleResponse = await fetch(`/api/voicebox/profiles/${encodeURIComponent(createdProfileId)}/samples`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          audioBase64,
-          filename: cloneFile.name,
-          mimeType: cloneFile.type || "audio/wav",
-          removeNoise: cloneDenoise,
-        }),
-      });
-      await readJson(sampleResponse, "Voice sample upload failed");
-      await loadProfiles();
-      const refreshedResponse = await fetch(VOICE_PROFILES_ROUTE);
-      const refreshed = await readJson(refreshedResponse, "Voices are unavailable");
-      const savedProfile = Array.isArray(refreshed.profiles) ? refreshed.profiles.find((profile: VoiceProfile) => profile.id === createdProfileId) : null;
-      if (!isVoiceReady(savedProfile)) {
-        throw new Error("The sample wasn't accepted. Use a clear 15–60 second recording of one speaker and try again.");
-      }
-      if (createdProfileId) {
-        setSavedVoiceIds((current) => current.includes(createdProfileId) ? current : [...current, createdProfileId]);
-        setSelectedVoiceId(createdProfileId);
-      }
-      setNotice(`${cloneName.trim() || "Your voice"} is ready and saved to your library.`);
-      setCloneFile(null);
-      setCloneName("");
-      setCloneDescription("");
-      setCloneConsent(false);
-      setActiveTab("voices");
-    } catch (err) {
-      if (createdProfileId) {
-        void fetch(`/api/voicebox/profiles/${encodeURIComponent(createdProfileId)}`, { method: "DELETE" }).catch(() => undefined);
-        setSavedVoiceIds((current) => current.filter((id) => id !== createdProfileId));
-      }
-      setError(err instanceof Error ? err.message : "Voice cloning failed");
-    } finally {
-      setCloning(false);
     }
   }
 
@@ -393,21 +304,19 @@ export function TextToSpeechStudio({ theme = "light", initialText = "" }: { them
           <div><h1>Audio Studio</h1><p>Turn a script into a natural voice track.</p></div>
         </div>
         <div className="as-head-actions">
-          <div className="as-tabs" role="tablist" aria-label="Audio Studio sections">
-            {STUDIO_TABS.map(({ id, label, icon: Icon }) => (
-              <button key={id} type="button" role="tab" aria-selected={activeTab === id} onClick={() => setActiveTab(id)} className="as-tab">
-                <Icon className="h-3.5 w-3.5" aria-hidden />
-                {label}
-              </button>
-            ))}
-          </div>
+          <Tabs
+            label="Audio Studio sections"
+            className="as-head-tabs"
+            value={activeTab}
+            onChange={(id) => setActiveTab(id as StudioTab)}
+            options={STUDIO_TABS.map(({ id, label, icon: Icon }) => ({ value: id, label, icon: <Icon className="h-3.5 w-3.5" aria-hidden /> }))}
+          />
           <button type="button" onClick={() => void loadProfiles()} className="as-icon" aria-label="Refresh voices" title="Refresh voices">
             {loadingVoices ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
           </button>
         </div>
       </header>
 
-            {notice ? <Status tone="success" dark={dark} message={notice} onClose={() => setNotice("")} /> : null}
 
       {activeTab === "generate" ? (
         <GenerateTab
@@ -444,25 +353,17 @@ export function TextToSpeechStudio({ theme = "light", initialText = "" }: { them
           onCreateVoice={() => setActiveTab("clone")}
         />
       ) : (
-        <CloneTab
-          dark={dark}
-          cloneVoice={cloneVoice}
-          cloneFile={cloneFile}
-          setCloneFile={setCloneFile}
-          cloneName={cloneName}
-          setCloneName={setCloneName}
-          cloneDescription={cloneDescription}
-          setCloneDescription={setCloneDescription}
-          cloneConsent={cloneConsent}
-          setCloneConsent={setCloneConsent}
-          cloneDenoise={cloneDenoise}
-          setCloneDenoise={setCloneDenoise}
-          cloneDragActive={cloneDragActive}
-          setCloneDragActive={setCloneDragActive}
-          cloning={cloning}
-          language={cloneLanguage}
-          setLanguage={setCloneLanguage}
-        />
+        <div className="as-clone">
+          <VoiceCloneForm
+            onCreated={(id, name) => {
+              setSavedVoiceIds((current) => (current.includes(id) ? current : [...current, id]));
+              setSelectedVoiceId(id);
+              void loadProfiles();
+              toast.success(`${name || "Your voice"} is ready and saved to your library.`);
+              setActiveTab("voices");
+            }}
+          />
+        </div>
       )}
     </section>
   );
@@ -532,13 +433,16 @@ function GenerateTab(props: {
       </section>
 
       <aside className="as-rail" aria-label="Voice settings and history">
-        <div className="as-seg" role="tablist" aria-label="Panel">
-          {(["settings", "history"] as RightRailTab[]).map((tab) => (
-            <button key={tab} type="button" role="tab" aria-selected={rightRailTab === tab} onClick={() => setRightRailTab(tab)}>
-              {tab === "settings" ? "Settings" : `History${props.history.length ? ` · ${props.history.length}` : ""}`}
-            </button>
-          ))}
-        </div>
+        <Tabs
+          label="Panel"
+          className="as-rail-tabs"
+          value={rightRailTab}
+          onChange={(tab) => setRightRailTab(tab as RightRailTab)}
+          options={[
+            { value: "settings", label: "Settings" },
+            { value: "history", label: `History${props.history.length ? ` · ${props.history.length}` : ""}` },
+          ]}
+        />
         {rightRailTab === "settings" ? (
           <div className="as-rail-body">
             <label className="as-field">
@@ -553,7 +457,12 @@ function GenerateTab(props: {
                 }}
               />
             </label>
-            {hosted ? null : <Select label="Engine" value={props.engine} onChange={props.setEngine} options={ENGINES} dark={dark} compact />}
+            {hosted ? null : (
+              <div className="as-field">
+                <span>Engine</span>
+                <FieldPicker value={props.engine} onChange={props.setEngine} options={VOICE_ENGINES} label="Engine" />
+              </div>
+            )}
             <div className="as-field">
               <span>Language</span>
               <LanguagePicker value={props.language} onChange={props.setLanguage} only={VOICEBOX_LANGUAGES} />
@@ -562,10 +471,7 @@ function GenerateTab(props: {
           </div>
         ) : (
           <div className="as-rail-body">
-            <label className="as-search">
-              <Search className="h-4 w-4" aria-hidden />
-              <input value={historySearch} onChange={(event) => setHistorySearch(event.target.value)} placeholder="Search this session" aria-label="Search generation history" />
-            </label>
+            <SearchField value={historySearch} onChange={setHistorySearch} placeholder="Search this session" label="Search generation history" size="sm" />
             {historyItems.length ? historyItems.map((item) => (
               <button key={item.id} type="button" onClick={() => props.setSelectedGenerationId(item.id)} className="as-history" aria-current={props.selectedGenerationId === item.id ? "true" : undefined}>
                 <strong>{item.text}</strong>
@@ -743,17 +649,16 @@ function VoicesLibraryTab({
   return (
     <div className="as-library">
       <div className="as-library-bar">
-        <div className="as-seg" role="tablist" aria-label="Voice library">
-          {(["explore", "mine"] as VoiceLibraryTab[]).map((tab) => (
-            <button key={tab} type="button" role="tab" aria-selected={libraryTab === tab} onClick={() => setLibraryTab(tab)}>
-              {tab === "explore" ? "All voices" : `Saved · ${savedVoiceIds.length}`}
-            </button>
-          ))}
-        </div>
-        <label className="as-search is-grow">
-          <Search className="h-4 w-4" aria-hidden />
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search voices" aria-label="Search voices" />
-        </label>
+        <Segmented
+          label="Voice library"
+          value={libraryTab}
+          onChange={(tab) => setLibraryTab(tab as VoiceLibraryTab)}
+          options={[
+            { value: "explore", label: "All voices" },
+            { value: "mine", label: `Saved · ${savedVoiceIds.length}` },
+          ]}
+        />
+        <SearchField value={query} onChange={setQuery} placeholder="Search voices" className="as-grow" />
         <span className="as-count">{filteredVoices.length} {filteredVoices.length === 1 ? "voice" : "voices"}</span>
         <button type="button" onClick={onCreateVoice} className="as-primary"><Plus className="h-4 w-4" />Create voice</button>
       </div>
@@ -779,9 +684,9 @@ function VoicesLibraryTab({
                       <button
                         type="button"
                         className={cn("as-icon is-sm", saved && !canDelete && "is-on")}
-                        onClick={() => {
+                        onClick={async () => {
                           if (canDelete) {
-                            if (!window.confirm(`Delete “${voice.name}”? This cannot be undone.`)) return;
+                            if (!(await confirm({ title: `Delete ${voice.name}?`, body: "The voice and its samples are removed. This can't be undone.", confirmLabel: "Delete voice", danger: true }))) return;
                             setDeletingId(voice.id);
                             void onDeleteVoice(voice.id).finally(() => setDeletingId(""));
                             return;
@@ -847,222 +752,4 @@ function VoicesLibraryTab({
   );
 }
 
-const MAX_SAMPLE_MB = 20;
 
-function CloneTab(props: {
-  dark: boolean;
-  cloneVoice: (event: FormEvent) => Promise<void>;
-  cloneFile: File | null;
-  setCloneFile: (file: File | null) => void;
-  cloneName: string;
-  setCloneName: (value: string) => void;
-  cloneDescription: string;
-  setCloneDescription: (value: string) => void;
-  cloneConsent: boolean;
-  setCloneConsent: (value: boolean) => void;
-  cloneDenoise: boolean;
-  setCloneDenoise: (value: boolean) => void;
-  cloneDragActive: boolean;
-  setCloneDragActive: (value: boolean) => void;
-  cloning: boolean;
-  language: string;
-  setLanguage: (value: string) => void;
-}) {
-  const { setCloneFile, setCloneName, cloneName } = props;
-  const [mode, setMode] = useState<"record" | "upload">(canRecord() ? "record" : "upload");
-  const [upload, setUpload] = useState<File | null>(null);
-  const [uploadUrl, setUploadUrl] = useState("");
-  const [uploadError, setUploadError] = useState("");
-  const rec = useVoiceRecorder();
-  // Voices are named like people: a name is suggested, and can be kept, shuffled, or typed over.
-  useEffect(() => {
-    if (!cloneName) setCloneName(generateVoiceName());
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  // The sample that gets cloned is whichever the chosen mode holds.
-  useEffect(() => {
-    if (mode === "upload") setCloneFile(upload);
-    else setCloneFile(rec.recording ? new File([rec.recording.blob], "voice-sample.wav", { type: "audio/wav" }) : null);
-  }, [mode, upload, rec.recording, setCloneFile]);
-  useEffect(() => {
-    if (!upload) return setUploadUrl("");
-    const url = URL.createObjectURL(upload);
-    setUploadUrl(url);
-    return () => URL.revokeObjectURL(url);
-  }, [upload]);
-
-  function pick(file: File | null | undefined) {
-    setUploadError("");
-    if (!file) return;
-    if (!file.type.startsWith("audio/")) return setUploadError("Choose an audio file: WAV, MP3, M4A, or FLAC.");
-    if (file.size > MAX_SAMPLE_MB * 1024 * 1024) return setUploadError(`Samples can be up to ${MAX_SAMPLE_MB} MB. Trim it to under a minute.`);
-    setUpload(file);
-  }
-  function acceptDroppedFile(event: DragEvent<HTMLLabelElement>) {
-    event.preventDefault();
-    props.setCloneDragActive(false);
-    pick(Array.from(event.dataTransfer.files || [])[0]);
-  }
-
-  const recording = rec.live !== null;
-  const missing = !props.cloneFile ? (mode === "record" ? "Record the passage to continue" : "Add a recording to continue") : !cloneName.trim() ? "Name the voice" : !props.cloneConsent ? "Confirm you have permission to continue" : "";
-  const sampleError = mode === "record" ? rec.error : uploadError;
-
-  return (
-    <form onSubmit={(event) => void props.cloneVoice(event)} className="as-clone">
-      <div className="as-clone-flow">
-        <header className="as-clone-head">
-          <h2>Clone a voice</h2>
-          <p>Read a short passage aloud, or upload a clean recording of one speaker. Voices you clone are private to you and appear in your library.</p>
-        </header>
-
-        <section className="as-step" aria-labelledby="as-step-sample">
-          <div className="as-step-title">
-            <span className="as-step-n" aria-hidden="true">1</span>
-            <h3 id="as-step-sample">Voice sample</h3>
-            <div className="as-seg as-clone-mode" role="tablist" aria-label="How to add the sample">
-              <button type="button" role="tab" aria-selected={mode === "record"} className={cn(mode === "record" && "is-active")} onClick={() => setMode("record")} disabled={!canRecord() || recording}>
-                <Mic className="h-3.5 w-3.5" aria-hidden="true" /> Record
-              </button>
-              <button type="button" role="tab" aria-selected={mode === "upload"} className={cn(mode === "upload" && "is-active")} onClick={() => setMode("upload")} disabled={recording}>
-                <Upload className="h-3.5 w-3.5" aria-hidden="true" /> Upload
-              </button>
-            </div>
-          </div>
-
-          {mode === "record" ? (
-            <div className="as-rec">
-              <p className="as-passage">{VOICE_PASSAGE}</p>
-              <div className="as-rec-row">
-                {recording ? (
-                  <button type="button" className="as-rec-btn is-live" onClick={rec.stop} aria-label="Stop recording">
-                    <Square className="h-5 w-5" aria-hidden="true" />
-                  </button>
-                ) : (
-                  <button type="button" className="as-rec-btn" onClick={() => void rec.start()} disabled={props.cloning} aria-label={rec.recording ? "Record again" : "Start recording"}>
-                    {rec.recording ? <RotateCcw className="h-5 w-5" aria-hidden="true" /> : <Mic className="h-5 w-5" aria-hidden="true" />}
-                  </button>
-                )}
-                {recording ? (
-                  <div className="as-rec-live" role="status">
-                    <div className="as-rec-meter" ref={rec.meter} aria-hidden="true">
-                      {Array.from({ length: 24 }, (_, i) => <span key={i} style={{ "--i": i } as React.CSSProperties} />)}
-                    </div>
-                    <span className="as-rec-time">
-                      <strong>{clockOf(rec.live || 0)}</strong>
-                      {(rec.live || 0) < MIN_RECORD_SECONDS ? `Keep reading · at least ${MIN_RECORD_SECONDS}s` : "Good length · press stop when you finish"}
-                    </span>
-                  </div>
-                ) : rec.recording ? (
-                  <div className="as-rec-take">
-                    <AudioPlayer src={rec.recording.url} label="Your recording" compact />
-                    <span>{clockOf(rec.recording.seconds)} recorded · press the button to record again</span>
-                  </div>
-                ) : (
-                  <span className="as-rec-hint">
-                    <strong>Press record and read the passage</strong>
-                    About 20 seconds at your normal pace, in a quiet room, close to the mic.
-                  </span>
-                )}
-              </div>
-            </div>
-          ) : upload ? (
-            <div className="as-file">
-              <span className="as-file-icon" aria-hidden="true"><FileAudio className="h-5 w-5" /></span>
-              <span className="as-file-name">
-                <strong>{upload.name}</strong>
-                <small>{(upload.size / 1048576).toFixed(1)} MB</small>
-              </span>
-              <button type="button" className="as-icon" onClick={() => setUpload(null)} aria-label="Remove this recording" title="Remove">
-                <X className="h-4 w-4" />
-              </button>
-              {uploadUrl ? <AudioPlayer src={uploadUrl} label="Uploaded sample" compact className="as-file-player" /> : null}
-            </div>
-          ) : (
-            <label
-              onDragOver={(event) => { event.preventDefault(); props.setCloneDragActive(true); }}
-              onDragLeave={() => props.setCloneDragActive(false)}
-              onDrop={acceptDroppedFile}
-              className={cn("as-drop", props.cloneDragActive && "is-active")}
-            >
-              <input type="file" accept="audio/*" className="sr-only" onChange={(event: ChangeEvent<HTMLInputElement>) => pick(event.target.files?.[0])} />
-              <span className="as-drop-icon"><Upload className="h-5 w-5" /></span>
-              <strong>{props.cloneDragActive ? "Drop the recording here" : "Choose or drop a recording"}</strong>
-              <small>15–60 seconds of one speaker, no music · WAV, MP3, M4A or FLAC up to {MAX_SAMPLE_MB} MB</small>
-            </label>
-          )}
-          {sampleError ? <p className="as-clone-error" role="alert">{sampleError}</p> : null}
-        </section>
-
-        <section className="as-step" aria-labelledby="as-step-details">
-          <div className="as-step-title">
-            <span className="as-step-n" aria-hidden="true">2</span>
-            <h3 id="as-step-details">Name and language</h3>
-          </div>
-          <div className="as-clone-fields">
-            <label className="as-field">
-              <span>Name</span>
-              <span className="as-name-row">
-                <input className="as-input" value={cloneName} onChange={(event) => setCloneName(event.target.value)} maxLength={60} placeholder="e.g. Nora Whitfield" autoComplete="off" />
-                <button type="button" className="as-icon" onClick={() => setCloneName(generateVoiceName([cloneName]))} aria-label="Suggest another name" title="Suggest another name">
-                  <Shuffle className="h-4 w-4" />
-                </button>
-              </span>
-            </label>
-            <div className="as-field">
-              <span>Language</span>
-              <LanguagePicker value={props.language} onChange={props.setLanguage} only={VOICEBOX_LANGUAGES} label="Voice language" />
-            </div>
-          </div>
-          <label className="as-field">
-            <span>Notes <em>optional</em></span>
-            <textarea value={props.cloneDescription} onChange={(event) => props.setCloneDescription(event.target.value)} className="as-textarea is-short" placeholder="Tone and where you'll use it, e.g. calm recap narrator" />
-          </label>
-        </section>
-
-        <section className="as-step" aria-labelledby="as-step-confirm">
-          <div className="as-step-title">
-            <span className="as-step-n" aria-hidden="true">3</span>
-            <h3 id="as-step-confirm">Confirm</h3>
-          </div>
-          <label className="as-check">
-            <input type="checkbox" checked={props.cloneDenoise} onChange={(event) => props.setCloneDenoise(event.target.checked)} />
-            <span><strong>Clean up background noise</strong><small>Filters hum, hiss and room rumble. Leave it off for studio recordings.</small></span>
-          </label>
-          <label className="as-check">
-            <input type="checkbox" checked={props.cloneConsent} onChange={(event) => props.setCloneConsent(event.target.checked)} />
-            <span><strong>I have the right to clone this voice</strong><small>It's my voice, or the speaker gave explicit permission.</small></span>
-          </label>
-        </section>
-
-        <div className="as-clone-foot">
-          <span className="as-clone-missing" aria-live="polite">{props.cloning ? "Learning the voice. This takes under a minute." : missing}</span>
-          <button type="submit" disabled={props.cloning || recording || Boolean(missing)} className="as-primary">
-            {props.cloning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mic className="h-4 w-4" />}
-            {props.cloning ? "Creating voice" : "Create voice"}
-          </button>
-        </div>
-      </div>
-    </form>
-  );
-}
-
-function Select({ label, value, onChange, options, dark, compact = false }: { label: string; value: string; onChange: (value: string) => void; options: string[][]; dark: boolean; compact?: boolean }) {
-  return (
-    <label className="block">
-      <span className={cn("mb-1.5 block text-[11px] font-bold uppercase tracking-widest", dark ? "text-white/45" : "text-[#1A1A1A]/45")}>{label}</span>
-      <select value={value} onChange={(event) => onChange(event.target.value)} className={cn("h-11 w-full rounded-lg border px-3 text-sm font-semibold outline-none transition focus:border-[#f9dc0b] focus:ring-2 focus:ring-[#f9dc0b]/20", dark ? "border-white/10 bg-[#151515] text-white" : compact ? "border-[#1A1A1A]/10 bg-[#F9F8F6] text-[#1A1A1A]" : "border-[#1A1A1A]/10 bg-white text-[#1A1A1A]")}>
-        {options.map(([id, optionLabel]) => <option key={id} value={id}>{optionLabel}</option>)}
-      </select>
-    </label>
-  );
-}
-
-function Status({ tone, dark, message, onClose }: { tone: "success" | "error"; dark: boolean; message: string; onClose: () => void }) {
-  return (
-    <div role={tone === "error" ? "alert" : "status"} aria-live="polite" className={cn("flex items-center gap-3 border-b px-4 py-2 text-sm", tone === "success" ? "border-[#f9dc0b]/40 bg-[#fffbea] text-[#1A1A1A]" : dark ? "border-white/14 bg-white/8 text-white" : "border-[#f9dc0b]/40 bg-[#fffbea] text-[#5F5300]")}>
-      {tone === "success" ? <Check className="h-4 w-4 text-[#f9dc0b]" /> : <FileAudio className="h-4 w-4 text-[#f9dc0b]" />}
-      <span className="flex-1">{message}</span>
-      <button type="button" onClick={onClose} className="grid h-11 w-11 place-items-center rounded-lg transition hover:bg-[#1A1A1A]/8 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70" aria-label="Dismiss message"><X className="h-4 w-4" /></button>
-    </div>
-  );
-}

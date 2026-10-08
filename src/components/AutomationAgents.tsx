@@ -107,6 +107,9 @@ import { SourcePoolUsage } from "./SourcePoolUsage";
 import { scheduleHourFromUtcLabel } from "../utils/automationDecisionPolicy.js";
 import "./AutomationAgents.css";
 import { type PlaylistMode, PlaylistControl, SCHEDULED_VISIBILITY_OPTIONS, VisibilityControl } from "./YouTubePublishForm";
+import { choose, confirm, Dialog } from "./ui/Dialog";
+import { EmptyState, Notice as SharedNotice, SearchField, Switch } from "./ui/controls";
+import { OrientationPicker } from "./OrientationPicker";
 
 const DEFAULT_SETTINGS = {
   maxPostsPerDay: 1,
@@ -1117,8 +1120,16 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
   }
 
   async function deleteUpload(id: string) {
-    const deletePublished = window.confirm("Delete the live YouTube video too? Click OK to delete both the published video and its AutoYT record. Click Cancel to keep the video live and remove only the AutoYT record.");
-    if (!deletePublished && !window.confirm("Remove this upload record from AutoYT while keeping the published post live?")) return;
+    const answer = await choose({
+      title: "Delete this upload?",
+      body: "You can delete the live video on YouTube too, or keep it live and remove only the AutoYT record.",
+      options: [
+        { value: "record", label: "Keep video live", tone: "default" },
+        { value: "both", label: "Delete from YouTube too", tone: "danger" },
+      ],
+    });
+    if (!answer) return;
+    const deletePublished = answer === "both";
     setDeletingUpload(id);
     setError("");
     setNotice("");
@@ -1144,7 +1155,7 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
   async function deleteAgent(id: string) {
     const agent = agents.find((item) => item.id === id);
     const label = agent?.name || "this agent";
-    if (!window.confirm(`Delete ${label}? This removes its automation setup, run log, and upload history from AutoYT.`)) return;
+    if (!(await confirm({ title: `Delete ${label}?`, body: "This removes its automation setup, run log, and upload history from AutoYT.", confirmLabel: "Delete agent", danger: true }))) return;
     setDeleting(id);
     setError("");
     setNotice("");
@@ -1558,16 +1569,17 @@ function AgentBoard({
 
 function EmptyAgentCard({ onCreate }: { onCreate: () => void }) {
   return (
-    <div className="col-span-full grid place-items-center rounded-[1.35rem] border border-dashed border-[#1A1A1A]/12 bg-white px-6 py-14 text-center shadow-sm">
-      <div className="grid h-14 w-14 place-items-center rounded-2xl bg-[#f9dc0b]/15 text-[#8a7500]">
-        <Bot className="h-6 w-6" />
-      </div>
-      <p className="mt-5 font-serif text-xl font-bold tracking-tight text-[#1A1A1A]">No agents yet</p>
-      <p className="mt-2 max-w-sm text-sm font-semibold leading-6 text-[#1A1A1A]/55">An agent watches a TikTok or YouTube source, identifies each movie, and republishes clips to your channel on a schedule.</p>
-      <button type="button" onClick={onCreate} className="mt-6 inline-flex h-10 items-center gap-2 rounded-xl bg-[#f9dc0b] px-5 text-xs font-black text-[#1A1A1A] shadow-sm transition hover:bg-[#1A1A1A] hover:text-white active:scale-[0.98]">
-        <Plus className="h-4 w-4" />
-        Create your first agent
-      </button>
+    <div className="col-span-full rounded-[1.35rem] border border-dashed border-[#1A1A1A]/12 bg-white shadow-sm agent-empty-card">
+      <EmptyState
+        icon={<Bot className="h-5 w-5" />}
+        title="No agents yet"
+        body="An agent watches a TikTok or YouTube source, identifies each movie, and republishes clips to your channel on a schedule."
+      >
+        <button type="button" onClick={onCreate} className="ui-btn is-primary">
+          <Plus className="h-4 w-4" />
+          Create your first agent
+        </button>
+      </EmptyState>
     </div>
   );
 }
@@ -2748,34 +2760,21 @@ function RankedUploadsTable({ rows, theme, onPreview }: { rows: any[]; theme: Ag
   );
 }
 
-function AgentVideoLightbox({ item, theme, onClose }: { item: any; theme: AgentTheme; onClose: () => void }) {
-  const tokens = getAgentTheme(theme);
-  useEffect(() => {
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", closeOnEscape);
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.removeEventListener("keydown", closeOnEscape);
-      document.body.style.overflow = previousOverflow;
-    };
-  }, [onClose]);
+function AgentVideoLightbox({ item, onClose }: { item: any; theme?: AgentTheme; onClose: () => void }) {
   return (
-    <div className="fixed inset-0 z-[90] grid place-items-center bg-[#111411]/90 p-3 backdrop-blur-sm md:p-8" role="dialog" aria-modal="true" aria-label={`Video preview: ${item.title}`} onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <section className={cn("flex max-h-[94vh] w-full max-w-5xl flex-col overflow-hidden rounded-xl border shadow-2xl", tokens.surface)}>
-        <header className={cn("flex shrink-0 items-center gap-3 border-b px-4 py-3", tokens.divider)}>
-          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[#f9dc0b] text-[#1A1A1A]"><Play className="h-4 w-4 fill-current" /></span>
-          <div className="min-w-0 flex-1"><p className={cn("truncate text-sm font-black", tokens.text)}>{item.title}</p><p className={cn("mt-0.5 truncate text-xs font-semibold", tokens.muted)}>{item.movie} · {compact(item.views)} views</p></div>
-          {item.externalUrl ? <a href={item.externalUrl} target="_blank" rel="noreferrer" className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-lg border transition hover:bg-[#f9dc0b] hover:text-[#1A1A1A]", tokens.surfaceSoft, tokens.muted)} aria-label="Open original video"><ExternalLink className="h-4 w-4" /></a> : null}
-          <button type="button" onClick={onClose} className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-lg border transition hover:bg-[#f9dc0b] hover:text-[#1A1A1A]", tokens.surfaceSoft, tokens.muted)} aria-label="Close preview"><X className="h-4 w-4" /></button>
-        </header>
-        <div className="min-h-0 flex-1 bg-[#090b09]">
-          {item.playbackUrl ? <iframe src={item.playbackUrl} title={item.title} allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowFullScreen className="aspect-video max-h-[calc(94vh-66px)] w-full border-0 bg-[#090b09]" /> : <div className="grid aspect-video place-items-center text-sm font-bold text-white/60">Preview is unavailable for this upload.</div>}
-        </div>
-      </section>
-    </div>
+    <Dialog
+      title={item.title}
+      description={`${item.movie} · ${compact(item.views)} views`}
+      size="xl"
+      onClose={onClose}
+      footer={item.externalUrl ? <a href={item.externalUrl} target="_blank" rel="noreferrer" className="ui-btn"><ExternalLink className="h-4 w-4" />Open original</a> : undefined}
+    >
+      {item.playbackUrl ? (
+        <iframe src={item.playbackUrl} title={item.title} allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowFullScreen className="aspect-video max-h-[70dvh] w-full rounded-lg border-0 bg-[#090b09]" />
+      ) : (
+        <EmptyState compact icon={<Play className="h-5 w-5" />} title="Preview unavailable" body="This upload can't be played here." />
+      )}
+    </Dialog>
   );
 }
 
@@ -2810,7 +2809,11 @@ function ReliabilityPanel({ analytics, reliability, agent, theme }: { analytics:
 
 function AnalyticsEmpty({ theme, text }: { theme: AgentTheme; text: string }) {
   const tokens = getAgentTheme(theme);
-  return <div className={cn("mt-4 grid min-h-48 place-items-center rounded-lg border border-dashed p-6 text-center text-sm font-semibold", tokens.surfaceSoft, tokens.muted)}>{text}</div>;
+  return (
+    <div className={cn("mt-4 rounded-lg border border-dashed", tokens.surfaceSoft)}>
+      <EmptyState compact icon={<BarChart3 className="h-5 w-5" />} title="No data yet" body={text} />
+    </div>
+  );
 }
 
 function buildAgentAnalytics(uploads: AutomationUpload[], runs: AutomationRun[]) {
@@ -3138,10 +3141,7 @@ function CreateAgentWizard({
 
       <div className={cn("sticky bottom-0 -mx-4 mt-auto border-t px-4 py-3 backdrop-blur md:-mx-6 md:px-6", tokens.divider, tokens.isDark ? "bg-[#111411]/92" : "bg-[#f9f9f9]/92")}>
         {stepError ? (
-          <p role="alert" className="mb-3 flex items-start gap-2 rounded-lg border border-[#f9dc0b]/40 bg-[#fff9d6] px-3 py-2 text-xs font-bold leading-5 text-[#6a5b00]">
-            <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            {stepError}
-          </p>
+          <SharedNotice tone="error" className="mb-3">{stepError}</SharedNotice>
         ) : null}
         <div className="flex items-center justify-between gap-3">
           <button type="button" onClick={() => (step === 0 ? onCancel() : goTo(step - 1))} disabled={saving} className={cn("inline-flex h-11 items-center gap-2 rounded-xl border px-4 text-xs font-bold transition active:scale-[0.98] disabled:opacity-50", tokens.surface, tokens.text)}>
@@ -3317,7 +3317,7 @@ export function RemakePanel({ agent, form, updateSetting, saveAgent, saving, acc
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}Save remake settings
         </button>
       </div>
-      {error ? <p className="rounded-xl bg-[#fde8e4] px-3 py-2 text-sm font-semibold text-[#9a2e1a]" role="alert">{error}</p> : null}
+      {error ? <SharedNotice tone="error">{error}</SharedNotice> : null}
 
       <SetupSection id="remake-auto" icon={<WandSparkles className="h-4 w-4" />} title="Auto-remake" summary={autoSummary} open={open.has("remake-auto")} onToggle={() => toggle("remake-auto")} theme={theme}>
         <div className="grid gap-4 md:grid-cols-2">
@@ -3942,46 +3942,49 @@ function SetupPanel({
               selected={(id) => destinationCount(id) > 0}
               note={(id) => (destinationCount(id) ? `${destinationCount(id)} on` : null)}
             />
-            {openedDestination ? createPortal(
-              <div className="agent-social-modal-layer">
-                <button type="button" className="agent-social-modal-backdrop" aria-label="Close destination picker" onClick={() => setOpenDestination(null)} />
-                <section className={cn("agent-social-modal", tokens.isDark ? "text-[#F8F5E8]" : "text-[#1A1A1A]")} role="dialog" aria-modal="true" aria-label={`${openedDestination.label} publishing accounts`}>
-                  <header className="agent-social-modal-header">
-                    <div className="flex min-w-0 items-center gap-3">
-                      <PlatformIcon id={openedDestination.id} />
-                      <div className="min-w-0">
-                        <h3 className="truncate text-base font-black">{openedDestination.label}</h3>
-                        <p className={cn("mt-0.5 text-xs font-semibold", tokens.muted)}>Choose where this agent can publish.</p>
-                      </div>
-                    </div>
-                    <button type="button" onClick={() => setOpenDestination(null)} className={cn("grid h-9 w-9 place-items-center rounded-full transition", tokens.isDark ? "text-white/55 hover:bg-white/8 hover:text-white" : "text-[#1A1A1A]/45 hover:bg-[#1A1A1A]/6 hover:text-[#1A1A1A]")} aria-label="Close destination picker"><X className="h-4 w-4" /></button>
-                  </header>
-                  <div className="agent-social-modal-body">
-                    {(() => {
-                      const connected = accounts.filter((account) => String(account.platform || "youtube").toLowerCase() === openedDestination.id);
-                      if (!connected.length) return <div className={cn("agent-social-empty", tokens.muted)}>No {openedDestination.label} account connected yet.</div>;
-                      return connected.map((account) => {
+            {openedDestination ? (
+              <Dialog
+                title={`Publish to ${openedDestination.label}`}
+                description="Choose which accounts this agent posts to."
+                size="sm"
+                onClose={() => setOpenDestination(null)}
+                footer={
+                  <>
+                    <a href={connectHref(openedDestination.id)} className="ui-btn"><Plus className="h-4 w-4" />Add {openedDestination.label}</a>
+                    <button type="button" className="ui-btn is-primary" onClick={() => setOpenDestination(null)}>Done</button>
+                  </>
+                }
+              >
+                {(() => {
+                  const connected = accounts.filter((account) => String(account.platform || "youtube").toLowerCase() === openedDestination.id);
+                  if (!connected.length) return <EmptyState compact icon={<PlatformIcon id={openedDestination.id} size={40} />} title={`No ${openedDestination.label} account yet`} body="Connect one to publish there." />;
+                  return (
+                    <div className="grid gap-2">
+                      {connected.map((account) => {
                         const isPrimary = openedDestination.id === "youtube" && account.id === form.youtubeAccountId;
                         const active = isPrimary || (openedDestination.id === "youtube"
                           ? youtubeTargets.some((target) => target.accountId === account.id)
                           : socialTargets.some((target) => target.platform === openedDestination.id && target.accountId === account.id && target.enabled !== false));
                         return (
-                          <button key={account.id} type="button" role="switch" aria-checked={active} disabled={isPrimary} onClick={() => openedDestination.id === "youtube" ? toggleYoutubeTarget(account.id) : toggleSocialTarget(openedDestination.id, account.id)} className={cn("agent-social-account", active && "agent-social-account-active", isPrimary && "cursor-default", tokens.text)}>
-                            {account.thumbnailUrl ? <img src={account.thumbnailUrl} alt="" className="h-9 w-9 rounded-full object-cover" referrerPolicy="no-referrer" /> : <span className="grid h-9 w-9 place-items-center rounded-full bg-[#f9dc0b] text-[#1A1A1A]">{openedDestination.icon(16)}</span>}
-                            <span className="min-w-0 flex-1 truncate text-left text-sm font-bold">{account.channelTitle || account.channelHandle || openedDestination.label}{isPrimary ? " · primary" : ""}</span>
-                            <span className={cn("agent-social-toggle", active && "agent-social-toggle-active")} aria-hidden="true"><span /></span>
-                          </button>
+                          <Switch
+                            key={account.id}
+                            checked={active}
+                            disabled={isPrimary}
+                            onChange={() => (openedDestination.id === "youtube" ? toggleYoutubeTarget(account.id) : toggleSocialTarget(openedDestination.id, account.id))}
+                            label={
+                              <span className="flex min-w-0 items-center gap-3">
+                                {account.thumbnailUrl ? <img src={account.thumbnailUrl} alt="" className="h-8 w-8 shrink-0 rounded-full object-cover" referrerPolicy="no-referrer" /> : <PlatformIcon id={openedDestination.id} size={32} />}
+                                <span className="truncate">{account.channelTitle || account.channelHandle || openedDestination.label}</span>
+                              </span>
+                            }
+                            description={isPrimary ? "Primary channel for this agent" : undefined}
+                          />
                         );
-                      });
-                    })()}
-                  </div>
-                  <footer className="agent-social-modal-footer">
-                    <a href={connectHref(openedDestination.id)} className={cn("inline-flex min-h-10 items-center gap-2 rounded-xl px-3 text-xs font-black transition", tokens.isDark ? "bg-white/8 text-white hover:bg-white/12" : "bg-[#1A1A1A]/6 text-[#1A1A1A] hover:bg-[#1A1A1A]/10")}><Plus className="h-4 w-4" />Add {openedDestination.label}</a>
-                    <button type="button" onClick={() => setOpenDestination(null)} className="inline-flex min-h-10 items-center justify-center rounded-xl bg-[#f9dc0b] px-4 text-xs font-black text-[#1A1A1A] transition hover:bg-[#e8cb00]">Done</button>
-                  </footer>
-                </section>
-              </div>,
-              document.body,
+                      })}
+                    </div>
+                  );
+                })()}
+              </Dialog>
             ) : null}
           </SetupSection>
 
@@ -4114,10 +4117,7 @@ function SetupPanel({
                     </div>
                   </Field>
                   <Field label="Layout">
-                    <select value={form.settings.compilationLayout || "vertical"} onChange={(e) => updateSetting("compilationLayout", e.target.value)} className="input bg-white">
-                      <option value="vertical">Vertical (9:16)</option>
-                      <option value="landscape">Landscape (16:9)</option>
-                    </select>
+                    <OrientationPicker value={form.settings.compilationLayout || "vertical"} onChange={(layout) => updateSetting("compilationLayout", layout)} />
                   </Field>
                   <ToggleRow
                     title="Build them on a schedule"
@@ -5122,15 +5122,11 @@ function AgentChatHistorySidebar({ agent, conversations, activeId, theme, mobile
   const isDark = theme === "dark";
   const [search, setSearch] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
-  const searchInputRef = useRef<HTMLInputElement>(null);
   const query = search.trim().toLowerCase();
   const visible = useMemo(() => conversations.filter((conversation) => conversation.messages.length && (!query
     || conversation.title.toLowerCase().includes(query)
     || conversation.messages.some((message) => message.content.toLowerCase().includes(query)))), [conversations, query]);
 
-  useEffect(() => {
-    if (searchOpen) searchInputRef.current?.focus();
-  }, [searchOpen]);
 
   const closeSearch = () => {
     setSearch("");
@@ -5155,20 +5151,20 @@ function AgentChatHistorySidebar({ agent, conversations, activeId, theme, mobile
       </div>
       <div className="px-2.5 py-1">
         {searchOpen ? (
-          <div className={cn("flex h-11 items-center gap-2 rounded-xl px-3 transition-[background-color,box-shadow] duration-200 focus-within:shadow-[0_4px_16px_rgba(26,26,26,0.08)] md:h-[34px]", isDark ? "bg-[#F8F5E8]/[0.065] text-[#F8F5E8]/58" : "bg-[#1A1A1A]/[0.045] text-[#1A1A1A]/52")}>
-            <Search className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-            <input
-              ref={searchInputRef}
+          <div className="flex items-center gap-1">
+            <SearchField
+              size="sm"
+              autoFocus
+              className="min-w-0 flex-1"
               value={search}
-              onChange={(event) => setSearch(event.target.value)}
+              onChange={setSearch}
               onKeyDown={(event) => {
                 if (event.key === "Escape") closeSearch();
               }}
               placeholder="Search chats"
-              aria-label="Search chat history"
-              className={cn("min-w-0 flex-1 bg-transparent text-xs font-medium outline-none", isDark ? "text-[#F8F5E8] placeholder:text-[#F8F5E8]/62" : "text-[#1A1A1A] placeholder:text-[#1A1A1A]/64")}
+              label="Search chat history"
             />
-            <button type="button" onClick={closeSearch} className={cn("-mr-3 grid h-11 w-11 shrink-0 place-items-center rounded-lg transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#b89f00] md:-mr-2 md:h-8 md:w-8", isDark ? "hover:bg-[#F8F5E8]/10 hover:text-[#F8F5E8]" : "hover:bg-[#1A1A1A]/6 hover:text-[#1A1A1A]")} aria-label="Close chat search" title="Close search">
+            <button type="button" onClick={closeSearch} className="ui-icon-btn" aria-label="Close search">
               <X className="h-3.5 w-3.5" />
             </button>
           </div>
@@ -6842,18 +6838,7 @@ function AgentChatPanel({ agent, theme, compact = false, conversationId, message
 }
 
 function ToggleRow({ title, body, checked, onChange, wide = true }: { title: string; body: string; checked: boolean; onChange: (next: boolean) => void; wide?: boolean }) {
-  return (
-    <label className={cn("agent-toggle flex cursor-pointer flex-col gap-3 rounded-xl border border-[#1A1A1A]/8 bg-white p-4 transition focus-within:ring-2 focus-within:ring-[#f9dc0b]/60 sm:flex-row sm:items-center sm:justify-between", wide && "md:col-span-2")}>
-      <span className="min-w-0">
-        <span className="agent-toggle-title block text-sm font-bold text-[#1A1A1A]">{title}</span>
-        <span className="agent-toggle-body mt-1 block text-xs font-semibold leading-5 text-[#1A1A1A]/48">{body}</span>
-      </span>
-      <span className={cn("relative inline-flex h-7 w-12 shrink-0 items-center rounded-full border transition", checked ? "border-[#f9dc0b] bg-[#f9dc0b]" : "agent-toggle-track-off border-[#1A1A1A]/12 bg-[#1A1A1A]/10")}>
-        <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} className="sr-only" />
-        <span className={cn("block h-5 w-5 rounded-full bg-white shadow transition", checked ? "translate-x-5" : "translate-x-1")} />
-      </span>
-    </label>
-  );
+  return <Switch className={cn("agent-switch", wide && "md:col-span-2")} label={title} description={body} checked={checked} onChange={onChange} />;
 }
 
 function DurationTrimControl({ value, onChange, theme }: { value: number; onChange: (value: number) => void; theme: AgentTheme }) {
@@ -6921,16 +6906,7 @@ function Field({ label, children, wide = false }: { label: string; children: Rea
 }
 
 function Notice({ title, body, tone = "warn" }: { title: string; body: string; tone?: "warn" | "error" | "success" }) {
-  const color = tone === "success" ? "border-[#f9dc0b]/18 bg-[#fff9d6] text-[#6a5b00]" : tone === "error" ? "border-[#f9dc0b]/18 bg-[#fff9d6] text-[#6a5b00]" : "border-[#f9dc0b]/18 bg-[#fff9d6] text-[#443b00]";
-  return (
-    <div className={cn("flex gap-3 rounded-xl border p-4 shadow-sm", color)}>
-      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-      <div>
-        <p className="text-sm font-bold">{title}</p>
-        <p className="mt-1 text-sm leading-6 opacity-75">{body}</p>
-      </div>
-    </div>
-  );
+  return <SharedNotice tone={tone === "warn" ? "warning" : tone} title={title}>{body}</SharedNotice>;
 }
 
 function SectionTitle({ title, body, theme = "light" }: { title: string; body: string; theme?: AgentTheme }) {

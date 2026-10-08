@@ -21,38 +21,6 @@
   color: var(--mk-muted);
   font-size: 13px;
 }
-.chs-seg {
-  display: inline-flex;
-  gap: 2px;
-  padding: 3px;
-  border-radius: 10px;
-  background: var(--mk-sunken);
-}
-.maker-workspace .chs-seg button {
-  min-height: 32px;
-  padding: 0 14px;
-  border: 0;
-  border-radius: 8px;
-  background: none;
-  color: var(--mk-muted);
-  font-size: 13px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-.maker-workspace .chs-seg button:hover {
-  background: none;
-  color: var(--mk-text);
-}
-.maker-workspace .chs-seg button[aria-checked="true"] {
-  background: var(--mk-surface);
-  color: var(--mk-text);
-  box-shadow: var(--mk-shadow);
-}
-.maker-workspace .chs-seg.is-small button {
-  min-height: 28px;
-  padding: 0 10px;
-  font-size: 12px;
-}
 
 /* Layout: cast list | detail */
 .chs-layout {
@@ -406,9 +374,6 @@
   flex-direction: column;
   gap: 8px;
   padding-top: 4px;
-}
-.chs-generate .chs-seg {
-  align-self: flex-start;
 }
 .maker-workspace .chs-go {
   width: 100%;

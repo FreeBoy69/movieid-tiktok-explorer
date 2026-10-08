@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { Loader2, Search, Sparkles, Star, Undo2, X } from "lucide-react";
 import { categoryLabel, listPrompts, setFavorite, suggestPrompts, type LibraryPrompt, type PromptCategoryId } from "../utils/promptLibrary";
 import { useErrorToast } from "../utils/toast";
+import { SearchField } from "./ui/controls";
 import "./PromptSuggestions.css";
 
 /**
@@ -218,10 +219,7 @@ function BrowsePanel({
             <X size={16} />
           </button>
         </div>
-        <label className="mk-suggest-search">
-          <Search size={15} aria-hidden="true" />
-          <input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search this category" aria-label="Search prompts" style={{ paddingLeft: 34 }} />
-        </label>
+        <SearchField autoFocus value={query} onChange={setQuery} placeholder="Search this category" label="Search prompts" size="sm" className="mk-suggest-search-field" />
         <div className="mk-suggest-list">
           {loading && !items.length ? (
             <div className="mk-suggest-wait"><Loader2 size={16} className="mk-suggest-spin" /></div>

@@ -96,8 +96,13 @@ import { PRODUCTION_PLAYBOOKS, PRODUCTION_PROFILES } from "../utils/productionPr
 import { tokensToCredits } from "../utils/credits.js";
 import { ProductionPreflight, type ProductionReview } from "./ProductionPreflight";
 import { FileDrop } from "./FileDrop";
+import { SourcePicker } from "./SourcePicker";
+import { UploadButton } from "./UploadButton";
 import { LanguagePicker } from "./LanguagePicker";
 import "./CreatorWorkspace.css";
+import { confirm as confirmDialog, Dialog } from "./ui/Dialog";
+import { EmptyState, Progress, SearchField, Segmented, Switch, Tabs } from "./ui/controls";
+import { confirmRemoveCharacter } from "./castSheets";
 
 type BoardSize = "s" | "m" | "l";
 const BOARD_SIZE_KEY = "autoyt-storyboard-size";
@@ -255,12 +260,9 @@ export function Empty({
   children?: ReactNode;
 }) {
   return (
-    <div className="maker-empty">
-      {icon || <Film size={28} />}
-      <h2>{title}</h2>
-      {text && <p>{text}</p>}
-      {children && <div className="maker-actions">{children}</div>}
-    </div>
+    <EmptyState className="maker-empty" icon={icon || <Film size={22} />} title={title} body={text}>
+      {children}
+    </EmptyState>
   );
 }
 export function PageHead({
@@ -284,6 +286,43 @@ export function PageHead({
     </header>
   );
 }
+// Channel style cards: picked when a project starts and when it is edited.
+function StyleCardPicker({ styles, value, onChange, allowNone }: { styles: ChannelStyle[]; value: string; onChange: (id: string) => void; allowNone?: boolean }) {
+  return (
+    <div className="maker-style-picker" role="radiogroup" aria-label="Channel style">
+      {allowNone ? (
+        <button type="button" role="radio" aria-checked={!value} aria-pressed={!value} className="is-dashed" onClick={() => onChange("")}>
+          <X size={18} />
+          <strong>No style</strong>
+        </button>
+      ) : null}
+      {styles.map((s) => (
+        <button key={s.id} type="button" role="radio" aria-checked={value === s.id} aria-pressed={value === s.id} onClick={() => onChange(s.id)}>
+          <StyleCover style={s} />
+          <strong>{s.name}</strong>
+          <small>{s.profile?.settings?.wordCount || 600} words</small>
+        </button>
+      ))}
+      <button type="button" className="is-dashed" onClick={() => writeDeepLink({ view: "styles" })}>
+        <Plus size={18} />
+        <strong>Create style</strong>
+      </button>
+    </div>
+  );
+}
+// Create Video's dialogs use the shared Dialog. Its body and footer sit in a
+// maker scope (display: contents) so maker form styles and theme still apply.
+function makerTheme() {
+  if (typeof document === "undefined") return "dark";
+  return document.querySelector<HTMLElement>(".maker-workspace:not(.maker-scope)")?.dataset.theme || document.documentElement.dataset.theme || "dark";
+}
+export function MakerScope({ children }: { children: ReactNode }) {
+  return (
+    <div className="maker-workspace maker-scope" data-theme={makerTheme()}>
+      {children}
+    </div>
+  );
+}
 export function Modal({
   title,
   onClose,
@@ -299,69 +338,16 @@ export function Modal({
   className?: string;
   children: ReactNode;
 }) {
-  const ref = useRef<HTMLElement>(null);
-  useEffect(() => {
-    const previous = document.activeElement as HTMLElement | null;
-    const focusable = () =>
-      ref.current?.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-      );
-    focusable()?.[0]?.focus();
-    const handleKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        onClose();
-        return;
-      }
-      if (event.key !== "Tab") return;
-      const items = focusable();
-      if (!items?.length) return;
-      const first = items[0];
-      const last = items[items.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-    document.addEventListener("keydown", handleKey);
-    return () => {
-      document.removeEventListener("keydown", handleKey);
-      previous?.focus();
-    };
-  }, []);
   return (
-    <div className="maker-modal-backdrop" onMouseDown={onClose}>
-      <section
-        ref={ref}
-        className={`maker-modal ${wide ? "is-wide" : ""} ${className}`}
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        onMouseDown={(e) => e.stopPropagation()}
-      >
-        {wide ? (
-          <>
-            <header>
-              <h2>{title}</h2>
-              <Action label="Close" onClick={onClose}>
-                <X size={18} />
-              </Action>
-            </header>
-            <div className="maker-modal-body">{children}</div>
-            {footer && <footer>{footer}</footer>}
-          </>
-        ) : (
-          <>
-            <h2>{title}</h2>
-            {children}
-            {footer && <div className="maker-actions">{footer}</div>}
-          </>
-        )}
-      </section>
-    </div>
+    <Dialog
+      title={title}
+      onClose={onClose}
+      size={wide ? "lg" : "sm"}
+      className={`maker-dialog${wide ? " is-wide" : ""} ${className}`.trim()}
+      footer={footer ? <MakerScope>{footer}</MakerScope> : undefined}
+    >
+      <MakerScope>{children}</MakerScope>
+    </Dialog>
   );
 }
 function Disclosure({
@@ -636,28 +622,7 @@ function NewVideoModal({
           {mode === "style" && (
             <div className="maker-option-extra">
               {styles.length ? (
-                <div className="maker-style-picker">
-                  {styles.map((s) => (
-                    <button
-                      key={s.id}
-                      type="button"
-                      aria-pressed={styleId === s.id}
-                      onClick={() => setStyleId(s.id)}
-                    >
-                      <StyleCover style={s} />
-                      <strong>{s.name}</strong>
-                      <small>{s.profile?.settings?.wordCount || 600} words</small>
-                    </button>
-                  ))}
-                  <button
-                    type="button"
-                    className="is-dashed"
-                    onClick={() => writeDeepLink({ view: "styles" })}
-                  >
-                    <Plus size={18} />
-                    <strong>Create style</strong>
-                  </button>
-                </div>
+                <StyleCardPicker styles={styles} value={styleId} onChange={setStyleId} />
               ) : (
                 <p className="maker-muted maker-small">
                   No styles yet. Copy one from a channel in Niche Finder or Styles.
@@ -692,20 +657,17 @@ function NewVideoModal({
           />
           {mode === "collection" && (
             <div className="maker-option-extra">
-              <select
-                aria-label="Research collection"
+              <SourcePicker
+                label="Research collection"
+                ariaLabel="Research collection"
+                placeholder={research.length ? "Choose saved research" : "No saved research yet"}
+                sourcesTabLabel="Saved research"
+                disabled={!research.length}
+                theme={makerTheme() === "light" ? "light" : "dark"}
+                options={research.map((c) => ({ value: c.id, label: c.name, kind: "collection" as const }))}
                 value={collectionId}
-                onChange={(e) => setCollectionId(e.target.value)}
-              >
-                <option value="">
-                  {research.length ? "Choose saved research" : "No saved research yet"}
-                </option>
-                {research.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
+                onChange={setCollectionId}
+              />
             </div>
           )}
           <Option
@@ -1018,6 +980,7 @@ function EditProjectModal({
   return (
     <Modal
       title="Edit project"
+      wide
       onClose={onClose}
       footer={
         <>
@@ -1036,17 +999,10 @@ function EditProjectModal({
           Project title
           <input value={title} maxLength={180} onChange={(e) => setTitle(e.target.value)} />
         </label>
-        <label className="maker-field">
-          Style
-          <select value={styleId} onChange={(e) => setStyleId(e.target.value)}>
-            <option value="">No style</option>
-            {styles.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="maker-field">
+          <span>Style</span>
+          <StyleCardPicker styles={styles} value={styleId} onChange={setStyleId} allowNone />
+        </div>
         {styleChanged && (
           <p className="maker-notice">
             <CircleAlert size={15} />
@@ -1124,23 +1080,16 @@ function Projects({
           </button>
         </PageHead>
         <div className="maker-history-toolbar">
-          <label className="maker-searchbar">
-            <Search size={16} />
-            <input
-              aria-label="Search projects"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search projects"
-            />
-          </label>
-          <div className="maker-segmented">
-            <button aria-pressed={!archived} onClick={() => setArchived(false)}>
-              Active
-            </button>
-            <button aria-pressed={archived} onClick={() => setArchived(true)}>
-              Archived
-            </button>
-          </div>
+          <SearchField className="maker-searchbar" value={query} onChange={setQuery} placeholder="Search projects" />
+          <Segmented
+            label="Project list"
+            value={archived ? "archived" : "active"}
+            onChange={(next) => setArchived(next === "archived")}
+            options={[
+              { value: "active", label: "Active" },
+              { value: "archived", label: "Archived" },
+            ]}
+          />
         </div>
         {loading ? (
           <div className="maker-loading">
@@ -1822,18 +1771,17 @@ function Discovery({
           </div>
         )}
         <div className="maker-filterbar">
-          <div className="maker-segmented" role="tablist" aria-label="Results">
-            {[
-              ["channels", "Channels"],
-              ["videos", "Videos"],
-              ["bookmarks", `Bookmarks${bookmarks.length ? ` · ${bookmarks.length}` : ""}`],
-              ["saved", `Collections${research.length ? ` · ${research.length}` : ""}`],
-            ].map(([t, label]) => (
-              <button key={t} role="tab" aria-selected={tab === t} aria-pressed={tab === t} onClick={() => setTab(t)}>
-                {label}
-              </button>
-            ))}
-          </div>
+          <Segmented
+            label="Results"
+            value={tab}
+            onChange={(next) => setTab(next as typeof tab)}
+            options={[
+              { value: "channels", label: "Channels" },
+              { value: "videos", label: "Videos" },
+              { value: "bookmarks", label: "Bookmarks", hint: bookmarks.length ? String(bookmarks.length) : undefined },
+              { value: "saved", label: "Collections", hint: research.length ? String(research.length) : undefined },
+            ]}
+          />
           <label className="maker-sort">
             Sort by
             <select
@@ -2102,10 +2050,7 @@ function FilterForm({ value: f, onChange }: { value: Filters; onChange: (f: Filt
             </select>
           </label>
         </div>
-        <label className="maker-switch maker-filter-switch">
-          <input type="checkbox" checked={f.faceless} onChange={(e) => set({ faceless: e.target.checked })} />
-          Likely faceless channels only
-        </label>
+        <Switch className="maker-switch-row maker-filter-switch" compact checked={f.faceless} onChange={(on) => set({ faceless: on })} label="Likely faceless channels only" />
       </section>
       <section>
         <h3>Channel recency</h3>
@@ -2483,7 +2428,7 @@ function EditStyleModal({
             className="maker-danger maker-push-left"
             disabled={!!busy}
             onClick={async () => {
-              if (!window.confirm(`Delete the “${s.name}” style? Projects that used it keep their settings.`)) return;
+              if (!(await confirmDialog({ title: `Delete the “${s.name}” style?`, body: "Projects that used it keep their settings.", confirmLabel: "Delete style", danger: true }))) return;
               try {
                 await creatorApi(`/api/maker/styles/${s.id}`, { accountId, name: s.name, deleted: true }, "PATCH");
                 await onDeleted();
@@ -2845,14 +2790,16 @@ function CreateArtStyleModal({
       }
     >
       <div className="maker-stack">
-        <div className="maker-art-source-tabs" role="tablist" aria-label="Style source">
-          <button role="tab" aria-selected={mode === "video"} onClick={() => setMode("video")}>
-            <Clapperboard size={16} /> Sample video
-          </button>
-          <button role="tab" aria-selected={mode === "frames"} onClick={() => setMode("frames")}>
-            <ImagePlus size={16} /> Reference images
-          </button>
-        </div>
+        <Segmented
+          label="Style source"
+          block
+          value={mode}
+          onChange={(next) => setMode(next as typeof mode)}
+          options={[
+            { value: "video", label: "Sample video", icon: <Clapperboard size={16} /> },
+            { value: "frames", label: "Reference images", icon: <ImagePlus size={16} /> },
+          ]}
+        />
         <div className="maker-art-form">
           <div className="maker-stack">
           <label className="maker-field">
@@ -2865,10 +2812,7 @@ function CreateArtStyleModal({
                 Video link
                 <input value={sourceUrl} inputMode="url" placeholder="https://www.youtube.com/watch?v=..." onChange={(e) => setSourceUrl(e.target.value)} />
               </label>
-              <label className="maker-switch maker-rights-confirm">
-                <input type="checkbox" checked={rightsConfirmed} onChange={(e) => setRightsConfirmed(e.target.checked)} />
-                <span>I own this sample or have permission to analyze it</span>
-              </label>
+              <Switch className="maker-switch-row maker-rights-confirm" compact checked={rightsConfirmed} onChange={(on) => setRightsConfirmed(on)} label="I own this sample or have permission to analyze it" />
             </>
           ) : (
             <label className="maker-field">
@@ -3073,21 +3017,15 @@ function SegmentEditor({
         )}
       </div>
       <div className="maker-segment-grid">
-        <label className="maker-setting-tile" title={animation?.available ? "" : animation?.reason}>
-          <div>
-            <strong>Animate</strong>
-            <span>{animation?.available ? "Image-to-video for every scene in this part" : animation?.reason || "Checking scene animation"}</span>
-          </div>
-          <span className="maker-switch">
-            <input
-              type="checkbox"
-              aria-label={`Animate ${segments.length > 1 ? `segment ${index + 1}` : "the whole video"}`}
-              disabled={!animation?.available}
-              checked={Boolean(current.animate)}
-              onChange={(e) => update({ animate: e.target.checked })}
-            />
-          </span>
-        </label>
+        <span className="maker-tile-switch" title={animation?.available ? "" : animation?.reason}>
+          <Switch
+            checked={Boolean(current.animate)}
+            onChange={(on) => update({ animate: on })}
+            label={<>Animate<span className="sr-only">{segments.length > 1 ? ` segment ${index + 1}` : " the whole video"}</span></>}
+            description={animation?.available ? "Image-to-video for every scene in this part" : animation?.reason || "Checking scene animation"}
+            disabled={!animation?.available}
+          />
+        </span>
         <div className="maker-field">
           <span>Image quality</span>
           <div className="maker-presets">
@@ -3802,7 +3740,7 @@ function ProjectEditor({
       onError(`Choose ${kind === "image" ? "an image" : "audio"} smaller than ${limitMb} MB`);
       return;
     }
-    if (kind === "audio" && !window.confirm("Do you own this music or have permission to use it?")) return;
+    if (kind === "audio" && !(await confirmDialog({ title: "Do you have the rights to this music?", body: "Only use music you own or have permission to use.", confirmLabel: "I have the rights" }))) return;
     setBusy(true);
     try {
       const encoded = await readFile(file);
@@ -4206,19 +4144,19 @@ function ProjectEditor({
     <>
       {active && latest && (
         <div className="maker-progress" role="status">
-          <Loader2 size={15} className="animate-spin" />
-          <span>{latest.message || "Queued"}</span>
-          <span className="maker-progress-track">
-            <span style={{ width: `${Math.max(3, latest.progress || 0)}%` }} />
-          </span>
-          <span className="maker-mono">{Math.round(latest.progress || 0)}%</span>
-          {latest.progress > 5 && latest.progress < 95 ? (
-            <span>
-              about{" "}
-              {Math.max(1, Math.ceil((((Date.now() - latest.createdAt) / 60000) * (100 - latest.progress)) / latest.progress))} min
-              left
-            </span>
-          ) : null}
+          <Progress
+            label="Stage progress"
+            value={(latest.progress || 0) / 100}
+            message={
+              <>
+                <Loader2 size={14} className="animate-spin" />
+                {latest.message || "Queued"}
+                {latest.progress > 5 && latest.progress < 95
+                  ? ` · about ${Math.max(1, Math.ceil((((Date.now() - latest.createdAt) / 60000) * (100 - latest.progress)) / latest.progress))} min left`
+                  : ""}
+              </>
+            }
+          />
         </div>
       )}
       {output?.stale && (
@@ -4288,8 +4226,8 @@ function ProjectEditor({
         <div className="maker-topbar-left">
           <button
             className="maker-ghost"
-            onClick={() => {
-              if (!dirty || window.confirm("Leave without saving this draft?"))
+            onClick={async () => {
+              if (!dirty || (await confirmDialog({ title: "Leave without saving?", body: "Your draft changes will be lost.", confirmLabel: "Leave", danger: true })))
                 writeDeepLink(dramaEpisode ? { view: "drama", seriesId: dramaEpisode.seriesId } : { view: "projects" });
             }}
           >
@@ -4401,10 +4339,7 @@ function ProjectEditor({
                         Target words
                         <input type="number" min={100} max={5000} step={50} value={settings.wordCount ?? 600} onChange={(e) => editSetting({ wordCount: Number(e.target.value) })} />
                       </label>
-                      <label className="maker-switch maker-align-end">
-                        <input type="checkbox" checked={Boolean(settings.research)} onChange={(e) => editSetting({ research: e.target.checked })} />
-                        Research and keep source links
-                      </label>
+                      <Switch className="maker-switch-row maker-align-end" compact checked={Boolean(settings.research)} onChange={(on) => editSetting({ research: on })} label="Research and keep source links" />
                       <label className="maker-field maker-span">
                         Additional script context
                         <textarea rows={3} value={settings.additionalContext || ""} onChange={(e) => editSetting({ additionalContext: e.target.value })} />
@@ -4605,37 +4540,22 @@ function ProjectEditor({
                   </div>
                   <div className="maker-field">
                     <span>Format</span>
-                    <div className="maker-segmented maker-format-pick" role="radiogroup" aria-label="Script format">
-                      {([
-                        ["narration", "Narration", "One voice tells the story"],
-                        ["dialogue", "Dialogue", "Characters talk: short dramas, AI fruit stories"],
-                      ] as const).map(([key, label, hint]) => (
-                        <button
-                          key={key}
-                          type="button"
-                          role="radio"
-                          aria-checked={(settings.scriptFormat === "dialogue" ? "dialogue" : "narration") === key}
-                          aria-pressed={(settings.scriptFormat === "dialogue" ? "dialogue" : "narration") === key}
-                          title={hint}
-                          onClick={() => editSetting({ scriptFormat: key })}
-                        >
-                          {label}
-                        </button>
-                      ))}
-                    </div>
+                    <Segmented
+                      label="Script format"
+                      value={settings.scriptFormat === "dialogue" ? "dialogue" : "narration"}
+                      onChange={(scriptFormat) => editSetting({ scriptFormat })}
+                      options={[
+                        { value: "narration", label: "Narration", title: "One voice tells the story" },
+                        { value: "dialogue", label: "Dialogue", title: "Characters talk: short dramas, AI fruit stories" },
+                      ]}
+                    />
                     <small>
                       {settings.scriptFormat === "dialogue"
                         ? "One line per turn as NAME: what they say. Add a voice direction in parentheses, e.g. APPLE (whispering): … Each character gets their own voice and every line gets its own scene."
                         : "A single narrator. Scenes follow the narration sentence by sentence."}
                     </small>
                   </div>
-                  <label className="maker-switch">
-                    <input type="checkbox" checked={Boolean(settings.research)} onChange={(e) => editSetting({ research: e.target.checked })} />
-                    <span>
-                      Web research
-                      <small>Pull citable sources into the script. May take longer.</small>
-                    </span>
-                  </label>
+                  <Switch className="maker-switch-row" compact checked={Boolean(settings.research)} onChange={(on) => editSetting({ research: on })} label="Web research" description="Pull citable sources into the script. May take longer." />
                   <Disclosure label="Show options" summary={`${styleName || "no style"} · ${settings.wordCount ?? 600} words`}>
                     <div className="maker-grid-2">
                       <label className="maker-field">
@@ -4843,7 +4763,7 @@ function ProjectEditor({
                   onImport={(file) => void upload(file, 30, "audio")}
                   importHint="Licensed audio, up to 30 MB"
                   onUse={async (track) => {
-                    if (!window.confirm(`Import “${track.title}” under its stated ${track.license || "free"} license?`)) return;
+                    if (!(await confirmDialog({ title: `Import “${track.title}”?`, body: `It’s used under its stated ${track.license || "free"} license.`, confirmLabel: "Import track" }))) return;
                     setBusy(true);
                     try {
                       const data = await creatorApi(`/api/maker/projects/${id}/soundtrack-url`, {
@@ -4980,10 +4900,7 @@ function ProjectEditor({
                           Music level · {Math.round((settings.soundtrackVolume ?? 0.18) * 100)}%
                           <input type="range" min={0} max={1} step={0.05} value={settings.soundtrackVolume ?? 0.18} onChange={(e) => editSetting({ soundtrackVolume: Number(e.target.value) })} />
                         </label>
-                        <label className="maker-switch maker-align-end">
-                          <input type="checkbox" checked={settings.preserveDialogue !== false} onChange={(e) => editSetting({ preserveDialogue: e.target.checked })} />
-                          Duck music under narration
-                        </label>
+                        <Switch className="maker-switch-row maker-align-end" compact checked={settings.preserveDialogue !== false} onChange={(on) => editSetting({ preserveDialogue: on })} label="Duck music under narration" />
                       </div>
                       <Disclosure label="Use a royalty-free track instead" summary="Pixabay, Openverse, or your own file" defaultOpen={music ? !music.available : false}>
                         {royaltyFree}
@@ -4999,18 +4916,17 @@ function ProjectEditor({
                   {genHead(undefined, true)}
                   <div className="maker-gen-body maker-stack">
                     {stageNotices}
-                    <div className="maker-vtabs" role="tablist" aria-label="Visual settings">
-                      {([
-                        ["style", "Style", styleLabel],
-                        ["timing", "Timing", promptEstimate ? `~${promptEstimate} scenes` : `${paceSeconds.toFixed(0)}s each`],
-                        ["output", "Output", `${settings.aspect || "16:9"} · ${QUALITY_OPTIONS.find(([key]) => key === (settings.quality || "standard"))?.[1]}`],
-                      ] as const).map(([key, label, hint]) => (
-                        <button key={key} type="button" role="tab" aria-selected={visualTab === key} className="maker-vtab" onClick={() => setVisualTab(key)}>
-                          <strong>{label}</strong>
-                          <small>{hint}</small>
-                        </button>
-                      ))}
-                    </div>
+                    <Tabs
+                      label="Visual settings"
+                      className="maker-vtabs"
+                      value={visualTab}
+                      onChange={(next) => setVisualTab(next as typeof visualTab)}
+                      options={[
+                        { value: "style", label: "Style", hint: styleLabel },
+                        { value: "timing", label: "Timing", hint: promptEstimate ? `~${promptEstimate} scenes` : `${paceSeconds.toFixed(0)}s each` },
+                        { value: "output", label: "Output", hint: `${settings.aspect || "16:9"} · ${QUALITY_OPTIONS.find(([key]) => key === (settings.quality || "standard"))?.[1]}` },
+                      ]}
+                    />
                     {visualTab === "style" && (
                       <div className="maker-stack-sm" role="tabpanel" aria-label="Style">
                         <ArtStylePicker
@@ -5020,7 +4936,7 @@ function ProjectEditor({
                           onChange={(artStyleId) => editSetting({ artStyleId })}
                           onCreate={() => setArtModal(true)}
                           onDelete={async (style) => {
-                            if (!window.confirm(`Delete the “${style.name}” art style? Projects using it will need a new style before generating images.`)) return;
+                            if (!(await confirmDialog({ title: `Delete the “${style.name}” art style?`, body: "Projects using it will need a new style before generating images.", confirmLabel: "Delete style", danger: true }))) return;
                             try {
                               await creatorApi(`/api/maker/art-styles/${style.id}?accountId=${encodeURIComponent(accountId)}`, undefined, "DELETE");
                               if (settings.artStyleId === style.id) editSetting({ artStyleId: "" });
@@ -5060,15 +4976,7 @@ function ProjectEditor({
                               ))}
                             </select>
                           </div>
-                          <div className="maker-setting-tile">
-                            <div>
-                              <strong>Pan and zoom</strong>
-                              <span>Every still zooms or pans, switching direction each cut. Rendered locally. Free.</span>
-                            </div>
-                            <label className="maker-switch">
-                              <input type="checkbox" aria-label="Pan and zoom" checked={settings.motion !== "still"} onChange={(e) => editSetting({ motion: e.target.checked ? "push" : "still" })} />
-                            </label>
-                          </div>
+                          <Switch className="maker-tile-switch" checked={settings.motion !== "still"} onChange={(on) => editSetting({ motion: on ? "push" : "still" })} label="Pan and zoom" description="Every still zooms or pans, switching direction each cut. Rendered locally. Free." />
                           <div className="maker-setting-tile">
                             <div>
                               <strong>Footage</strong>
@@ -5093,13 +5001,7 @@ function ProjectEditor({
                             </div>
                           )}
                         </div>
-                        <label className="maker-switch maker-advanced-toggle">
-                          <input type="checkbox" checked={advanced} onChange={(e) => setAdvanced(e.target.checked)} />
-                          <span>
-                            Per-segment control
-                            <small>Split the narration and set animation, quality, and image count for each part</small>
-                          </span>
-                        </label>
+                        <Switch className="maker-switch-row maker-advanced-toggle" compact checked={advanced} onChange={(on) => setAdvanced(on)} label="Per-segment control" description="Split the narration and set animation, quality, and image count for each part" />
                         {voiceover?.duration ? (
                           <SegmentEditor
                             advanced={advanced}
@@ -5123,10 +5025,7 @@ function ProjectEditor({
                         <DeliverySettings settings={settings} editSetting={editSetting} />
                         <div className="maker-field">
                           <span>Safe prompts</span>
-                          <label className="maker-switch">
-                            <input type="checkbox" checked={Boolean(settings.safePrompts)} onChange={(e) => editSetting({ safePrompts: e.target.checked })} />
-                            {settings.safePrompts ? "On · no gore, logos, or real people" : "Off"}
-                          </label>
+                          <Switch className="maker-switch-row" compact checked={Boolean(settings.safePrompts)} onChange={(on) => editSetting({ safePrompts: on })} label={settings.safePrompts ? "On · no gore, logos, or real people" : "Off"} />
                         </div>
                         <label className="maker-field">
                           Image source
@@ -5180,9 +5079,9 @@ function ProjectEditor({
                     onSuggest={() => void suggestCast()}
                     onAdd={() => editBible({ cast: [...bible.cast, { id: `cast-${crypto.randomUUID()}`, name: `Character ${bible.cast.length + 1}`, role: "", appearance: "", outfit: "", approvedReferences: [] }] })}
                     onEdit={(castId, patch) => editBible({ cast: bible.cast.map((item) => (item.id === castId ? { ...item, ...patch } : item)) })}
-                    onRemove={(castId) => {
+                    onRemove={async (castId) => {
                       const character = bible.cast.find((item) => item.id === castId);
-                      if (character?.approvedReferences.length && !window.confirm(`Remove ${character.name} and their locked sheet?`)) return;
+                      if (character?.approvedReferences.length && !(await confirmRemoveCharacter(character.name))) return;
                       editBible({ cast: bible.cast.filter((item) => item.id !== castId) });
                     }}
                     onSheets={(castId, count) => void generateCastSheets(castId, count)}
@@ -5442,20 +5341,9 @@ function ProjectEditor({
                                   </button>
                                 )}
                                 <span className="sce-spacer" />
-                                <label className="sce-icon" title="Use your own image" data-disabled={active || busy || undefined}>
+                                <UploadButton className="sce-icon" title="Use your own image" label={`Use your own image for scene ${index + 1}`} disabled={active || busy} maxBytes={15 * 1024 ** 2} onError={onError} onFile={(file) => void applyOwnSceneImage(scene.id, file)}>
                                   <Upload size={16} />
-                                  <span className="sr-only">Use your own image for scene {index + 1}</span>
-                                  <input
-                                    type="file"
-                                    hidden
-                                    disabled={active || busy}
-                                    accept="image/png,image/jpeg,image/webp"
-                                    onChange={(e) => {
-                                      void applyOwnSceneImage(scene.id, e.target.files?.[0]);
-                                      e.target.value = "";
-                                    }}
-                                  />
-                                </label>
+                                </UploadButton>
                                 {scene.asset && (
                                   <a className="sce-icon" href={scene.asset} download title="Download image" aria-label={`Download scene ${index + 1}`}>
                                     <Download size={16} />
@@ -5502,19 +5390,13 @@ function ProjectEditor({
                               </label>
                               <div className="sce-field">
                                 <span className="sce-label">Shot size</span>
-                                <div className="sce-seg" role="radiogroup" aria-label={`Scene ${index + 1} shot size`}>
-                                  {SHOT_SIZES.map((shot: string) => (
-                                    <button
-                                      key={shot}
-                                      type="button"
-                                      role="radio"
-                                      aria-checked={(scene.shot || "") === shot}
-                                      onClick={() => editScene(index, { shot, ...(shot === "broll" ? { castIds: [] } : {}) })}
-                                    >
-                                      {SHOT_LABELS[shot as keyof typeof SHOT_LABELS]}
-                                    </button>
-                                  ))}
-                                </div>
+                                <Segmented
+                                  size="sm"
+                                  label={`Scene ${index + 1} shot size`}
+                                  value={scene.shot || ""}
+                                  onChange={(shot) => editScene(index, { shot, ...(shot === "broll" ? { castIds: [] } : {}) })}
+                                  options={SHOT_SIZES.map((shot: string) => ({ value: shot, label: SHOT_LABELS[shot as keyof typeof SHOT_LABELS] }))}
+                                />
                                 <small>Applies when you regenerate. B-roll takes the cast out of the scene.</small>
                               </div>
                               {bible.cast.length > 0 && (
@@ -5547,23 +5429,30 @@ function ProjectEditor({
                               )}
                               <div className="sce-field">
                                 <span className="sce-label">Motion</span>
-                                <div className="sce-seg" role="radiogroup" aria-label={`Scene ${index + 1} motion`}>
-                                  {([["still", "Still"], ["push", "Pan & zoom"]] as const).map(([key, label]) => (
-                                    <button key={key} type="button" role="radio" aria-checked={(scene.motion || "still") === key} onClick={() => editScene(index, { motion: key })}>
-                                      {label}
-                                    </button>
-                                  ))}
-                                </div>
+                                <Segmented
+                                  size="sm"
+                                  label={`Scene ${index + 1} motion`}
+                                  value={scene.motion || "still"}
+                                  onChange={(motion) => editScene(index, { motion })}
+                                  options={[
+                                    { value: "still", label: "Still" },
+                                    { value: "push", label: "Pan & zoom" },
+                                  ]}
+                                />
                               </div>
                               <div className="sce-field">
                                 <span className="sce-label">Image source</span>
-                                <div className="sce-seg" role="radiogroup" aria-label={`Scene ${index + 1} source policy`}>
-                                  {([["generated", "Generated"], ["reference", "From a reference"], ["upload", "Uploaded"]] as const).map(([key, label]) => (
-                                    <button key={key} type="button" role="radio" aria-checked={(scene.sourcePolicy || "generated") === key} onClick={() => editScene(index, { sourcePolicy: key })}>
-                                      {label}
-                                    </button>
-                                  ))}
-                                </div>
+                                <Segmented
+                                  size="sm"
+                                  label={`Scene ${index + 1} source policy`}
+                                  value={scene.sourcePolicy || "generated"}
+                                  onChange={(sourcePolicy) => editScene(index, { sourcePolicy })}
+                                  options={[
+                                    { value: "generated", label: "Generated" },
+                                    { value: "reference", label: "From a reference" },
+                                    { value: "upload", label: "Uploaded" },
+                                  ]}
+                                />
                                 {scene.sourcePolicy && scene.sourcePolicy !== "generated" ? (
                                   references.length ? (
                                     <div className="sce-refs" role="radiogroup" aria-label={`Scene ${index + 1} reference image`}>
@@ -5585,16 +5474,9 @@ function ProjectEditor({
                                 </div>
                               ) : null}
                               <div className="sce-field sce-animate">
-                                <label className="maker-switch" title={animation?.available ? "Animate this scene with AI" : animation?.reason}>
-                                  <input
-                                    type="checkbox"
-                                    aria-label={`Animate scene ${index + 1}`}
-                                    disabled={!animation?.available}
-                                    checked={Boolean(scene.animate)}
-                                    onChange={(e) => editScene(index, { animate: e.target.checked })}
-                                  />
-                                  Animate this scene
-                                </label>
+                                <span className="maker-switch-row" title={animation?.available ? "Animate this scene with AI" : animation?.reason}>
+                                  <Switch compact checked={Boolean(scene.animate)} onChange={(on) => editScene(index, { animate: on })} label="Animate this scene" disabled={!animation?.available} />
+                                </span>
                                 {!animation?.available && animation?.reason ? <small>{animation.reason}</small> : null}
                                 {(scene.animate || scene.clip) && (
                                   <textarea
@@ -5631,8 +5513,11 @@ function ProjectEditor({
                   {view === "scenes" && (
                   <>
                   <div className="maker-board-bar">
-                    <div className="maker-board-filter" role="tablist" aria-label="Filter scenes">
-                      {([
+                    <Segmented
+                      label="Filter scenes"
+                      value={sceneFilter}
+                      onChange={(next) => setSceneFilter(next as typeof sceneFilter)}
+                      options={([
                         ["all", "All", scenes.length],
                         ["missing", "Missing", missingImages],
                         ["ready", "Ready", scenes.filter((s) => s.asset).length],
@@ -5640,47 +5525,31 @@ function ProjectEditor({
                         ["animated", "Animated", scenes.filter((s) => s.clip || s.animate).length],
                       ] as const)
                         .filter(([key, , count]) => key === "all" || count > 0)
-                        .map(([key, label, count]) => (
-                          <button key={key} type="button" role="tab" aria-selected={sceneFilter === key} onClick={() => setSceneFilter(key)}>
-                            {label}
-                            <span>{count}</span>
-                          </button>
-                        ))}
-                    </div>
-                    <label className="sb-search">
-                      <Search size={15} aria-hidden="true" />
-                      <input className="sb-q" type="search" value={boardQuery} placeholder="Search narration or prompts" aria-label="Search scenes" onChange={(e) => setBoardQuery(e.target.value)} />
-                    </label>
+                        .map(([key, label, count]) => ({ value: key, label, hint: String(count) }))}
+                    />
+                    <SearchField className="sb-search" size="sm" value={boardQuery} onChange={setBoardQuery} placeholder="Search narration or prompts" label="Search scenes" />
                     <div className="maker-actions">
-                      <div className="sb-size" role="radiogroup" aria-label="Card size">
-                        {([
+                      <Segmented
+                        label="Card size"
+                        className="sb-size"
+                        size="sm"
+                        value={boardSize}
+                        onChange={(key) => {
+                          setBoardSize(key);
+                          try {
+                            window.localStorage.setItem(BOARD_SIZE_KEY, key);
+                          } catch {}
+                        }}
+                        options={([
                           ["s", "Small cards", <Grid3x3 size={15} key="i" />],
                           ["m", "Medium cards", <Grid2x2 size={15} key="i" />],
                           ["l", "Large cards", <Square size={15} key="i" />],
-                        ] as const).map(([key, label, icon]) => (
-                          <button
-                            key={key}
-                            type="button"
-                            role="radio"
-                            aria-checked={boardSize === key}
-                            aria-label={label}
-                            title={label}
-                            onClick={() => {
-                              setBoardSize(key);
-                              try {
-                                window.localStorage.setItem(BOARD_SIZE_KEY, key);
-                              } catch {}
-                            }}
-                          >
-                            {icon}
-                          </button>
-                        ))}
-                      </div>
-                      <label className="mk-btn maker-outline" title="Reference images are used by scenes set to Reference">
+                        ] as const).map(([value, label, icon]) => ({ value, title: label, icon, label: <span className="sr-only">{label}</span> }))}
+                      />
+                      <UploadButton className="mk-btn maker-outline" title="Reference images are used by scenes set to Reference" onFile={(file) => void upload(file, 15, "image")}>
                         <ImagePlus size={15} />
                         Reference image{project.metadata.referenceAssets?.length ? ` (${project.metadata.referenceAssets.length})` : ""}
-                        <input type="file" hidden accept="image/png,image/jpeg,image/webp" onChange={(e) => void upload(e.target.files?.[0], 15, "image")} />
-                      </label>
+                      </UploadButton>
                       {scenes.some((s) => s.asset) && (
                         <a className="mk-btn maker-outline" href={`/api/maker/projects/${id}/scene-images.zip?accountId=${encodeURIComponent(accountId)}`} download>
                           <Download size={15} />
@@ -5807,20 +5676,9 @@ function ProjectEditor({
                               <RefreshCw size={14} />
                               {scene.error ? "Retry" : scene.asset ? "Regenerate" : "Generate"}
                             </button>
-                            <label className="sb-icon" title="Use your own image" data-disabled={active || busy || undefined}>
+                            <UploadButton className="sb-icon" title="Use your own image" label={`Use your own image for scene ${index + 1}`} disabled={active || busy} maxBytes={15 * 1024 ** 2} onError={onError} onFile={(file) => void applyOwnSceneImage(scene.id, file)}>
                               <Upload size={15} />
-                              <span className="sr-only">Use your own image for scene {index + 1}</span>
-                              <input
-                                type="file"
-                                hidden
-                                disabled={active || busy}
-                                accept="image/png,image/jpeg,image/webp"
-                                onChange={(e) => {
-                                  void applyOwnSceneImage(scene.id, e.target.files?.[0]);
-                                  e.target.value = "";
-                                }}
-                              />
-                            </label>
+                            </UploadButton>
                             {scene.asset ? (
                               <a className="sb-icon" href={scene.asset} download title="Download image" aria-label={`Download scene ${index + 1} image`}>
                                 <Download size={15} />
@@ -5858,29 +5716,20 @@ function ProjectEditor({
                 {genHead()}
                 <div className="maker-gen-body">
                   {stageNotices}
-                  <div className="maker-segmented maker-thumb-mode" role="tablist" aria-label="Thumbnail method">
-                    {[
-                      ["channel", <TrendingUp size={14} key="i" />, "Copy a winner", ""],
-                      ["reference", <ImageIcon size={14} key="i" />, "Edit a reference", ""],
-                      ["scratch", <WandSparkles size={14} key="i" />, "Start from scratch", ""],
-                    ].map(([key, icon, label, reason]) => (
-                      <button
-                        key={String(key)}
-                        role="tab"
-                        aria-selected={thumbModeNow === key}
-                        aria-pressed={thumbModeNow === key}
-                        disabled={Boolean(reason)}
-                        title={String(reason || "")}
-                        onClick={() => {
-                          setThumbMode(key as any);
-                          editSetting({ thumbnailMode: key, ...(key !== "reference" && thumbReference ? { thumbnailReference: "" } : {}) });
-                        }}
-                      >
-                        {icon}
-                        {label}
-                      </button>
-                    ))}
-                  </div>
+                  <Segmented
+                    label="Thumbnail method"
+                    className="maker-thumb-mode"
+                    value={thumbModeNow}
+                    onChange={(key) => {
+                      setThumbMode(key as any);
+                      editSetting({ thumbnailMode: key, ...(key !== "reference" && thumbReference ? { thumbnailReference: "" } : {}) });
+                    }}
+                    options={[
+                      { value: "channel", label: "Copy a winner", icon: <TrendingUp size={14} /> },
+                      { value: "reference", label: "Edit a reference", icon: <ImageIcon size={14} /> },
+                      { value: "scratch", label: "Start from scratch", icon: <WandSparkles size={14} /> },
+                    ]}
+                  />
                   {thumbModeNow === "channel" ? (
                     <>
                       <Step n={1} title="Pick a winning thumbnail">
@@ -5943,11 +5792,10 @@ function ProjectEditor({
                             <div className="maker-stack-sm">
                               <p className="maker-caption maker-flush">This image is edited, not copied: only the changes you describe are applied.</p>
                               <div className="maker-actions">
-                                <label className="mk-btn maker-outline">
+                                <UploadButton className="mk-btn maker-outline" maxBytes={15 * 1024 ** 2} onError={onError} onFile={(file) => void setThumbnailReference({ file })}>
                                   <Upload size={14} />
                                   Replace
-                                  <input type="file" hidden accept="image/png,image/jpeg,image/webp" onChange={(e) => e.target.files?.[0] && void setThumbnailReference({ file: e.target.files[0] })} />
-                                </label>
+                                </UploadButton>
                                 <button className="maker-link" onClick={() => editSetting({ thumbnailReference: "" })}>
                                   <X size={13} />
                                   Remove
@@ -6153,10 +6001,7 @@ function ProjectEditor({
                     ))}
                   </div>
                   <CaptionStylePicker value={settings.captionStyle || "none"} onChange={(captionStyle) => editSetting({ captionStyle })} disabled={busy} />
-                  <label className="maker-switch">
-                    <input type="checkbox" checked={settings.musicPolicy === "none"} onChange={(e) => editSetting({ musicPolicy: e.target.checked ? "none" : "imported" })} />
-                    Export without music
-                  </label>
+                  <Switch className="maker-switch-row" compact checked={settings.musicPolicy === "none"} onChange={(on) => editSetting({ musicPolicy: on ? "none" : "imported" })} label="Export without music" />
                   <div className="maker-grid-2">
                     <label className="maker-field maker-inline-field">
                       Cuts to render
@@ -6178,20 +6023,14 @@ function ProjectEditor({
                   </div>
                   <div className="maker-grid-2">
                     <div className="maker-field">
-                      <label className="maker-switch">
-                        <input type="checkbox" checked={Boolean(settings.hookHeadline)} onChange={(e) => editSetting({ hookHeadline: e.target.checked })} />
-                        Open with a hook headline
-                      </label>
+                      <Switch className="maker-switch-row" compact checked={Boolean(settings.hookHeadline)} onChange={(on) => editSetting({ hookHeadline: on })} label="Open with a hook headline" />
                       {settings.hookHeadline ? (
                         <input aria-label="Hook headline" value={settings.hookText || ""} placeholder={project.outputs.title?.current || "The line that stops the scroll"} maxLength={70} onChange={(e) => editSetting({ hookText: e.target.value })} />
                       ) : null}
                       <small>An animated headline over the first two seconds. Leave the text blank to use the title.</small>
                     </div>
                     <div className="maker-field">
-                      <label className="maker-switch">
-                        <input type="checkbox" checked={Boolean(settings.subscribeOutro)} onChange={(e) => editSetting({ subscribeOutro: e.target.checked })} />
-                        End with a subscribe card
-                      </label>
+                      <Switch className="maker-switch-row" compact checked={Boolean(settings.subscribeOutro)} onChange={(on) => editSetting({ subscribeOutro: on })} label="End with a subscribe card" />
                       {settings.subscribeOutro ? (
                         <input aria-label="Channel name" value={settings.channelName || ""} placeholder={project.outputs.title?.blueprint?.channel?.title || "Your channel name"} maxLength={32} onChange={(e) => editSetting({ channelName: e.target.value })} />
                       ) : null}
@@ -6203,10 +6042,9 @@ function ProjectEditor({
                     <LookPicker value={settings.look || "none"} onChange={(look) => editSetting({ look })} disabled={busy} />
                     <small>One grade and texture over every scene. Data cards are drawn in the same palette; film them again after changing it.</small>
                   </div>
-                  <label className="maker-switch" title={settings.captionStyle && settings.captionStyle !== "none" ? "A caption style is burned in, so the overlay captions are off" : ""}>
-                    <input type="checkbox" disabled={Boolean(settings.captionStyle && settings.captionStyle !== "none")} checked={Boolean(settings.animatedCaptions) && !(settings.captionStyle && settings.captionStyle !== "none")} onChange={(e) => editSetting({ animatedCaptions: e.target.checked })} />
-                    Animated captions and scene effects
-                  </label>
+                  <span className="maker-switch-row" title={settings.captionStyle && settings.captionStyle !== "none" ? "A caption style is burned in, so the overlay captions are off" : ""}>
+                    <Switch compact checked={Boolean(settings.animatedCaptions) && !(settings.captionStyle && settings.captionStyle !== "none")} onChange={(on) => editSetting({ animatedCaptions: on })} label="Animated captions and scene effects" disabled={Boolean(settings.captionStyle && settings.captionStyle !== "none")} />
+                  </span>
                   {settings.animatedCaptions && !(settings.captionStyle && settings.captionStyle !== "none") ? (
                     <label className="maker-field maker-inline-field">
                       Effect
@@ -6217,10 +6055,7 @@ function ProjectEditor({
                       </select>
                     </label>
                   ) : null}
-                  <label className="maker-switch">
-                    <input type="checkbox" checked={Boolean(settings.rightsConfirmed)} onChange={(e) => editSetting({ rightsConfirmed: e.target.checked })} />
-                    I confirm rights and provenance for every asset in this video
-                  </label>
+                  <Switch className="maker-switch-row" compact checked={Boolean(settings.rightsConfirmed)} onChange={(on) => editSetting({ rightsConfirmed: on })} label="I confirm rights and provenance for every asset in this video" />
                 </div>
               </section>
             )}
@@ -6338,15 +6173,7 @@ function ProjectEditor({
                       ))}
                     </select>
                   </label>
-                  <label className="maker-setting-tile">
-                    <div>
-                      <strong>Fixed camera</strong>
-                      <span>Only the subjects move. The frame stays locked, with no pans or zooms.</span>
-                    </div>
-                    <span className="maker-switch">
-                      <input type="checkbox" aria-label="Fixed camera" checked={animOptions.fixedCamera} onChange={(e) => setAnimOptions({ ...animOptions, fixedCamera: e.target.checked })} />
-                    </span>
-                  </label>
+                  <Switch className="maker-tile-switch" checked={animOptions.fixedCamera} onChange={(on) => setAnimOptions({ ...animOptions, fixedCamera: on })} label="Fixed camera" description="Only the subjects move. The frame stays locked, with no pans or zooms." />
                 </div>
               );
             if (confirm.action === "music")

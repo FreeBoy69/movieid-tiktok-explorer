@@ -103,125 +103,48 @@
   box-shadow: 0 0 0 3px var(--ytp-accent-soft);
 }
 
-/* Segmented radio choice (visibility, playlist mode). */
-.ytp-segments {
-  display: grid;
-  grid-template-columns: repeat(var(--ytp-count, 3), minmax(max-content, 1fr));
-  gap: 4px;
-  padding: 4px;
-  border-radius: calc(var(--ytp-radius) + 2px);
-  background: var(--ytp-sunken);
+/* Segmented choice (visibility, playlist mode) and switch rows use the shared
+   ui/ controls; .ytp hands them its palette. */
+.ytp:not([data-theme="studio"]) {
+  --cs-text: var(--ytp-text);
+  --cs-muted: var(--ytp-muted);
+  --cs-line: var(--ytp-line);
+  --cs-line-strong: var(--ytp-line-strong);
+  --cs-sunken: var(--ytp-sunken);
+  --cs-surface: var(--ytp-field);
 }
-.ytp .ytp-segment {
-  display: inline-flex;
+.ytp-choice {
+  container-type: inline-size;
+}
+.ytp .ui-seg.ytp-seg {
+  display: grid;
+  grid-template-columns: repeat(var(--ytp-count, 3), minmax(0, 1fr));
+  border-radius: calc(var(--ytp-radius) + 2px);
+}
+.ytp .ui-seg.ytp-seg > button {
   min-width: 0;
   min-height: 36px;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 6px 8px;
-  border: 0;
-  border-radius: var(--ytp-radius);
-  background: transparent;
-  color: var(--ytp-muted);
-  font: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background-color 160ms ease-out, color 160ms ease-out, box-shadow 160ms ease-out;
 }
-.ytp .ytp-segment span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ytp .ytp-segment svg {
+.ytp .ui-seg.ytp-seg svg {
   width: 15px;
   height: 15px;
   flex: none;
 }
-.ytp .ytp-segment:hover {
-  color: var(--ytp-text);
+.ytp .ui-seg.ytp-seg > button span {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.ytp .ytp-segment[aria-checked="true"] {
-  background: var(--ytp-accent);
-  color: var(--ytp-accent-ink);
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
-}
-
-.ytp-choice {
-  container-type: inline-size;
-}
-.ytp-segments[data-count="2"] { --ytp-count: 2; }
-.ytp-segments[data-count="4"] { --ytp-count: 4; }
+.ytp-seg-2 { --ytp-count: 2; }
+.ytp-seg-4 { --ytp-count: 4; }
 @container (max-width: 380px) {
-  .ytp-segments[data-count="4"] { --ytp-count: 2; }
+  .ytp-seg-4 { --ytp-count: 2; }
 }
 @container (max-width: 290px) {
-  .ytp-segments { --ytp-count: 1; }
+  .ytp .ui-seg.ytp-seg { --ytp-count: 1; }
 }
-
-/* Switch row (Short, made for kids). */
-.ytp-switch {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 12px 14px;
-  border: 1px solid var(--ytp-line);
+.ytp .ui-switch.ytp-switch {
   border-radius: var(--ytp-radius);
   background: var(--ytp-field);
-  cursor: pointer;
-  transition: border-color 160ms ease-out;
-}
-.ytp-switch:hover {
-  border-color: var(--ytp-line-strong);
-}
-.ytp-switch-copy {
-  display: grid;
-  gap: 3px;
-  min-width: 0;
-}
-.ytp-switch-title {
-  font-size: 14px;
-  font-weight: 600;
-}
-.ytp-switch input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
-}
-.ytp-switch-track {
-  position: relative;
-  flex: none;
-  width: 40px;
-  height: 24px;
-  border-radius: 999px;
-  background: var(--ytp-line-strong);
-  transition: background-color 180ms ease-out;
-}
-.ytp-switch-track span {
-  position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 18px;
-  height: 18px;
-  border-radius: 999px;
-  background: #fdfcfa;
-  box-shadow: 0 1px 3px rgb(0 0 0 / 0.25);
-  transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-.ytp-switch input:checked + .ytp-switch-track {
-  background: var(--ytp-accent);
-}
-.ytp-switch input:checked + .ytp-switch-track span {
-  transform: translateX(16px);
-}
-.ytp-switch:has(input:focus-visible) {
-  outline: 2px solid var(--ytp-accent);
-  outline-offset: 2px;
 }
 
 /* Playlist. */
@@ -337,7 +260,6 @@
   color: var(--ytp-muted);
   font-size: 13px;
 }
-.ytp .ytp-segment:focus-visible,
 .ytp .ytp-list-row:focus-visible,
 .ytp .ytp-text-button:focus-visible {
   outline: 2px solid var(--ytp-accent);

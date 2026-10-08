@@ -33,6 +33,9 @@ import { FILM_FORMATS, formatCount } from "../utils/filmFormats.js";
 import { CinemaLookPanel, FilmHub, filmLink, formatIcon, formatOfRoute, LyricsEditor, SongPanel, SongStart, TempoRow, type BeatGrid, type FilmCinema, type FilmFormatId, type LyricLine, type Song } from "./FilmParts";
 import type { FilmRoute } from "../utils/tiktokRoute";
 import "./DramaStudio.css";
+import { confirm as confirmDialog } from "./ui/Dialog";
+import { EmptyState, Segmented, Tabs } from "./ui/controls";
+import { confirmRemoveCharacter } from "./castSheets";
 
 type Template = (typeof DRAMA_TEMPLATES)[number];
 type Concept = { title: string; genre: string; premise: string; logline: string; tone: string; visualPrompt: string; artStyleId: string; cast: Character[]; locations: DramaLocation[]; storyBible: StoryBible };
@@ -177,7 +180,7 @@ function DramaHome({ accountId, format, onError }: { accountId: string; format: 
               <section className="dr-idea" aria-labelledby="fl-lyrics-title">
                 <div className="maker-section-title dr-idea-heading">
                   <h2 id="fl-lyrics-title">2. Check the lyrics</h2>
-                  <button type="button" className="maker-ghost dr-small" onClick={() => window.confirm("Start over with another song?") && setSong(null)}>Change song</button>
+                  <button type="button" className="maker-ghost dr-small" onClick={async () => (await confirmDialog({ title: "Start over with another song?", body: "The lyrics you checked are cleared.", confirmLabel: "Change song" })) && setSong(null)}>Change song</button>
                 </div>
                 <p className="dr-hint">{song.name} · {Math.floor(song.duration / 60)}:{String(Math.round(song.duration % 60)).padStart(2, "0")} · read from the {song.engine?.toLowerCase().includes("mix") ? "full mix" : "isolated vocals"}. Fix any misheard words and timings; the concept and the scene cuts follow these lines.</p>
                 <TempoRow grid={song.grid} onChange={(grid) => setSong({ ...song, grid })} />
@@ -232,7 +235,7 @@ function DramaHome({ accountId, format, onError }: { accountId: string; format: 
                     </button>
                   ))}
                 </div>
-              ) : <div className="dr-drawer-empty"><FolderOpen size={24} /><strong>No {kind.noun} projects yet</strong><span>Your projects will appear here as soon as you create one.</span></div>}
+              ) : <EmptyState compact icon={<FolderOpen size={20} />} title={`No ${kind.noun} projects yet`} body="Your projects will appear here as soon as you create one." />}
             </div>
           </aside>
         </div>
@@ -471,7 +474,7 @@ function DramaIdea({ accountId, format = "series", song = null, onError, project
               <h4>{format === "series" ? "Series" : "Settings"}</h4>
               <div className="dr-idea-settings">
                 {kind.count.max > 1 && <label>{kind.units} <input type="number" inputMode="numeric" min={kind.count.min} max={kind.count.max} value={episodeCount} onChange={(event) => setEpisodeCount(Number(event.target.value))} onBlur={() => setEpisodeCount(count)} /></label>}
-                {format !== "music" && <label>Length <select value={episodeSeconds} onChange={(event) => setEpisodeSeconds(Number(event.target.value))}>{lengths.map((option) => <option key={option.seconds} value={option.seconds}>{option.label}</option>)}</select></label>}
+                {format !== "music" && <div className="dr-idea-choice"><Choice skin="drama" label="Length" value={String(episodeSeconds)} options={lengths.map((option) => ({ value: String(option.seconds), label: option.label }))} onChange={(value) => setEpisodeSeconds(Number(value))} /></div>}
                 <label>Look <ArtStyleButton value={artStyleId} onChange={setArtStyleId} label="" /></label>
                 <label>Scene format <SceneFormatButton value={shotTemplateId} onChange={setShotTemplateId} suggested={kind.shotTemplateId} /></label>
               </div>
@@ -666,14 +669,13 @@ function NewSeriesModal({ accountId, template, onClose, onError }: { accountId: 
           </div>
           <fieldset className="maker-field dr-lengths">
             <legend>Episode length</legend>
-            <div className="dr-segmented" role="group" aria-label="Episode length">
-              {DRAMA_EPISODE_LENGTHS.map((option) => (
-                <button key={option.seconds} type="button" aria-pressed={episodeSeconds === option.seconds} onClick={() => setEpisodeSeconds(option.seconds)}>
-                  {option.label}
-                  <small>~{option.words} words</small>
-                </button>
-              ))}
-            </div>
+            <Segmented
+              label="Episode length"
+              block
+              value={String(episodeSeconds)}
+              onChange={(next) => setEpisodeSeconds(Number(next))}
+              options={DRAMA_EPISODE_LENGTHS.map((option) => ({ value: String(option.seconds), label: option.label, hint: `~${option.words} words` }))}
+            />
           </fieldset>
         </div>
       </div>
@@ -906,8 +908,12 @@ function SeriesPage({ accountId, id, onError }: { accountId: string; id: string;
             </section>
           ) : (
             <>
-              <div className="dr-tabs" role="tablist" aria-label="Series">
-                {(
+              <Tabs
+                label="Series"
+                className="dr-tabs"
+                value={tab}
+                onChange={(next) => setTab(next as typeof tab)}
+                options={(
                   [
                     ["episodes", single ? kind.unit : kind.units, single ? (byEpisode.size ? "Started" : "Plan") : `${byEpisode.size}/${series.episodes.length}`],
                     ["cast", "Cast", `${series.cast.filter((c) => production.characters[c.id]?.locked && (!kind.dialogue || series.voices[speakerName(c.name)])).length}/${series.cast.length}`],
@@ -916,13 +922,8 @@ function SeriesPage({ accountId, id, onError }: { accountId: string; id: string;
                     ...(format === "music" && series.song ? [["song", "Song", `${series.song.lyrics.length} lines`]] : []),
                     ["bible", "Story Bible", "Canon"],
                   ] as Array<[typeof tab, string, string]>
-                ).map(([key, label, count]) => (
-                  <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => setTab(key)}>
-                    {label}
-                    <small>{count}</small>
-                  </button>
-                ))}
-              </div>
+                ).map(([value, label, hint]) => ({ value, label, hint }))}
+              />
               {tab === "look" && <CinemaLookPanel cinema={series.cinema || {}} onSave={async (cinema) => Boolean(await patch({ cinema }))} />}
               {tab === "song" && series.song && (
                 <SongPanel
@@ -1306,7 +1307,7 @@ function CastModal({ character, cast, onClose, onSave, onRemove }: { character: 
               className="maker-ghost dr-modal-remove"
               disabled={busy}
               onClick={async () => {
-                if (!window.confirm(`Remove ${character.name} from the cast? Their sheet and voice stay in your library, but scenes they appear in will need rewriting.`)) return;
+                if (!(await confirmRemoveCharacter(character.name, "Their sheet and voice stay in your library, but scenes they appear in will need rewriting."))) return;
                 setBusy(true);
                 await onRemove();
                 setBusy(false);

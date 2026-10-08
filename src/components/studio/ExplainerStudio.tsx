@@ -8,23 +8,17 @@ import {
   ArrowDown,
   ArrowLeft,
   ArrowUp,
-  Captions,
-  ChevronDown,
   Clock,
   FileText,
   Film,
-  ImagePlus,
   Link2,
   ListChecks,
   Loader2,
-  MonitorPlay,
-  Music,
   Plus,
   Presentation,
   RectangleHorizontal,
   Sparkles,
   Trash2,
-  Video,
   X,
   Zap,
 } from "lucide-react";
@@ -43,7 +37,9 @@ import {
 } from "../../utils/explainerPresets";
 import { isVoiceReady, loadVoiceProfiles, type VoiceProfile } from "../../utils/voiceProfiles";
 import { VoicePicker } from "../VoicePicker";
-import { type Asset, type Catalog, type ExplainerChapter, type ExplainerPlan, type ExplainerScript, type Generation, readJson, timeAgo, uploadAsset, usePopover } from "./studioShared";
+import { AspectPicker, type Asset, type Catalog, Choice, type ExplainerChapter, type ExplainerPlan, type ExplainerScript, type Generation, GenerationUnavailable, readJson, ReferenceTray, timeAgo, usePopover, VIDEO_TYPES } from "./studioShared";
+import { confirm } from "../ui/Dialog";
+import { Switch } from "../ui/controls";
 import { type GalleryHandlers, StudioGallery } from "./StudioGallery";
 import { VoiceCloneSheet } from "./VoiceCloneSheet";
 import { clearPendingTemplate, peekPendingTemplate } from "../../utils/promptTemplates";
@@ -107,12 +103,9 @@ export function ExplainerStudio({ generations, now, handlers, onCreated, catalog
   const [voiceError, setVoiceError] = useState("");
   const [cloning, setCloning] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [uploading, setUploading] = useState("");
   const [error, setError] = useState("");
   useErrorToast(error, () => setError(""));
   const pricing = useStudioPricing();
-  const images = useRef<HTMLInputElement>(null);
-  const videos = useRef<HTMLInputElement>(null);
   const top = useRef<HTMLDivElement>(null);
   const patch = (changes: Partial<Draft>) => setDraft((current) => ({ ...current, ...changes }));
   const configured = catalog?.configured !== false;
@@ -199,27 +192,6 @@ export function ExplainerStudio({ generations, now, handlers, onCreated, catalog
       seen.current.set(item.id, item.status);
     }
   }, [items, editing, openPlan]);
-
-  async function addFiles(files: File[], kind: "image" | "video") {
-    const list = kind === "image" ? draft.uploads : draft.recordings;
-    const room = (kind === "image" ? MAX_UPLOADS : MAX_RECORDINGS) - list.length;
-    if (room <= 0) return;
-    const accepted = files.filter((f) => (kind === "image" ? /^image\/(png|jpeg|webp)$/ : /^video\/(mp4|quicktime|webm)$/).test(f.type)).slice(0, room);
-    if (!accepted.length) return setError(kind === "image" ? "Use PNG, JPG, or WebP screenshots" : "Use an MP4, MOV, or WebM screen recording");
-    setUploading(kind);
-    try {
-      const added: Asset[] = [];
-      for (const f of accepted) {
-        if (kind === "video" && f.size > 200 * 1024 * 1024) throw new Error("Screen recordings can be up to 200 MB");
-        added.push(await uploadAsset(f, f.name.replace(/\.[^.]+$/, "")));
-      }
-      setDraft((current) => (kind === "image" ? { ...current, uploads: [...current.uploads, ...added].slice(0, MAX_UPLOADS) } : { ...current, recordings: [...current.recordings, ...added].slice(0, MAX_RECORDINGS) }));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Upload failed");
-    } finally {
-      setUploading("");
-    }
-  }
 
   const hasMaterial = Boolean(draft.url.trim() || draft.notes.trim() || draft.uploads.length || draft.recordings.length);
   async function plan() {
@@ -350,31 +322,50 @@ export function ExplainerStudio({ generations, now, handlers, onCreated, catalog
                     aria-label="What the video should cover"
                     maxLength={4000}
                   />
-                  <div className="mks-row">
-                    <button type="button" className="mks-plus" aria-label="Add screenshots" title="Add screenshots of screens behind a login" disabled={Boolean(uploading) || draft.uploads.length >= MAX_UPLOADS} onClick={() => images.current?.click()}>
-                      {uploading === "image" ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
-                    </button>
-                    <button type="button" className="mks-plus" aria-label="Add a screen recording" title="Add a screen recording (MP4, MOV, WebM)" disabled={Boolean(uploading) || draft.recordings.length >= MAX_RECORDINGS} onClick={() => videos.current?.click()}>
-                      {uploading === "video" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Video className="h-4 w-4" />}
-                    </button>
-                    {[...draft.uploads.map((asset) => ({ asset, kind: "image" as const })), ...draft.recordings.map((asset) => ({ asset, kind: "video" as const }))].map(({ asset, kind }) => (
-                      <span key={asset.file} className="mks-tag prs-thumb">
-                        {kind === "image" ? <img src={asset.url} alt="" /> : <MonitorPlay className="h-4 w-4 exs-tag-icon" aria-hidden="true" />}
-                        <span>{asset.name || (kind === "image" ? "Screenshot" : "Recording")}</span>
-                        <button type="button" aria-label={`Remove ${asset.name || kind}`} onClick={() => patch(kind === "image" ? { uploads: draft.uploads.filter((u) => u.file !== asset.file) } : { recordings: draft.recordings.filter((u) => u.file !== asset.file) })}><X className="h-3 w-3" /></button>
-                      </span>
-                    ))}
-                    {!draft.uploads.length && !draft.recordings.length ? <span className="prs-drop-hint">Screenshots or a screen recording, for screens behind a login</span> : null}
-                    <input ref={images} type="file" accept="image/png,image/jpeg,image/webp" multiple hidden onChange={(event) => { const files = Array.from(event.target.files || []); event.target.value = ""; void addFiles(files, "image"); }} />
-                    <input ref={videos} type="file" accept="video/mp4,video/quicktime,video/webm" hidden onChange={(event) => { const files = Array.from(event.target.files || []); event.target.value = ""; void addFiles(files, "video"); }} />
+                  <div className="mks-row exs-material">
+                    <ReferenceTray
+                      className="prs-uploads"
+                      assets={draft.uploads}
+                      max={MAX_UPLOADS}
+                      label="screenshots"
+                      onChange={(uploads) => patch({ uploads })}
+                      onError={setError}
+                    />
+                    <ReferenceTray
+                      className="prs-uploads"
+                      assets={draft.recordings}
+                      max={MAX_RECORDINGS}
+                      accept={VIDEO_TYPES}
+                      link={false}
+                      maxBytes={200 * 1024 * 1024}
+                      label="screen recordings"
+                      onChange={(recordings) => patch({ recordings })}
+                      onError={setError}
+                      empty={draft.uploads.length ? null : "Screenshots or a screen recording, for screens behind a login"}
+                    />
                   </div>
                   <div className="mks-row">
-                    <TemplateChip value={draft.template} onPick={(id) => patch({ template: id, length: findExplainerTemplate(id).length })} />
-                    <LengthChip value={draft.length} onPick={(length) => patch({ length })} />
+                    <Choice
+                      skin="mks"
+                      label="Walkthrough type"
+                      icon={<Presentation className="h-3.5 w-3.5" />}
+                      value={draft.template}
+                      onChange={(id) => patch({ template: id, length: findExplainerTemplate(id).length })}
+                      options={EXPLAINER_TEMPLATES.map((item) => ({ value: item.id, label: item.name, hint: item.blurb }))}
+                    />
+                    <Choice
+                      skin="mks"
+                      label="About how long"
+                      icon={<Clock className="h-3.5 w-3.5" />}
+                      value={String(draft.length)}
+                      onChange={(length) => patch({ length: Number(length) })}
+                      options={EXPLAINER_LENGTHS.map((length) => ({ value: String(length), label: `~${clock(length)}` }))}
+                      note={`The narration sets the final length. Up to ${EXPLAINER_MAX_SECONDS / 60} minutes.`}
+                    />
                   </div>
                 </div>
                 <div className="mks-cluster">
-                  <button type="button" className="mks-generate" disabled={!configured || busy || Boolean(uploading) || !hasMaterial} onClick={() => void plan()} title={hasMaterial ? undefined : "Add a link, screenshots, a recording, or a description"}>
+                  <button type="button" className="mks-generate" disabled={!configured || busy || !hasMaterial} onClick={() => void plan()} title={hasMaterial ? undefined : "Add a link, screenshots, a recording, or a description"}>
                     {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : <span>Draft script</span>}
                     {planCredits !== null ? <small title={CREDIT_ESTIMATE_TITLE}><Zap className="h-3 w-3" />{creditEstimateLabel(planCredits)}</small> : null}
                     <small className="prs-eta"><Clock className="h-3 w-3" />2–4 min</small>
@@ -384,7 +375,7 @@ export function ExplainerStudio({ generations, now, handlers, onCreated, catalog
             </div>
           </div>
           {!hasMaterial && !busy ? <p className="mks-hint">Add a link, screenshots, a recording, or a description</p> : <p className="mks-hint">{template.name}: {template.blurb.toLowerCase()}. You'll review the script before anything is recorded.</p>}
-          {!configured ? <p className="mks-error">Generation isn't set up on this server yet.</p> : null}
+          {!configured ? <GenerationUnavailable className="mks-notice" /> : null}
         </section>
       )}
 
@@ -430,64 +421,6 @@ export function ExplainerStudio({ generations, now, handlers, onCreated, catalog
             void reloadVoices(id);
           }}
         />
-      ) : null}
-    </div>
-  );
-}
-
-function TemplateChip({ value, onPick }: { value: string; onPick: (id: string) => void }) {
-  const { open, setOpen, ref } = usePopover();
-  const current = findExplainerTemplate(value);
-  return (
-    <div className="mks-pop" ref={ref}>
-      <span className="mks-chip">
-        <button type="button" aria-expanded={open} aria-haspopup="listbox" onClick={() => setOpen(!open)}>
-          <Presentation className="h-3.5 w-3.5" />
-          <span>{current.name}</span>
-          <ChevronDown className="h-3 w-3" />
-        </button>
-      </span>
-      {open ? (
-        <div className="mks-tech prs-subjects" role="listbox" aria-label="Walkthrough type">
-          {EXPLAINER_TEMPLATES.map((item) => (
-            <button key={item.id} type="button" role="option" aria-selected={item.id === value} className="prs-subject" onClick={() => { onPick(item.id); setOpen(false); }}>
-              <span>
-                <strong>{item.name}</strong>
-                <small>{item.blurb}</small>
-              </span>
-            </button>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function LengthChip({ value, onPick }: { value: number; onPick: (length: number) => void }) {
-  const { open, setOpen, ref } = usePopover();
-  return (
-    <div className="mks-pop" ref={ref}>
-      <span className="mks-chip">
-        <button type="button" aria-expanded={open} onClick={() => setOpen(!open)} aria-label={`Length: about ${value} seconds`}>
-          <Clock className="h-3.5 w-3.5" />
-          <span className="prs-num">~{clock(value)}</span>
-          <ChevronDown className="h-3 w-3" />
-        </button>
-      </span>
-      {open ? (
-        <div className="mks-tech prs-format" role="dialog" aria-label="Length">
-          <fieldset>
-            <legend><Clock className="h-3.5 w-3.5" />About how long</legend>
-            <div className="prs-seg exs-seg-4">
-              {EXPLAINER_LENGTHS.map((length) => (
-                <button key={length} type="button" aria-pressed={value === length} onClick={() => { onPick(length); setOpen(false); }}>
-                  <span className="prs-num">{clock(length)}</span>
-                </button>
-              ))}
-            </div>
-          </fieldset>
-          <p className="prs-format-note">The narration sets the final length. Up to {EXPLAINER_MAX_SECONDS / 60} minutes.</p>
-        </div>
       ) : null}
     </div>
   );
@@ -609,23 +542,10 @@ function ScriptEditor({
 
           <div className="exs-panel">
             <h3><RectangleHorizontal className="h-3.5 w-3.5" aria-hidden="true" />Format</h3>
-            <div className="prs-seg" role="group" aria-label="Aspect ratio">
-              {EXPLAINER_ASPECTS.map((value) => (
-                <button key={value} type="button" aria-pressed={draft.aspect === value} onClick={() => patch({ aspect: value })}>
-                  <span className="prs-shape" data-aspect={value} aria-hidden="true" />
-                  <span className="prs-num">{value}</span>
-                </button>
-              ))}
-            </div>
+            <AspectPicker value={draft.aspect} options={EXPLAINER_ASPECTS} onChange={(aspect) => patch({ aspect })} />
             <div className="exs-toggles">
-              <button type="button" className={`mks-chip prs-toggle${draft.captions ? " is-on" : ""}`} aria-pressed={draft.captions} onClick={() => patch({ captions: !draft.captions })}>
-                <Captions className="h-3.5 w-3.5" />
-                <span>Captions</span>
-              </button>
-              <button type="button" className={`mks-chip prs-toggle${draft.music ? " is-on" : ""}`} aria-pressed={draft.music} onClick={() => patch({ music: !draft.music })}>
-                <Music className="h-3.5 w-3.5" />
-                <span>{draft.music ? "Music bed" : "Voice only"}</span>
-              </button>
+              <Switch checked={draft.captions} onChange={(captions) => patch({ captions })} label="Captions" description="Burned in, timed to the narration" />
+              <Switch checked={draft.music} onChange={(music) => patch({ music })} label="Music bed" description={draft.music ? "Quiet music under the voice" : "Voice only"} />
             </div>
           </div>
 
@@ -652,7 +572,7 @@ function ScriptEditor({
           {problem ? <p className="mks-hint exs-problem">{problem}</p> : null}
           {!renderer ? <p className="mks-hint">This server can't render video right now, so the video comes back as a live preview you can render to MP4 later.</p> : null}
           {editing.baseFile ? <p className="exs-note">Chapters you didn't change are kept, so only the edited ones are rewritten.</p> : null}
-          <button type="button" className="exs-link" onClick={() => window.confirm("Discard your edits and go back to Opus's draft?") && onReset()}>Start over from the draft</button>
+          <button type="button" className="exs-link" onClick={() => void confirm({ title: "Start over from the draft?", body: "Your edits to this script are discarded and Opus's draft comes back.", confirmLabel: "Discard edits", danger: true }).then((ok) => ok && onReset())}>Start over from the draft</button>
         </aside>
       </div>
     </section>
@@ -689,7 +609,7 @@ function ChapterCard({
         <div className="exs-chapter-actions">
           <button type="button" className="exs-icon" aria-label={`Move chapter ${index + 1} up`} disabled={index === 0} onClick={() => onMove(-1)}><ArrowUp className="h-3.5 w-3.5" /></button>
           <button type="button" className="exs-icon" aria-label={`Move chapter ${index + 1} down`} disabled={index === total - 1} onClick={() => onMove(1)}><ArrowDown className="h-3.5 w-3.5" /></button>
-          <button type="button" className="exs-icon" aria-label={`Delete chapter ${index + 1}`} disabled={total <= 1} onClick={() => window.confirm(`Delete "${chapter.title}"?`) && onRemove()}><Trash2 className="h-3.5 w-3.5" /></button>
+          <button type="button" className="exs-icon" aria-label={`Delete chapter ${index + 1}`} disabled={total <= 1} onClick={() => void confirm({ title: `Delete "${chapter.title}"?`, body: "Its lines and screens are removed from the script.", confirmLabel: "Delete chapter", danger: true }).then((ok) => ok && onRemove())}><Trash2 className="h-3.5 w-3.5" /></button>
         </div>
       </header>
       <VisualPicker chapter={chapter} assets={assets} thumbs={thumbs} onChange={(visuals) => onChange({ visuals })} />

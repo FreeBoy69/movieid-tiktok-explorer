@@ -1,9 +1,9 @@
 // Writing tools on the metered text model: titles, descriptions, hashtags.
 // Each task has its own inputs and its own way of laying out the answer.
 import { FormEvent, useState } from "react";
-import { Check, Copy, ImageIcon, Link2, Loader2, Sparkles } from "lucide-react";
+import { Check, Copy, ImageIcon, Loader2, Sparkles } from "lucide-react";
 import { useErrorToast } from "../../utils/toast";
-import { Choice, Empty, Segment } from "../studio/studioShared";
+import { Choice, Empty, LinkField, Segment } from "../studio/studioShared";
 import { openToolWith } from "./toolHandoff";
 import { toolEntry, type ToolDef } from "./toolApps";
 import { ToolLayout } from "./ToolPage";
@@ -43,32 +43,20 @@ function useCopy() {
 
 /** A link in place of pasted notes: the page is read server-side (Jina Reader, then a direct fetch). */
 function LinkReader({ onText, onError, label }: { onText: (text: string, title: string) => void; onError: (message: string) => void; label: string }) {
-  const [url, setUrl] = useState("");
-  const [busy, setBusy] = useState(false);
-  const ready = /^(https?:\/\/)?[^\s]+\.[^\s]+/.test(url.trim()) && !busy;
-  async function read() {
-    if (!ready) return;
-    setBusy(true);
-    try {
-      const response = await fetch("/api/tools/read", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: url.trim(), maxChars: 8000 }) });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.error || "Could not read that page");
-      onText(String(data.text || ""), String(data.title || ""));
-      setUrl("");
-    } catch (err) {
-      onError(err instanceof Error ? err.message : "Could not read that page");
-    } finally {
-      setBusy(false);
-    }
-  }
   return (
-    <div className="mt-link" style={{ marginTop: 0 }}>
-      <div className="relative" style={{ flex: 1, minWidth: 0 }}>
-        <Link2 size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 opacity-50" aria-hidden="true" />
-        <input className="mt-input" style={{ paddingLeft: 34 }} type="url" inputMode="url" value={url} disabled={busy} aria-label={label} placeholder={label} onChange={(event) => setUrl(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void read(); } }} />
-      </div>
-      <button type="button" className="mt-secondary" disabled={!ready} onClick={() => void read()}>{busy ? <Loader2 size={15} className="animate-spin" /> : null}{busy ? "Reading" : "Read"}</button>
-    </div>
+    <LinkField
+      skin="tool"
+      label={label}
+      action="Read"
+      busyAction="Reading"
+      onError={onError}
+      onSubmit={async (url) => {
+        const response = await fetch("/api/tools/read", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url, maxChars: 8000 }) });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || "Could not read that page");
+        onText(String(data.text || ""), String(data.title || ""));
+      }}
+    />
   );
 }
 

@@ -3,8 +3,9 @@
 // it with their sheet, takes, and details. The locked sheet is the identity
 // reference for every scene the character appears in.
 import { useEffect, useState } from "react";
-import { createPortal } from "react-dom";
-import { Check, ChevronLeft, ChevronRight, Clapperboard, Download, Loader2, Lock, Maximize2, Plus, Save, Sparkles, Trash2, Upload, Users, WandSparkles, X } from "lucide-react";
+import { Check, ChevronLeft, Clapperboard, Loader2, Lock, Maximize2, Plus, Save, Sparkles, Trash2, Users, WandSparkles } from "lucide-react";
+import { SheetPhotoButton, SheetViewer, TakeCount } from "./castSheets";
+import { EmptyState, Segmented, Switch } from "./ui/controls";
 import "./CharactersStep.css";
 
 export type CastMember = { id: string; name: string; role?: string; appearance: string; outfit: string; approvedReferences: string[] };
@@ -13,7 +14,6 @@ export type Framing = "character" | "cinematic";
 
 // A run that never reported back (a server restart) stops showing as busy.
 const STALE_MS = 8 * 60 * 1000;
-const SHEET_COUNTS = [1, 2, 4];
 const isRunning = (sheet?: CastSheetState) => sheet?.status === "running" && Date.now() - (sheet.startedAt || 0) < STALE_MS;
 // Generated sheets put the close-up portrait on the left, so avatars zoom into it.
 const isSheet = (asset: string) => /-sheet-/.test(asset);
@@ -116,25 +116,23 @@ export function CharactersStep({
       </div>
 
       <div className="chs-bar">
-        <div className="chs-seg" role="radiogroup" aria-label="Scene framing">
-          {([
-            ["character", "Character-led"],
-            ["cinematic", "Cinematic mix"],
-          ] as const).map(([key, label]) => (
-            <button key={key} type="button" role="radio" aria-checked={framing === key} onClick={() => onFraming(key)}>
-              {label}
-            </button>
-          ))}
-        </div>
+        <Segmented
+          label="Scene framing"
+          value={framing}
+          onChange={onFraming}
+          options={[
+            { value: "character", label: "Character-led" },
+            { value: "cinematic", label: "Cinematic mix" },
+          ]}
+        />
         <p className="chs-bar-note">
           {framing === "character"
             ? "Cast in most scenes · close-ups and medium shots lead · no wide or crowd shots · max 2 per scene"
             : "Wider shots and more B-roll · faces drift more in wide shots"}
         </p>
-        <label className="maker-switch chs-consistency" title="Send each character's locked sheet with every scene they appear in">
-          <input type="checkbox" checked={consistency} onChange={(e) => onConsistency(e.target.checked)} />
-          Keep faces consistent
-        </label>
+        <span className="chs-consistency" title="Send each character's locked sheet with every scene they appear in">
+          <Switch compact checked={consistency} onChange={onConsistency} label="Keep faces consistent" />
+        </span>
       </div>
 
       {cast.length && selected ? (
@@ -188,13 +186,12 @@ export function CharactersStep({
           />
         </div>
       ) : (
-        <div className="chs-empty">
-          <span className="chs-empty-icon">
-            <Users size={22} />
-          </span>
-          <h3>Who's in this story?</h3>
-          <p>Let the AI read your script and cast its recurring characters, or add them yourself. Videos without people can skip straight to the storyboard.</p>
-          <div className="maker-actions">
+        <EmptyState
+          className="chs-empty"
+          icon={<Users size={22} />}
+          title="Who's in this story?"
+          body="Let the AI read your script and cast its recurring characters, or add them yourself. Videos without people can skip straight to the storyboard."
+        >
             <button className="maker-primary" disabled={busy || suggesting} onClick={onSuggest}>
               {suggesting ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
               {suggesting ? "Reading the script" : "Cast from script"}
@@ -203,8 +200,7 @@ export function CharactersStep({
               <Plus size={15} />
               Add a character
             </button>
-          </div>
-        </div>
+        </EmptyState>
       )}
     </div>
   );
@@ -258,20 +254,7 @@ function CharacterDetail({
           {locked ? "Locked" : running ? "Generating" : candidates.length ? "Pick a take" : "Not locked"}
         </span>
         <div className="chs-head-actions">
-          <label className="chs-iconbtn" title="Use a photo of them. New sheets will match this face.">
-            <Upload size={16} />
-            <span className="sr-only">Use a photo of {character.name}</span>
-            <input
-              type="file"
-              hidden
-              disabled={busy}
-              accept="image/png,image/jpeg,image/webp"
-              onChange={(e) => {
-                if (e.target.files?.[0]) onUpload(e.target.files[0]);
-                e.target.value = "";
-              }}
-            />
-          </label>
+          <SheetPhotoButton variant="icon" name={character.name} disabled={busy} onFile={onUpload} />
           <button type="button" className="chs-iconbtn is-danger" title={`Remove ${character.name}`} aria-label={`Remove ${character.name}`} onClick={onRemove}>
             <Trash2 size={16} />
           </button>
@@ -364,13 +347,7 @@ function CharacterDetail({
           <textarea rows={2} value={character.outfit} placeholder="One locked outfit: colors, materials, accessories" onChange={(e) => onEdit({ outfit: e.target.value })} />
         </label>
         <div className="chs-generate">
-          <div className="chs-seg is-small" role="radiogroup" aria-label="Takes to generate">
-            {SHEET_COUNTS.map((n) => (
-              <button key={n} type="button" role="radio" aria-checked={count === n} onClick={() => setCount(n)}>
-                {n} {n === 1 ? "take" : "takes"}
-              </button>
-            ))}
-          </div>
+          <TakeCount value={count} onChange={setCount} />
           <button
             type="button"
             className="maker-primary chs-go"
@@ -403,102 +380,5 @@ function CharacterDetail({
         />
       ) : null}
     </section>
-  );
-}
-
-// Full-screen sheet viewer: arrows or ←/→ step through takes, Esc closes.
-function SheetViewer({
-  name,
-  images,
-  locked,
-  index,
-  busy,
-  onIndex,
-  onClose,
-  onLock,
-}: {
-  name: string;
-  images: string[];
-  locked: string;
-  index: number;
-  busy: boolean;
-  onIndex: (index: number) => void;
-  onClose: () => void;
-  onLock: (asset: string) => void;
-}) {
-  const asset = images[index];
-  const step = (delta: number) => onIndex((index + delta + images.length) % images.length);
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-      if (event.key === "ArrowRight") step(1);
-      if (event.key === "ArrowLeft") step(-1);
-    };
-    document.addEventListener("keydown", onKey);
-    const overflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = overflow;
-    };
-  });
-  return createPortal(
-    <div className="chs-lightbox" role="dialog" aria-modal="true" aria-label={`${name} character sheets`} onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <header className="chs-lb-bar">
-        <div>
-          <strong>{name}</strong>
-          <span>
-            {asset === locked ? "Locked sheet" : `Take ${images.length - index} of ${images.length}`}
-          </span>
-        </div>
-        <div className="chs-lb-actions">
-          {asset === locked ? (
-            <span className="chs-status is-locked">
-              <Lock size={12} />
-              Locked
-            </span>
-          ) : (
-            <button type="button" className="chs-lb-lock" disabled={busy} onClick={() => onLock(asset)}>
-              <Check size={15} />
-              Lock this take
-            </button>
-          )}
-          <a className="chs-lb-icon" href={asset} download title="Download" aria-label="Download this sheet">
-            <Download size={17} />
-          </a>
-          <button type="button" className="chs-lb-icon" aria-label="Close" autoFocus onClick={onClose}>
-            <X size={18} />
-          </button>
-        </div>
-      </header>
-      <div className="chs-lb-stage" onClick={(e) => e.target === e.currentTarget && onClose()}>
-        {images.length > 1 ? (
-          <button type="button" className="chs-lb-nav is-prev" aria-label="Previous take" onClick={() => step(-1)}>
-            <ChevronLeft size={22} />
-          </button>
-        ) : null}
-        <img key={asset} src={asset} alt={`${name} character sheet`} />
-        {images.length > 1 ? (
-          <button type="button" className="chs-lb-nav is-next" aria-label="Next take" onClick={() => step(1)}>
-            <ChevronRight size={22} />
-          </button>
-        ) : null}
-      </div>
-      {images.length > 1 ? (
-        <div className="chs-lb-strip">
-          {images.map((item, i) => (
-            <button key={item} type="button" aria-current={i === index || undefined} aria-label={item === locked ? "Locked sheet" : `Take ${images.length - i}`} onClick={() => onIndex(i)}>
-              <img src={item} alt="" />
-              {item === locked ? (
-                <span className="chs-take-lock">
-                  <Lock size={10} />
-                </span>
-              ) : null}
-            </button>
-          ))}
-        </div>
-      ) : null}
-    </div>,
-    document.body,
   );
 }

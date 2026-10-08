@@ -232,7 +232,7 @@
   display: flex; align-items: center; gap: 12px; padding: 6px 12px;
   border-bottom: 1px solid var(--vs-line); background: var(--vs-accent-wash); font-size: 12px; font-weight: 600; color: var(--vs-ink); flex: none;
 }
-.vs-progress-line progress { flex: 1; height: 6px; accent-color: var(--vs-accent-deep); }
+.vs-progress-line .ui-progress { flex: 1; --ui-text: var(--vs-ink); --ui-muted: var(--vs-ink); }
 
 .vs-main {
   flex: 1;
@@ -390,6 +390,7 @@
 .voice-avatar-fieldset label { display: flex; align-items: center; gap: 8px; }
 .voice-avatar-fieldset label.is-disabled { opacity: 0.55; }
 .voice-avatar-placeholders { display: grid; gap: 10px; }
+.voice-avatar-face,
 .voice-avatar-placeholders label { display: grid; gap: 6px; font-size: 12px; font-weight: 600; color: var(--vs-muted); }
 .voice-avatar-placeholders em { font-style: normal; font-size: 11px; font-weight: 500; color: var(--vs-subtle); }
 .voice-avatar-placeholders input, .voice-avatar-placeholders select { height: 38px; border: 1px solid var(--vs-line); border-radius: 10px; background: var(--vs-panel); color: var(--vs-ink); padding: 0 10px; }
@@ -463,3 +464,6 @@
     min-height: 0;
   }
 }
+
+/* Shared controls (ui/controls, FileDrop, pickers) read --cs-*: point them at the Voiceover palette. */
+.voice-workspace { --cs-bg: var(--vs-bg); --cs-surface: var(--vs-panel); --cs-sunken: var(--vs-soft); --cs-line: var(--vs-line); --cs-line-strong: var(--vs-line-strong); --cs-text: var(--vs-ink); --cs-muted: var(--vs-muted); --cs-faint: var(--vs-subtle); --cs-accent: var(--vs-accent); --cs-accent-ink: #1a1a1a; --cs-accent-text: var(--vs-accent-deep); --cs-accent-soft: var(--vs-accent-wash); }

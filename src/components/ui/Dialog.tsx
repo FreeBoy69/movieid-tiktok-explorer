@@ -19,11 +19,18 @@ export type DialogProps = {
   bare?: boolean;
   /** Clicking the backdrop closes (default true). */
   dismissible?: boolean;
+  /** "right" docks the dialog as a full-height side sheet. */
+  placement?: "center" | "right";
+  /** Slot before the title, e.g. a back button. */
+  leading?: ReactNode;
+  /** Class and theme on the backdrop layer, for hosts whose tokens hang off a wrapper. */
+  layerClassName?: string;
+  theme?: string;
   className?: string;
   children?: ReactNode;
 };
 
-export function Dialog({ title, onClose, description, footer, size = "md", bare, dismissible = true, className, children }: DialogProps) {
+export function Dialog({ title, onClose, description, footer, size = "md", bare, dismissible = true, placement = "center", leading, layerClassName, theme, className, children }: DialogProps) {
   const ref = useRef<HTMLElement>(null);
   const close = useRef(onClose);
   close.current = onClose;
@@ -63,10 +70,11 @@ export function Dialog({ title, onClose, description, footer, size = "md", bare,
     };
   }, []);
   return createPortal(
-    <div className="ui-dialog-layer" onMouseDown={(event) => dismissible && event.target === event.currentTarget && onClose()}>
-      <section ref={ref} className={["ui-dialog", `ui-dialog-${size}`, className].filter(Boolean).join(" ")} role="dialog" aria-modal="true" aria-label={title}>
+    <div className={["ui-dialog-layer", placement === "right" && "is-right", layerClassName].filter(Boolean).join(" ")} data-theme={theme} onMouseDown={(event) => dismissible && event.target === event.currentTarget && onClose()}>
+      <section ref={ref} className={["ui-dialog", `ui-dialog-${size}`, placement === "right" && "is-right", className].filter(Boolean).join(" ")} role="dialog" aria-modal="true" aria-label={title}>
         {bare ? null : (
           <header className="ui-dialog-head">
+            {leading ? <div className="ui-dialog-lead">{leading}</div> : null}
             <div className="ui-dialog-titles">
               <h2>{title}</h2>
               {description ? <p>{description}</p> : null}

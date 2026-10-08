@@ -1,0 +1,5 @@
+/* Background activity: the shared right-side sheet; rows run edge to edge. */
+.ui-dialog.bpc-sheet > .ui-dialog-body { padding: 0; }
+.ui-dialog.bpc-sheet > .ui-dialog-head { padding-bottom: 14px; border-bottom: 1px solid var(--ui-line); }
+.bpc-row-progress { margin-top: 12px; }
+.bpc-row-progress .ui-progress-bar { height: 4px; }

@@ -3,10 +3,7 @@ import { VoicePicker } from "../VoicePicker";
 import type { VoiceProfile } from "../../utils/voiceProfiles";
 import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
 import {
-  AlertCircle,
   AudioLines,
-  Camera,
-  ChevronDown,
   Clapperboard,
   Image as ImageIcon,
   Images,
@@ -27,35 +24,33 @@ import { STUDIO_APPS, type StudioApp } from "./studioApps";
 import { CREDIT_ESTIMATE_TITLE, creditEstimateLabel, fallbackCreditEstimate, providerCreditEstimate, useStudioPricing } from "./studioPricing";
 import {
   type AnyModel,
+  AspectPicker,
   type Asset,
   type Catalog,
   Choice,
   Empty,
   type Generation,
+  GenerationUnavailable,
   IMAGE_TYPES,
   Lightbox,
   MediaSlot,
   ModelPicker,
+  OptionCards,
   readJson,
   ReferenceTray,
   Segment,
+  StudioNotice,
   Tabs,
   Toggle,
   VIDEO_TYPES,
   fit,
   timeAgo,
   uploadAsset,
+  useDeleteGeneration,
 } from "./studioShared";
 
 type AppId = StudioApp["id"];
 export type Draft = Record<string, any>;
-
-// Camera rig presets and preview art from Open Generative AI's Cinema Studio.
-const CAMERAS = ["Modular 8K Digital", "Full-Frame Cine Digital", "Grand Format 70mm Film", "Studio Digital S35", "Classic 16mm Film", "Premium Large Format Digital"];
-const LENSES = ["Creative Tilt Lens", "Compact Anamorphic", "Extreme Macro", "70s Cinema Prime", "Classic Anamorphic", "Premium Modern Prime", "Warm Cinema Prime", "Swirl Bokeh Portrait", "Vintage Prime", "Halation Diffusion", "Clinical Sharp Prime"];
-const FOCAL_LENGTHS = [8, 14, 24, 35, 50, 85];
-const APERTURES = ["f/1.4", "f/4", "f/11"];
-const rigArt = (name: string) => `/assets/cinema/${name.toLowerCase().replace("/", "_").replace(/\./g, "_").replace(/[^a-z0-9_]+/g, "_")}.webp`;
 
 const SCENES = [
   { value: "cafe", label: "Café selfie", hint: "Sunlit café, coffee in hand", group: "everyday" },
@@ -87,18 +82,6 @@ const AD_GROUPS = [
 ];
 const pickInGroup = (list: Array<{ value: string; group: string }>, group: string, current: string) =>
   list.find((item) => item.group === group && item.value === current)?.value || list.find((item) => item.group === group)!.value;
-function OptionCards({ label, options, value, onChange }: { label: string; options: Array<{ value: string; label: string; hint: string }>; value: string; onChange: (value: string) => void }) {
-  return (
-    <div className="cs-options" role="radiogroup" aria-label={label}>
-      {options.map((option) => (
-        <button key={option.value} type="button" role="radio" aria-checked={value === option.value} className="cs-option" onClick={() => onChange(option.value)}>
-          <strong>{option.label}</strong>
-          <span>{option.hint}</span>
-        </button>
-      ))}
-    </div>
-  );
-}
 const WORKFLOW_ART: Record<string, ReactNode> = {
   "image-to-video": <Clapperboard className="h-4 w-4" />,
   "talking-avatar": <Mic className="h-4 w-4" />,
@@ -127,7 +110,7 @@ export function defaultDraft(): Draft {
     duration: 5,
     audio: true,
     references: [],
-    cinema: { camera: CAMERAS[1], lens: LENSES[5], focalLength: 35, aperture: "f/1.4" },
+    cinema: { camera: "Full-Frame Cine Digital", lens: "Premium Modern Prime", focalLength: 35, aperture: "f/1.4" },
     videoTab: "text",
     frameMode: "text",
     clipSource: "link",
@@ -234,6 +217,7 @@ export function StudioGenerator({
   const [voiceClips, setVoiceClips] = useState<Array<{ id: string; voice: string; text: string; audioUrl: string; createdAt: string }>>([]);
   const [audioRailTab, setAudioRailTab] = useState<"settings" | "history">("settings");
   const pricing = useStudioPricing();
+  const remove = useDeleteGeneration(onRemoved);
   const { key: modelKey, list: models } = useMemo(() => modelsFor(catalog, app, draft), [catalog, app, draft]);
   const model = models.find((m) => m.id === draft.model);
   const usesModel = Boolean(modelKey);
@@ -389,11 +373,7 @@ export function StudioGenerator({
     await fetch(`/api/studio/generations/${encodeURIComponent(item.id)}/stop`, { method: "POST" }).catch(() => undefined);
     onRefresh();
   }
-  async function remove(item: Generation) {
-    if (!window.confirm("Delete this generation and its files?")) return;
-    onRemoved(item.id);
-    await fetch(`/api/studio/generations/${encodeURIComponent(item.id)}`, { method: "DELETE" }).catch(() => undefined);
-  }
+
   function reuse(item: Generation) {
     const s = item.settings || {};
     patch({
@@ -522,7 +502,6 @@ export function StudioGenerator({
   );
   const fields = (
     <>
-        {app === "cinema" ? <CinemaRig value={draft.cinema} onChange={(cinema) => patch({ cinema })} /> : null}
         {app === "ai-influencer" ? <OptionCards label="Scene" options={SCENES.filter((scene) => scene.group === draft.sceneGroup)} value={draft.scene} onChange={(scene) => patch({ scene })} /> : null}
         {app === "marketing" || (app === "workflows" && draft.workflow === "product-ad") ? (
           <>
@@ -624,7 +603,7 @@ export function StudioGenerator({
               <Choice label="Voice" value={draft.workflowVoice || catalog?.voices[0]?.id || ""} options={(catalog?.voices || []).map((v) => ({ value: v.id, label: v.name }))} onChange={(workflowVoice) => patch({ workflowVoice })} empty="No voices" />
             ) : null}
             {app === "workflows" && draft.workflow === "storyboard" ? <Choice label="Shots" value={String(draft.count)} options={[3, 4, 5, 6].map((n) => ({ value: String(n), label: String(n) }))} onChange={(count) => patch({ count: Number(count) })} /> : null}
-            {app === "workflows" || app === "vibe-motion" ? <Choice label="Aspect" value={draft.aspectRatio} options={["16:9", "9:16", "1:1"].map((a) => ({ value: a, label: a }))} onChange={(aspectRatio) => patch({ aspectRatio })} /> : null}
+            {app === "workflows" || app === "vibe-motion" ? <AspectPicker variant="chip" label="Aspect" value={draft.aspectRatio} options={["16:9", "9:16", "1:1"]} onChange={(aspectRatio) => patch({ aspectRatio })} /> : null}
             {app === "vibe-motion" ? <Choice label="Length" value={String(draft.duration)} options={[5, 8, 12, 20].map((d) => ({ value: String(d), label: `${d}s` }))} onChange={(duration) => patch({ duration: Number(duration) })} /> : null}
             {app === "clipping" ? (
               <>
@@ -635,7 +614,7 @@ export function StudioGenerator({
                 <Toggle label="Burn captions" value={draft.clipCaptions} onChange={(clipCaptions) => patch({ clipCaptions })} />
               </>
             ) : null}
-            {showAspect ? <Choice label="Aspect" value={draft.aspectRatio} options={model.aspectRatios.filter((a) => a !== "auto").map((a) => ({ value: a, label: a }))} onChange={(aspectRatio) => patch({ aspectRatio })} /> : null}
+            {showAspect ? <AspectPicker variant="chip" label="Aspect" value={draft.aspectRatio} options={model.aspectRatios.filter((a) => a !== "auto")} onChange={(aspectRatio) => patch({ aspectRatio })} /> : null}
             {model && model.resolutions.length > 1 ? <Choice label="Resolution" value={draft.resolution} options={model.resolutions.map((r) => ({ value: r, label: r }))} onChange={(resolution) => patch({ resolution })} /> : null}
             {model && "qualities" in model && model.qualities.length ? <Choice label="Quality" value={draft.quality} options={model.qualities.map((q) => ({ value: q, label: q[0].toUpperCase() + q.slice(1) }))} onChange={(quality) => patch({ quality })} /> : null}
             {model && "maxImages" in model && model.maxImages > 1 ? <Choice label="Images" value={String(draft.count)} options={Array.from({ length: model.maxImages }, (_, n) => ({ value: String(n + 1), label: String(n + 1) }))} onChange={(count) => patch({ count: Number(count) })} /> : null}
@@ -649,7 +628,7 @@ export function StudioGenerator({
   );
   const errors = (
     <>
-        {app === "music" && draft.audioMode === "music" && catalog && !catalog.music.available ? <p className="cs-error">{catalog.music.reason}</p> : null}
+        {app === "music" && draft.audioMode === "music" && catalog && !catalog.music.available ? <StudioNotice>{catalog.music.reason}</StudioNotice> : null}
     </>
   );
   const submitButton = (
@@ -660,8 +639,8 @@ export function StudioGenerator({
   );
   const banners = (
     <>
-          {catalog && !catalog.configured ? <p className="cs-banner" role="alert"><AlertCircle className="h-4 w-4" />Generation isn't set up yet.</p> : null}
-          {usesModel && catalog && !models.length ? <p className="cs-banner" role="status"><AlertCircle className="h-4 w-4" />No models for {meta.label} are available right now.</p> : null}
+          {catalog && !catalog.configured ? <GenerationUnavailable /> : null}
+          {usesModel && catalog && catalog.configured && !models.length ? <StudioNotice>No models for {meta.label} are available right now.</StudioNotice> : null}
     </>
   );
   const gallery = voiceMode ? (
@@ -762,10 +741,7 @@ export function StudioGenerator({
             </form>
           </main>
           <aside className="cs-audio-rail" aria-label="Audio controls">
-            <div className="cs-audio-rail-tabs" role="tablist" aria-label="Audio panel">
-              <button type="button" role="tab" aria-selected={audioRailTab === "settings"} onClick={() => setAudioRailTab("settings")}>Settings</button>
-              <button type="button" role="tab" aria-selected={audioRailTab === "history"} onClick={() => setAudioRailTab("history")}>History<span>{recentAudio.length || ""}</span></button>
-            </div>
+            <Tabs label="Audio panel" value={audioRailTab} onChange={(next) => setAudioRailTab(next as "settings" | "history")} options={[{ value: "settings", label: "Settings" }, { value: "history", label: "History", hint: recentAudio.length ? String(recentAudio.length) : undefined }]} />
             {audioRailTab === "settings" ? (
               <div className="cs-audio-settings" role="tabpanel">
                 <div className="cs-audio-setting-heading"><span>Generation</span><span>{voiceMode ? "VOICE" : "MUSIC"}</span></div>
@@ -854,53 +830,4 @@ function modelName(catalog: Catalog | null, item: Generation) {
   if (item.tab === "vibe-motion") return "Vibe Motion";
   const all: AnyModel[] = [...(catalog?.image || []), ...(catalog?.video || []), ...(catalog?.avatar || []), ...(catalog?.edit || []), ...(catalog?.upscale || []), ...(catalog?.motion || [])];
   return all.find((m) => m.id === item.model)?.name || item.model.split("/").pop() || "Model";
-}
-
-function CinemaRig({ value, onChange }: { value: Draft["cinema"]; onChange: (value: Draft["cinema"]) => void }) {
-  const [open, setOpen] = useState(false);
-  const [part, setPart] = useState<"camera" | "lens" | "focal" | "aperture">("camera");
-  return (
-    <div className="cs-rig">
-      <button type="button" className="cs-rig-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
-        <Camera className="h-4 w-4" />
-        <span className="cs-rig-summary">{value.camera} · {value.lens} · {value.focalLength}mm · {value.aperture}</span>
-        <ChevronDown className="cs-rig-chevron h-3.5 w-3.5" />
-      </button>
-      {open ? (
-        <div className="cs-rig-panel">
-          <Tabs
-            compact
-            label="Camera rig"
-            value={part}
-            onChange={(next) => setPart(next as typeof part)}
-            options={[
-              { value: "camera", label: "Camera", hint: value.camera },
-              { value: "lens", label: "Lens", hint: value.lens },
-              { value: "focal", label: "Focal length", hint: `${value.focalLength}mm` },
-              { value: "aperture", label: "Aperture", hint: value.aperture },
-            ]}
-          />
-          {part === "camera" ? <RigColumn title="Camera" items={CAMERAS} value={value.camera} onChange={(camera) => onChange({ ...value, camera })} image /> : null}
-          {part === "lens" ? <RigColumn title="Lens" items={LENSES} value={value.lens} onChange={(lens) => onChange({ ...value, lens })} image /> : null}
-          {part === "focal" ? <RigColumn title="Focal length" items={FOCAL_LENGTHS.map(String)} value={String(value.focalLength)} onChange={(focal) => onChange({ ...value, focalLength: Number(focal) })} suffix="mm" /> : null}
-          {part === "aperture" ? <RigColumn title="Aperture" items={APERTURES} value={value.aperture} onChange={(aperture) => onChange({ ...value, aperture })} image /> : null}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-function RigColumn({ title, items, value, onChange, image, suffix = "" }: { title: string; items: string[]; value: string; onChange: (value: string) => void; image?: boolean; suffix?: string }) {
-  return (
-    <fieldset className="cs-rig-col">
-      <legend className="cs-sr-only">{title}</legend>
-      <div className={image ? "cs-rig-options" : "cs-rig-options cs-rig-numbers"}>
-        {items.map((item) => (
-          <button key={item} type="button" aria-pressed={item === value} className="cs-rig-option" onClick={() => onChange(item)}>
-            {image ? <img src={rigArt(item)} alt="" loading="lazy" /> : <span className="cs-rig-number">{item}<small>{suffix}</small></span>}
-            {image ? <span className="cs-rig-name">{item}</span> : null}
-          </button>
-        ))}
-      </div>
-    </fieldset>
-  );
 }

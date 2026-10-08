@@ -1,10 +1,10 @@
 // Cinema Studio, rebuilt after Higgsfield's: a gallery with one floating
 // prompt bar. Image mode shoots stills through a virtual camera rig; Video mode
 // films shots with the same rig plus a move set and speed ramp.
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Camera, Clapperboard, Clock, Crop, Eye, Film, ImageIcon, Loader2, Minus, Move, Palette, Plus, RectangleHorizontal, Sparkles, Sun, Volume2, VolumeX, X, Zap } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Camera, Clapperboard, Clock, Crop, Eye, Film, ImageIcon, Loader2, Minus, Move, Palette, Plus, Sparkles, Sun, Volume2, Zap } from "lucide-react";
 import { CINEMA_GENRES, CINEMA_LIGHTING, CINEMA_MOVESETS, CINEMA_PALETTES, CINEMA_SPEED_RAMPS } from "../../utils/cinemaPresets";
-import { type Asset, type Catalog, Choice, fit, type Generation, ModelPicker, readJson, uploadAsset } from "./studioShared";
+import { AspectPicker, type Asset, type Catalog, Choice, fit, type Generation, GenerationUnavailable, ModelPicker, readJson, ReferenceTray, Segment, Toggle } from "./studioShared";
 import { CAMERA_PICKS, CinemaLookPicker as LookPicker, type Rig, RigPicker } from "./CinemaPickers";
 import { type GalleryHandlers, StudioGallery } from "./StudioGallery";
 import { useErrorToast } from "../../utils/toast";
@@ -68,8 +68,6 @@ export function CinemaStudioPage({ catalog, generations, now, handlers, onCreate
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   useErrorToast(error, () => setError(""));
-  const [uploading, setUploading] = useState(false);
-  const file = useRef<HTMLInputElement>(null);
   const patch = (changes: Partial<Draft>) => setDraft((current) => ({ ...current, ...changes }));
   useEffect(() => {
     try {
@@ -155,18 +153,18 @@ export function CinemaStudioPage({ catalog, generations, now, handlers, onCreate
         )}
       </div>
 
+      {catalog && !catalog.configured ? <GenerationUnavailable className="cns-notice" /> : null}
       <div className="cns-dock">
-        <div className="cns-modes" role="tablist" aria-label="Mode">
-          {([
-            ["image", "Image", <ImageIcon key="i" className="h-4 w-4" />],
-            ["video", "Video", <Clapperboard key="v" className="h-4 w-4" />],
-          ] as const).map(([value, label, icon]) => (
-            <button key={value} type="button" role="tab" aria-selected={draft.mode === value} onClick={() => patch({ mode: value })}>
-              {icon}
-              <span>{label}</span>
-            </button>
-          ))}
-        </div>
+        <Segment
+          className="cns-modes"
+          label="Mode"
+          value={draft.mode}
+          onChange={(mode) => patch({ mode })}
+          options={[
+            { value: "image", label: "Image", icon: <ImageIcon className="h-4 w-4" /> },
+            { value: "video", label: "Video", icon: <Clapperboard className="h-4 w-4" /> },
+          ]}
+        />
 
         <div className="cns-bar">
           <div className="cns-looks">
@@ -185,16 +183,16 @@ export function CinemaStudioPage({ catalog, generations, now, handlers, onCreate
             ) : null}
           </div>
 
-          {draft.refs.length ? (
-            <div className="cns-refs">
-              {draft.refs.map((ref, index) => (
-                <span key={ref.file} className="cns-ref">
-                  <img src={ref.url} alt="" />
-                  {video && index === 0 ? <em>Start frame</em> : null}
-                  <button type="button" aria-label="Remove reference" onClick={() => patch({ refs: draft.refs.filter((r) => r.file !== ref.file) })}><X className="h-3 w-3" /></button>
-                </span>
-              ))}
-            </div>
+          {maxRefs > 0 || video ? (
+            <ReferenceTray
+              className="cns-refs"
+              assets={draft.refs}
+              max={Math.max(1, maxRefs)}
+              label={video ? "a start frame" : "reference images"}
+              tagFor={(index) => (video && index === 0 ? "Start frame" : undefined)}
+              onChange={(refs) => patch({ refs })}
+              onError={setError}
+            />
           ) : null}
 
           <textarea
@@ -211,35 +209,13 @@ export function CinemaStudioPage({ catalog, generations, now, handlers, onCreate
           />
 
           <div className="cns-controls">
-            <button type="button" className="cns-icon" aria-label={video ? "Add a start frame" : "Add reference images"} title={video ? "Start frame" : "Reference images"} disabled={uploading || draft.refs.length >= Math.max(1, maxRefs)} onClick={() => file.current?.click()}>
-              {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-            </button>
-            <input ref={file} type="file" accept="image/png,image/jpeg,image/webp" multiple={!video} hidden onChange={async (event) => {
-              const files = Array.from(event.target.files || []).slice(0, Math.max(1, maxRefs) - draft.refs.length);
-              event.target.value = "";
-              setUploading(true);
-              try {
-                const added: Asset[] = [];
-                for (const f of files) added.push(await uploadAsset(f, f.name));
-                patch({ refs: [...draft.refs, ...added] });
-              } catch (err) {
-                setError(err instanceof Error ? err.message : "Upload failed");
-              } finally {
-                setUploading(false);
-              }
-            }} />
             <ModelPicker models={video ? videoModels : imageModels} value={(video ? videoModel : imageModel)?.id || ""} onChange={(id) => patch(video ? { videoModel: id } : { imageModel: id })} loading={!catalog} pricing={pricing} />
-            <Choice skin="cinema-mini" icon={<RectangleHorizontal className="h-3.5 w-3.5" />} label="Aspect ratio" value={aspect} options={aspects.map((a) => ({ value: a, label: a }))} onChange={(value) => patch({ aspect: value })} />
+            <AspectPicker variant="chip" skin="cinema-mini" label="Aspect ratio" value={aspect} options={aspects} onChange={(value) => patch({ aspect: value })} />
             {resolutions.length ? <Choice skin="cinema-mini" icon={<Sparkles className="h-3.5 w-3.5" />} label="Quality" value={resolution} options={resolutions.map((r) => ({ value: r, label: r }))} onChange={(value) => patch({ resolution: value })} /> : null}
             {video ? (
               <>
                 <Choice skin="cinema-mini" icon={<Clock className="h-3.5 w-3.5" />} label="Duration" value={`${duration}s`} options={durations.map((d) => ({ value: `${d}s`, label: `${d}s` }))} onChange={(value) => patch({ duration: Number(value.replace("s", "")) })} />
-                {videoModel?.audio ? (
-                  <button type="button" className="cns-chip" aria-pressed={draft.audio} onClick={() => patch({ audio: !draft.audio })} aria-label="Native audio">
-                    {draft.audio ? <Volume2 className="h-3.5 w-3.5" /> : <VolumeX className="h-3.5 w-3.5" />}
-                    {draft.audio ? "On" : "Off"}
-                  </button>
-                ) : null}
+                {videoModel?.audio ? <Toggle className="cns-toggle" icon={<Volume2 className="h-3.5 w-3.5" />} label="Sound" value={draft.audio} onChange={(audio) => patch({ audio })} /> : null}
               </>
             ) : maxCount > 1 ? (
               <span className="cns-stepper" aria-label="Images per shot">

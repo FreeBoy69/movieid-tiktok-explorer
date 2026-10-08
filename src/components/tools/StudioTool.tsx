@@ -2,10 +2,10 @@
 // Studio, the Thumbnail Maker, and the Video Upscaler. One uploaded file, a
 // few choices, one button; results land in the stage as they finish.
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, Link2, Loader2, Wand2 } from "lucide-react";
+import { Loader2, Wand2 } from "lucide-react";
 import { useErrorToast } from "../../utils/toast";
 import type { Catalog, AnyModel, Asset, Generation } from "../studio/studioShared";
-import { Choice, Empty, IMAGE_TYPES, importLinkAsset, LINK_PATTERN, MediaSlot, ModelPicker, readJson, ReferenceTray, VIDEO_TYPES, fit } from "../studio/studioShared";
+import { AspectPicker, Choice, Empty, GenerationUnavailable, IMAGE_TYPES, LinkImport, MediaSlot, ModelPicker, OptionCards, readJson, ReferenceTray, StudioNotice, VIDEO_TYPES, fit, useDeleteGeneration } from "../studio/studioShared";
 import { type GalleryHandlers, StudioGallery } from "../studio/StudioGallery";
 import { CREDIT_ESTIMATE_TITLE, creditEstimateLabel, fallbackCreditEstimate, useStudioPricing } from "../studio/studioPricing";
 import { readDrafts, sendAsset, TOOL_DRAFTS_KEY, writeDrafts } from "./toolHandoff";
@@ -29,66 +29,6 @@ const PREFERRED_IMAGE = ["google/gemini-3-pro-image", "bytedance-seed/seedream-4
 // Layers Studio history shows up in the tool that now owns that operation.
 const LEGACY_TAB = "layers";
 
-function OptionCards({ label, options, value, onChange }: { label: string; options: Array<{ value: string; label: string; hint: string }>; value: string; onChange: (value: string) => void }) {
-  return (
-    <div className="cs-options" role="radiogroup" aria-label={label}>
-      {options.map((option) => (
-        <button key={option.value} type="button" role="radio" aria-checked={value === option.value} className="cs-option" onClick={() => onChange(option.value)}>
-          <strong>{option.label}</strong>
-          <span>{option.hint}</span>
-        </button>
-      ))}
-    </div>
-  );
-}
-
-/** Paste a link instead of uploading. For images: a direct image, a page's preview image, or a YouTube or other video link (its thumbnail). For video: a link the server downloads. */
-function LinkImport({ kind, onImport, onError }: { kind: "image" | "video"; onImport: (asset: Asset) => void; onError: (message: string) => void }) {
-  const [url, setUrl] = useState("");
-  const [busy, setBusy] = useState(false);
-  const ready = LINK_PATTERN.test(url.trim()) && !busy;
-  async function go() {
-    if (!ready) return;
-    setBusy(true);
-    try {
-      onImport(await importLinkAsset(url, kind));
-      setUrl("");
-    } catch (err) {
-      onError(err instanceof Error ? err.message : "Could not import that link");
-    } finally {
-      setBusy(false);
-    }
-  }
-  return (
-    <div className="mt-link">
-      <div className="relative" style={{ flex: 1, minWidth: 0 }}>
-        <Link2 size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 opacity-50" aria-hidden="true" />
-        <input
-          className="mt-input"
-          style={{ paddingLeft: 34 }}
-          type="url"
-          inputMode="url"
-          value={url}
-          disabled={busy}
-          aria-label={kind === "video" ? "Video link" : "Image link"}
-          placeholder={kind === "video" ? "or paste a video link" : "or paste an image or video link"}
-          onChange={(event) => setUrl(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              void go();
-            }
-          }}
-        />
-      </div>
-      <button type="button" className="mt-secondary" disabled={!ready} onClick={() => void go()}>
-        {busy ? <Loader2 size={15} className="animate-spin" /> : null}
-        {busy ? (kind === "video" ? "Downloading" : "Fetching") : "Import"}
-      </button>
-    </div>
-  );
-}
-
 export function StudioTool({ tool }: { tool: ToolDef }) {
   const entry = toolEntry(tool.id);
   const defaultOp = tool.operations?.[0]?.value || "";
@@ -108,6 +48,7 @@ export function StudioTool({ tool }: { tool: ToolDef }) {
   const [error, setError] = useState("");
   useErrorToast(error, () => setError(""));
   const pricing = useStudioPricing();
+  const deleteResult = useDeleteGeneration(useCallback((id: string) => setGenerations((current) => current.filter((g) => g.id !== id)), []), "result");
 
   useEffect(() => {
     let cancelled = false;
@@ -222,11 +163,7 @@ export function StudioTool({ tool }: { tool: ToolDef }) {
     onStop: (item) => void fetch(`/api/studio/generations/${encodeURIComponent(item.id)}/stop`, { method: "POST" }).then(() => refresh()),
     onRetry: (item) => void submit(undefined, item),
     onReuse: (item) => patch({ prompt: item.prompt, ...(item.settings?.operation && ops.has(item.settings.operation) ? { operation: item.settings.operation } : {}), ...(item.settings?.title ? { title: item.settings.title } : {}) }),
-    onDelete: (item) => {
-      if (!window.confirm("Delete this result and its files?")) return;
-      setGenerations((current) => current.filter((g) => g.id !== item.id));
-      void fetch(`/api/studio/generations/${encodeURIComponent(item.id)}`, { method: "DELETE" });
-    },
+    onDelete: (item) => void deleteResult(item),
     onSend: (target, field, asset) => sendAsset(String(target), field, asset),
     onRevise: () => undefined,
   };
@@ -281,13 +218,13 @@ export function StudioTool({ tool }: { tool: ToolDef }) {
       ) : null}
       {tool.kind === "stems" ? null : <div className="mt-row">
         <ModelPicker models={models} value={draft.model} onChange={(id) => patch({ model: id })} loading={!catalog && !catalogError} pricing={pricing} />
-        {tool.aspect && model ? <Choice label="Aspect" value={draft.aspectRatio} options={model.aspectRatios.filter((a) => a !== "auto").map((a) => ({ value: a, label: a }))} onChange={(aspectRatio) => patch({ aspectRatio })} /> : null}
+        {tool.aspect && model ? <AspectPicker variant="chip" label="Aspect" value={draft.aspectRatio} options={model.aspectRatios.filter((a) => a !== "auto")} onChange={(aspectRatio) => patch({ aspectRatio })} /> : null}
         {tool.kind === "video-upscale" ? <Choice label="Scale" value={String(draft.upscaleFactor)} options={[{ value: "1.5", label: "1.5×" }, { value: "2", label: "2×" }, { value: "3", label: "3×" }]} onChange={(upscaleFactor) => patch({ upscaleFactor: Number(upscaleFactor) })} /> : null}
         {estimate !== null && model ? <span className="cs-cost" title={CREDIT_ESTIMATE_TITLE}>{creditEstimateLabel(estimate)}</span> : null}
       </div>}
-      {catalogError ? <p className="mt-error" role="alert"><AlertCircle size={16} />{catalogError}</p> : null}
-      {catalog && !catalog.configured && tool.kind !== "stems" ? <p className="mt-error" role="alert"><AlertCircle size={16} />Generation isn't set up on this server yet.</p> : null}
-      {catalog && catalog.configured && !models.length && tool.kind !== "stems" ? <p className="mt-error" role="status"><AlertCircle size={16} />No model can run this tool right now.</p> : null}
+      {catalogError ? <StudioNotice tone="error">{catalogError}</StudioNotice> : null}
+      {catalog && !catalog.configured && tool.kind !== "stems" ? <GenerationUnavailable /> : null}
+      {catalog && catalog.configured && !models.length && tool.kind !== "stems" ? <StudioNotice>No model can run this tool right now.</StudioNotice> : null}
       <button type="submit" className="mt-primary" disabled={!ready}>
         {submitting ? <Loader2 size={16} className="animate-spin" /> : <Wand2 size={16} />}
         {tool.action}

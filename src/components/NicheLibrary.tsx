@@ -2,6 +2,7 @@ import { ReactNode, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, BarChart3, Bot, Database, Globe2, Layers3, Loader2, Search, Sparkles, Target, WalletCards } from "lucide-react";
 import { writeDeepLink } from "../utils/tiktokRoute";
 import { cn } from "../lib/utils";
+import { Notice } from "./ui/controls";
 
 interface PremiumNiche {
   id: string;
@@ -445,11 +446,7 @@ function ErrorState({ message, onBack }: { message: string; onBack: () => void }
 }
 
 function WarningBar({ message }: { message: string }) {
-  return (
-    <div className="rounded-xl border border-[#f9dc0b]/35 bg-[#fff9d6] px-4 py-3 text-sm font-semibold text-[#443b00]">
-      Using seed data while the database reconnects: {message}
-    </div>
-  );
+  return <Notice tone="warning" title="Using seed data while the database reconnects">{message}</Notice>;
 }
 
 function HeroMetric({ label, value }: { label: string; value: string }) {

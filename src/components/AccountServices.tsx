@@ -6,6 +6,8 @@ import { tokensToCredits } from "../utils/credits";
 import { chooseLingbasePack, chooseLingbasePlan, continueLingbaseCheckout, openLingbasePortal, syncLingbasePayments, type CheckoutSession } from "../utils/lingbasePayments";
 import { purchasesAllowed } from "../native/platform";
 import "./AccountServices.css";
+import { Dialog } from "./ui/Dialog";
+import { Meter } from "./ui/controls";
 
 // User-facing pieces of billing, governance and support: the credit balance in the
 // account menu, the Help & support dialog, the site-wide notice banner, and the
@@ -93,7 +95,7 @@ export function TokenSummary({ email = "" }: { theme?: Theme; email?: string }) 
     return (
       <div className="as-tokens" aria-busy="true">
         <span className="as-tokens-row"><span>Credits</span><Loader2 size={13} className="as-spin" aria-hidden="true" /></span>
-        <span className="as-meter" />
+        <Meter className="as-meter" value={0} label="Credits loading" />
       </div>
     );
   }
@@ -108,9 +110,7 @@ export function TokenSummary({ email = "" }: { theme?: Theme; email?: string }) 
         <span>{billing.planId === "pending" ? "Plan required" : `${billing.planName} plan`}</span>
         <strong className={low ? "is-low" : undefined}>{billing.unlimited ? "Unlimited" : `${compact.format(tokensToCredits(left))} credits left`}</strong>
       </span>
-      <span className="as-meter" role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(pct)} aria-label="Credits left this period">
-        <span className={low ? "is-low" : undefined} style={{ width: `${pct}%` }} />
-      </span>
+      <Meter className="as-meter" value={pct / 100} low={low} label="Credits left this period" />
       {!billing.unlimited && billing.status === "active" ? <small>Allowance renews {new Date(billing.periodEnd).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</small> : null}
       {purchasesAllowed() ? <button type="button" className="as-billing-open" onClick={() => openBilling(low ? "packs" : "plans")}>Credits & plans</button> : null}
     </div>
@@ -579,10 +579,7 @@ export function SupportDialog({ open, onClose, theme }: { open: boolean; onClose
     setView("list");
     setTickets(null);
     void loadTickets();
-    const onKey = (event: KeyboardEvent) => event.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, loadTickets, onClose]);
+  }, [open, loadTickets]);
   useEffect(() => {
     if (!open || view === "list" || view === "new") return;
     setThread(null);
@@ -610,17 +607,12 @@ export function SupportDialog({ open, onClose, theme }: { open: boolean; onClose
 
   if (!open) return null;
   const isThread = view !== "list" && view !== "new";
-  return createPortal(
-    <div className="as-overlay" data-theme={theme} onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <div className="as-dialog" role="dialog" aria-modal="true" aria-labelledby="as-support-title">
-        <header className="as-dialog-head">
-          {view !== "list" && (tickets?.length || isThread) ? (
-            <button type="button" className="as-icon" onClick={() => setView("list")} aria-label="Back to your requests"><ArrowLeft size={17} /></button>
-          ) : <LifeBuoy size={18} className="as-head-icon" aria-hidden="true" />}
-          <h2 id="as-support-title">{view === "new" ? "New request" : isThread ? thread?.subject || "Request" : "Help & support"}</h2>
-          <button type="button" className="as-icon" onClick={onClose} aria-label="Close"><X size={17} /></button>
-        </header>
-        <div className="as-dialog-body">
+  return (
+    <Dialog title={view === "new" ? "New request" : isThread ? thread?.subject || "Request" : "Help & support"} size="md" onClose={onClose}>
+      <div className="as-scope" data-theme={theme}>
+        {view !== "list" && (tickets?.length || isThread) ? (
+          <button type="button" className="ui-btn as-back" onClick={() => setView("list")}><ArrowLeft size={15} aria-hidden="true" /> Your requests</button>
+        ) : null}
           {error ? <p className="as-error" role="alert">{error}</p> : null}
           {view === "list" ? (
             tickets === null ? <p className="as-muted as-center"><Loader2 size={16} className="as-spin" aria-hidden="true" /> Loading…</p> : (
@@ -698,10 +690,8 @@ export function SupportDialog({ open, onClose, theme }: { open: boolean; onClose
               </form>
             </>
           )}
-        </div>
       </div>
-    </div>,
-    document.body,
+    </Dialog>
   );
 }
 
@@ -711,20 +701,12 @@ export function DeleteAccountDialog({ open, onClose, theme }: { open: boolean; o
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [subscriptionWarning, setSubscriptionWarning] = useState("");
-  const busyRef = useRef(false);
-  busyRef.current = busy;
   useEffect(() => {
     if (!open) return;
     setConfirm("");
     setError("");
     setSubscriptionWarning("");
   }, [open]);
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape" && !busyRef.current) onClose(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
   if (!open) return null;
   const ready = confirm.trim().toUpperCase() === "DELETE";
   const submit = async () => {
@@ -751,15 +733,9 @@ export function DeleteAccountDialog({ open, onClose, theme }: { open: boolean; o
       setBusy(false);
     }
   };
-  return createPortal(
-    <div className="as-overlay" data-theme={theme} onMouseDown={(event) => event.target === event.currentTarget && !busy && onClose()}>
-      <div className="as-dialog as-delete" role="dialog" aria-modal="true" aria-labelledby="as-delete-title">
-        <header className="as-dialog-head">
-          <Trash2 size={18} className="as-head-icon as-delete-icon" aria-hidden="true" />
-          <h2 id="as-delete-title">Delete account</h2>
-          <button type="button" className="as-icon" onClick={onClose} disabled={busy} aria-label="Close"><X size={17} /></button>
-        </header>
-        <div className="as-dialog-body">
+  return (
+    <Dialog title="Delete account" size="sm" dismissible={!busy} onClose={() => !busy && onClose()}>
+      <div className="as-scope as-delete" data-theme={theme}>
           <p className="as-delete-lede">This permanently deletes your AutoYT account and everything in it: projects, renders, agents, connected channels, voices, and history. It can't be undone.</p>
           <p className="as-muted">Records of past payments are kept as required for tax and refunds, without your name or email.</p>
           {subscriptionWarning ? <p className="as-delete-warning" role="alert"><TriangleAlert size={16} aria-hidden="true" /> {subscriptionWarning}</p> : null}
@@ -776,9 +752,7 @@ export function DeleteAccountDialog({ open, onClose, theme }: { open: boolean; o
               </button>
             </div>
           </form>
-        </div>
       </div>
-    </div>,
-    document.body,
+    </Dialog>
   );
 }

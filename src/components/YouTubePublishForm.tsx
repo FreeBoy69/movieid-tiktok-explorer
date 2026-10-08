@@ -1,8 +1,9 @@
 // The one YouTube publish form: title, description, tags, Short, visibility, made for kids
 // and playlist. Hosts keep their own submit logic and chrome; this renders the fields.
-import { type KeyboardEvent, type ReactNode, useId, useRef } from "react";
+import { type ReactNode, useId } from "react";
 import { CalendarClock, Check, Globe2, Link2, ListPlus, ListVideo, Loader2, Lock, RefreshCw, Sparkles, X } from "lucide-react";
 import "./YouTubePublishForm.css";
+import { Segmented, Switch } from "./ui/controls";
 
 export type PublishTheme = "light" | "dark" | "studio";
 export type PlaylistMode = "none" | "existing" | "create" | "auto";
@@ -32,38 +33,10 @@ const PLAYLIST_MODES: Record<PlaylistMode, { label: string; hint: string }> = {
 export type PlaylistSummary = { id: string; title: string; videoCount?: number };
 
 function SegmentedChoice({ label, value, options, onChange, hint }: { label: string; value: string; options: Array<{ value: string; label: string; icon?: ReactNode }>; onChange: (value: string) => void; hint?: string }) {
-  const refs = useRef<Array<HTMLButtonElement | null>>([]);
-  const labelId = useId();
-  const active = Math.max(0, options.findIndex((option) => option.value === value));
-  const move = (event: KeyboardEvent, index: number) => {
-    const step = event.key === "ArrowRight" || event.key === "ArrowDown" ? 1 : event.key === "ArrowLeft" || event.key === "ArrowUp" ? -1 : 0;
-    if (!step) return;
-    event.preventDefault();
-    const next = (index + step + options.length) % options.length;
-    onChange(options[next].value);
-    refs.current[next]?.focus();
-  };
   return (
     <div className="ytp-field ytp-choice">
-      <span className="ytp-label" id={labelId}>{label}</span>
-      <div className="ytp-segments" role="radiogroup" aria-labelledby={labelId} data-count={options.length}>
-        {options.map((option, index) => (
-          <button
-            key={option.value}
-            ref={(node) => { refs.current[index] = node; }}
-            type="button"
-            role="radio"
-            aria-checked={option.value === value}
-            tabIndex={index === active ? 0 : -1}
-            className="ytp-segment"
-            onClick={() => onChange(option.value)}
-            onKeyDown={(event) => move(event, index)}
-          >
-            {option.icon}
-            <span>{option.label}</span>
-          </button>
-        ))}
-      </div>
+      <span className="ytp-label" aria-hidden="true">{label}</span>
+      <Segmented block label={label} value={value} options={options.map(({ value: v, label: l, icon }) => ({ value: v, label: l, icon }))} onChange={onChange} className={`ytp-seg ytp-seg-${options.length}`} />
       {hint ? <span className="ytp-hint">{hint}</span> : null}
     </div>
   );
@@ -76,16 +49,7 @@ export function VisibilityControl({ value, onChange, options = VISIBILITY_OPTION
 }
 
 export function PublishSwitch({ title, body, checked, onChange, theme }: { title: string; body?: string; checked: boolean; onChange: (next: boolean) => void; theme?: PublishTheme }) {
-  const row = (
-    <label className="ytp-switch">
-      <span className="ytp-switch-copy">
-        <span className="ytp-switch-title">{title}</span>
-        {body ? <span className="ytp-hint">{body}</span> : null}
-      </span>
-      <input type="checkbox" role="switch" checked={checked} onChange={(event) => onChange(event.target.checked)} />
-      <span className="ytp-switch-track" aria-hidden="true"><span /></span>
-    </label>
-  );
+  const row = <Switch className="ytp-switch" label={title} description={body} checked={checked} onChange={onChange} />;
   return theme ? <div className="ytp" data-theme={theme}>{row}</div> : row;
 }
 

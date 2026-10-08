@@ -18,6 +18,7 @@ import {
   setCaptionLook,
   updateItem,
   VIBE_ASPECTS,
+  type VibeAspect,
   type VibeAsset,
 } from "../../utils/vibeEdit";
 import { SOUND_PRESETS } from "../../utils/vibeSound.js";
@@ -31,6 +32,9 @@ import { normalizeOverlay, OVERLAY_KINDS, overlayExample } from "../../utils/vid
 import { LookPicker } from "../CreateVideoExtras";
 import { MusicLibrary, type LibraryTrack } from "../MusicLibrary";
 import { FileDrop } from "../FileDrop";
+import { AspectPicker } from "../studio/studioShared";
+import { Segmented } from "../ui/controls";
+import "../CreatorStudio.css";
 import { LanguagePicker } from "../LanguagePicker";
 import { COLOR_BOOST } from "../../utils/vibeAutoEdit";
 
@@ -475,13 +479,16 @@ function GeneratePanel() {
   };
   return (
     <>
-      <div className="ve-seg" role="radiogroup" aria-label="What to generate">
-        {(["video", "image"] as const).map((k) => (
-          <button key={k} type="button" role="radio" aria-checked={kind === k} className={kind === k ? "is-on" : ""} onClick={() => setKind(k)}>
-            {k === "video" ? <Film size={14} /> : <ImageIcon size={14} />} {k === "video" ? "Video shot" : "Image"}
-          </button>
-        ))}
-      </div>
+      <Segmented
+        label="What to generate"
+        block
+        value={kind}
+        onChange={(next) => setKind(next as typeof kind)}
+        options={[
+          { value: "video", label: "Video shot", icon: <Film size={14} /> },
+          { value: "image", label: "Image", icon: <ImageIcon size={14} /> },
+        ]}
+      />
       <Section title="Describe the shot">
         <textarea className="ve-textarea" rows={6} value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="A steam train races a cliffside railway at dusk, film grain, wide shot" />
       </Section>
@@ -704,14 +711,13 @@ function ProjectProps() {
         <strong>{project.name}</strong>
       </div>
       <Group title="Frame">
-        <div className="ve-seg ve-seg-block" role="radiogroup" aria-label="Frame">
-          {VIBE_ASPECTS.map((a) => (
-            <button key={a.id} type="button" role="radio" aria-checked={project.aspect === a.id} className={project.aspect === a.id ? "is-on" : ""} onClick={() => set({ aspect: a.id }, "aspect")}>
-              <span className="ve-aspect-glyph" data-aspect={a.id} aria-hidden="true" />
-              {a.id}
-            </button>
-          ))}
-        </div>
+        <AspectPicker
+          label="Frame"
+          className="ve-frame-pick"
+          value={project.aspect}
+          onChange={(aspect) => set({ aspect: aspect as VibeAspect }, "aspect")}
+          options={VIBE_ASPECTS.map((a) => ({ value: a.id, hint: a.label }))}
+        />
         <label className="ve-prop-row">
           <span>Background</span>
           <span className="ve-color">
@@ -791,13 +797,18 @@ export function Inspector() {
         {text ? (
           <Group title="Text">
             <textarea className="ve-textarea" rows={2} value={text.text} onChange={(e) => set({ text: e.target.value })} aria-label="Title text" />
-            <div className="ve-seg ve-seg-block" role="radiogroup" aria-label="Look">
-              {(["plain", "boxed", "outline"] as const).map((l) => (
-                <button key={l} type="button" role="radio" aria-checked={(text.look || "plain") === l} className={(text.look || "plain") === l ? "is-on" : ""} onClick={() => set({ look: l })}>
-                  {l === "plain" ? "Shadow" : l === "boxed" ? "Boxed" : "Outline"}
-                </button>
-              ))}
-            </div>
+            <Segmented
+              label="Look"
+              block
+              size="sm"
+              value={text.look || "plain"}
+              onChange={(look) => set({ look: look as "plain" | "boxed" | "outline" })}
+              options={[
+                { value: "plain", label: "Shadow" },
+                { value: "boxed", label: "Boxed" },
+                { value: "outline", label: "Outline" },
+              ]}
+            />
             <label className="ve-prop-row">
               <span>Color</span>
               <span className="ve-color">
@@ -823,13 +834,17 @@ export function Inspector() {
         {clip ? (
           <>
           <Group title="Picture">
-            <div className="ve-seg ve-seg-block" role="radiogroup" aria-label="Framing">
-              {(["fit", "fill"] as const).map((f) => (
-                <button key={f} type="button" role="radio" aria-checked={(clip.fit || "fit") === f} className={(clip.fit || "fit") === f ? "is-on" : ""} onClick={() => set({ fit: f })}>
-                  {f === "fit" ? "Fit" : "Fill & crop"}
-                </button>
-              ))}
-            </div>
+            <Segmented
+              label="Framing"
+              block
+              size="sm"
+              value={clip.fit || "fit"}
+              onChange={(fit) => set({ fit: fit as "fit" | "fill" })}
+              options={[
+                { value: "fit", label: "Fit" },
+                { value: "fill", label: "Fill & crop" },
+              ]}
+            />
             <Slider label="Punch-in" value={clip.zoom || 1} display={`${Math.round((clip.zoom || 1) * 100)}%`} min={1} max={1.5} step={0.01} onChange={(v) => set({ zoom: v > 1.004 ? v : null })} />
           </Group>
           <Group title="Color">

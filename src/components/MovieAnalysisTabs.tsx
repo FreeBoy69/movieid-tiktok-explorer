@@ -20,6 +20,8 @@ import { cn } from "../lib/utils";
 import type { MovieResult } from "../types";
 import { getMovieIdentificationSourceDisplay } from "../utils/movieIdentificationSource.js";
 import { findRelatedNiches, getTrendingNiches, NICHE_DATABASE } from "../data/niches";
+import { EmptyState } from "./ui/controls";
+import "./uiInherit.css";
 
 const C = {
   bg: "#F5F4F0",
@@ -629,5 +631,9 @@ function EvidenceCard({ icon, title, content }: { icon: ReactNode; title: string
 }
 
 function EmptyNote({ children }: { children: ReactNode }) {
-  return <p className="rounded-lg border border-dashed p-5 text-sm" style={{ background: C.bg, borderColor: C.border, color: C.textMuted }}>{children}</p>;
+  return (
+    <div className="ui-inherit rounded-lg border border-dashed" style={{ background: C.bg, borderColor: C.border, color: C.text }}>
+      <EmptyState compact title="Nothing here yet" body={children} />
+    </div>
+  );
 }

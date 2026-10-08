@@ -6,6 +6,7 @@ import { AudioLines, Check, ExternalLink, Loader2, Search, Upload } from "lucide
 import { inferMusicMood, pixabayMusicSearchUrl } from "../utils/royaltyFreeMusic.js";
 import { TrackPreviewButton } from "./ScenePlayback";
 import { useErrorToast } from "../utils/toast";
+import { SearchField, Tabs } from "./ui/controls";
 import "./MusicLibrary.css";
 
 export type LibraryTrack = {
@@ -148,19 +149,18 @@ export function MusicLibrary({
         </header>
       ) : null}
 
-      <div className="ml-tabs" role="tablist" aria-label="Music source">
-        {tabs.map(([id, label]) => (
-          <button key={id} type="button" role="tab" aria-selected={library === id} disabled={disabled} onClick={() => setLibrary(id)}>
-            {label}
-          </button>
-        ))}
-      </div>
+      <Tabs
+        label="Music source"
+        className="ml-source-tabs"
+        value={library}
+        onChange={(id) => setLibrary(id as typeof library)}
+        options={tabs.map(([id, label]) => ({ value: id, label, disabled }))}
+      />
 
       {library === "openverse" ? (
         <>
           <form className="ml-search" onSubmit={(e) => { e.preventDefault(); if (query.trim()) void search(query.trim()); }}>
-            <Search size={15} aria-hidden="true" />
-            <input value={query} disabled={disabled} aria-label="Search music" placeholder="Mood, genre or instrument" onChange={(e) => setQuery(e.target.value)} />
+            <SearchField value={query} onChange={setQuery} label="Search music" placeholder="Mood, genre or instrument" size="sm" className="ml-search-field" />
             <button type="submit" disabled={disabled || loading || !query.trim()}>{loading ? <Loader2 size={14} className="ml-spin" /> : "Search"}</button>
           </form>
           <div className="ml-moods" aria-label="Moods">

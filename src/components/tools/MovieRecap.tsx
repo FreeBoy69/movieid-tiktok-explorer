@@ -4,7 +4,6 @@
 // Vibe Edit with every cut, narration line, and caption on the timeline, ready to tweak and export.
 import { PickerDialog } from "../SourcePicker";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import {
   AlertCircle, ArrowLeft, ArrowRight, Check, Clapperboard, Download, ExternalLink, Film, Link2, Loader2, Plus,
   Music, Projector, RotateCcw, Search, ShieldCheck, Sparkles, Square, Trash2, Undo2, Upload, Users, WandSparkles, X, Youtube, PenLine, Image as ImageIcon } from "lucide-react";
@@ -32,6 +31,8 @@ import "./MovieRecap.css";
 import { YouTubePublishFields } from "../YouTubePublishForm";
 import { FileDrop } from "../FileDrop";
 import { socialPlatform } from "../SocialPlatforms";
+import { confirm, Dialog } from "../ui/Dialog";
+import { Segmented, Switch } from "../ui/controls";
 
 const TONES: Array<{ id: RecapTone; label: string }> = [
   { id: "dramatic", label: "Dramatic" },
@@ -295,10 +296,16 @@ function NewRecapPanel({ onCreated, onError }: { onCreated: (recap: Recap) => vo
     <>
       <div className="mt-field">
         <span className="mt-label" id="mr-source-label">The film</span>
-        <div className="mr-segment" role="tablist" aria-labelledby="mr-source-label">
-          <button type="button" role="tab" aria-selected={mode === "link"} onClick={() => setMode("link")}><Link2 size={14} aria-hidden="true" />Link</button>
-          <button type="button" role="tab" aria-selected={mode === "upload"} onClick={() => setMode("upload")}><Upload size={14} aria-hidden="true" />Upload</button>
-        </div>
+        <Segmented
+          label="The film"
+          block
+          value={mode}
+          onChange={(next) => setMode(next as typeof mode)}
+          options={[
+            { value: "link", label: "Link", icon: <Link2 size={14} aria-hidden="true" /> },
+            { value: "upload", label: "Upload", icon: <Upload size={14} aria-hidden="true" /> },
+          ]}
+        />
         {mode === "link" ? (
           <>
             <input
@@ -396,9 +403,9 @@ function NewRecapPanel({ onCreated, onError }: { onCreated: (recap: Recap) => vo
       <div className="mt-field">
         <span className="mt-label">On the video <small>You can turn captions off again on the storyboard</small></span>
         <div className="mr-switches mr-extras">
-          <Switch on={captions} onChange={setCaptions} label="Captions" />
-          <Switch on={music} onChange={setMusic} label="Background music, 12 dB under the voice" />
-          <Switch on={graphics} onChange={setGraphics} label="Motion graphics on the long recap: film title card, character names, subscribe" />
+          <Switch compact className="mr-toggle" checked={captions} onChange={setCaptions} label="Captions" />
+          <Switch compact className="mr-toggle" checked={music} onChange={setMusic} label="Background music, 12 dB under the voice" />
+          <Switch compact className="mr-toggle" checked={graphics} onChange={setGraphics} label="Motion graphics on the long recap: film title card, character names, subscribe" />
         </div>
       </div>
 
@@ -415,10 +422,10 @@ function NewRecapPanel({ onCreated, onError }: { onCreated: (recap: Recap) => vo
           <li><Check size={14} aria-hidden="true" />The film's own audio is removed; your narration carries it</li>
         </ul>
         <div className="mr-switches">
-          <Switch on={transforms.zoom} onChange={(zoom) => setTransforms({ ...transforms, zoom })} label="Slight zoom on every cut" />
-          <Switch on={transforms.color} onChange={(color) => setTransforms({ ...transforms, color })} label="Light color shift" />
-          <Switch on={transforms.mirror} onChange={(mirror) => setTransforms({ ...transforms, mirror })} label="Mirror the picture" />
-          <Switch on={transforms.speed} onChange={(speed) => setTransforms({ ...transforms, speed })} label="Play 5% faster" />
+          <Switch compact className="mr-toggle" checked={transforms.zoom} onChange={(zoom) => setTransforms({ ...transforms, zoom })} label="Slight zoom on every cut" />
+          <Switch compact className="mr-toggle" checked={transforms.color} onChange={(color) => setTransforms({ ...transforms, color })} label="Light color shift" />
+          <Switch compact className="mr-toggle" checked={transforms.mirror} onChange={(mirror) => setTransforms({ ...transforms, mirror })} label="Mirror the picture" />
+          <Switch compact className="mr-toggle" checked={transforms.speed} onChange={(speed) => setTransforms({ ...transforms, speed })} label="Play 5% faster" />
         </div>
         <p className="mt-note">These lower the chance of Content ID claims. No editing method guarantees zero claims.</p>
       </details>
@@ -441,15 +448,6 @@ function FormatOption({ on, onToggle, title, detail, children }: { on: boolean; 
       </button>
       <div className="mr-format-body">{children}</div>
     </div>
-  );
-}
-
-function Switch({ on, onChange, label }: { on: boolean; onChange: (value: boolean) => void; label: string }) {
-  return (
-    <button type="button" role="switch" aria-checked={on} className="mr-switch" onClick={() => onChange(!on)}>
-      <span>{label}</span>
-      <span className="mr-switch-track" aria-hidden="true"><span /></span>
-    </button>
   );
 }
 
@@ -599,7 +597,7 @@ function RecapView({ id, onBack, onError }: { id: string; onBack: () => void; on
     }
   };
   const remove = async () => {
-    if (!window.confirm("Delete this recap, its script, and its videos? Vibe Edit projects made from it stay.")) return;
+    if (!(await confirm({ title: "Delete this recap?", body: "Its script and videos are removed. Vibe Edit projects made from it stay.", confirmLabel: "Delete recap", danger: true }))) return;
     try {
       await deleteRecap(recap.id);
       onBack();
@@ -950,7 +948,7 @@ function ScriptReview({ recap, onChange, onRender, onError }: { recap: Recap; on
   };
   const [rewriting, setRewriting] = useState(false);
   const rewrite = async () => {
-    if (!window.confirm("Write the script again from the film? This replaces the current script, your edits included.")) return;
+    if (!(await confirm({ title: "Write the script again?", body: "A new script from the film replaces the current one, your edits included.", confirmLabel: "Rewrite script", danger: true }))) return;
     setRewriting(true);
     try {
       onChange(await rewriteScript(recap.id));
@@ -1040,13 +1038,14 @@ function ScriptReview({ recap, onChange, onRender, onError }: { recap: Recap; on
           <p className="mr-notice" role="note">This copy of the film is {recap.film.height}p, so the recap will look soft. A 720p or sharper copy gives a cleaner result.</p>
         ) : null}
         {recap.options.formats.length > 1 ? (
-          <div className="mr-segment mr-format-tabs" role="tablist" aria-label="Format">
-            {recap.options.formats.map((f) => (
-              <button key={f} type="button" role="tab" aria-selected={format === f} onClick={() => setFormat(f)}>
-                {FORMAT_LABEL[f]}<small>{(script[f]?.beats || []).length} lines</small>
-              </button>
-            ))}
-          </div>
+          <Segmented
+            label="Format"
+            block
+            className="mr-format-tabs"
+            value={format}
+            onChange={(next) => setFormat(next as RecapFormat)}
+            options={recap.options.formats.map((f) => ({ value: f, label: FORMAT_LABEL[f], hint: `${(script[f]?.beats || []).length} lines` }))}
+          />
         ) : null}
         {format === "short" ? (
           <input
@@ -1092,7 +1091,7 @@ function ScriptReview({ recap, onChange, onRender, onError }: { recap: Recap; on
           <VoiceSpeedNote voice={voices.find((v) => v.id === voiceId)} minutes={(script.long?.beats.length ? spokenSeconds((script.long?.beats || []).map((b) => b.text).join(" ")) : spokenSeconds((script.short?.beats || []).map((b) => b.text).join(" "))) / 60} />
         </div>
         <div className="mr-side-block">
-          <Switch on={captions} onChange={setCaptions} label="Captions on the video" />
+          <Switch compact className="mr-toggle" checked={captions} onChange={setCaptions} label="Captions on the video" />
           <label className="mr-zoom">
             <span className="mr-zoom-head">
               <span>Screen size</span>
@@ -1100,11 +1099,11 @@ function ScriptReview({ recap, onChange, onRender, onError }: { recap: Recap; on
             </span>
             <input type="range" className="mr-range" min={0} max={30} step={1} value={zoomPct} onChange={(event) => setZoomPct(Number(event.target.value))} aria-label="Screen size: how far the footage is zoomed in" />
           </label>
-          <Switch on={pan} onChange={setPan} label="Freeze and zoom shots" />
+          <Switch compact className="mr-toggle" checked={pan} onChange={setPan} label="Freeze and zoom shots" />
           <p className="mt-note">A bigger picture, slow pans, and the odd frozen push-in keep the footage from matching the film frame for frame.</p>
           {recap.options.formats.includes("long") ? (
             <>
-              <Switch on={hasIntro} onChange={(on) => { if (!introBusy) void toggleIntro(on); }} label="Intro: a teaser over quick cuts of the best shots" />
+              <Switch compact className="mr-toggle" checked={hasIntro} onChange={(on) => { if (!introBusy) void toggleIntro(on); }} label="Intro: a teaser over quick cuts of the best shots" />
               {introBusy ? <p className="mt-note"><Loader2 size={13} className="animate-spin" aria-hidden="true" /> {hasIntro ? "Removing the intro" : "Writing the intro"}</p> : null}
             </>
           ) : null}
@@ -1337,40 +1336,46 @@ function PostPanel({ recap, format, onChange, onError }: { recap: Recap; format:
         items={(channels || []).map((c) => ({ value: c.id, label: c.title, imageUrl: c.thumbnail || undefined, kind: "channel" as const, platform: c.platform, meta: `${socialPlatform(c.platform)?.label || c.platform}${c.handle ? ` · ${c.handle}` : ""}` }))}
         onChoose={(item) => void pick(item.value)}
       />
-      {open && accountId ? createPortal(
-        <div className="mr-modal" role="presentation" onMouseDown={(e) => e.target === e.currentTarget && setOpen(false)}>
-          <section className="mr-modal-card" role="dialog" aria-modal="true" aria-label="Post to a channel">
-            <header className="mr-modal-head">
-              {accountId ? <button type="button" className="mr-icon-btn" onClick={() => setAccountId("")} aria-label="Choose another channel"><ArrowLeft size={16} /></button> : null}
-              <h2>{accountId ? `Post to ${channel?.title || "channel"}` : "Post to a channel"}</h2>
-              <button type="button" className="mr-icon-btn" onClick={() => setOpen(false)} aria-label="Close"><X size={16} /></button>
-            </header>
-            {drafting ? (
-              <p className="mt-note mr-modal-wait"><Loader2 size={14} className="animate-spin" aria-hidden="true" /> Writing a title and description in {channel?.title || "this channel"}'s style</p>
-            ) : (
-              <div className="mr-post-form">
-                <YouTubePublishFields
-                  theme="dark"
-                  title={title}
-                  onTitleChange={setTitle}
-                  description={description}
-                  onDescriptionChange={setDescription}
-                  tags={tags}
-                  onTagsChange={setTags}
-                  privacyStatus={privacy}
-                  onPrivacyStatusChange={setPrivacy}
-                />
-                <div className="mr-post-actions">
-                  <button type="button" className="mr-post-go" disabled={posting || !title.trim()} onClick={() => void post()}>
-                    {posting ? <Loader2 size={15} className="animate-spin" aria-hidden="true" /> : <Upload size={15} aria-hidden="true" />}Post in the background
-                  </button>
-                </div>
-                <p className="mt-note">The upload runs on our server: you can close this and keep working. You'll get a note when it's posted.</p>
-              </div>
-            )}
-          </section>
-        </div>,
-        document.body,
+      {open && accountId ? (
+        <Dialog
+          title={`Post to ${channel?.title || "channel"}`}
+          size="sm"
+          className="mr-post-dialog"
+          onClose={() => setOpen(false)}
+          footer={
+            drafting ? null : (
+              <>
+                <button type="button" className="ui-btn" onClick={() => setAccountId("")}>
+                  <ArrowLeft size={15} aria-hidden="true" />
+                  Another channel
+                </button>
+                <button type="button" className="ui-btn is-primary" disabled={posting || !title.trim()} onClick={() => void post()}>
+                  {posting ? <Loader2 size={15} className="animate-spin" aria-hidden="true" /> : <Upload size={15} aria-hidden="true" />}
+                  Post in the background
+                </button>
+              </>
+            )
+          }
+        >
+          {drafting ? (
+            <p className="mt-note mr-modal-wait"><Loader2 size={14} className="animate-spin" aria-hidden="true" /> Writing a title and description in {channel?.title || "this channel"}'s style</p>
+          ) : (
+            <div className="mr-post-form">
+              <YouTubePublishFields
+                theme={document.documentElement.dataset.theme === "light" ? "light" : "dark"}
+                title={title}
+                onTitleChange={setTitle}
+                description={description}
+                onDescriptionChange={setDescription}
+                tags={tags}
+                onTagsChange={setTags}
+                privacyStatus={privacy}
+                onPrivacyStatusChange={setPrivacy}
+              />
+              <p className="mt-note">The upload runs on our server: you can close this and keep working. You'll get a note when it's posted.</p>
+            </div>
+          )}
+        </Dialog>
       ) : null}
     </div>
   );
@@ -1416,13 +1421,14 @@ function Finished({ recap, onRerender, onChange, onError }: { recap: Recap; onRe
             </div>
           </div>
           {formats.length > 1 ? (
-            <div className="mr-final-tabs" role="tablist" aria-label="Format">
-              {formats.map((f) => (
-                <button key={f} type="button" role="tab" aria-selected={f === format} onClick={() => setFormat(f)}>
-                  {f === "short" ? "Short" : "Long recap"}
-                </button>
-              ))}
-            </div>
+            <Segmented
+              label="Format"
+              block
+              className="mr-final-tabs"
+              value={format}
+              onChange={(next) => setFormat(next as RecapFormat)}
+              options={formats.map((f) => ({ value: f, label: f === "short" ? "Short" : "Long recap" }))}
+            />
           ) : null}
           {stats ? (
             <dl className="mr-stats">

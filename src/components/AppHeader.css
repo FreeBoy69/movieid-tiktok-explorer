@@ -808,34 +808,11 @@
   min-height: 40px;
   border-radius: 10px;
 }
-.ah-m-theme {
-  display: flex;
+.ui-seg.ah-m-theme {
   flex-shrink: 0;
-  padding: 3px;
-  border: 1px solid var(--ah-line);
-  border-radius: 10px;
-  background: var(--ah-tile);
-}
-.ah-overlay .ah-m-theme button {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 32px;
-  padding: 0 11px;
-  border: 0;
-  border-radius: 8px !important;
-  background: transparent;
-  color: var(--ah-muted);
-  font-size: 13px;
-  font-weight: 600;
-  transition: background 0.15s, color 0.15s;
-}
-.ah-overlay .ah-m-theme button[aria-checked="true"] {
-  background: var(--ah-text);
-  color: var(--ah-panel);
-}
-.ah-overlay[data-theme="light"] .ah-m-theme button[aria-checked="true"] {
-  color: #fff;
+  --ui-text: var(--ah-text);
+  --ui-muted: var(--ah-muted);
+  --ui-line: var(--ah-line);
 }
 
 /* Home page: the header floats over the Explore hero, transparent with light text while the

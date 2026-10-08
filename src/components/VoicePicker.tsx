@@ -1,7 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { AudioLines, Check, ChevronsUpDown, Loader2, Mic, Play, Search, Sparkles, Square, Star, X } from "lucide-react";
-import { claimPlayback } from "./AudioPlayer";
+import { usePreview, voicePreviewUrl } from "../utils/voicePreview";
 import { isVoiceReady, type VoiceProfile } from "../utils/voiceProfiles";
 import "./VoicePicker.css";
 
@@ -55,38 +55,6 @@ export function VoiceAvatar({ voice, size = 36 }: { voice: VoiceProfile; size?: 
       <Icon size={Math.round(size * 0.46)} strokeWidth={2} />
     </span>
   );
-}
-
-// One shared element so previews never overlap each other or other players.
-let previewAudio: HTMLAudioElement | null = null;
-function usePreview() {
-  const [state, setState] = useState<{ id: string; status: "loading" | "playing" | "error" } | null>(null);
-  const current = useRef<string>("");
-  const stop = () => {
-    current.current = "";
-    previewAudio?.pause();
-    setState(null);
-  };
-  useEffect(() => stop, []);
-  async function toggle(voice: VoiceProfile) {
-    if (state?.id === voice.id && state.status !== "error") return stop();
-    previewAudio ??= new Audio();
-    const audio = previewAudio;
-    audio.pause();
-    current.current = voice.id;
-    setState({ id: voice.id, status: "loading" });
-    audio.src = `/api/voicebox/profiles/${encodeURIComponent(voice.id)}/preview`;
-    audio.onplaying = () => current.current === voice.id && setState({ id: voice.id, status: "playing" });
-    audio.onended = () => current.current === voice.id && setState(null);
-    audio.onerror = () => current.current === voice.id && setState({ id: voice.id, status: "error" });
-    try {
-      claimPlayback(audio);
-      await audio.play();
-    } catch (error) {
-      if ((error as Error)?.name !== "AbortError" && current.current === voice.id) setState({ id: voice.id, status: "error" });
-    }
-  }
-  return { state, toggle, stop };
 }
 
 export function VoicePicker({
@@ -324,7 +292,7 @@ export function VoicePicker({
                       {group.voices.map((voice) => {
                         const ready = isVoiceReady(voice);
                         const isSelected = voice.id === value;
-                        const status = preview.state?.id === voice.id ? preview.state.status : null;
+                        const status = preview.state?.key === voice.id ? preview.state.status : null;
                         return (
                           <div key={voice.id} className={`mk-voice-row ${isSelected ? "is-selected" : ""} ${status === "playing" ? "is-previewing" : ""}`}>
                             <button
@@ -358,7 +326,7 @@ export function VoicePicker({
                               className="mk-voice-preview"
                               disabled={!ready}
                               aria-label={status === "playing" || status === "loading" ? `Stop preview of ${voice.name}` : `Preview ${voice.name}`}
-                              onClick={() => void preview.toggle(voice)}
+                              onClick={() => void preview.toggle(voice.id, voicePreviewUrl(voice.id))}
                             >
                               {status === "loading" ? (
                                 <Loader2 size={15} className="mk-voice-spin" />

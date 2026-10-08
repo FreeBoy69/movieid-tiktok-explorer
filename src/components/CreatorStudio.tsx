@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowRight } from "lucide-react";
 import { STUDIO_TABS, writeDeepLink, type StudioTab } from "../utils/tiktokRoute";
 import { STUDIO_APPS, STUDIO_CATEGORIES, type StudioApp } from "./studio/studioApps";
-import { type Asset, type Catalog, type Generation, readJson } from "./studio/studioShared";
+import { type Asset, type Catalog, type Generation, readJson, StudioNotice, useDeleteGeneration } from "./studio/studioShared";
 import { defaultDraft, type Draft, StudioGenerator } from "./studio/StudioGenerator";
 import { StudioAgents } from "./studio/StudioAgents";
 import { MarketingStudio } from "./studio/MarketingStudio";
@@ -112,6 +112,7 @@ export function CreatorStudio({ theme = "light", tab: routeTab, generationId, on
 
   const app = tab === "apps" ? null : STUDIO_APPS[tab as AppId];
   const custom = tab === "marketing" || tab === "promo" || tab === "explainer" || tab === "cinema" || tab === "audio";
+  const deleteGeneration = useDeleteGeneration(useCallback((id: string) => setGenerations((current) => current.filter((g) => g.id !== id)), []));
   const created = (item: Generation) => {
     setGenerations((current) => [item, ...current.filter((g) => g.id !== item.id)]);
     setNow(Date.now());
@@ -126,11 +127,7 @@ export function CreatorStudio({ theme = "light", tab: routeTab, generationId, on
         .then((data) => created(data.generation))
         .catch(() => undefined),
     onReuse: () => undefined,
-    onDelete: (item) => {
-      if (!window.confirm("Delete this generation and its files?")) return;
-      setGenerations((current) => current.filter((g) => g.id !== item.id));
-      void fetch(`/api/studio/generations/${encodeURIComponent(item.id)}`, { method: "DELETE" });
-    },
+    onDelete: (item) => void deleteGeneration(item),
     onSend: send,
     onRevise: () => undefined,
     routeGenerationId: generationId,
@@ -146,7 +143,7 @@ export function CreatorStudio({ theme = "light", tab: routeTab, generationId, on
             <h1>{app.label}</h1>
           </div>
         ) : null}
-        {catalogError ? <p className="cs-banner" role="alert">{catalogError}</p> : null}
+        {catalogError ? <StudioNotice tone="error">{catalogError}</StudioNotice> : null}
         {tab === "apps" ? (
           <ExploreApps onPick={go} busy={busyApps} />
         ) : tab === "marketing" ? (

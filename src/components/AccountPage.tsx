@@ -8,7 +8,10 @@ import { purchasesAllowed } from "../native/platform";
 import { toast } from "../utils/toast";
 import { DeleteAccountDialog, openBilling, SupportDialog, type BillingOffer } from "./AccountServices";
 import { PlatformGrid, socialPlatform } from "./SocialPlatforms";
+import { useChannels } from "./useChannels";
+import { Meter } from "./ui/controls";
 import "./AccountPage.css";
+import { confirm } from "./ui/Dialog";
 
 // Account settings: profile, plan and billing, credit usage, connected channels,
 // the Telegram bridge to the agent, and sign-in security, one section per route
@@ -152,13 +155,8 @@ function Pending({ error, onRetry }: { error: string; onRetry: () => void }) {
     : <p className="acp-note"><Loader2 size={15} className="acp-spin" aria-hidden="true" /> Loading</p>;
 }
 
-function Meter({ value, max, low }: { value: number; max: number; low?: boolean }) {
-  const pct = max > 0 ? Math.max(0, Math.min(100, (value / max) * 100)) : 100;
-  return (
-    <span className="acp-meter" role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(pct)} aria-label="Credits left this period">
-      <span className={low ? "is-low" : undefined} style={{ width: `${pct}%` }} />
-    </span>
-  );
+function CreditMeter({ value, max, low }: { value: number; max: number; low?: boolean }) {
+  return <Meter className="acp-meter" value={max > 0 ? value / max : 1} low={low} label="Credits left this period" />;
 }
 
 // ---------- profile ----------
@@ -243,7 +241,7 @@ function BillingSection() {
               <strong className={low ? "is-low" : undefined}>{credits(left)}</strong>
               <span>credits left</span>
             </div>
-            <Meter value={left} max={total} low={low} />
+            <CreditMeter value={left} max={total} low={low} />
             <Rows>
               <Row label="Monthly allowance left">{credits(Math.max(0, billing.allowanceRemaining))}</Row>
               <Row label="Bonus credits">{credits(Math.max(0, billing.bonusBalance))}</Row>
@@ -368,21 +366,8 @@ function DailyBars({ series }: { series: Array<{ day: string; tokens: number }> 
 
 // ---------- channels ----------
 function ChannelsSection({ auth, onRefresh }: { auth: AuthSessionPayload; onRefresh: () => Promise<void> }) {
-  const [busy, setBusy] = useState("");
   const accounts = auth.accounts || [];
-  const act = async (account: ConnectedYouTubeAccount, kind: "select" | "remove") => {
-    if (kind === "remove" && !window.confirm(`Disconnect ${account.channelTitle}? Agents posting to it stop until you connect it again.`)) return;
-    setBusy(`${kind}:${account.id}`);
-    try {
-      await getJson(kind === "select" ? `/api/youtube/accounts/${encodeURIComponent(account.id)}/select` : `/api/youtube/accounts/${encodeURIComponent(account.id)}`, { method: kind === "select" ? "POST" : "DELETE" });
-      await onRefresh();
-      toast.success(kind === "select" ? `${account.channelTitle} is now your active channel.` : `${account.channelTitle} was disconnected.`);
-    } catch (cause) {
-      toast.error(cause instanceof Error ? cause.message : "That didn't work. Try again.");
-    } finally {
-      setBusy("");
-    }
-  };
+  const { busy, select, disconnect } = useChannels(onRefresh);
   return (
     <>
       <Panel title="Connected channels" description="The active channel is where agents and the publish tools post by default.">
@@ -398,8 +383,8 @@ function ChannelsSection({ auth, onRefresh }: { auth: AuthSessionPayload; onRefr
                     <small>{platformName(account.platform)}{account.channelHandle ? ` · ${account.channelHandle}` : ""}</small>
                   </span>
                   <span className="acp-list-actions">
-                    {!active ? <button type="button" className="acp-btn is-small" disabled={Boolean(busy)} onClick={() => void act(account, "select")}>{busy === `select:${account.id}` ? <Loader2 size={14} className="acp-spin" aria-hidden="true" /> : null}Make active</button> : null}
-                    <button type="button" className="acp-btn is-small is-ghost" disabled={Boolean(busy)} onClick={() => void act(account, "remove")} aria-label={`Disconnect ${account.channelTitle}`}>{busy === `remove:${account.id}` ? <Loader2 size={14} className="acp-spin" aria-hidden="true" /> : null}Disconnect</button>
+                    {!active ? <button type="button" className="acp-btn is-small" disabled={Boolean(busy)} onClick={() => void select(account)}>{busy === `select:${account.id}` ? <Loader2 size={14} className="acp-spin" aria-hidden="true" /> : null}Make active</button> : null}
+                    <button type="button" className="acp-btn is-small is-ghost" disabled={Boolean(busy)} onClick={() => void disconnect(account)} aria-label={`Disconnect ${account.channelTitle}`}>{busy === `remove:${account.id}` ? <Loader2 size={14} className="acp-spin" aria-hidden="true" /> : null}Disconnect</button>
                   </span>
                 </li>
               );
@@ -440,7 +425,7 @@ function TelegramSection() {
     }
   };
   const unlink = async () => {
-    if (!window.confirm("Unlink Telegram? Messages from that chat will stop reaching your agent.")) return;
+    if (!(await confirm({ title: "Unlink Telegram?", body: "Messages from that chat will stop reaching your agent.", confirmLabel: "Unlink", danger: true }))) return;
     setBusy("unlink");
     try {
       status.setData(await getJson<TelegramLink>("/api/account/telegram", { method: "DELETE" }));

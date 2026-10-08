@@ -6,6 +6,7 @@ import { ALL_NAV_ENTRIES, isCurrentEntry, MENU_ONLY_NAV_IDS, PRIMARY_NAV_CHILDRE
 import type { MainView, StudioTab, ToolId } from "../utils/tiktokRoute";
 import { JuelButton } from "./JuelPanel";
 import "./AppHeader.css";
+import { Segmented } from "./ui/controls";
 
 type Theme = "light" | "dark";
 // Theme-matched horizontal lockups copied from logo/ (white wordmark for dark, black for light).
@@ -285,10 +286,6 @@ export function AppHeader({
                     <small>{account.channel || "No channel connected"}</small>
                   </span>
                 </button>
-                <button type="button" role="menuitem" onClick={() => onThemeChange(theme === "dark" ? "light" : "dark")}>
-                  {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
-                  <span>{theme === "dark" ? "Light mode" : "Dark mode"}</span>
-                </button>
                 <button type="button" role="menuitem" onClick={() => { setAccountOpen(false); setSupportOpen(true); }}>
                   <LifeBuoy size={16} />
                   <span>Help & support</span>
@@ -548,10 +545,16 @@ function MobileMenu({ theme, view, studioTab, toolId, account, signedIn, onSignI
         ) : (
           <button type="button" className="ah-get-started ah-m-signin" onClick={onSignIn}>Get started <ArrowRight size={15} aria-hidden="true" /></button>
         )}
-        <div className="ah-m-theme" role="radiogroup" aria-label="Theme">
-          <button type="button" role="radio" aria-checked={theme === "light"} onClick={() => onThemeChange("light")}><Sun size={15} aria-hidden="true" />Light</button>
-          <button type="button" role="radio" aria-checked={theme === "dark"} onClick={() => onThemeChange("dark")}><Moon size={15} aria-hidden="true" />Dark</button>
-        </div>
+        <Segmented
+          label="Theme"
+          className="ah-m-theme"
+          value={theme}
+          onChange={(next) => onThemeChange(next as Theme)}
+          options={[
+            { value: "light", label: "Light", icon: <Sun size={15} aria-hidden="true" /> },
+            { value: "dark", label: "Dark", icon: <Moon size={15} aria-hidden="true" /> },
+          ]}
+        />
       </footer>
     </Overlay>
   );

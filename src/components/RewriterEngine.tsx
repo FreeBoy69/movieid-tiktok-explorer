@@ -23,7 +23,8 @@ import { useErrorToast } from "../utils/toast";
 import { loadVoiceProfiles } from "../utils/voiceProfiles";
 import { VoicePicker } from "./VoicePicker";
 import { AudioPlayer } from "./AudioPlayer";
-import { LanguagePicker, VOICEBOX_LANGUAGES } from "./LanguagePicker";
+import { FieldPicker, LanguagePicker, VOICEBOX_LANGUAGES } from "./LanguagePicker";
+import { engineOptions } from "../utils/voiceEngines";
 import { FileDrop } from "./FileDrop";
 
 interface Props {
@@ -70,12 +71,6 @@ const FALLBACK_VOICES: VoiceProfile[] = [
   { id: "demo-story", name: "Storyline", description: "Warm explainer voice", language: "en", defaultEngine: "kokoro" },
 ];
 
-const ENGINES = [
-  ["kokoro", "Kokoro"],
-  ["qwen", "Qwen3-TTS 1.7B"],
-  ["qwen-0.6b", "Qwen3-TTS 0.6B"],
-  ["chatterbox_turbo", "Chatterbox Turbo"],
-];
 
 function calculateMetrics(text: string) {
   const words = text.trim().split(/\s+/).filter(Boolean).length;
@@ -564,7 +559,10 @@ function SettingsPanel(props: {
         <span className="mb-2 block text-sm font-semibold underline decoration-dotted underline-offset-4">Voice</span>
         <VoicePicker voices={props.voices} value={props.selectedVoiceId} onChange={props.setSelectedVoiceId} />
       </div>
-      <Select label="Engine" value={props.engine} onChange={props.setEngine} options={ENGINES} />
+      <div className="block">
+        <span className="mb-2 block text-sm font-semibold underline decoration-dotted underline-offset-4">Engine</span>
+        <FieldPicker value={props.engine} onChange={props.setEngine} options={engineOptions(["kokoro", "qwen", "qwen-0.6b", "chatterbox_turbo"])} label="Engine" />
+      </div>
       <div className="block">
         <span className="mb-2 block text-sm font-semibold underline decoration-dotted underline-offset-4">Language</span>
         <LanguagePicker value={props.language} onChange={props.setLanguage} only={VOICEBOX_LANGUAGES} />
@@ -576,19 +574,6 @@ function SettingsPanel(props: {
   );
 }
 
-function Select({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: string[][] }) {
-  return (
-    <label className="block">
-      <span className="mb-2 block text-sm font-semibold underline decoration-dotted underline-offset-4">{label}</span>
-      <span className="relative block">
-        <select value={value} onChange={(event) => onChange(event.target.value)} className="h-10 w-full appearance-none rounded-lg border border-[#DADDE3] bg-white px-3 pr-9 text-sm font-semibold outline-none focus:border-[#111827]">
-          {options.map(([id, optionLabel]) => <option key={id} value={id}>{optionLabel}</option>)}
-        </select>
-        <ChevronDown className="pointer-events-none absolute right-3 top-3 h-4 w-4 text-[#6B7280]" />
-      </span>
-    </label>
-  );
-}
 
 function Range({ label, left, right, value, onChange }: { label: string; left: string; right: string; value: number; onChange: (value: number) => void }) {
   return (

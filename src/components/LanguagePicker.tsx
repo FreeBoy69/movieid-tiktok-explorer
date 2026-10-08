@@ -43,26 +43,27 @@ export function languageName(value: string) {
 
 const AUTO = "auto";
 
-export function LanguagePicker({
+export type FieldOption = { value: string; label: string; sub?: string; badge?: string; search?: string };
+
+/** A field-shaped button that opens a searchable, keyboard-driven list. The
+ *  one dropdown for form rails (language, engine, …); chip-style choices in
+ *  docks use studioShared Choice. */
+export function FieldPicker({
   value,
   onChange,
-  only,
-  format = "code",
-  auto,
-  label = "Language",
+  options,
+  label,
+  placeholder = "Choose",
+  searchPlaceholder = "Search",
   disabled = false,
   className = "",
 }: {
   value: string;
   onChange: (value: string) => void;
-  /** Restrict to these codes (e.g. VOICEBOX_LANGUAGES), in list order. */
-  only?: string[];
-  /** "locale" hands back BCP-47 tags (en-US) instead of codes (en). */
-  format?: "code" | "locale";
-  /** Offers an "auto" choice with this label, e.g. "Match the script". */
-  auto?: string;
-  /** Names the field for screen readers and heads the panel. */
-  label?: string;
+  options: FieldOption[];
+  label: string;
+  placeholder?: string;
+  searchPlaceholder?: string;
   disabled?: boolean;
   className?: string;
 }) {
@@ -75,18 +76,14 @@ export function LanguagePicker({
   const search = useRef<HTMLInputElement>(null);
   const listId = useId();
 
-  const options = useMemo(() => {
-    const pool = only ? only.map((code) => LANGUAGES.find((language) => language.code === base(code))).filter(Boolean) as Language[] : LANGUAGES;
-    return [...(auto ? [{ code: AUTO, name: auto, native: "", locale: AUTO }] : []), ...pool];
-  }, [only, auto]);
-  const valueOf = (language: Language) => (format === "locale" ? language.locale : language.code);
-  const selected = value === AUTO ? options.find((option) => option.code === AUTO) : findLanguage(value);
+  const selected = options.find((option) => option.value === value);
   const matches = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (!needle) return options;
-    return options.filter((option) => `${option.name} ${option.native} ${option.code} ${option.locale}`.toLowerCase().includes(needle));
+    return options.filter((option) => `${option.label} ${option.sub || ""} ${option.value} ${option.search || ""}`.toLowerCase().includes(needle));
   }, [options, query]);
   const searchable = options.length > 8;
+  const showBadges = options.some((option) => option.badge);
 
   const place = () => {
     const rect = trigger.current?.getBoundingClientRect();
@@ -117,8 +114,8 @@ export function LanguagePicker({
     setActive(Math.max(0, options.findIndex((option) => option === selected)));
     setOpen(true);
   }
-  function choose(option: Language) {
-    onChange(option.code === AUTO ? AUTO : valueOf(option));
+  function choose(option: FieldOption) {
+    onChange(option.value);
     close(true);
   }
 
@@ -170,10 +167,10 @@ export function LanguagePicker({
       <button
         ref={trigger}
         type="button"
-        className={`lang-pick-trigger ${className}`.trim()}
+        className={`lang-pick-trigger ${showBadges ? "" : "is-plain"} ${className}`.trim()}
         aria-haspopup="listbox"
         aria-expanded={open}
-        aria-label={`${label}: ${selected?.name || value || "not set"}`}
+        aria-label={`${label}: ${selected?.label || value || "not set"}`}
         disabled={disabled}
         onClick={() => (open ? close() : show())}
         onKeyDown={(event) => {
@@ -183,11 +180,11 @@ export function LanguagePicker({
           }
         }}
       >
-        <span className="lang-pick-code" aria-hidden="true">{selected && selected.code !== AUTO ? selected.code.toUpperCase() : "A"}</span>
+        {showBadges ? <span className="lang-pick-code" aria-hidden="true">{selected?.badge || "·"}</span> : null}
         {/* strong + small keeps the field corners (the global pill rule skips that pair). */}
         <span className="lang-pick-name">
-          <strong>{selected?.name || value || "Choose a language"}</strong>
-          <small>{selected?.native && selected.native !== selected.name ? selected.native : ""}</small>
+          <strong>{selected?.label || value || placeholder}</strong>
+          <small>{selected?.sub || ""}</small>
         </span>
         <ChevronsUpDown size={15} className="lang-pick-chevron" aria-hidden="true" />
       </button>
@@ -208,8 +205,8 @@ export function LanguagePicker({
                     ref={search}
                     value={query}
                     onChange={(event) => setQuery(event.target.value)}
-                    placeholder="Search languages"
-                    aria-label="Search languages"
+                    placeholder={searchPlaceholder}
+                    aria-label={searchPlaceholder}
                     aria-controls={listId}
                     aria-activedescendant={matches[active] ? `${listId}-${active}` : undefined}
                   />
@@ -226,7 +223,7 @@ export function LanguagePicker({
                 const isOn = option === selected;
                 return (
                   <button
-                    key={option.code}
+                    key={option.value}
                     id={`${listId}-${index}`}
                     data-index={index}
                     type="button"
@@ -236,20 +233,73 @@ export function LanguagePicker({
                     onMouseEnter={() => setActive(index)}
                     onClick={() => choose(option)}
                   >
-                    <span className="lang-pick-code" aria-hidden="true">{option.code === AUTO ? "A" : option.code.toUpperCase()}</span>
+                    {showBadges ? <span className="lang-pick-code" aria-hidden="true">{option.badge || "·"}</span> : null}
                     <span className="lang-pick-name">
-                      {option.name}
-                      {option.native && option.native !== option.name ? <small>{option.native}</small> : null}
+                      {option.label}
+                      {option.sub ? <small>{option.sub}</small> : null}
                     </span>
                     {isOn ? <Check size={15} className="lang-pick-check" aria-hidden="true" /> : null}
                   </button>
                 );
               })}
-              {!matches.length ? <p className="lang-pick-empty">No language matches “{query}”.</p> : null}
+              {!matches.length ? <p className="lang-pick-empty">Nothing matches “{query}”.</p> : null}
             </div>
           </div>,
           document.body,
         )}
     </>
+  );
+}
+
+export function LanguagePicker({
+  value,
+  onChange,
+  only,
+  format = "code",
+  auto,
+  label = "Language",
+  disabled = false,
+  className = "",
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  /** Restrict to these codes (e.g. VOICEBOX_LANGUAGES), in list order. */
+  only?: string[];
+  /** "locale" hands back BCP-47 tags (en-US) instead of codes (en). */
+  format?: "code" | "locale";
+  /** Offers an "auto" choice with this label, e.g. "Match the script". */
+  auto?: string;
+  /** Names the field for screen readers and heads the panel. */
+  label?: string;
+  disabled?: boolean;
+  className?: string;
+}) {
+  const options = useMemo<FieldOption[]>(() => {
+    const pool = only ? (only.map((code) => LANGUAGES.find((language) => language.code === base(code))).filter(Boolean) as Language[]) : LANGUAGES;
+    return [
+      ...(auto ? [{ value: AUTO, label: auto, badge: "A" }] : []),
+      ...pool.map((language) => ({
+        value: format === "locale" ? language.locale : language.code,
+        label: language.name,
+        sub: language.native !== language.name ? language.native : undefined,
+        badge: language.code.toUpperCase(),
+        search: `${language.code} ${language.locale}`,
+      })),
+    ];
+  }, [only, auto, format]);
+  // Accept either form ("en" or "en-US") for the current value.
+  const found = value === AUTO ? null : findLanguage(value);
+  const current = value === AUTO || !found ? value : format === "locale" ? found.locale : found.code;
+  return (
+    <FieldPicker
+      value={current}
+      onChange={onChange}
+      options={options}
+      label={label}
+      placeholder="Choose a language"
+      searchPlaceholder="Search languages"
+      disabled={disabled}
+      className={className}
+    />
   );
 }

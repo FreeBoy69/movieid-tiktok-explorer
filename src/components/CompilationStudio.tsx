@@ -21,6 +21,7 @@ import {
 } from "../utils/tiktokRoute";
 import { VideoPlayer } from "./VideoPlayer";
 import { YouTubePublishFields } from "./YouTubePublishForm";
+import { OrientationPicker } from "./OrientationPicker";
 
 type SortMode = CompilationSortMode;
 type PlaylistMode = "none" | "existing" | "create";
@@ -1153,10 +1154,7 @@ export function CompilationStudio({
                 </Field>
               </div>
               <Field label="Format">
-                <select value={layout} onChange={(event) => setLayout(event.target.value as "vertical" | "landscape")} className="input bg-white">
-                  <option value="vertical">Vertical 9:16</option>
-                  <option value="landscape">Landscape 16:9</option>
-                </select>
+                <OrientationPicker label="Format" value={layout} onChange={setLayout} />
               </Field>
             </div>
             <div className="grid gap-4 border-t border-[#1A1A1A]/8 pt-5">

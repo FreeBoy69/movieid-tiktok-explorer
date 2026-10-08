@@ -41,69 +41,32 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.ml-tabs {
-  display: flex;
-  gap: 2px;
-  padding: 3px;
-  border-radius: 10px;
-  background: var(--ml-sunken);
-}
-.ml .ml-tabs button {
-  flex: 1;
-  min-height: 30px;
-  padding: 6px 10px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--ml-muted);
-  font: inherit;
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-}
-.ml .ml-tabs button[aria-selected="true"] {
-  background: var(--ml-surface);
-  color: var(--ml-ink);
-  box-shadow: 0 1px 4px rgb(0 0 0 / 0.1);
-}
 .ml-search {
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 38px;
-  padding: 0 4px 0 12px;
-  border: 1px solid var(--ml-line);
-  border-radius: 10px;
-  background: var(--ml-surface);
-  color: var(--ml-muted);
 }
-.ml-search:focus-within {
-  border-color: var(--ml-accent);
-  box-shadow: 0 0 0 3px var(--ml-accent-wash);
-}
-/* Host studios style every bare input (Create Video's rule carries five
-   :not()s); the search field sits inside its own frame, so it opts out. */
-.ml .ml-search input {
+.ml-search-field {
   flex: 1;
   min-width: 0;
-  height: 100% !important;
-  padding: 0 !important;
+}
+/* Host studios style every bare input (Create Video's rule carries five
+   :not()s); the shared search field draws its own frame, so its input opts out. */
+.ml .ml-search-field input[type="search"] {
+  height: auto !important;
+  padding: 6px 0 !important;
   border: 0 !important;
-  outline: 0;
   background: transparent !important;
-  color: var(--ml-ink);
-  font: inherit;
-  font-size: 13px;
   box-shadow: none !important;
 }
-.ml .ml-search button {
+.ml .ml-search > button {
   display: inline-grid;
   place-items: center;
   min-width: 64px;
-  height: 30px;
+  height: 34px;
   padding: 0 12px;
   border: 0;
-  border-radius: 7px;
+  border-radius: 8px;
   background: var(--ml-sunken);
   color: var(--ml-ink);
   font: inherit;
@@ -111,7 +74,7 @@
   font-weight: 700;
   cursor: pointer;
 }
-.ml .ml-search button:disabled {
+.ml .ml-search > button:disabled {
   opacity: 0.5;
   cursor: default;
 }
@@ -375,3 +338,4 @@
   font: inherit;
   font-size: 13px;
 }
+.ml-source-tabs { margin-bottom: 2px; }

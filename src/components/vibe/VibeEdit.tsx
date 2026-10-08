@@ -18,6 +18,10 @@ import { useVibe, vibe } from "./store";
 import { Timeline } from "./Timeline";
 import "../../styles/captionFonts.css";
 import "./VibeEdit.css";
+import { confirm } from "../ui/Dialog";
+import { Progress } from "../ui/controls";
+import { AspectPicker } from "../studio/studioShared";
+import { VideoPlayer } from "../VideoPlayer";
 
 const focusMode = (on: boolean) => {
   window.dispatchEvent(new CustomEvent("autoyt-focus-mode", { detail: on }));
@@ -43,7 +47,7 @@ function Home({ onOpen, onCreate }: { onOpen: (id: string) => void; onCreate: (a
   }, []);
 
   const remove = async (id: string) => {
-    if (!window.confirm("Delete this edit? Its media stays in your library.")) return;
+    if (!(await confirm({ title: "Delete this edit?", body: "Its media stays in your library.", confirmLabel: "Delete edit", danger: true }))) return;
     try {
       await deleteProject(id);
       setProjects((list) => list?.filter((p) => p.id !== id) || null);
@@ -72,14 +76,7 @@ function Home({ onOpen, onCreate }: { onOpen: (id: string) => void; onCreate: (a
         </h1>
         <p>Drop in footage and edit on a timeline, or tell the assistant what you want: captions, a voiceover in any of 30 voices, music under the voice, titles, generated shots.</p>
         <div className="ve-home-start">
-          <div className="ve-seg" role="radiogroup" aria-label="Frame">
-            {VIBE_ASPECTS.map((a) => (
-              <button key={a.id} type="button" role="radio" aria-checked={aspect === a.id} className={aspect === a.id ? "is-on" : ""} onClick={() => setAspect(a.id)}>
-                <span className="ve-aspect-glyph" data-aspect={a.id} aria-hidden="true" />
-                {a.label}
-              </button>
-            ))}
-          </div>
+          <AspectPicker label="Frame" className="ve-home-frame" value={aspect} onChange={(next) => setAspect(next as VibeAspect)} options={VIBE_ASPECTS.map((a) => ({ value: a.id, label: a.label, hint: a.id }))} />
           <button type="button" className="ve-btn ve-btn-primary ve-btn-lg" onClick={() => onCreate(aspect)}>
             <Plus size={17} /> New edit
           </button>
@@ -223,12 +220,11 @@ function ExportMenu() {
           </dl>
           {running ? (
             <div className="ve-progress">
-              <div className="ve-progress-bar">
-                <span style={{ width: `${Math.round(Math.max(0.03, phase === "frames" ? progress : 0.15 + (job?.progress || 0) * 0.85) * 100)}%` }} />
-              </div>
-              <p>
-                {phase === "frames" ? "Drawing captions and titles…" : "Rendering on the server. You can keep editing; this edit is what exports."}
-              </p>
+              <Progress
+                label="Export progress"
+                value={Math.max(0.03, phase === "frames" ? progress : 0.15 + (job?.progress || 0) * 0.85)}
+                message={phase === "frames" ? "Drawing captions and titles…" : "Rendering on the server. You can keep editing; this edit is what exports."}
+              />
               {job?.status === "running" ? (
                 <button type="button" className="ve-btn ve-btn-quiet" onClick={() => void stopRender(job.id).then(() => setJob({ ...job, status: "stopped" }))}>
                   <Square size={13} /> Stop
@@ -237,7 +233,7 @@ function ExportMenu() {
             </div>
           ) : job?.status === "completed" && job.url ? (
             <div className="ve-done">
-              <video src={job.url} controls playsInline className="ve-done-video" />
+              <VideoPlayer src={job.url} label="Exported video" size="fit" className="ve-done-video" />
               <div className="ve-actions">
                 <a className="ve-btn ve-btn-primary" href={`${job.url}?download=1`} download>
                   <Download size={15} /> Download MP4
@@ -561,17 +557,7 @@ function Editor({ onBack, onOpenEdit, onNew }: { onBack: () => void; onOpenEdit:
         </nav>
         <div className="ve-top-end">
           <StatusStrip />
-          <label className="ve-aspect" title="Frame">
-            <span className="ve-aspect-glyph" data-aspect={aspect} aria-hidden="true" />
-            <select value={aspect} onChange={(e) => vibe.commit((p) => ({ ...p, aspect: e.target.value as VibeAspect, updatedAt: Date.now() }))} aria-label="Frame">
-              {VIBE_ASPECTS.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.id} · {a.label}
-                </option>
-              ))}
-            </select>
-            <ChevronDown size={14} />
-          </label>
+          <AspectPicker variant="chip" label="Frame" value={aspect} onChange={(next) => vibe.commit((p) => ({ ...p, aspect: next as VibeAspect, updatedAt: Date.now() }))} options={VIBE_ASPECTS.map((a) => ({ value: a.id, hint: a.label }))} />
           <ShareButton />
           <ExportMenu />
         </div>

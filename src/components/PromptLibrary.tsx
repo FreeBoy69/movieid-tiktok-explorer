@@ -26,6 +26,7 @@ import {
 } from "../utils/promptTemplates";
 import { writeDeepLink } from "../utils/tiktokRoute";
 import { findShortfilmTemplate } from "../utils/shortfilmTemplates.js";
+import { SearchField, Segmented } from "./ui/controls";
 import "./PromptLibrary.css";
 
 const PAGE = 36;
@@ -186,40 +187,27 @@ export function PromptLibrary({ theme = "light" }: { theme?: "light" | "dark" })
         </header>
 
         <div className="plib-toolbar">
-          <label className="plib-search">
-            <Search size={17} aria-hidden="true" />
-            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search prompts, e.g. noir, documentary, lo-fi" aria-label="Search prompts" />
-            {query && (
-              <button type="button" onClick={() => setQuery("")} aria-label="Clear search">
-                <X size={15} />
-              </button>
-            )}
-          </label>
-          <div className="plib-tabs" role="tablist" aria-label="What the prompt makes">
-            <button role="tab" aria-selected={!output && !saved} onClick={() => { setOutput(""); setCategory(""); setSaved(false); }}>
-              All
-            </button>
-            {TEMPLATE_OUTPUTS.map((item) => (
-              <button
-                key={item.id}
-                role="tab"
-                aria-selected={output === item.id && !saved}
-                onClick={() => {
-                  setOutput(output === item.id ? "" : item.id);
-                  setCategory("");
-                  setSaved(false);
-                  if (item.id !== "video") setMultiScene(false);
-                }}
-              >
-                {item.label}
-                {outputCounts[item.id] ? <span>{outputCounts[item.id]}</span> : null}
-              </button>
-            ))}
-            <button role="tab" aria-selected={saved} className="plib-tab-saved" onClick={() => setSaved(!saved)}>
-              <Star size={13} /> Saved
-              {savedCount ? <span>{savedCount}</span> : null}
-            </button>
-          </div>
+          <SearchField value={query} onChange={setQuery} placeholder="Search prompts, e.g. noir, documentary, lo-fi" label="Search prompts" className="plib-search-field" />
+          <Segmented
+            label="What the prompt makes"
+            className="plib-seg"
+            value={saved ? "saved" : output || "all"}
+            onChange={(next) => {
+              if (next === "saved") {
+                setSaved(true);
+                return;
+              }
+              setSaved(false);
+              setCategory("");
+              setOutput(next === "all" ? "" : (next as typeof output));
+              if (next !== "video") setMultiScene(false);
+            }}
+            options={[
+              { value: "all", label: "All" },
+              ...TEMPLATE_OUTPUTS.map((item) => ({ value: item.id, label: item.label, hint: outputCounts[item.id] ? String(outputCounts[item.id]) : undefined })),
+              { value: "saved", label: "Saved", icon: <Star size={13} />, hint: savedCount ? String(savedCount) : undefined },
+            ]}
+          />
         </div>
         {output && OUTPUT_CATEGORIES[output].length > 1 ? (
           <div className="plib-subtabs" role="group" aria-label="Kind">

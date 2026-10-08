@@ -151,27 +151,12 @@
 .ve-loading { display: flex; height: 100%; align-items: center; justify-content: center; gap: 10px; color: var(--ve-muted); }
 
 /* ---------- Aspect glyph ---------- */
-.ve-aspect-glyph { display: inline-block; flex: none; border: 1.5px solid currentColor; border-radius: 2px; }
-.ve-aspect-glyph[data-aspect="16:9"] { width: 16px; height: 9px; }
-.ve-aspect-glyph[data-aspect="9:16"] { width: 9px; height: 16px; }
-.ve-aspect-glyph[data-aspect="1:1"] { width: 12px; height: 12px; }
-.ve-aspect-glyph[data-aspect="4:5"] { width: 11px; height: 14px; }
 
 /* ---------- Segmented ---------- */
-.ve-seg { display: inline-flex; gap: 2px; padding: 3px; border-radius: 999px; background: var(--ve-sunken); box-shadow: 0 0 0 1px var(--ve-line) inset; }
-.ve-seg button { display: inline-flex; min-height: 30px; align-items: center; gap: 7px; padding: 0 12px; color: var(--ve-muted); font-weight: 600; transition: background 0.16s ease, color 0.16s ease; }
-.ve-seg button:hover { color: var(--ve-text); }
-.ve-seg button.is-on { background: var(--ve-raised); color: var(--ve-text); box-shadow: 0 1px 3px rgb(0 0 0 / 0.25); }
 
 /* ---------- Editor shell ---------- */
 .ve-save { display: inline-flex; align-items: center; gap: 5px; color: var(--ve-faint); font-size: 12px; white-space: nowrap; }
 .ve-save.is-error { color: var(--ve-danger); }
-.ve-aspect { position: relative; display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; border-radius: 8px; color: var(--ve-muted); }
-.ve-aspect:hover { background: var(--ve-raised); color: var(--ve-text); }
-.ve-aspect select { appearance: none; border: 0; background: transparent; font-weight: 600; cursor: pointer; }
-.ve-aspect select:focus-visible { outline: none; }
-.ve-aspect:focus-within { outline: 2px solid var(--ve-accent); outline-offset: 1px; }
-.ve-aspect select option { background: var(--ve-panel); color: var(--ve-text); }
 .ve-status { display: inline-flex; max-width: 300px; align-items: center; gap: 7px; overflow: hidden; padding: 0 12px; height: 30px; border-radius: 999px; background: color-mix(in srgb, var(--ve-accent) 10%, transparent); color: var(--ve-accent-text); font-size: 12px; font-weight: 600; white-space: nowrap; text-overflow: ellipsis; }
 .ve-status span { color: var(--ve-muted); font-weight: 500; }
 /* Studio layout: a breadcrumb bar on the page itself, a slim workspace rail, then
@@ -194,7 +179,6 @@
 .ve-btn-outline { background: var(--ve-raised) !important; }
 .ve-btn-ink { border-color: transparent !important; background: var(--ve-ink) !important; color: var(--ve-ink-text) !important; }
 .ve-btn-ink:hover:not(:disabled) { background: color-mix(in srgb, var(--ve-ink) 86%, var(--ve-bg)) !important; }
-
 
 /* Sidebar: an icon column, or open, a card of your edits with layout toggles at its foot. */
 .ve-editor.has-nav { grid-template-columns: 286px minmax(0, 1fr); }
@@ -310,7 +294,6 @@
 .ve-tl-status { overflow: hidden; margin: 0; color: var(--ve-muted); font-size: 12.5px; font-variant-numeric: tabular-nums; white-space: nowrap; text-overflow: ellipsis; }
 .ve-timeline .ve-tl-scroll { border-radius: 0 0 var(--ve-radius) var(--ve-radius); }
 
-
 /* ---------- Panel parts ---------- */
 .ve-sec { display: grid; gap: 9px; }
 .ve-sec-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
@@ -389,7 +372,6 @@
 .ve-text-preset.look-boxed span { padding: 3px 9px; border-radius: 5px; background: rgb(10 10 12 / 0.82); font-size: 15px; text-shadow: none; }
 .ve-text-preset.look-outline span { -webkit-text-stroke: 4px #000; paint-order: stroke fill; text-shadow: none; }
 
-
 /* ---------- Viewer ---------- */
 .ve-viewer { display: flex; min-height: 0; flex: 1; flex-direction: column; }
 .ve-stage { position: relative; max-width: 100%; max-height: 100%; height: 100cqh; overflow: hidden; border-radius: 4px; box-shadow: 0 0 0 1px rgb(255 255 255 / 0.06), 0 30px 80px -30px rgb(0 0 0 / 0.85); }
@@ -449,8 +431,6 @@
 .ve-color input[type="color"]::-webkit-color-swatch-wrapper { padding: 2px; }
 .ve-color input[type="color"]::-webkit-color-swatch { border: 0; border-radius: 4px; }
 .ve-color code { color: var(--ve-muted); font-family: var(--ve-mono); font-size: 11.5px; }
-.ve-seg-block { display: flex; width: 100%; }
-.ve-seg-block button { flex: 1; justify-content: center; padding: 0 6px; font-size: 12px; }
 .ve-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 0; }
 .ve-stats div { display: grid; gap: 2px; padding: 8px 10px; border-radius: 8px; background: var(--ve-sunken); }
 .ve-stats dt { color: var(--ve-faint); font-size: 11px; }
@@ -490,9 +470,6 @@
 .ve-spec dt { color: var(--ve-muted); }
 .ve-spec dd { margin: 0; font-family: var(--ve-mono); font-size: 12px; }
 .ve-progress { display: grid; gap: 10px; }
-.ve-progress p { margin: 0; color: var(--ve-muted); font-size: 12px; line-height: 1.5; }
-.ve-progress-bar { height: 6px; overflow: hidden; border-radius: 99px; background: var(--ve-sunken); }
-.ve-progress-bar span { display: block; height: 100%; border-radius: inherit; background: var(--ve-accent); transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1); }
 .ve-done { display: grid; gap: 12px; }
 .ve-done-video { width: 100%; max-height: 260px; border-radius: 10px; background: #000; }
 
@@ -728,8 +705,6 @@
   .ve-name { max-width: 42vw; font-size: 17px; }
   .ve-top-end { gap: 6px; }
   .ve-top-end .ve-btn { min-height: 36px; padding: 0 12px; }
-  .ve-aspect { width: 52px; justify-content: center; gap: 4px; padding: 0; }
-  .ve-aspect select { position: absolute; inset: 0; width: 100%; opacity: 0; }
   .ve-body,
   .ve-body.has-chat,
   .ve-body.has-panel,
@@ -815,4 +790,16 @@ label.ve-auto-pick:hover { background: var(--ve-raised); }
 
 /* Shared Create Video pickers (LookPicker) read the maker tokens; map them to the editor's. */
 .ve-root { --mk-line: var(--ve-line); --mk-line-strong: var(--ve-line-strong); --mk-surface: var(--ve-raised); --mk-sunken: var(--ve-sunken); --mk-text: var(--ve-text); --mk-muted: var(--ve-muted); --mk-faint: var(--ve-faint); --mk-accent: var(--ve-accent); --mk-accent-ink: var(--ve-accent-ink); --mk-accent-text: var(--ve-accent-text); --mk-accent-soft: color-mix(in srgb, var(--ve-accent) 14%, transparent); }
+/* Shared studio controls (AspectPicker, Choice) read --cs-*: point them at the Vibe palette. */
+.ve-root { --cs-bg: var(--ve-bg, var(--ve-sunken)); --cs-surface: var(--ve-raised); --cs-sunken: var(--ve-sunken); --cs-line: var(--ve-line); --cs-line-strong: var(--ve-line-strong); --cs-text: var(--ve-text); --cs-muted: var(--ve-muted); --cs-faint: var(--ve-faint); --cs-accent: var(--ve-accent); --cs-accent-ink: var(--ve-accent-ink); --cs-accent-text: var(--ve-accent-text); --cs-accent-soft: color-mix(in srgb, var(--ve-accent) 14%, transparent); --cs-radius: 12px; --cs-radius-sm: 8px; --cs-ease: cubic-bezier(0.22, 1, 0.36, 1); --cs-shadow: 0 1px 2px rgb(0 0 0 / 0.2); }
 .ve-panel .cvx-looks { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+/* Frame pickers (shared AspectPicker): the home row and the inspector fill their width. */
+.ve-props .cs-aspect-seg { display: flex; width: 100%; }
+.ve-props .cs-aspect-seg > button { flex: 1; padding: 0 6px; }
+/* Top-bar Frame chip (AspectPicker chip variant): drops down from the bar, right-aligned. */
+.ve-top-end .cs-pop .cs-chip { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; border: 0; border-radius: 8px; background: transparent; color: var(--ve-muted); font: inherit; font-size: 13px; font-weight: 600; white-space: nowrap; cursor: pointer; }
+.ve-top-end .cs-pop .cs-chip:hover { background: var(--ve-raised); color: var(--ve-text); }
+.ve-top-end .cs-pop .cs-chip:focus-visible { outline: 2px solid var(--ve-accent); outline-offset: 1px; }
+.ve-top-end .cs-pop .cs-chip-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.ve-top-end .cs-pop .cs-menu { top: calc(100% + 6px); right: 0; bottom: auto; left: auto; --cs-shadow-lift: 0 18px 40px -12px rgb(0 0 0 / 0.45); }
+@media (max-width: 720px) { .ve-top-end .cs-pop .cs-chip > span:not(.cs-aspect-box) { display: none; } }

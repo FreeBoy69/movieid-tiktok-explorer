@@ -1,0 +1,11 @@
+/* Hosts styled with hard-coded Tailwind colours (Automations, Channels, Explorer)
+   have no palette tokens. Inside .ui-inherit the shared ui/ controls derive theirs
+   from the surrounding text colour, so they match light and dark cards alike. */
+.ui-inherit {
+  --cs-text: currentColor;
+  --cs-muted: color-mix(in srgb, currentColor 62%, transparent);
+  --cs-line: color-mix(in srgb, currentColor 12%, transparent);
+  --cs-line-strong: color-mix(in srgb, currentColor 24%, transparent);
+  --cs-sunken: color-mix(in srgb, currentColor 6%, transparent);
+  --cs-surface: color-mix(in srgb, currentColor 10%, transparent);
+}

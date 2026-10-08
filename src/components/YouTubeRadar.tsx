@@ -20,6 +20,7 @@ import { YouTubeRadarCompetitor, YouTubeRadarNiche, YouTubeRadarResult, YouTubeR
 import { cn } from "../lib/utils";
 import { useErrorToast } from "../utils/toast";
 import { StandardChannelCard, StandardVideoCard } from "./StandardCards";
+import { EmptyState as SharedEmptyState } from "./ui/controls";
 
 type RadarTab = "discover" | "competitors" | "outliers" | "niches" | "saved";
 type SourceMode = "search" | "viral";
@@ -493,12 +494,10 @@ function EmptyState({ activeTab, hasResult }: { activeTab: RadarTab; hasResult: 
       : hasResult
         ? "No videos matched this view yet. Try widening the filters or changing the query."
         : "Run a radar scan to populate opportunities, outliers, and niche clusters.";
+  const title = activeTab === "saved" ? "Nothing saved yet" : hasResult ? "No matches" : "No scan yet";
   return (
-    <div className="grid min-h-[360px] place-items-center p-8 text-center">
-      <div>
-        <Radar className="mx-auto mb-3 h-8 w-8 text-[#f9dc0b]/55" />
-        <p className="max-w-sm text-sm font-medium leading-relaxed text-[#1A1A1A]/50">{copy}</p>
-      </div>
+    <div className="grid min-h-[360px] place-items-center">
+      <SharedEmptyState icon={<Radar className="h-5 w-5" />} title={title} body={copy} />
     </div>
   );
 }

@@ -84,6 +84,9 @@ import { VideoPlayer } from "./VideoPlayer";
 import { getMovieIdentificationSourceDisplay } from "../utils/movieIdentificationSource.js";
 import { StandardPlaylistCard, StandardVideoCard } from "./StandardCards";
 import { type PlaylistMode, YouTubePublishFields } from "./YouTubePublishForm";
+import { confirm, Dialog } from "./ui/Dialog";
+import { EmptyState, Notice, SearchField, Segmented } from "./ui/controls";
+import "./uiInherit.css";
 
 interface TikTokExplorerProps {
   onAnalyzeVideo?: (videoUrl: string) => void;
@@ -558,9 +561,7 @@ function LockedAnalysisTabs({
             Analyzing clip… fetching comments, then Movie ID.
           </div>
         ) : (
-          <div className="mt-6 rounded-xl border border-dashed border-[#1A1A1A]/15 px-5 py-4 text-sm text-[#1A1A1A]/55">
-            Hit Analyze clip to unlock Movie ID, Transcript, Story, Visuals, Niche, Evidence, and Details.
-          </div>
+          <Notice className="mt-6" title="Analysis tabs are locked">Analyze this clip to unlock Movie ID, transcript, story, visuals, niche, evidence, and details.</Notice>
         )}
       </div>
     );
@@ -603,10 +604,7 @@ function LockedAnalysisTabs({
           </div>
         )}
         {!loading && (
-          <div className="rounded-xl border border-dashed border-[#1A1A1A]/10 bg-[#F9F8F6] p-5">
-            <p className="text-sm font-semibold text-[#f9dc0b]">Analysis tabs are locked</p>
-            <p className="mt-2 text-sm leading-relaxed text-[#1A1A1A]/55">Analyze this clip to unlock Movie ID, transcript, story, visuals, niche, evidence, and details.</p>
-          </div>
+          <Notice title="Analysis tabs are locked">Analyze this clip to unlock Movie ID, transcript, story, visuals, niche, evidence, and details.</Notice>
         )}
       </div>
     </div>
@@ -1490,7 +1488,7 @@ export default function TikTokExplorer({
     async (e: MouseEvent, key: string) => {
       e.stopPropagation();
       const summary = savedSummaries.find((item) => item.key === key);
-      if (!window.confirm(`Remove ${summary?.title || "this saved source"}? This cannot be undone.`)) return;
+      if (!(await confirm({ title: `Remove ${summary?.title || "this saved source"}?`, body: "This can't be undone.", confirmLabel: "Remove", danger: true }))) return;
       try {
         await removeSavedPlaylist(key);
         setSavedMenuKey("");
@@ -1760,53 +1758,26 @@ export default function TikTokExplorer({
             <span className="hidden max-w-44 truncate text-xs font-black sm:inline">{initialReturnTo ? returnDestinationLabel(initialReturnTo) : focusedBackLabel}</span>
           </button>
 
-          <select
-            value={activeDetailTab}
-            onChange={(event) => {
-              const next = event.target.value as MainTab;
-              if (!hasAnalysis && next !== "post") {
-                void analyzePostInline(selectedVideo);
-                return;
-              }
-              setActiveDetailTab(next);
-            }}
-            className="h-11 min-w-0 flex-1 rounded-lg border px-3 text-xs font-black outline-none focus:border-[#f9dc0b] focus:ring-2 focus:ring-[#f9dc0b]/20 sm:hidden"
-            style={{ borderColor: border, background: bgCard, color: text }}
-            aria-label="Analysis section"
-          >
-            {detailTabs.map((tab) => <option key={tab.id} value={tab.id}>{tab.label}</option>)}
-          </select>
-
-          <nav className="hidden min-w-0 flex-1 items-center gap-1 overflow-x-auto sm:flex [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" aria-label="Analysis sections">
-            {detailTabs.map((tab) => {
-              const isActive = activeDetailTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  disabled={!hasAnalysis && tab.id !== "post" && selectedPostAnalyzing}
-                  onClick={() => {
-                    if (!hasAnalysis && tab.id !== "post") {
-                      void analyzePostInline(selectedVideo);
-                      return;
-                    }
-                    setActiveDetailTab(tab.id);
-                  }}
-                  className={cn(
-                    "inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg px-3 text-xs font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b]/70",
-                    isActive
-                      ? isDark ? "bg-white/10 text-white" : "bg-[#1C1A16] text-white"
-                      : hasAnalysis || tab.id === "post"
-                        ? isDark ? "text-white/60 hover:bg-white/8 hover:text-white" : "text-[#1A1A1A]/50 hover:bg-[#1A1A1A]/5 hover:text-[#1A1A1A]"
-                        : "cursor-not-allowed opacity-30",
-                  )}
-                >
-                  {tab.id === "post" && <Film className="h-3 w-3" />}
-                  {tab.label}
-                </button>
-              );
-            })}
-          </nav>
+          <div className="ui-inherit min-w-0 flex-1" style={{ color: text }}>
+            <Segmented
+              size="sm"
+              label="Analysis sections"
+              value={activeDetailTab}
+              onChange={(next) => {
+                if (!hasAnalysis && next !== "post") {
+                  void analyzePostInline(selectedVideo);
+                  return;
+                }
+                setActiveDetailTab(next);
+              }}
+              options={detailTabs.map((tab) => ({
+                value: tab.id,
+                label: tab.label,
+                icon: tab.id === "post" ? <Film className="h-3 w-3" /> : undefined,
+                disabled: !hasAnalysis && tab.id !== "post" && selectedPostAnalyzing,
+              }))}
+            />
+          </div>
 
           {/* Right actions */}
           <div className="flex shrink-0 items-center gap-2">
@@ -2101,42 +2072,34 @@ export default function TikTokExplorer({
       {mainTab === "saved" ? (
         <div className="space-y-6">
           {savedSummaries.length > 0 ? (
-            <div className="flex flex-col gap-2 rounded-xl border p-2 sm:flex-row sm:items-center" style={{ borderColor: border, background: bg }}>
-              <label className="relative min-w-0 flex-1">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" style={{ color: muted }} />
-                <input
-                  type="search"
-                  value={savedQuery}
-                  onChange={(event) => setSavedQuery(event.target.value)}
-                  placeholder="Search saved sources"
-                  className="h-11 w-full rounded-lg border pl-10 pr-3 text-xs font-semibold outline-none transition focus:border-[#f9dc0b] focus:ring-2 focus:ring-[#f9dc0b]/20"
-                  style={{ borderColor: border, background: bgCard, color: text }}
+            <div className="ui-inherit flex flex-col gap-2 rounded-xl border p-2 sm:flex-row sm:items-center" style={{ borderColor: border, background: bg, color: text }}>
+              <SearchField className="min-w-0 flex-1" value={savedQuery} onChange={setSavedQuery} placeholder="Search saved sources" />
+              <div className="flex flex-wrap gap-2">
+                <Segmented
+                  size="sm"
+                  label="Source type"
+                  value={savedKind}
+                  onChange={(next) => setSavedKind(next as typeof savedKind)}
+                  options={[{ value: "all", label: "All" }, { value: "playlist", label: "Playlists" }, { value: "channel", label: "Channels" }]}
                 />
-              </label>
-              <div className="grid grid-cols-2 gap-2 sm:flex">
-                <label className="sr-only" htmlFor="saved-source-kind">Source type</label>
-                <select id="saved-source-kind" value={savedKind} onChange={(event) => setSavedKind(event.target.value as typeof savedKind)} className="h-11 min-w-0 rounded-lg border px-3 text-xs font-black outline-none focus:border-[#f9dc0b] focus:ring-2 focus:ring-[#f9dc0b]/20" style={{ borderColor: border, background: bgCard, color: text }}>
-                  <option value="all">All sources</option>
-                  <option value="playlist">Playlists</option>
-                  <option value="channel">Channels</option>
-                </select>
-                <label className="sr-only" htmlFor="saved-source-sort">Sort saved sources</label>
-                <select id="saved-source-sort" value={savedSort} onChange={(event) => setSavedSort(event.target.value as typeof savedSort)} className="h-11 min-w-0 rounded-lg border px-3 text-xs font-black outline-none focus:border-[#f9dc0b] focus:ring-2 focus:ring-[#f9dc0b]/20" style={{ borderColor: border, background: bgCard, color: text }}>
-                  <option value="recent">Recently saved</option>
-                  <option value="name">Name</option>
-                  <option value="videos">Most videos</option>
-                </select>
+                <Segmented
+                  size="sm"
+                  label="Sort saved sources"
+                  value={savedSort}
+                  onChange={(next) => setSavedSort(next as typeof savedSort)}
+                  options={[{ value: "recent", label: "Recent" }, { value: "name", label: "Name" }, { value: "videos", label: "Most videos" }]}
+                />
               </div>
               <span className="shrink-0 px-2 text-center text-[11px] font-black tabular-nums sm:text-left" style={{ color: muted }}>{visibleSavedSummaries.length} of {savedSummaries.length}</span>
             </div>
           ) : null}
           {savedSummaries.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-[#1A1A1A]/15 bg-white/80 p-12 text-center text-sm text-[#1A1A1A]/45">
-              No saved playlists yet. Analyze a URL and save the playlist.
+            <div className="ui-inherit rounded-xl border border-dashed" style={{ borderColor: border, color: text }}>
+              <EmptyState icon={<Bookmark className="h-5 w-5" />} title="No saved sources yet" body="Analyze a playlist or channel link, then save it to find it here." />
             </div>
           ) : visibleSavedSummaries.length === 0 ? (
-            <div className="rounded-xl border border-dashed p-12 text-center text-sm" style={{ borderColor: border, color: muted }}>
-              No saved sources match those filters.
+            <div className="ui-inherit rounded-xl border border-dashed" style={{ borderColor: border, color: text }}>
+              <EmptyState icon={<Search className="h-5 w-5" />} title="No matches" body="No saved sources match those filters." />
             </div>
           ) : (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
@@ -2419,56 +2382,24 @@ export default function TikTokExplorer({
         </>
       )}
       </div>
-      <AnimatePresence>
         {activeMovieIdModalVideo && (() => {
           const slug = slugifySavedPost(activeMovieIdModalVideo);
           const analysis = postAnalyses[slug];
           if (!analysis?.result) return null;
 
           return (
-            <motion.div
-              className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3 backdrop-blur-sm sm:p-4 overflow-y-auto"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => {
-                if (!isUploadingToYoutube) {
-                  setActiveMovieIdModalVideo(null);
-                  setYoutubeUploadResult(null);
-                  setYoutubeUploadError("");
-                }
+            <Dialog
+              title={analysis.result.title || "Identified title"}
+              description="Movie ID details"
+              size="xl"
+              dismissible={!isUploadingToYoutube}
+              onClose={() => {
+                if (isUploadingToYoutube) return;
+                setActiveMovieIdModalVideo(null);
+                setYoutubeUploadResult(null);
+                setYoutubeUploadError("");
               }}
             >
-              <motion.div
-                className="relative w-full max-w-5xl rounded-2xl border bg-white shadow-2xl overflow-hidden flex flex-col max-h-[92dvh]"
-                style={{ borderColor: "rgba(28,26,22,0.12)" }}
-                initial={{ y: 24, scale: 0.98 }}
-                animate={{ y: 0, scale: 1 }}
-                exit={{ y: 24, scale: 0.98 }}
-                onClick={(event) => event.stopPropagation()}
-              >
-                {/* Modal Header */}
-                <div className="flex items-center justify-between border-b border-[#1A1A1A]/8 bg-[#FDFCFA] px-5 py-4 shrink-0">
-                  <div>
-                    <span className="text-[10px] font-black uppercase tracking-widest text-[#f9dc0b]">Movie ID details</span>
-                    <h3 className="text-lg font-black leading-tight text-[#1A1A1A] mt-0.5">{analysis.result.title || "Identified Title"}</h3>
-                  </div>
-                  <button
-                    type="button"
-                    disabled={isUploadingToYoutube}
-                    onClick={() => {
-                      setActiveMovieIdModalVideo(null);
-                      setYoutubeUploadResult(null);
-                      setYoutubeUploadError("");
-                    }}
-                    className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-[#1A1A1A]/10 text-[#1A1A1A]/55 hover:bg-[#F9F8F6] disabled:opacity-40"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-
-                {/* Modal Content */}
-                <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
                   {youtubeUploadResult ? (
                     <div className="mx-auto max-w-xl rounded-2xl border border-[#16a34a]/30 bg-green-50/50 p-6 text-center shadow-sm">
                       <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-green-100 text-green-600 mb-4">
@@ -2657,12 +2588,9 @@ export default function TikTokExplorer({
                       </div>
                     </div>
                   )}
-                </div>
-              </motion.div>
-            </motion.div>
+            </Dialog>
           );
         })()}
-      </AnimatePresence>
     </div>
   );
 }

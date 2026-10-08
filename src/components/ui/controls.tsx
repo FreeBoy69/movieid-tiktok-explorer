@@ -1,15 +1,15 @@
 // Small shared controls. Each picks up the host app's palette (studio --cs-*,
 // maker --mk-*, Vibe --ve-*) and falls back to the site theme on :root.
-import { type KeyboardEvent, type ReactNode, useId, useRef } from "react";
+import { forwardRef, type KeyboardEvent, type ReactNode, useId, useRef } from "react";
 import { Search, X } from "lucide-react";
 import "./ui.css";
 
 const cx = (...names: Array<string | false | null | undefined>) => names.filter(Boolean).join(" ");
 
 // ---------- Switch (from the YouTube publish form) ----------
-export function Switch({ checked, onChange, label, description, disabled, compact, className }: { checked: boolean; onChange: (next: boolean) => void; label: ReactNode; description?: ReactNode; disabled?: boolean; compact?: boolean; className?: string }) {
+export function Switch({ checked, onChange, label, description, disabled, compact, title, className }: { checked: boolean; onChange: (next: boolean) => void; label: ReactNode; description?: ReactNode; disabled?: boolean; compact?: boolean; title?: string; className?: string }) {
   return (
-    <label className={cx("ui-switch", compact && "is-compact", disabled && "is-disabled", className)}>
+    <label className={cx("ui-switch", compact && "is-compact", disabled && "is-disabled", className)} title={title}>
       <span className="ui-switch-copy">
         <span className="ui-switch-label">{label}</span>
         {description ? <span className="ui-hint">{description}</span> : null}
@@ -124,12 +124,13 @@ export function Notice({ tone = "info", title, children, action, onDismiss, clas
 }
 
 // ---------- Search field ----------
-export function SearchField({ value, onChange, placeholder = "Search", label, autoFocus, onKeyDown, className, size = "md" }: { value: string; onChange: (value: string) => void; placeholder?: string; label?: string; autoFocus?: boolean; onKeyDown?: (event: KeyboardEvent<HTMLInputElement>) => void; className?: string; size?: "sm" | "md" }) {
+type SearchFieldProps = { value: string; onChange: (value: string) => void; placeholder?: string; label?: string; autoFocus?: boolean; onKeyDown?: (event: KeyboardEvent<HTMLInputElement>) => void; className?: string; size?: "sm" | "md" };
+export const SearchField = forwardRef<HTMLInputElement, SearchFieldProps>(function SearchField({ value, onChange, placeholder = "Search", label, autoFocus, onKeyDown, className, size = "md" }, ref) {
   const id = useId();
   return (
     <div className={cx("ui-search", `ui-search-${size}`, className)}>
       <Search size={size === "sm" ? 14 : 16} aria-hidden="true" />
-      <input id={id} type="search" value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} aria-label={label || placeholder} autoFocus={autoFocus} onKeyDown={onKeyDown} />
+      <input ref={ref} id={id} type="search" value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} aria-label={label || placeholder} autoFocus={autoFocus} onKeyDown={onKeyDown} />
       {value ? (
         <button type="button" className="ui-icon-btn" onClick={() => onChange("")} aria-label="Clear search">
           <X size={14} />
@@ -137,7 +138,7 @@ export function SearchField({ value, onChange, placeholder = "Search", label, au
       ) : null}
     </div>
   );
-}
+});
 
 // ---------- Meter / progress ----------
 export function Meter({ value, label, low, className }: { value: number; label: string; low?: boolean; className?: string }) {
