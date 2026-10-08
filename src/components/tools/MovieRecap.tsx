@@ -6,8 +6,7 @@ import { type DragEvent, type ReactNode, useCallback, useEffect, useMemo, useRef
 import { createPortal } from "react-dom";
 import {
   AlertCircle, ArrowLeft, ArrowRight, Check, Clapperboard, Download, ExternalLink, Film, Link2, Loader2, Plus,
-  Music, Projector, RotateCcw, Search, ShieldCheck, Sparkles, Square, Trash2, Undo2, Upload, Users, WandSparkles, X, Youtube,
-} from "lucide-react";
+  Music, Projector, RotateCcw, Search, ShieldCheck, Sparkles, Square, Trash2, Undo2, Upload, Users, WandSparkles, X, Youtube, PenLine } from "lucide-react";
 import { toast, useErrorToast } from "../../utils/toast";
 import { isVoiceReady, loadVoiceProfiles, type VoiceProfile } from "../../utils/voiceProfiles";
 import { writeDeepLink } from "../../utils/tiktokRoute";
@@ -24,7 +23,7 @@ import {
   listSources,
   saveSources,
   searchFilmSources,
-  backToStoryboard, cancelRecap, clock, correctNames, draftPost, followRecapPost, postChannels, postRecap, setIntro, type PostChannel, createRecap, deleteRecap, getRecap, listRecaps, parseClock, renderRecap, retryRecap, saveScript, shotTile, spokenSeconds,
+  backToStoryboard, cancelRecap, clock, correctNames, rewriteScript, draftPost, followRecapPost, postChannels, postRecap, setIntro, type PostChannel, createRecap, deleteRecap, getRecap, listRecaps, parseClock, renderRecap, retryRecap, saveScript, shotTile, spokenSeconds,
   uploadFilm, type Recap, type RecapBeat, type RecapFormat, type RecapPace, type RecapScript, type RecapTone, type RecapTransforms,
 } from "./recapApi";
 import "./MovieRecap.css";
@@ -960,6 +959,17 @@ function ScriptReview({ recap, onChange, onRender, onError }: { recap: Recap; on
       setNaming(false);
     }
   };
+  const [rewriting, setRewriting] = useState(false);
+  const rewrite = async () => {
+    if (!window.confirm("Write the script again from the film? This replaces the current script, your edits included.")) return;
+    setRewriting(true);
+    try {
+      onChange(await rewriteScript(recap.id));
+    } catch (error) {
+      onError(error instanceof Error ? error.message : "Couldn't write the script again");
+      setRewriting(false);
+    }
+  };
   const [voices, setVoices] = useState<VoiceProfile[]>([]);
   const [rendering, setRendering] = useState(false);
   const film = recap.film;
@@ -1106,6 +1116,9 @@ function ScriptReview({ recap, onChange, onRender, onError }: { recap: Recap; on
             {naming ? <Loader2 size={15} className="animate-spin" aria-hidden="true" /> : <Users size={15} aria-hidden="true" />}Correct character names
           </button>
           {namesNote ? <p className="mt-note">{namesNote}</p> : null}
+          <button type="button" className="mt-secondary" disabled={rewriting} onClick={() => void rewrite()} title="A new script from the same analysis: the opening told shot by shot from what the film shows">
+            {rewriting ? <Loader2 size={15} className="animate-spin" aria-hidden="true" /> : <PenLine size={15} aria-hidden="true" />}Write the script again
+          </button>
         </div>
         <div className="mr-side-block mr-side-rules">
           <ShieldCheck size={16} aria-hidden="true" />

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildRecapPlan, centreShortCuts, checkMatchesVisually, centreVerdict, chronologicalWindows, cutShortlist, keepInOrder, matchClass, rankShotsForCut, writeJson, markSubtitledCuts, matchCutsToFrames, mirrorCloseCuts, recapScriptPrompt, recapVibeProject, scriptShortfall, shortHalfWindow } from "./movieRecap.js";
+import { buildRecapPlan, centreShortCuts, checkMatchesVisually, openingPicks, centreVerdict, chronologicalWindows, cutShortlist, keepInOrder, matchClass, rankShotsForCut, writeJson, markSubtitledCuts, matchCutsToFrames, mirrorCloseCuts, recapScriptPrompt, recapVibeProject, scriptShortfall, shortHalfWindow } from "./movieRecap.js";
 
 const film = 6000;
 const analysis = { duration: film, shots: Array.from({ length: 2000 }, (_, i) => ({ i, t: 1.5 + i * 3 })) };
@@ -83,6 +83,47 @@ describe("movie recap plan", () => {
     const checked = await checkMatchesVisually(shoveProject, analysis, described, built, {}, { look, request });
     const shoveCuts = checked.plan.formats.long.cuts.filter((c: any) => checked.edit.long.cuts[checked.plan.formats.long.cuts.indexOf(c)]?.beatId === "b1");
     expect(shoveCuts.some((c: any) => c.start <= 362 && c.end >= 361)).toBe(true);
+  });
+
+  it("picks an opening line's best-rated frames, 3 s apart, in film order", () => {
+    const times = [10, 11, 12, 20, 21, 30, 31, 40];
+    const rated = [2, 3, 3, 1, 3, 2, null, 3];
+    // 11 and 12 are too close together; 31 was never rated; 20 is only rated 1; 30 sits on another line's cut.
+    expect(openingPicks(times, rated, 3, [30.5])!.map((c) => c.t)).toEqual([11, 21, 40]);
+    // Not enough good frames: null, unless the line's own frames fill the gap.
+    expect(openingPicks(times, rated, 5)).toBeNull();
+    expect(openingPicks(times, rated, 4, [30.5], [{ t: 50, f: 1 }])!.map((c) => c.t)).toEqual([11, 21, 40, 50]);
+  });
+
+  it("matches the opening on real frames when the described frames miss", async () => {
+    const lines = [
+      { id: "b0", text: "Compalo and Cole step out of the elevators and cross the lobby.", from: 100, to: 170, shots: [40], audio: "a0.wav", seconds: 8 },
+      { id: "b1", text: "The sedan glides through the city toward the estate.", from: 300, to: 420, shots: [110], audio: "a1.wav", seconds: 8 },
+    ];
+    const openProject = { ...project, options: { ...project.options, formats: ["long"] }, script: { title: "Opening", long: { beats: lines } } } as any;
+    const built = buildRecapPlan(openProject, analysis);
+    const described: Record<number, string> = {};
+    analysis.shots.forEach((s) => { described[s.i] = "an aerial view of a city"; });
+    // The elevator shots are the two seconds after 128, 141, and 154: between the 3 s samples.
+    const right = (t: number) => [128, 141, 154].some((at) => t >= at && t <= at + 2);
+    const look = async (times: number[]) => ({ frames: times.map((t) => Buffer.from(String(t))) });
+    const request: any = async ({ messages }: any) => {
+      const frames: any[] = [];
+      let n = -1;
+      for (const part of messages[0].content) {
+        if (part.type === "text" && /^Frame (\d+)/.test(part.text)) n = Number(part.text.match(/^Frame (\d+)/)[1]);
+        if (part.type === "image_url") {
+          const t = Number(Buffer.from(part.image_url.url.split(",")[1], "base64").toString());
+          frames.push({ n, person: true, shows: "people", gore: false, fit: right(t) ? 3 : 1 });
+        }
+      }
+      return { value: { frames } };
+    };
+    const checked = await checkMatchesVisually(openProject, analysis, described, built, {}, { look, request });
+    const opening = checked.plan.formats.long.cuts.filter((_: any, k: number) => checked.edit.long.cuts[k]?.beatId === "b0");
+    expect(opening.length).toBeGreaterThan(1);
+    // The line has four cuts and three elevator shots: all three play, and one old frame stays.
+    for (const at of [128, 141, 154]) expect(opening.some((cut: any) => cut.start < at + 2 && cut.end > at)).toBe(true);
   });
 
   it("lands the render in Vibe Edit with every cut, line, and caption editable", () => {

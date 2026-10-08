@@ -890,10 +890,11 @@ House style for every recap:
 ${wantLong ? `
 Long recap (${longMinutes} minutes):
 - No introduction: no welcome, no teaser of later moments, no "This is the movie ...". The first line goes straight into the story at the film's first scene, e.g. "The movie opens with ..." or "The movie begins as ...".
+- The opening decides whether viewers stay, and its footage must match the words exactly. The first 6 beats follow the timeline SHOT by SHOT: tell the film's first scenes in the exact order the SHOTs show them, and say only what those SHOTs show: the place, the time of day (day or night as the shots show it), who is there, and what they do. Nothing the timeline does not show (no object, action, or detail it never mentions). Each of these beats covers a short stretch of film (20-60 seconds) and lists as its "shots" the SHOT numbers it describes, in order.
 - Tell the whole story in chronological order, skipping scenes that don't matter, through the ending. Narrate the climax rather than replaying it.
 - Give the thrilling set-pieces room: the climax and every big action moment (a fall, a chase, a fight, a near-miss on a collapsing bridge, a desperate swing or jump) get several lines that follow it moment by moment, what happens and then what happens next, so the footage can follow it too. Save the words from quiet scenes, not from these.
 - End with the outro: "Thank you for watching ${channelName || "the channel"}. This has been our recap of ${filmTitle || "[the film]"}. If you enjoyed it, like and subscribe, and tell us in the comments what you thought of the ending. Until next time, take care."
-- Beats of 2-3 sentences (30-50 words), about ${Math.round(longWords / 40)} beats in all. Their film stretches move forward through the film and are at least 45 seconds long.
+- Beats of 2-3 sentences (30-50 words), about ${Math.round(longWords / 40)} beats in all. Their film stretches move forward through the film and are at least 45 seconds long (the opening's 20-60 seconds, see above).
 ` : ""}${wantShort ? `
 Short (${shortSeconds} seconds):
 - One main character (at most three named) and one storyline from one stretch of the film. No introduction ("This movie tells the story of...", "This is a thrilling film"); start in the action. No one to three sentences that sum up the whole plot. Do not summarize the whole film and do not explain unrelated plots. It need not be chronological.
@@ -1792,6 +1793,23 @@ export async function rateFrames(frames, said, { signal = undefined, request = r
   return fit;
 }
 
+/** The opening's recap time that gets the second-by-second look: about the first two minutes. */
+export const OPENING_SECONDS = 120;
+
+/** A line's frames for its cuts: the best rated, 3 s apart and clear of other lines' cuts, in film order.
+ *  New frames count only as good or exact matches (2+); the line's current frames (keep, {t, f}) compete
+ *  on their own rating, so a line with three good shots for four cuts keeps its best old one. Null when
+ *  there aren't enough frames for every cut. */
+export function openingPicks(times, rated, count, others = [], keep = []) {
+  const picks = [];
+  [...times.map((t, n) => ({ t, n, f: rated[n] })).filter((c) => c.f !== null && c.f !== undefined && c.f >= 2), ...keep.map((c) => ({ ...c, n: -1, kept: true }))]
+    .sort((a, b) => b.f - a.f || Number(Boolean(b.kept)) - Number(Boolean(a.kept)) || a.t - b.t)
+    .forEach((c) => {
+      if (picks.length < count && !picks.some((p) => Math.abs(p.t - c.t) < 3) && !others.some((o) => Math.abs(o - c.t) < 3)) picks.push(c);
+    });
+  return picks.length === count ? picks.sort((a, b) => a.t - b.t) : null;
+}
+
 export async function checkMatchesVisually(project, analysis, described, built, matches, { look, signal = undefined, request = requestOpenRouter }) {
   let current = built;
   const fits = {};
@@ -1846,13 +1864,60 @@ export async function checkMatchesVisually(project, analysis, described, built, 
         current = { ...current, plan: { ...current.plan, formats: { ...current.plan.formats, [format]: settled.plan.formats[format] } }, stats: { ...current.stats, [format]: settled.stats[format] }, edit: { ...current.edit, [format]: settled.edit[format] } };
       } else break;
     }
+    // The opening decides whether viewers stay, so its lines (the first OPENING_SECONDS of a long recap)
+    // don't settle for the described frames: each line's film is looked at a second apart, rated against
+    // the line, and its cuts take the best-rated frames in film order. Mutiny's opening ran 3-4 cuts ahead
+    // of its words on an aerial city and a ship model.
+    const openingDone = new Set();
+    if (format === "long") {
+      const beats = project.script[format]?.beats || [];
+      const openingIds = [...new Set(current.edit[format].cuts.filter((cut) => cut.at < OPENING_SECONDS).map((cut) => cut.beatId))]
+        .filter((id) => !beats.find((b) => b.id === id)?.teaser)
+        .slice(0, 8);
+      for (const id of openingIds) {
+        signal?.throwIfAborted();
+        const beat = beats.find((b) => b.id === id);
+        const slots = current.edit[format].cuts.map((cut, k) => (cut.beatId === id ? k : -1)).filter((k) => k >= 0);
+        if (!beat || !slots.length) continue;
+        try {
+          const { from, to } = beatWindow(beat, analysis.duration);
+          const placed = slots.map((k) => middle(cuts()[k]));
+          const lo = Math.max(from, Math.min(...placed) - 20);
+          const hi = Math.min(to, Math.max(...placed) + 20);
+          const step = Math.max(1, (hi - lo) / 50);
+          const times = [];
+          for (let t = lo; t <= hi && times.length < 50; t += step) times.push(Math.round(t * 100) / 100);
+          const { frames: dense } = await look(times);
+          const rated = await rateFrames(dense, times.map(() => beat.text), { signal, request });
+          const keep = slots.map((k) => ({ t: middle(cuts()[k]), f: fit[k] ?? 0, gore: Boolean(gore[k]) }));
+          const picks = openingPicks(times, rated, slots.length, cuts().filter((_, k) => !slots.includes(k)).map(middle), keep);
+          // Only a full set that rates better than what the line has now replaces it.
+          if (!picks || picks.reduce((sum, c) => sum + c.f, 0) <= slots.reduce((sum, k) => sum + (fit[k] ?? 0), 0)) continue;
+          const next = { ...matches, [format]: { ...(matches[format] || {}) } };
+          Object.defineProperty(next, "jevScores", { value: matches.jevScores, enumerable: false });
+          next[format][id] = picks.map((c) => c.t);
+          matches = next;
+          openingDone.add(id);
+          const settled = buildRecapPlan(project, analysis, matches);
+          current = { ...current, plan: { ...current.plan, formats: { ...current.plan.formats, [format]: settled.plan.formats[format] } }, stats: { ...current.stats, [format]: settled.stats[format] }, edit: { ...current.edit, [format]: settled.edit[format] } };
+          current.edit[format].cuts.map((cut, k) => (cut.beatId === id ? k : -1)).filter((k) => k >= 0).forEach((k, j) => {
+            if (!picks[j]) return;
+            fit[k] = picks[j].f;
+            gore[k] = picks[j].kept ? picks[j].gore : Boolean(rated.gore?.[picks[j].n]);
+          });
+        } catch (error) {
+          if (signal?.aborted) throw error;
+          console.warn(`[movie-recap] opening look skipped: ${error.message}`);
+        }
+      }
+    }
     // A brief action (a shove off a ledge, a fall, a punch) lasts a second or two and slips between the
     // frames sampled every 3 s, so the descriptions can't find it: Fall 2's shove got the attacker's face.
     // For weak cuts under action words, look densely: real frames every second across the line's film.
     const denseLooks = new Map();
     // Also any cut still rated 0 (the aerial city under "steps out of the executive elevators"): the
     // described frames had nothing better, the real frames a second apart may.
-    const weakAction = fit.map((f, i) => (f !== null && (f === 0 || (f <= 1 && ACTION_WORDS.test(said[i]))) ? i : -1)).filter((i) => i >= 0).slice(0, 12);
+    const weakAction = fit.map((f, i) => (f !== null && !openingDone.has(current.edit[format].cuts[i]?.beatId) && (f === 0 || (f <= 1 && ACTION_WORDS.test(said[i]))) ? i : -1)).filter((i) => i >= 0).slice(0, 12);
     for (const i of weakAction) {
       signal?.throwIfAborted();
       const editCuts = current.edit[format].cuts;
@@ -2940,6 +3005,19 @@ export function registerMovieRecap(app) {
     running.get(project.id)?.abort(new Error("Restarting"));
     running.delete(project.id);
     await save(userId, project, { status: "queued", error: "", message: "Retrying", remote: project.stage === "analyzing" ? {} : project.remote });
+    start(userId, project.id);
+    res.status(202).json({ recap: summary(project) });
+  }));
+
+  // A new script from the same analysis (the frames stay described): for a recap written before the writer
+  // learned something, such as telling the opening shot by shot. Lands on the storyboard again.
+  app.post("/api/recaps/:id/rewrite", route(async (req, res, userId) => {
+    const project = await load(userId, req.params.id);
+    if (!project.script) throw fail("The script isn't written yet.", 409);
+    if (project.status === "working" || project.status === "queued") throw fail("This recap is working. Stop it or go back to the storyboard first.", 409);
+    running.get(project.id)?.abort(new Error("Rewriting"));
+    running.delete(project.id);
+    await save(userId, project, { stage: "writing", status: "queued", error: "", message: "Writing the script again", progress: 0.7, remote: { ...project.remote, renderStarted: false } });
     start(userId, project.id);
     res.status(202).json({ recap: summary(project) });
   }));

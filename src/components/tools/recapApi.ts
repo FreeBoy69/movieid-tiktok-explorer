@@ -199,6 +199,10 @@ export async function correctNames(id: string): Promise<{ recap: Recap; changed:
   return json<{ recap: Recap; changed: number }>(await fetch(`/api/recaps/${encodeURIComponent(id)}/names`, { method: "POST" }), "Couldn't correct the names");
 }
 
+export async function rewriteScript(id: string): Promise<Recap> {
+  return (await json<{ recap: Recap }>(await fetch(`/api/recaps/${encodeURIComponent(id)}/rewrite`, { method: "POST" }), "Couldn't write the script again")).recap;
+}
+
 export async function saveScript(id: string, script: RecapScript): Promise<Recap> {
   const data = await json<{ recap: Recap }>(
     await fetch(`/api/recaps/${encodeURIComponent(id)}/script`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ script }) }),
