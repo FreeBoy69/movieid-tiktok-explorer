@@ -15,7 +15,8 @@
 /* Shared UI surfaces (the Vibe Edit palette): warm paper in light, near-black in
    dark, hairline borders, soft shadows, 18-20px rounded panels. New pages build on
    these instead of their own colours. */
-:root {
+:root,
+[data-theme="light"] {
   --ui-bg: #efede8;
   --ui-panel: #fdfcfa;
   --ui-raised: #ffffff;
@@ -36,7 +37,8 @@
   --ui-shadow: 0 18px 44px -20px rgb(40 36 20 / 0.32), 0 2px 6px rgb(40 36 20 / 0.1);
   --ui-shadow-soft: 0 1px 2px rgb(40 36 20 / 0.06);
 }
-html[data-theme="dark"] {
+html[data-theme="dark"],
+[data-theme="dark"] {
   --ui-bg: #0e1012;
   --ui-panel: #15171a;
   --ui-raised: #1c1f23;
@@ -53,6 +55,40 @@ html[data-theme="dark"] {
   --ui-ring: rgb(249 220 11 / 0.16);
   --ui-shadow: 0 18px 48px -18px rgb(0 0 0 / 0.7), 0 2px 6px rgb(0 0 0 / 0.35);
   --ui-shadow-soft: 0 1px 2px rgb(0 0 0 / 0.3);
+}
+
+/* Control tokens: one scale for every app (see src/components/ui/ui.css for the
+   canonical control classes). Buttons are pills; fields, menus and chips use these. */
+:root,
+[data-theme="light"] {
+  --ui-radius-sm: 8px;
+  --ui-radius-md: 12px;
+  --ui-radius-pill: 999px;
+  --ui-control-sm: 32px;
+  --ui-control: 40px;
+  --ui-control-lg: 48px;
+  --ui-field-height: 40px;
+  --ui-radius-control: 12px;
+  --ui-accent-hover: #ffe53a;
+  --ui-accent-soft: rgb(249 220 11 / 0.18);
+  --ui-focus: #7a6600;
+  --ui-danger: #c53b3b;
+  --ui-success: #1e7a47;
+  --ui-warning: #a66f00;
+  --ui-scrim: rgb(20 19 17 / 0.32);
+  --ui-shadow-lift: 0 20px 48px -18px rgb(40 36 20 / 0.34), 0 4px 12px -6px rgb(40 36 20 / 0.16);
+  --ui-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --ui-duration: 160ms;
+}
+html[data-theme="dark"],
+[data-theme="dark"] {
+  --ui-accent-soft: rgb(249 220 11 / 0.14);
+  --ui-focus: #f9dc0b;
+  --ui-danger: #ff7b6e;
+  --ui-success: #7fd8a2;
+  --ui-warning: #f2c14e;
+  --ui-scrim: rgb(8 8 9 / 0.62);
+  --ui-shadow-lift: 0 22px 54px -18px rgb(0 0 0 / 0.75), 0 4px 14px -6px rgb(0 0 0 / 0.5);
 }
 
 @layer base {
@@ -104,6 +140,16 @@ html[data-theme="dark"] {
 
   *::-webkit-scrollbar-corner {
     background: var(--autoyt-scrollbar-corner);
+  }
+
+  /* One focus ring and one accent for native controls everywhere; app rules may refine. */
+  :where(:focus-visible) {
+    outline: 2px solid var(--ui-focus);
+    outline-offset: 2px;
+  }
+
+  :where(input[type="checkbox"], input[type="radio"], input[type="range"], progress) {
+    accent-color: var(--ui-accent);
   }
 
   body {
@@ -719,7 +765,7 @@ html .workspace-content .workspace-floating-shell {
 
 /* Only action buttons are pills. Anything holding media, headings, paragraphs, block wrappers,
    or a title-plus-subtitle pair is a card, row, or tile and keeps the corners it was designed with. */
-button:not(.sp-tile):not(.ui-tabs [role="tab"]):not(.mks-generate):not(.cns-generate):not(.sl-stack-card):not(.sl-chip button):not(.mks-card):not(.mks-slot):not(.mks-strip-card):not(.mks-face):not(.prs-slot):not(.maker-art-tile):not(.cs-thumb):not(.cs-slot-empty):not(.cs-app-card):not(.cns-rig-card):not(.tg-card):not(.plib-card-open):not(.dr-template):not(.dr-genre-card):not(.dr-location-art):not(.chs-person):not(.exs-visual):not(.exs-draft):not(.exs-visual-option):not(.gv-apple):not(.cs-option):not(.eds-canvas):not(.eds-item):not(.ve-card-open):not(.ve-asset):not(.ve-preset):not(.ve-style):not(.ve-text-preset):not(.ve-rail-btn):not(.ve-nav-item):not(.ve-nav-toggle):not(.ve-nav-link):not(.ve-collapse):not(.ve-lane-add):not(.ve-crumb-back):not(.ve-tabs [role="tab"]):not(.ve-starter):not(.ve-tool):not(.ve-btn):not(.ve-mini):not(.cs-gen .cs-chip):not(.dpm-product):not(.dpm-new-book):not(.dpm-toc-item):not(.cs-ref-add):not(.vs-rail [role="tab"]):not(.dr-menu-item):not(.cs-menu-item):not(.sb-prompt):not(.cap-card):not(.mks-tech-row):not(.mks-upload):not(.cs-model):not(.cs-rig-toggle):not(.voice-avatar-layout):not(.source-picker-trigger):not(.st-track-head):not(.st-audio-clip):not(.adm-ticket):not(.mr-row):not(.mr-format-toggle):not(.mr-switch):not(.mr-segment button):not(.mr-steps button):not([role="option"]):not([role^="menuitem"]):not(:has(img, video, picture, canvas, iframe, svg image, figure, p, h1, h2, h3, h4, h5, h6, ul, ol, table, div, section, article, strong ~ span, strong ~ small, strong ~ em, b ~ span)),
+button:not(.sp-tile):not(.ui-tabs [role="tab"]):not(.ui-menu-item):not(.ui-trigger):not(.mks-generate):not(.cns-generate):not(.sl-stack-card):not(.sl-chip button):not(.mks-card):not(.mks-slot):not(.mks-strip-card):not(.mks-face):not(.prs-slot):not(.maker-art-tile):not(.cs-thumb):not(.cs-slot-empty):not(.cs-app-card):not(.cns-rig-card):not(.tg-card):not(.plib-card-open):not(.dr-template):not(.dr-genre-card):not(.dr-location-art):not(.chs-person):not(.exs-visual):not(.exs-draft):not(.exs-visual-option):not(.gv-apple):not(.cs-option):not(.eds-canvas):not(.eds-item):not(.ve-card-open):not(.ve-asset):not(.ve-preset):not(.ve-style):not(.ve-text-preset):not(.ve-rail-btn):not(.ve-nav-item):not(.ve-nav-toggle):not(.ve-nav-link):not(.ve-collapse):not(.ve-lane-add):not(.ve-crumb-back):not(.ve-tabs [role="tab"]):not(.ve-starter):not(.ve-tool):not(.ve-btn):not(.ve-mini):not(.cs-gen .cs-chip):not(.dpm-product):not(.dpm-new-book):not(.dpm-toc-item):not(.cs-ref-add):not(.vs-rail [role="tab"]):not(.dr-menu-item):not(.cs-menu-item):not(.sb-prompt):not(.cap-card):not(.mks-tech-row):not(.mks-upload):not(.cs-model):not(.cs-rig-toggle):not(.voice-avatar-layout):not(.source-picker-trigger):not(.st-track-head):not(.st-audio-clip):not(.adm-ticket):not(.mr-row):not(.mr-format-toggle):not(.mr-switch):not(.mr-segment button):not(.mr-steps button):not([role="option"]):not([role^="menuitem"]):not(:has(img, video, picture, canvas, iframe, svg image, figure, p, h1, h2, h3, h4, h5, h6, ul, ol, table, div, section, article, strong ~ span, strong ~ small, strong ~ em, b ~ span)),
 input[type="button"],
 input[type="submit"],
 input[type="reset"],
