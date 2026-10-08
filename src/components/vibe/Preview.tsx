@@ -8,7 +8,7 @@ import { assetById, clipEnd, formatTimecode, frameSize, parseTimecode, projectDu
 import { gradeFilter } from "../../utils/vibeAutoEdit";
 import { buildSoundChain } from "../../utils/vibeSound.js";
 import { drawOverlay, textBox } from "./overlay";
-import { useVibe, vibe } from "./store";
+import { gestureKey, useVibe, vibe } from "./store";
 
 const LOOKAHEAD = 2;
 
@@ -288,7 +288,7 @@ export function Preview() {
     if (!t || !box) return;
     const x0 = e.clientX;
     const y0 = e.clientY;
-    const key = `title-drag:${id}:${x0}`;
+    const key = gestureKey(`title-drag:${id}`);
     const move = (ev: PointerEvent) => {
       const nx = Math.min(0.97, Math.max(0.03, t.x + (ev.clientX - x0) / box.width));
       let ny = Math.min(0.97, Math.max(0.03, t.y + (ev.clientY - y0) / box.height));
@@ -300,9 +300,11 @@ export function Preview() {
     const up = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
   };
   const toggleGuides = () =>
     setGuides((g) => {

@@ -71,16 +71,21 @@ export const vibe = {
   },
   /**
    * Apply an edit. Edits sharing a `coalesce` key within a moment (a drag, a
-   * slider) fold into one undo step.
+   * slider) fold into one undo step; pass { fold: true } to join it regardless of time.
    */
-  commit(next: VibeProject | ((p: VibeProject) => VibeProject), coalesce = "") {
+  commit(next: VibeProject | ((p: VibeProject) => VibeProject), coalesce = "", options: { fold?: boolean } = {}) {
     const project = typeof next === "function" ? next(state.project) : next;
     if (project === state.project) return;
     const now = Date.now();
-    const fold = coalesce && coalesce === lastKey && now - lastAt < 800;
+    // `fold` joins the previous step with the same key however long ago it was:
+    // the last word of a gesture (a cleanup, a cancel) belongs to that gesture.
+    const fold = coalesce && coalesce === lastKey && (options.fold || now - lastAt < 800);
     lastKey = coalesce;
     lastAt = now;
-    const past = fold ? state.past : [...state.past.slice(-(HISTORY - 1)), state.project];
+    // Folding back to the exact project the gesture started from (a cancelled
+    // drag) drops its undo step instead of leaving one that does nothing.
+    const reverted = fold && project === state.past.at(-1);
+    const past = reverted ? state.past.slice(0, -1) : fold ? state.past : [...state.past.slice(-(HISTORY - 1)), state.project];
     const ids = new Set([...project.clips, ...project.audio, ...project.texts, ...project.captions.cues].map((i) => i.id));
     state = { ...state, project, past, future: [], save: "dirty", selection: state.selection.filter((id) => ids.has(id)) };
     emit();
@@ -130,6 +135,10 @@ export const vibe = {
     emit();
   },
 };
+
+let gestures = 0;
+/** A fresh undo-coalescing key for one drag, so two drags never fold together. */
+export const gestureKey = (kind: string) => `${kind}:${(gestures += 1)}`;
 
 export function useVibe<T>(select: (s: VibeState) => T): T {
   return useSyncExternalStore(vibe.subscribe, () => select(state), () => select(state));

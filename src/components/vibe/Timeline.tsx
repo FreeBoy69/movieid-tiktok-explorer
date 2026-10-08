@@ -76,7 +76,7 @@ import {
 import { ContextMenu, ShortcutsPanel, type MenuEntry } from "./TimelineMenus";
 import { useFilmstrip } from "./filmstrip";
 import { uploadFiles } from "./Panels";
-import { useVibe, vibe } from "./store";
+import { gestureKey, useVibe, vibe } from "./store";
 
 const HEAD_WIDE = 168;
 const HEAD_NARROW = 44;
@@ -172,6 +172,8 @@ interface Drag {
   group: string[];
   /** The scroller's position when the drag began, so auto-scroll keeps the clip under the pointer. */
   scroll0: number;
+  /** This drag's undo key: every step of it folds into one undo. */
+  key: string;
 }
 
 interface Marquee {
@@ -396,9 +398,11 @@ function Overview({ scroller, head, pps, project, duration, total }: { scroller:
         const up = () => {
           window.removeEventListener("pointermove", move);
           window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
         };
         window.addEventListener("pointermove", move);
         window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
       }}
       aria-hidden="true"
     >
@@ -633,9 +637,11 @@ export function Timeline({ snapping, onToggleSnap, onCollapse }: { snapping: boo
       setReadout(null);
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
   };
 
   // The hover line moves by direct style writes so pointer motion never re-renders the clips.
@@ -662,12 +668,13 @@ export function Timeline({ snapping, onToggleSnap, onCollapse }: { snapping: boo
     e.stopPropagation();
     e.preventDefault();
     const x0 = e.clientX;
+    const key = gestureKey(`marker:${id}`);
     let moved = false;
     const move = (ev: PointerEvent) => {
       if (!moved && Math.abs(ev.clientX - x0) < 3) return;
       moved = true;
       const t = Math.max(0, time + (ev.clientX - x0) / pps);
-      vibe.commit((p) => updateMarker(p, id, { time: t }), `marker:${id}:${x0}`);
+      vibe.commit((p) => updateMarker(p, id, { time: t }), key);
       setReadout({ x: ev.clientX, y: ev.clientY, text: formatTimecode(t) });
     };
     const up = () => {
@@ -675,9 +682,11 @@ export function Timeline({ snapping, onToggleSnap, onCollapse }: { snapping: boo
       setReadout(null);
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
   };
 
   const commitRename = () => {
@@ -698,6 +707,7 @@ export function Timeline({ snapping, onToggleSnap, onCollapse }: { snapping: boo
     const up = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
       try {
         window.localStorage.setItem(HEIGHT_KEY, String(Math.round(last)));
       } catch {
@@ -706,6 +716,7 @@ export function Timeline({ snapping, onToggleSnap, onCollapse }: { snapping: boo
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
   };
 
   const rowAt = (clientX: number, clientY: number, kind: TrackKind): number | undefined => {
@@ -725,7 +736,7 @@ export function Timeline({ snapping, onToggleSnap, onCollapse }: { snapping: boo
     if (nextSelection !== selection) vibe.select(nextSelection);
     if (isLocked(vibe.get().project, id) || !nextSelection.includes(id)) return;
     const group = mode === "move" && nextSelection.length > 1 ? nextSelection : [];
-    drag.current = { id, mode, kind, x0: e.clientX, y0: e.clientY, base: vibe.get().project, start, end, inPoint, moved: false, group, scroll0: scroller.current?.scrollLeft || 0 };
+    drag.current = { id, mode, kind, x0: e.clientX, y0: e.clientY, base: vibe.get().project, start, end, inPoint, moved: false, group, scroll0: scroller.current?.scrollLeft || 0, key: gestureKey(`drag:${id}`) };
     const baseClip = kind === "video" ? vibe.get().project.clips.find((c) => c.id === id) : undefined;
     const ripples = vibe.get().magnetic && baseClip?.track === 0;
     const move = (ev: PointerEvent) => {
@@ -806,20 +817,35 @@ export function Timeline({ snapping, onToggleSnap, onCollapse }: { snapping: boo
       }
       setGuide(snappedAt);
       setReadout({ x: ev.clientX, y: ev.clientY, text });
-      vibe.commit(next, `drag:${d.id}:${d.x0}`);
+      vibe.commit(next, d.key);
     };
-    const up = () => {
+    const up = (ev?: Event) => {
       const d = drag.current;
-      // A move can empty a track; close the stack up in the same undo step.
-      if (d?.moved && d.mode === "move") vibe.commit((p) => compactTracks(p), `drag:${d.id}:${d.x0}`);
+      const key = d?.key || "";
+      if (d?.moved) {
+        // A cancelled gesture (or Escape) puts everything back where it was;
+        // a finished move closes up any emptied track. Both join the drag's undo step.
+        if (ev?.type === "pointercancel" || ev?.type === "keydown") vibe.commit(d.base, key, { fold: true });
+        else if (d.mode === "move") vibe.commit((p) => compactTracks(p), key, { fold: true });
+      }
       drag.current = null;
       setGuide(null);
       setReadout(null);
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+      window.removeEventListener("keydown", escape, true);
+    };
+    const escape = (ev: KeyboardEvent) => {
+      if (ev.key !== "Escape") return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      up(ev);
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+    window.addEventListener("keydown", escape, true);
   };
 
   // ---------- Sound: fade handles and the volume line ----------
@@ -833,7 +859,7 @@ export function Timeline({ snapping, onToggleSnap, onCollapse }: { snapping: boo
     const y0 = e.clientY;
     const area = (e.currentTarget.closest(".ve-env") as HTMLElement).getBoundingClientRect().height || 30;
     const len = clip.out - clip.in;
-    const key = `env:${clip.id}:${part}:${x0}`;
+    const key = gestureKey(`env:${clip.id}:${part}`);
     const move = (ev: PointerEvent) => {
       let patch: Partial<VibeAudioClip>;
       let text: string;
@@ -855,9 +881,11 @@ export function Timeline({ snapping, onToggleSnap, onCollapse }: { snapping: boo
       setReadout(null);
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
   };
 
   const envelope = (c: VibeAudioClip, w: number) => {
@@ -920,9 +948,11 @@ export function Timeline({ snapping, onToggleSnap, onCollapse }: { snapping: boo
       setMarquee(null);
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
   };
 
   // ---------- Commands shared by the toolbar, menus, and keys ----------
