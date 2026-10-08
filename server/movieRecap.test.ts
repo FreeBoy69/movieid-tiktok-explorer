@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildRecapPlan, centreShortCuts, checkMatchesVisually, openingPicks, centreVerdict, chronologicalWindows, cutShortlist, keepInOrder, matchClass, rankShotsForCut, writeJson, markSubtitledCuts, matchCutsToFrames, mirrorCloseCuts, recapScriptPrompt, recapVibeProject, scriptShortfall, shortHalfWindow } from "./movieRecap.js";
+import { alignOpening, buildRecapPlan, centreShortCuts, checkMatchesVisually, openingPicks, centreVerdict, chronologicalWindows, cutShortlist, keepInOrder, matchClass, rankShotsForCut, writeJson, markSubtitledCuts, matchCutsToFrames, mirrorCloseCuts, recapScriptPrompt, recapVibeProject, scriptShortfall, shortHalfWindow } from "./movieRecap.js";
 
 const film = 6000;
 const analysis = { duration: film, shots: Array.from({ length: 2000 }, (_, i) => ({ i, t: 1.5 + i * 3 })) };
@@ -452,6 +452,49 @@ describe("opening teaser and line stretches", () => {
     const { filmNames } = await import("./movieRecap.js");
     const project = { options: { filmTitle: "" }, source: { kind: "link", name: "mega.nz", url: "https://mega.nz/file/ABC123xy#k" }, script: { long: { beats: [{ text: "Hi, welcome. This is the 2026 movie Fall 2." }] } } } as any;
     expect(filmNames(project)).toEqual([{ title: "Fall 2", year: 2026 }]);
+  });
+});
+
+describe("opening alignment", () => {
+  const look = async (times: number[]) => ({ frames: times.map((t) => Buffer.from(String(t))) });
+  const visionCaptions = (messages: any) => {
+    const frames: any[] = [];
+    let n = -1;
+    for (const part of messages[0].content) {
+      if (part.type === "text" && /^Frame (\d+)/.test(part.text)) n = Number(part.text.match(/^Frame (\d+)/)[1]);
+      if (part.type === "image_url") {
+        const t = Number(Buffer.from(part.image_url.url.split(",")[1], "base64").toString());
+        frames.push({ n, d: t < 140 ? "Peter at a workbench" : t < 170 ? "Peter reads a note" : "Spider-Man on a girder" });
+      }
+    }
+    return { frames };
+  };
+
+  it("lines the opening's words up with the frames that show them, in film order", async () => {
+    const cuts = [{ k: 1, said: "Peter tinkers at his workbench" }, { k: 2, said: "He unfolds a wrinkled note" }, { k: 3, said: "Spider-Man sits on a girder" }];
+    let asked = "";
+    const request: any = async ({ kind, messages }: any) => {
+      if (kind === "vision") return { value: visionCaptions(messages) };
+      asked = messages[0].content;
+      // The frame for each piece by its caption: the first workbench, note, and girder frames.
+      const frames = [...asked.matchAll(/F(\d+) \([^)]*\): (.*)/g)].map((m) => ({ f: Number(m[1]), d: m[2] }));
+      const first = (word: string) => frames.find((fr) => fr.d.includes(word))!.f;
+      return { value: { cuts: [{ c: 0, f: first("workbench") }, { c: 1, f: first("note") }, { c: 2, f: first("girder") }] } };
+    };
+    const aligned = await alignOpening(cuts, [100, 220], look, { request });
+    expect(asked).toContain("C1: He unfolds a wrinkled note");
+    expect(aligned![1]).toBeLessThan(140);
+    expect(aligned![2]).toBeGreaterThanOrEqual(140);
+    expect(aligned![2]).toBeLessThan(170);
+    expect(aligned![3]).toBeGreaterThanOrEqual(170);
+  });
+
+  it("keeps film order and 3 s spacing whatever the model answers", async () => {
+    const cuts = [{ k: 0, said: "a" }, { k: 1, said: "b" }, { k: 2, said: "c" }];
+    const request: any = async ({ kind, messages }: any) => (kind === "vision" ? { value: visionCaptions(messages) } : { value: { cuts: [{ c: 0, f: 50 }, { c: 1, f: 10 }, { c: 2, f: 51 }] } });
+    const aligned = await alignOpening(cuts, [100, 220], look, { request });
+    expect(aligned![1] - aligned![0]).toBeGreaterThanOrEqual(3);
+    expect(aligned![2] - aligned![1]).toBeGreaterThanOrEqual(3);
   });
 });
 

@@ -1825,6 +1825,74 @@ export function openingPicks(times, rated, count, others = [], keep = []) {
   return picks.length === count ? picks.sort((a, b) => a.t - b.t) : null;
 }
 
+/** Captions for frames, a few words each (who, doing what, where), for lining up narration with footage. */
+export async function captionFrames(frames, { signal = undefined, request = requestOpenRouter } = {}) {
+  const model = process.env.MOVIE_RECAP_VISION_MODEL || "google/gemini-3.8-flash";
+  const out = new Array(frames.length).fill("");
+  const queue = [];
+  for (let i = 0; i < frames.length; i += 12) queue.push(i);
+  await Promise.all(Array.from({ length: 3 }, async () => {
+    while (queue.length) {
+      signal?.throwIfAborted();
+      const first = queue.shift();
+      const content = [{ type: "text", text: 'These are frames from one film. For every frame say in at most 14 words what is on screen: who (by look, or "nobody"), what they do, and where. Return JSON {"frames":[{"n":<frame number>,"d":"<words>"}]} for every frame.' }];
+      for (let n = first; n < Math.min(frames.length, first + 12); n++) if (frames[n]) content.push({ type: "text", text: `Frame ${n}:` }, { type: "image_url", image_url: { url: `data:image/jpeg;base64,${frames[n].toString("base64")}` } });
+      if (content.length < 2) continue;
+      try {
+        const { value } = await request({ kind: "vision", model, json: true, maxTokens: 1500, temperature: 0, reasoningEffort: "low", signal, messages: [{ role: "user", content }], validate: (v) => { if (!Array.isArray(listOf(v, "frames"))) throw new Error("No frames"); } });
+        for (const frame of listOf(value, "frames")) {
+          const n = Number(frame?.n);
+          if (Number.isInteger(n) && n >= 0 && n < out.length) out[n] = clip(frame.d, 120);
+        }
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        console.warn(`[movie-recap] frame captions skipped a batch: ${error.message}`);
+      }
+    }
+  }));
+  return out;
+}
+
+/** The opening's cuts lined up with the film second by second: the opening stretch of film is captioned a
+ *  frame a second, and one call matches each cut's words (in order) to the frame that shows them, in film
+ *  order and 3 s apart. Lines are placed by how long they are, which in Spider-Man put the opening's
+ *  footage 20-40 s off its words; this doesn't depend on that placement. {k: film time} or null. */
+export async function alignOpening(cutsSaid, span, look, { signal = undefined, request = requestOpenRouter } = {}) {
+  if (cutsSaid.length < 2) return null;
+  const [lo, hi] = span;
+  const step = Math.max(1, (hi - lo) / 400);
+  const times = [];
+  for (let t = lo; t <= hi && times.length < 400; t += step) times.push(Math.round(t * 100) / 100);
+  if (times.length < cutsSaid.length * 2) return null;
+  const { frames } = await look(times);
+  const captions = await captionFrames(frames, { signal, request });
+  const seen = captions.map((d, n) => (d ? `F${n} (${fmtTime(times[n])}): ${d}` : "")).filter(Boolean);
+  if (seen.length < cutsSaid.length * 2) return null;
+  const gap = Math.max(1, Math.ceil(3 / step));
+  const { value } = await request({
+    kind: "text", model: process.env.MOVIE_RECAP_SCRIPT_MODEL || "google/gemini-3.8-flash", json: true, maxTokens: 3000, temperature: 0, reasoningEffort: "low", signal,
+    messages: [{ role: "user", content: `A movie recap's opening plays one film clip under each piece of narration below (C0, C1, ... in order). Pick for every piece the frame (F number) whose picture shows what that piece says: the person, the action, the object, the place. Keep film order: each piece's frame number is at least ${gap} more than the one before. When a piece names nothing visible, pick a frame of the same moment showing the people it is about.
+
+NARRATION:
+${cutsSaid.map((c, i) => `C${i}: ${c.said || "(a pause)"}`).join("\n")}
+
+FRAMES (a frame a second, in film order):
+${seen.join("\n")}
+
+Return JSON {"cuts":[{"c":0,"f":<frame number>}]} with one entry per piece.` }],
+    validate: (v) => { if (!Array.isArray(listOf(v, "cuts"))) throw new Error("No cuts"); },
+  });
+  const picked = new Array(cutsSaid.length).fill(null);
+  for (const entry of listOf(value, "cuts")) {
+    const c = Number(entry?.c), f = Number(entry?.f);
+    if (Number.isInteger(c) && c >= 0 && c < picked.length && Number.isInteger(f) && f >= 0 && f < times.length) picked[c] = f;
+  }
+  if (picked.some((f) => f === null)) return null;
+  // Film order and spacing, whatever came back: a frame too early moves to the earliest allowed one.
+  for (let i = 1; i < picked.length; i++) if (picked[i] < picked[i - 1] + gap) picked[i] = Math.min(times.length - 1, picked[i - 1] + gap);
+  return Object.fromEntries(cutsSaid.map((c, i) => [c.k, times[picked[i]]]));
+}
+
 export async function checkMatchesVisually(project, analysis, described, built, matches, { look, signal = undefined, request = requestOpenRouter }) {
   let current = built;
   const fits = {};
@@ -1885,12 +1953,49 @@ export async function checkMatchesVisually(project, analysis, described, built, 
     // of its words on an aerial city and a ship model.
     const openingDone = new Set();
     if (format === "long") {
+      const beatsAll = project.script[format]?.beats || [];
+      const opening = current.edit[format].cuts.map((cut, k) => ({ cut, k })).filter(({ cut }) => cut.at < OPENING_SECONDS && !beatsAll.find((b) => b.id === cut.beatId)?.teaser);
+      try {
+        const lineIds = [...new Set(opening.map(({ cut }) => cut.beatId))];
+        const windows = lineIds.map((id) => beatWindow(beatsAll.find((b) => b.id === id), analysis.duration));
+        const story = storyRange(analysis);
+        const lo = Math.max(story.start, Math.min(...windows.map((w) => w.from), ...opening.map(({ k }) => cuts()[k].start)) - 30);
+        const hi = Math.min(story.end, lo + 600, Math.max(...windows.map((w) => w.to), ...opening.map(({ k }) => cuts()[k].end)) + 60);
+        const aligned = opening.length > 1 ? await alignOpening(opening.map(({ k }) => ({ k, said: said[k] })), [lo, hi], look, { signal, request }) : null;
+        if (aligned) {
+          const next = { ...matches, [format]: { ...(matches[format] || {}) } };
+          Object.defineProperty(next, "jevScores", { value: matches.jevScores, enumerable: false });
+          for (const id of lineIds) {
+            const slots = current.edit[format].cuts.map((cut, k) => (cut.beatId === id ? k : -1)).filter((k) => k >= 0);
+            next[format][id] = slots.map((k) => aligned[k] ?? middle(cuts()[k]));
+          }
+          const settled = buildRecapPlan(project, analysis, next);
+          const candidate = { ...current, plan: { ...current.plan, formats: { ...current.plan.formats, [format]: settled.plan.formats[format] } }, stats: { ...current.stats, [format]: settled.stats[format] }, edit: { ...current.edit, [format]: settled.edit[format] } };
+          // Rated on the real frames against their words, the aligned opening has to beat the one it replaces.
+          const ks = candidate.edit[format].cuts.map((cut, k) => (lineIds.includes(cut.beatId) ? k : -1)).filter((k) => k >= 0);
+          const candidateSaid = wordsOverCuts(candidate.edit[format]);
+          const { frames: seen } = await look(ks.map((k) => middle(candidate.plan.formats[format].cuts[k])));
+          const rated = await rateFrames(seen, ks.map((k) => candidateSaid[k]), { signal, request });
+          const before = opening.reduce((sum, { k }) => sum + (fit[k] ?? 0), 0) / Math.max(1, opening.length);
+          const after = rated.reduce((sum, f) => sum + (f ?? 0), 0) / Math.max(1, ks.length);
+          if (after > before) {
+            matches = next;
+            current = candidate;
+            ks.forEach((k, j) => { fit[k] = rated[j]; gore[k] = Boolean(rated.gore?.[j]); });
+            for (const id of lineIds) openingDone.add(id);
+          } else console.warn(`[movie-recap] aligned opening rated ${after.toFixed(2)}, not better than ${before.toFixed(2)}; kept`);
+        }
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        console.warn(`[movie-recap] opening alignment skipped: ${error.message}`);
+      }
       const beats = project.script[format]?.beats || [];
       const openingIds = [...new Set(current.edit[format].cuts.filter((cut) => cut.at < OPENING_SECONDS).map((cut) => cut.beatId))]
         .filter((id) => !beats.find((b) => b.id === id)?.teaser)
         .slice(0, 8);
       for (const id of openingIds) {
         signal?.throwIfAborted();
+        if (openingDone.has(id)) continue;
         const beat = beats.find((b) => b.id === id);
         const slots = current.edit[format].cuts.map((cut, k) => (cut.beatId === id ? k : -1)).filter((k) => k >= 0);
         if (!beat || !slots.length) continue;
