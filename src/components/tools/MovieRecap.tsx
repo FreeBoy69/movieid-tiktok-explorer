@@ -2,6 +2,7 @@
 // Create (link or upload, formats, voice, cut rules) -> progress while the worker watches the film
 // -> review and edit the script against the film's frames -> render -> the finished recap opens in
 // Vibe Edit with every cut, narration line, and caption on the timeline, ready to tweak and export.
+import { PickerDialog } from "../SourcePicker";
 import { type DragEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -1342,7 +1343,16 @@ function PostPanel({ recap, format, onChange, onError }: { recap: Recap; format:
       ) : null}
       <button type="button" className="mt-secondary" onClick={() => setOpen(true)}><Upload size={15} aria-hidden="true" />Post to a channel</button>
       {/* At the page's top level: the info panel's blur would trap a fixed overlay inside it. */}
-      {open ? createPortal(
+      <PickerDialog
+        open={open && !accountId}
+        onClose={() => setOpen(false)}
+        title="Post to a channel"
+        loading={!channels}
+        emptyText="No channels are connected. Connect one from the channel menu at the top."
+        items={(channels || []).map((c) => ({ value: c.id, label: c.title, imageUrl: c.thumbnail || undefined, kind: "channel" as const, platform: c.platform, meta: `${c.platform === "tiktok" ? "TikTok" : c.platform === "youtube" ? "YouTube" : c.platform}${c.handle ? ` · ${c.handle}` : ""}` }))}
+        onChoose={(item) => void pick(item.value)}
+      />
+      {open && accountId ? createPortal(
         <div className="mr-modal" role="presentation" onMouseDown={(e) => e.target === e.currentTarget && setOpen(false)}>
           <section className="mr-modal-card" role="dialog" aria-modal="true" aria-label="Post to a channel">
             <header className="mr-modal-head">
@@ -1350,21 +1360,7 @@ function PostPanel({ recap, format, onChange, onError }: { recap: Recap; format:
               <h2>{accountId ? `Post to ${channel?.title || "channel"}` : "Post to a channel"}</h2>
               <button type="button" className="mr-icon-btn" onClick={() => setOpen(false)} aria-label="Close"><X size={16} /></button>
             </header>
-            {!accountId ? (
-              <div className="mr-channel-list" role="listbox" aria-label="Your channels">
-                {!channels ? <p className="mt-note"><Loader2 size={13} className="animate-spin" aria-hidden="true" /> Loading your channels</p> : null}
-                {channels && !channels.length ? <p className="mt-note">No channels are connected. Connect one from Channel Management.</p> : null}
-                {(channels || []).map((c) => (
-                  <button key={c.id} type="button" role="option" aria-selected="false" className="mr-channel" onClick={() => void pick(c.id)}>
-                    <span className="mr-channel-avatar">
-                      {c.thumbnail ? <img src={c.thumbnail} alt="" referrerPolicy="no-referrer" /> : <span>{c.title.slice(0, 1)}</span>}
-                      <span className="mr-channel-badge" data-platform={c.platform}>{c.platform === "tiktok" ? <Music size={9} /> : <Youtube size={9} />}</span>
-                    </span>
-                    <span className="mr-channel-name"><strong>{c.title}</strong><small>{c.platform === "tiktok" ? "TikTok" : c.platform === "youtube" ? "YouTube" : c.platform}{c.handle ? ` · ${c.handle}` : ""}</small></span>
-                  </button>
-                ))}
-              </div>
-            ) : drafting ? (
+            {drafting ? (
               <p className="mt-note mr-modal-wait"><Loader2 size={14} className="animate-spin" aria-hidden="true" /> Writing a title and description in {channel?.title || "this channel"}'s style</p>
             ) : (
               <div className="mr-post-form">

@@ -124,3 +124,71 @@ export function SourcePicker({ options, value, onChange, label = "Source", place
     </div></div>, document.body)}
   </div>;
 }
+
+// ---------- The one channel/option pop-up ----------
+export type PickerItem = SourceOption & { meta?: string; platform?: "youtube" | "tiktok" | string };
+
+/**
+ * The grid pop-up every channel choice uses (header account switcher, posting
+ * a video, agents): search, avatars, two or three columns. Controlled by
+ * `open`, so any button can open it. `action` adds a per-item button (for
+ * example disconnect); `footer` sits under the grid (for example connect).
+ */
+export function PickerDialog({ open, onClose, title, items, value = "", onChoose, theme = "dark", loading = false, emptyText = "Nothing here yet", busyValue = "", action, footer }: {
+  open: boolean; onClose: () => void; title: string; items: PickerItem[]; value?: string; onChoose: (item: PickerItem) => void;
+  theme?: "light" | "dark"; loading?: boolean; emptyText?: string; busyValue?: string;
+  action?: (item: PickerItem) => ReactNode; footer?: ReactNode;
+}) {
+  const [query, setQuery] = useState(""), [active, setActive] = useState(0);
+  const search = useRef<HTMLInputElement>(null);
+  const id = useId();
+  const filtered = items.filter((item) => `${item.label} ${item.meta || ""}`.toLocaleLowerCase().includes(query.toLocaleLowerCase()));
+  useEffect(() => {
+    if (!open) return;
+    setQuery("");
+    setActive(Math.max(0, items.findIndex((item) => item.value === value)));
+    requestAnimationFrame(() => search.current?.focus());
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = previous; };
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (open) document.getElementById(`${id}-${active}`)?.scrollIntoView({ block: "nearest" }); }, [active, open, id]);
+  if (!open) return null;
+  const choose = (item: PickerItem) => { if (!item.disabled) onChoose(item); };
+  return createPortal(<div className="source-picker-overlay" onPointerDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <div className="source-picker-popup" data-theme={theme} role="dialog" aria-modal="true" aria-labelledby={`${id}-title`}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onClose(); }
+        if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+          event.preventDefault();
+          const available = filtered.map((item, i) => (item.disabled ? -1 : i)).filter((i) => i >= 0);
+          if (!available.length) return;
+          const current = available.indexOf(active), step = event.key === "ArrowUp" ? -1 : 1;
+          setActive(event.key === "Home" ? available[0] : event.key === "End" ? available.at(-1)! : available[(current + step + available.length) % available.length]);
+        }
+        if (event.key === "Enter" && filtered[active] && (event.target as HTMLElement).tagName === "INPUT") { event.preventDefault(); choose(filtered[active]); }
+      }}>
+      <div className="source-picker-modal-head">
+        <div className="source-picker-modal-title"><span className="source-picker-modal-icon"><Layers3 size={16} /></span><strong id={`${id}-title`}>{title}</strong></div>
+        <div className="source-picker-modal-actions"><span>{loading ? "Loading" : `${filtered.length} ${filtered.length === 1 ? "option" : "options"}`}</span><button type="button" className="source-picker-close" onClick={onClose} aria-label="Close" title="Close"><X size={17} /></button></div>
+      </div>
+      <div className="source-picker-tabpanel">
+        {items.length > 6 ? <div className="source-picker-search"><Search size={16} /><input ref={search} value={query} onChange={(event) => { setQuery(event.target.value); setActive(0); }} placeholder="Search" aria-label={`Search ${title.toLowerCase()}`} role="combobox" aria-expanded="true" aria-controls={id} aria-activedescendant={filtered[active] ? `${id}-${active}` : undefined} /></div> : null}
+        <div id={id} role="listbox" aria-label={title} className="source-picker-list">
+          {loading ? <div className="source-picker-empty" role="status"><Loader2 size={15} className="source-picker-spin" /> Loading</div> : null}
+          {!loading && filtered.map((item, i) => (
+            <div key={item.value} id={`${id}-${i}`} role="option" tabIndex={0} aria-selected={item.value === value} aria-disabled={item.disabled || undefined} className={`source-picker-option${active === i ? " is-active" : ""}${action ? " has-action" : ""}`}
+              onPointerMove={() => { if (!item.disabled) setActive(i); }} onClick={() => choose(item)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); choose(item); } }}>
+              <span className="source-picker-avatar"><Picture option={item} />{item.platform ? <span className="source-picker-platform" data-platform={item.platform}>{item.platform === "tiktok" ? "TT" : "YT"}</span> : null}</span>
+              <span className="source-picker-copy"><span className="source-picker-name">{item.label}</span>{item.meta ? <span className="source-picker-meta">{item.meta}</span> : null}</span>
+              {busyValue === item.value ? <Loader2 className="source-picker-spin" size={16} /> : item.value === value ? <Check className="source-picker-check" size={17} /> : null}
+              {action ? <span className="source-picker-option-action" onClick={(event) => event.stopPropagation()}>{action(item)}</span> : null}
+            </div>
+          ))}
+          {!loading && !filtered.length ? <div className="source-picker-empty" role="status">{items.length ? "No results" : emptyText}</div> : null}
+        </div>
+      </div>
+      {footer ? <div className="source-picker-footer">{footer}</div> : null}
+    </div>
+  </div>, document.body);
+}

@@ -24,6 +24,7 @@ import {
 import { identifyMovie } from "./services/gemini";
 import { AuthSessionPayload, ConnectedYouTubeAccount, ExtractionState, MovieResult } from "./types";
 import { cn } from "./lib/utils";
+import { PickerDialog } from "./components/SourcePicker";
 import { toast } from "./utils/toast";
 import TikTokExplorer from "./components/TikTokExplorer";
 import { MovieAnalysisTabs, type MainTab as MovieAnalysisTab } from "./components/MovieAnalysisTabs";
@@ -835,138 +836,49 @@ function AccountSwitcherModal({ auth, open, anchor, onClose, onRefresh, darkMode
     }
   }
 
+  // The same grid pop-up every channel choice in the app uses.
   return (
-    <AnimatePresence>
-      {open && (
-        <motion.div className="fixed inset-0 z-[90]" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-          <button type="button" className="absolute inset-0 cursor-default bg-transparent" aria-label="Close channel selector" onClick={onClose} />
-          <motion.section
-            initial={{ opacity: 0, y: -8, scale: 0.97 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -6, scale: 0.97 }}
-            transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-            className={cn(
-              "absolute w-[calc(100vw-24px)] max-w-[292px] overflow-y-auto rounded-[18px] border p-2 shadow-[0_24px_80px_rgba(0,0,0,0.28)] ring-1 backdrop-blur-xl",
-              darkMode
-                ? "border-white/10 bg-[#171B26] text-white ring-black/20"
-                : "border-[#1A1A1A]/10 bg-white/95 text-[#1A1A1A] ring-[#1A1A1A]/5",
-            )}
-            style={{ ...channelMenuPosition(anchor), maxHeight: `calc(100dvh - ${channelMenuPosition(anchor).top + 12}px)` }}
-            role="menu"
-            aria-label="Select YouTube channel"
-          >
-            <div className="max-h-[292px] space-y-1 overflow-y-auto">
-                {accounts.length ? accounts.map((account) => {
-                  const active = auth.activeAccount?.id === account.id;
-                  const isTikTok = account.platform === "tiktok";
-                  const PlatformIcon = isTikTok ? Music : Youtube;
-                  const platformName = isTikTok ? "TikTok" : "YouTube";
-                  return (
-                    <div
-                      key={account.id}
-                      className={cn(
-                        "group flex w-full items-center justify-between rounded-xl transition",
-                        active
-                          ? darkMode ? "bg-[#252A3A] text-white" : "bg-[#F4F5F8] text-[#1A1A1A]"
-                          : darkMode ? "text-white/76 hover:bg-white/[0.055] hover:text-white" : "text-[#1A1A1A]/70 hover:bg-[#F9F8F6] hover:text-[#1A1A1A]",
-                      )}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => void switchAccount(account)}
-                        className="flex flex-1 items-center gap-3 rounded-l-xl px-2.5 py-2.5 text-left transition min-w-0 bg-transparent"
-                        role="menuitem"
-                      >
-                        <span className="relative shrink-0">
-                          {account.thumbnailUrl ? (
-                            <img src={account.thumbnailUrl} alt="" className="h-9 w-9 rounded-full object-cover" referrerPolicy="no-referrer" />
-                          ) : (
-                            <span className="grid h-9 w-9 place-items-center rounded-full bg-[#f9dc0b] text-[#1A1A1A]">
-                              <PlatformIcon className="h-4 w-4" />
-                            </span>
-                          )}
-                          <span className={cn("absolute -bottom-0.5 -right-0.5 grid h-4 w-4 place-items-center rounded-full bg-[#f9dc0b] ring-2", darkMode ? "ring-[#252A3A]" : "ring-white")}>
-                            <PlatformIcon className="h-2.5 w-2.5 fill-white text-white" />
-                          </span>
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-sm font-bold">{account.channelTitle}</span>
-                          <span className={cn("block truncate text-[11px] font-semibold", active ? darkMode ? "text-white/45" : "text-[#1A1A1A]/45" : darkMode ? "text-white/28" : "text-[#1A1A1A]/35")}>
-                            {platformName}
-                          </span>
-                        </span>
-                      </button>
-
-                      <div className="relative flex items-center justify-center w-9 h-9 mr-1.5 shrink-0">
-                        {/* Status indicators visible by default, hidden on hover */}
-                        <div className={cn(
-                          "transition-all duration-200 flex items-center justify-center absolute inset-0",
-                          "group-hover:opacity-0 group-hover:scale-75"
-                        )}>
-                          {busy === account.id ? (
-                            <Loader2 className="h-4 w-4 animate-spin text-[#f9dc0b]" />
-                          ) : active ? (
-                            <CheckCircle2 className="h-4 w-4 text-[#f9dc0b]" />
-                          ) : null}
-                        </div>
-
-                        {/* Trash/delete action, visible on hover */}
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (window.confirm(`Are you sure you want to disconnect ${account.channelTitle}?`)) {
-                              void disconnectAccount(account);
-                            }
-                          }}
-                          className={cn(
-                            "absolute inset-0 flex items-center justify-center rounded-lg opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 transition-all duration-200",
-                            darkMode
-                              ? "text-white/40 hover:text-[#FF4D4D] hover:bg-[#FF4D4D]/10"
-                              : "text-[#1A1A1A]/40 hover:text-[#E53E3E] hover:bg-[#E53E3E]/8"
-                          )}
-                          title="Disconnect channel"
-                          aria-label={`Disconnect ${account.channelTitle}`}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                }) : (
-                  <p className={cn("rounded-xl px-3 py-4 text-sm font-semibold leading-6", darkMode ? "text-white/50" : "text-[#1A1A1A]/50")}>No connected YouTube channels yet.</p>
-                )}
-            </div>
-
-            <div className={cn("my-1 h-px", darkMode ? "bg-white/8" : "bg-[#1A1A1A]/8")} />
-
-            <div className="space-y-1">
-              <a href="/api/auth/google?mode=connect&next=/channels" className={cn("flex w-full items-center gap-3 rounded-xl px-2.5 py-2.5 text-left transition", darkMode ? "text-white/82 hover:bg-white/[0.055] hover:text-white" : "text-[#1A1A1A]/75 hover:bg-[#F9F8F6] hover:text-[#1A1A1A]")} role="menuitem">
-                <span className={cn("grid h-9 w-9 place-items-center rounded-full", darkMode ? "bg-white/[0.04] text-white/45" : "bg-[#f9dc0b]/35 text-[#1A1A1A]/65")}>
-                  <Youtube className="h-4 w-4" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-bold">YouTube</span>
-                  <span className={cn("block text-[11px] font-semibold", darkMode ? "text-white/28" : "text-[#1A1A1A]/40")}>Add channel</span>
-                </span>
-                <PlusCircle className={cn("h-4 w-4", darkMode ? "text-white/32" : "text-[#1A1A1A]/38")} />
-              </a>
-
-              <a href="/api/auth/tiktok?mode=connect&next=/channels" className={cn("flex w-full items-center gap-3 rounded-xl px-2.5 py-2.5 text-left transition", darkMode ? "text-white/82 hover:bg-white/[0.055] hover:text-white" : "text-[#1A1A1A]/75 hover:bg-[#F9F8F6] hover:text-[#1A1A1A]")} role="menuitem">
-                <span className={cn("grid h-9 w-9 place-items-center rounded-full", darkMode ? "bg-white/[0.04] text-white/45" : "bg-[#f9dc0b]/35 text-[#1A1A1A]/65")}>
-                  <Music className="h-4 w-4" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-bold">TikTok</span>
-                  <span className={cn("block text-[11px] font-semibold", darkMode ? "text-white/28" : "text-[#1A1A1A]/40")}>Add account</span>
-                </span>
-                <PlusCircle className={cn("h-4 w-4", darkMode ? "text-white/32" : "text-[#1A1A1A]/38")} />
-              </a>
-            </div>
-          </motion.section>
-        </motion.div>
+    <PickerDialog
+      open={open}
+      onClose={onClose}
+      title="Your channels"
+      theme={darkMode ? "dark" : "light"}
+      value={auth.activeAccount?.id || ""}
+      busyValue={busy}
+      emptyText="No channels connected yet. Connect one below."
+      items={accounts.map((account) => ({
+        value: account.id,
+        label: account.channelTitle,
+        imageUrl: account.thumbnailUrl,
+        kind: "channel" as const,
+        platform: account.platform === "tiktok" ? "tiktok" : "youtube",
+        meta: account.platform === "tiktok" ? "TikTok" : "YouTube",
+      }))}
+      onChoose={(item) => {
+        const account = accounts.find((entry) => entry.id === item.value);
+        if (account && item.value !== auth.activeAccount?.id) void switchAccount(account);
+        else onClose();
+      }}
+      action={(item) => (
+        <button
+          type="button"
+          title="Disconnect channel"
+          aria-label={`Disconnect ${item.label}`}
+          onClick={() => {
+            const account = accounts.find((entry) => entry.id === item.value);
+            if (account && window.confirm(`Disconnect ${account.channelTitle}? Agents posting to it will stop until you connect it again.`)) void disconnectAccount(account);
+          }}
+        >
+          <Trash2 className="h-4 w-4" />
+        </button>
       )}
-    </AnimatePresence>
+      footer={
+        <>
+          <a href="/api/auth/google?mode=connect&next=/channels"><Youtube className="h-4 w-4" /> Connect a YouTube channel</a>
+          <a href="/api/auth/tiktok?mode=connect&next=/channels"><Music className="h-4 w-4" /> Connect a TikTok account</a>
+        </>
+      }
+    />
   );
 }
 
