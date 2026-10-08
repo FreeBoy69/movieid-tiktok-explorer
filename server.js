@@ -75,6 +75,7 @@ import { createAdminConsole } from "./server/adminConsole.js";
 import { hostedAudioFile, hostedVoiceProfile, hostedVoiceProfiles, isHostedVoice, storeHostedAudio, synthesizeHostedVoice } from "./server/hostedVoices.js";
 import { canUseVoice, claimVoice, inFlightVoiceGeneration, releaseVoice, reusableVoiceGeneration, visibleVoices } from "./server/voiceOwners.js";
 import { registerNativeApp } from "./server/nativeApp.js";
+import { loadPackedAssets, packedAssetsMiddleware } from "./server/builtAssets.js";
 // Runs ffmpeg/ffprobe/python/yt-dlp/zip on the media worker when this host lacks them.
 installRemoteMedia();
 dns.setDefaultResultOrder("ipv4first");
@@ -25638,6 +25639,13 @@ SELECT json_build_object(
     else {
         // Built files have content hashes in their names, so they can be cached for
         // a year; the page itself must be re-read so it always names current files.
+        // In the hosted bundle the hashed scripts and styles arrive packed in one
+        // file (see scripts/lingcode-cloud/build-app-bundle.sh); serve those first.
+        const packedAssets = loadPackedAssets(path.join(__dirname, "dist"));
+        if (packedAssets) {
+            app.use("/assets", packedAssetsMiddleware(packedAssets));
+            console.log(`Serving ${packedAssets.size} packed front-end files`);
+        }
         app.use(express.static(path.join(__dirname, "dist"), {
             setHeaders(res, file) {
                 if (file.includes(`${path.sep}assets${path.sep}`)) res.setHeader("Cache-Control", "public, max-age=31536000, immutable");

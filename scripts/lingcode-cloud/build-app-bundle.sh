@@ -16,6 +16,19 @@ mkdir -p "$STAGE/src/utils" "$STAGE/scripts" "$STAGE/data" "$STAGE/dist"
 cp package.json package-lock.json server.js requirements.txt "$STAGE/"
 cp data/premium-niche-library.json data/prompt-library.json data/image-prompts.json data/shortfilm-prompts.json data/seedance-prompts.json "$STAGE/data/"
 cp -R dist/. "$STAGE/dist/"
+# Vite's hashed scripts and styles go into one file, dist/assets.pack, which the
+# server serves from memory (server/builtAssets.js). Pages load on demand, so
+# there are dozens of these, and each would count against the 500-file limit.
+# Images and fonts stay plain files: server code reads some of them from disk.
+(
+  cd "$STAGE/dist/assets"
+  find . -maxdepth 1 -type f \( -name '*.js' -o -name '*.css' \) | sed 's|^\./||' > ../.packlist
+  if [ -s ../.packlist ]; then
+    tar --format=ustar -cf ../assets.pack -T ../.packlist
+    xargs rm -f < ../.packlist
+  fi
+  rm -f ../.packlist
+)
 for f in src/utils/*.js; do
   case "$f" in *.test.*) ;; *) cp "$f" "$STAGE/src/utils/" ;; esac
 done
