@@ -613,15 +613,15 @@ def cut_luma(movie, start, length):
 
 
 def lift_filter(luma):
-    """Editing standard: a dark picture is brightened, not left murky. Lifts mids on cuts under ~28% luma, and
-    a night scene (Fall 2's rain prologue averages 25-30 of 255) gets more exposure and a touch of contrast
-    so the people in it read."""
-    if luma is None or luma >= 70:
+    """Editing standard: a dark picture is brightened, not left murky. Lifts mids on cuts under ~22% luma, and a
+    night scene (Fall 2's rain prologue averages 25-30 of 255) gets a light touch of exposure and contrast so
+    the people in it read. Gentle on purpose: the first curve (gamma up to 1.9) turned night into dusk."""
+    if luma is None or luma >= 55:
         return ""
-    gamma = min(1.9, max(1.1, (78 / max(luma, 18)) ** 0.6))
-    if luma < 40:
-        return f"eq=gamma={gamma:.2f}:brightness=0.05:contrast=1.08"
-    return f"eq=gamma={gamma:.2f}:brightness=0.02"
+    gamma = min(1.45, max(1.05, (55 / max(luma, 18)) ** 0.4))
+    if luma < 35:
+        return f"eq=gamma={gamma:.2f}:brightness=0.02:contrast=1.05"
+    return f"eq=gamma={gamma:.2f}"
 
 
 # The film's own subtitles sit in the bottom band of the frame (or the letterbox bar under it).
