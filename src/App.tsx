@@ -33,18 +33,35 @@ import { PickerDialog } from "./components/SourcePicker";
 import { PlatformGrid, socialPlatform } from "./components/SocialPlatforms";
 import { useChannels } from "./components/useChannels";
 import { toast } from "./utils/toast";
-import type { MainTab as MovieAnalysisTab } from "./components/MovieAnalysisTabs";
+import TikTokExplorer from "./components/TikTokExplorer";
+import { MovieAnalysisTabs, type MainTab as MovieAnalysisTab } from "./components/MovieAnalysisTabs";
+import { RewriterEngine } from "./components/RewriterEngine";
 import { handOffRemakeUpload } from "./components/AgentRemake";
-import { SignInDialog } from "./components/GuestToolView";
+import { CreatorWorkspace } from "./components/CreatorWorkspace";
+import { YouTubeRadar } from "./components/YouTubeRadar";
+import { ChannelManagement } from "./components/ChannelManagement";
+import { AutomationAgents } from "./components/AutomationAgents";
+import { CompilationStudio } from "./components/CompilationStudio";
+import { NicheLibrary } from "./components/NicheLibrary";
+import { GuestToolView, SignInDialog } from "./components/GuestToolView";
+import { LegalPage } from "./components/LegalPage";
+import { TextToSpeechStudio } from "./components/TextToSpeechStudio";
+import { PromptLibrary } from "./components/PromptLibrary";
+import { AccountPage } from "./components/AccountPage";
 import { AppHeader } from "./components/AppHeader";
 import { SiteNotice } from "./components/AccountServices";
 import type { NavTarget } from "./utils/appNavigation";
 import { writePendingTemplate } from "./utils/promptTemplates";
 import { findShortfilmTemplate } from "./utils/shortfilmTemplates";
+import { ToolsHub } from "./components/ToolsHub";
 import { navEntryFor } from "./utils/appNavigation";
 import { toolPageCopy } from "./components/guestToolCopy";
+import { VideoDownloader } from "./components/VideoDownloader";
+import { DigitalProductMaker } from "./components/DigitalProductMaker";
+import { CreatorStudio } from "./components/CreatorStudio";
 import { BrandLoader } from "./components/BrandLoader";
-import { lazyPage, PageBoundary, PageLoading } from "./utils/lazyPage";
+import { lazyPage, PageBoundary } from "./utils/lazyPage";
+import { ToolPage } from "./components/tools/ToolPage";
 import { readDeepLink, writeDeepLink, type MainView as View } from "./utils/tiktokRoute";
 import { BackgroundProcessCenter, openBackgroundProcessCenter, type BackgroundProcess } from "./components/BackgroundProcessCenter";
 
@@ -52,27 +69,6 @@ import { BackgroundProcessCenter, openBackgroundProcessCenter, type BackgroundPr
 const AdminApp = lazyPage(() => import("./admin/AdminApp"));
 // Vibe Edit is a full editor; it loads only when opened.
 const VibeEdit = lazyPage(() => import("./components/vibe/VibeEdit"));
-// Every page loads when it is first opened, so the first visit downloads only
-// the app shell and the page being shown (they used to arrive all at once).
-const TikTokExplorer = lazyPage(() => import("./components/TikTokExplorer"));
-const RewriterEngine = lazyPage(() => import("./components/RewriterEngine").then((m) => ({ default: m.RewriterEngine })));
-const CreatorWorkspace = lazyPage(() => import("./components/CreatorWorkspace").then((m) => ({ default: m.CreatorWorkspace })));
-const YouTubeRadar = lazyPage(() => import("./components/YouTubeRadar").then((m) => ({ default: m.YouTubeRadar })));
-const ChannelManagement = lazyPage(() => import("./components/ChannelManagement").then((m) => ({ default: m.ChannelManagement })));
-const AutomationAgents = lazyPage(() => import("./components/AutomationAgents").then((m) => ({ default: m.AutomationAgents })));
-const CompilationStudio = lazyPage(() => import("./components/CompilationStudio").then((m) => ({ default: m.CompilationStudio })));
-const NicheLibrary = lazyPage(() => import("./components/NicheLibrary").then((m) => ({ default: m.NicheLibrary })));
-const LegalPage = lazyPage(() => import("./components/LegalPage").then((m) => ({ default: m.LegalPage })));
-const TextToSpeechStudio = lazyPage(() => import("./components/TextToSpeechStudio").then((m) => ({ default: m.TextToSpeechStudio })));
-const PromptLibrary = lazyPage(() => import("./components/PromptLibrary").then((m) => ({ default: m.PromptLibrary })));
-const AccountPage = lazyPage(() => import("./components/AccountPage").then((m) => ({ default: m.AccountPage })));
-const ToolsHub = lazyPage(() => import("./components/ToolsHub").then((m) => ({ default: m.ToolsHub })));
-const VideoDownloader = lazyPage(() => import("./components/VideoDownloader").then((m) => ({ default: m.VideoDownloader })));
-const DigitalProductMaker = lazyPage(() => import("./components/DigitalProductMaker").then((m) => ({ default: m.DigitalProductMaker })));
-const CreatorStudio = lazyPage(() => import("./components/CreatorStudio").then((m) => ({ default: m.CreatorStudio })));
-const ToolPage = lazyPage(() => import("./components/tools/ToolPage").then((m) => ({ default: m.ToolPage })));
-const MovieAnalysisTabs = lazyPage(() => import("./components/MovieAnalysisTabs").then((m) => ({ default: m.MovieAnalysisTabs })));
-const GuestToolView = lazyPage(() => import("./components/GuestToolView").then((m) => ({ default: m.GuestToolView })));
 
 const MOVIE_RESULT_TABS: Array<{ id: MovieAnalysisTab; label: string }> = [
   { id: "movie", label: "Movie ID" },
@@ -86,8 +82,8 @@ const MOVIE_RESULT_TABS: Array<{ id: MovieAnalysisTab; label: string }> = [
 
 export default function App() {
   const publicPath = window.location.pathname;
-  if (publicPath === "/privacy") return <Suspense fallback={<PageLoading />}><LegalPage type="privacy" /></Suspense>;
-  if (publicPath === "/terms") return <Suspense fallback={<PageLoading />}><LegalPage type="terms" /></Suspense>;
+  if (publicPath === "/privacy") return <LegalPage type="privacy" />;
+  if (publicPath === "/terms") return <LegalPage type="terms" />;
   if (publicPath === "/admin" || publicPath.startsWith("/admin/"))
     return <PageBoundary theme="dark"><Suspense fallback={<BrandLoader label="Loading the admin console" theme="dark" />}><AdminApp /></Suspense></PageBoundary>;
 
@@ -602,8 +598,6 @@ function WorkspaceApp() {
         "app-backdrop",
       )}>
         <div className={cn("min-w-0", isEdgeToEdgeView ? cn("h-full w-full flex-1 overflow-hidden flex flex-col", isInsetEdgeView && "mx-auto max-w-[1440px]") : "mx-auto", !isEdgeToEdgeView && (["tools", "feed", "channels", "publish", "automation", "compile", "niches", "youtube"].includes(activeView) ? "max-w-[1280px]" : "max-w-[1000px]"))}>
-          <PageBoundary theme={channelTheme} resetKey={activeView}>
-          <Suspense fallback={<PageLoading theme={channelTheme} />}>
           <AnimatePresence mode="wait">
             {isGuest && activeView !== "tools" ? (
               <GuestToolView key={`${activeView}-${routeLink.view === "studio" ? routeLink.studioTab : routeLink.view === "tool" ? routeLink.toolId : ""}`} view={activeView} studioTab={routeLink.view === "studio" ? routeLink.studioTab : undefined} toolId={routeLink.view === "tool" ? routeLink.toolId : undefined} theme={channelTheme} onBack={() => handleNavigate({ view: "tools" })} onUse={() => setSignInOpen(true)} />
@@ -820,8 +814,6 @@ function WorkspaceApp() {
               </motion.div>
             )}
           </AnimatePresence>
-          </Suspense>
-          </PageBoundary>
         </div>
       </main>
       </div>

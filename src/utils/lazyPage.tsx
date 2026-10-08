@@ -5,7 +5,7 @@
 // longer exists, so the import fails. Without help that leaves an empty page
 // until a manual reload. Here, a failed page load reloads the app once (fresh
 // file names), and anything still failing shows a message with a Reload button.
-import { Component, lazy, useEffect, useState, type ComponentType, type ReactNode } from "react";
+import { Component, lazy, type ComponentType, type ReactNode } from "react";
 
 const RELOAD_KEY = "autoyt-chunk-reload-at";
 const RELOAD_GAP_MS = 15_000;
@@ -88,25 +88,4 @@ export class PageBoundary extends Component<BoundaryProps, { error: unknown; key
       </div>
     );
   }
-}
-
-/** Shown in the page area while a page's file downloads. It waits a moment
- * before appearing, so fast loads don't flash it. */
-export function PageLoading({ theme = "dark" }: { theme?: "light" | "dark" }) {
-  const [show, setShow] = useState(false);
-  useEffect(() => {
-    const t = window.setTimeout(() => setShow(true), 180);
-    return () => window.clearTimeout(t);
-  }, []);
-  const dark = theme !== "light";
-  return (
-    <div role="status" aria-live="polite" className="flex h-full min-h-[240px] items-center justify-center">
-      {show ? (
-        <span className={`flex items-center gap-2.5 text-[13px] ${dark ? "text-[#9b9a93]" : "text-[#66655e]"}`}>
-          <span className={`h-4 w-4 animate-spin rounded-full border-2 ${dark ? "border-white/15 border-t-[#f9dc0b]" : "border-black/10 border-t-[#7a6600]"}`} aria-hidden="true" />
-          Loading
-        </span>
-      ) : null}
-    </div>
-  );
 }
