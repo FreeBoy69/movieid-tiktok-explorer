@@ -3,7 +3,7 @@
 // your edits; the editor is a full-screen workspace: tool rail and panel on
 // the left, preview in the middle, assistant on the right, timeline below.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Check, ChevronDown, Clapperboard, CloudOff, Download, Film, Loader2, Plus, SlidersHorizontal, Square, Trash2, Upload, WandSparkles, ChevronLeft, Link2, PanelLeft, PanelRight, Pencil } from "lucide-react";
+import { Check, ChevronDown, Clapperboard, CloudOff, Download, Film, Loader2, Plus, SlidersHorizontal, Square, Trash2, Upload, WandSparkles, ChevronLeft, Link2, PanelBottomClose, PanelBottomOpen, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Pencil } from "lucide-react";
 import { toast } from "../../utils/toast";
 import { writeDeepLink } from "../../utils/tiktokRoute";
 import { loadVoiceProfiles } from "../../utils/voiceProfiles";
@@ -274,6 +274,24 @@ function StatusStrip() {
   );
 }
 
+// Which cards a viewer keeps open, remembered in this browser only.
+const LAYOUT_KEY = "vibe-edit-layout";
+type Layout = { chat?: boolean; panel?: boolean; timeline?: boolean };
+function readLayout(): Layout {
+  try {
+    return JSON.parse(localStorage.getItem(LAYOUT_KEY) || "{}") as Layout;
+  } catch {
+    return {};
+  }
+}
+function writeLayout(layout: Layout) {
+  try {
+    localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout));
+  } catch {
+    // Private windows can refuse storage; the layout just isn't remembered.
+  }
+}
+
 // Share copies this edit's link; the edit stays private to your account.
 function ShareButton() {
   const [copied, setCopied] = useState(false);
@@ -308,8 +326,12 @@ function Editor({ onBack }: { onBack: () => void }) {
   const aspect = useVibe((s) => s.project.aspect);
   // The assistant is the card on the left; the right card holds the tool panels and the
   // selected item's details as tabs.
-  const [chatOpen, setChatOpen] = useState(true);
-  const [tab, setTab] = useState<PanelId | "props" | null>("media");
+  const saved = useRef(readLayout()).current;
+  const [chatOpen, setChatOpen] = useState(saved.chat ?? true);
+  const [tab, setTab] = useState<PanelId | "props" | null>(saved.panel === false ? null : "media");
+  const [timelineOpen, setTimelineOpen] = useState(saved.timeline ?? true);
+  // Remember which cards this viewer keeps open.
+  useEffect(() => writeLayout({ chat: chatOpen, panel: Boolean(tab), timeline: timelineOpen }), [chatOpen, tab, timelineOpen]);
   const importer = useRef<HTMLInputElement>(null);
   const [snapping, setSnapping] = useState(true);
   const [voicesLoading, setVoicesLoading] = useState(true);
@@ -331,12 +353,12 @@ function Editor({ onBack }: { onBack: () => void }) {
     return () => controller.abort();
   }, []);
 
-  // Narrow screens start with the cards folded so the preview has room; mid-size ones keep one.
+  // Phones start with the cards folded so the preview has room.
   useEffect(() => {
     if (window.matchMedia("(max-width: 900px)").matches) {
       setTab(null);
       setChatOpen(false);
-    } else if (window.matchMedia("(max-width: 1100px)").matches) setChatOpen(false);
+    }
   }, []);
 
   // Keyboard: space, S, delete, undo/redo, arrows.
@@ -419,17 +441,21 @@ function Editor({ onBack }: { onBack: () => void }) {
       </header>
 
       <nav className="ve-rail" aria-label="Workspace">
-        <button type="button" className={`ve-rail-btn${chatOpen ? " is-on" : ""}`} onClick={() => setChatOpen((o) => !o)} aria-pressed={chatOpen} aria-label="Assistant" title="Assistant">
-          <PanelLeft size={18} />
+        <button type="button" className={`ve-rail-btn${chatOpen ? " is-on" : ""}`} onClick={() => setChatOpen((o) => !o)} aria-pressed={chatOpen} aria-label={chatOpen ? "Hide assistant" : "Show assistant"} title={chatOpen ? "Hide assistant" : "Show assistant"}>
+          {chatOpen ? <PanelLeftClose size={18} strokeWidth={1.75} /> : <PanelLeftOpen size={18} strokeWidth={1.75} />}
         </button>
+        <button type="button" className={`ve-rail-btn${tab ? " is-on" : ""}`} onClick={() => setTab(tab ? null : "media")} aria-pressed={Boolean(tab)} aria-label={tab ? "Hide tools" : "Show tools"} title={tab ? "Hide tools" : "Show media, captions, and more"}>
+          {tab ? <PanelRightClose size={18} strokeWidth={1.75} /> : <PanelRightOpen size={18} strokeWidth={1.75} />}
+        </button>
+        <button type="button" className={`ve-rail-btn${timelineOpen ? " is-on" : ""}`} onClick={() => setTimelineOpen((o) => !o)} aria-pressed={timelineOpen} aria-label={timelineOpen ? "Hide timeline" : "Show timeline"} title={timelineOpen ? "Hide timeline" : "Show timeline"}>
+          {timelineOpen ? <PanelBottomClose size={18} strokeWidth={1.75} /> : <PanelBottomOpen size={18} strokeWidth={1.75} />}
+        </button>
+        <span className="ve-rail-sep" aria-hidden="true" />
         <button type="button" className="ve-rail-btn" onClick={() => importer.current?.click()} aria-label="Import files" title="Import files">
-          <Plus size={18} />
+          <Plus size={18} strokeWidth={1.75} />
         </button>
-        <button type="button" className={`ve-rail-btn${tab === "auto" ? " is-on" : ""}`} onClick={() => setTab(tab === "auto" ? null : "auto")} aria-pressed={tab === "auto"} aria-label="Auto edit" title="Auto edit">
-          <WandSparkles size={18} />
-        </button>
-        <button type="button" className={`ve-rail-btn${tab && tab !== "auto" ? " is-on" : ""}`} onClick={() => setTab(tab && tab !== "auto" ? null : "media")} aria-pressed={Boolean(tab && tab !== "auto")} aria-label="Media, captions, and more" title="Media, captions, and more">
-          <PanelRight size={18} />
+        <button type="button" className={`ve-rail-btn${tab === "auto" ? " is-on" : ""}`} onClick={() => setTab(tab === "auto" ? "media" : "auto")} aria-pressed={tab === "auto"} aria-label="Auto edit" title="Auto edit">
+          <WandSparkles size={18} strokeWidth={1.75} />
         </button>
         <input
           ref={importer}
@@ -448,7 +474,7 @@ function Editor({ onBack }: { onBack: () => void }) {
         />
       </nav>
 
-      <div className={`ve-body${chatOpen ? " has-chat" : ""}${tab ? " has-panel" : ""}`}>
+      <div className={`ve-body${chatOpen ? " has-chat" : ""}${tab ? " has-panel" : ""}${timelineOpen ? "" : " is-tall"}`}>
         {chatOpen ? (
           <aside className="ve-card ve-chat-card" aria-label="Assistant">
             <ChatPanel onClose={() => setChatOpen(false)} />
@@ -461,14 +487,17 @@ function Editor({ onBack }: { onBack: () => void }) {
           <aside className="ve-card ve-tabs-card" aria-label={tab === "props" ? "Details" : PANELS.find((p) => p.id === tab)?.label}>
             <div className="ve-tabs" role="tablist" aria-label="Tools">
               {PANELS.filter((p) => p.id !== "auto").map((p) => (
-                <button key={p.id} type="button" role="tab" aria-selected={tab === p.id} className={tab === p.id ? "is-on" : ""} onClick={() => setTab(p.id)}>
+                <button key={p.id} type="button" role="tab" aria-selected={tab === p.id} className={tab === p.id ? "is-on" : ""} onClick={() => setTab(p.id)} aria-label={p.label} title={p.label}>
                   {p.icon}
                   <span>{p.short || p.label}</span>
                 </button>
               ))}
-              <button type="button" role="tab" aria-selected={tab === "props"} className={tab === "props" ? "is-on" : ""} onClick={() => setTab("props")}>
+              <button type="button" role="tab" aria-selected={tab === "props"} className={tab === "props" ? "is-on" : ""} onClick={() => setTab("props")} aria-label="Details" title="Details">
                 <SlidersHorizontal size={18} />
                 <span>Details</span>
+              </button>
+              <button type="button" className="ve-collapse ve-tabs-collapse" onClick={() => setTab(null)} aria-label="Hide tools" title="Hide tools">
+                <PanelRightClose size={16} strokeWidth={1.75} />
               </button>
             </div>
             {tab === "props" ? (
@@ -483,7 +512,7 @@ function Editor({ onBack }: { onBack: () => void }) {
         ) : null}
       </div>
 
-      <Timeline snapping={snapping} onToggleSnap={() => setSnapping((s) => !s)} />
+      {timelineOpen ? <Timeline snapping={snapping} onToggleSnap={() => setSnapping((s) => !s)} onCollapse={() => setTimelineOpen(false)} /> : null}
       {over ? (
         <div className="ve-dropzone" aria-hidden="true">
           <Upload size={28} />

@@ -195,14 +195,27 @@
 .ve-rail { grid-row: 2 / 4; grid-column: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 2px 0; }
 .ve-rail-btn { display: grid; width: 38px; height: 38px; place-items: center; border-radius: 11px; color: var(--ve-muted); transition: background 0.16s ease, color 0.16s ease, box-shadow 0.16s ease; }
 .ve-rail-btn:hover { background: var(--ve-raised); color: var(--ve-text); }
+.ve-rail-sep { width: 20px; height: 1px; flex: none; margin: 4px 0; background: var(--ve-line-strong); }
 .ve-rail-btn.is-on { background: var(--ve-raised); color: var(--ve-text); box-shadow: 0 0 0 1px var(--ve-line), 0 1px 2px rgb(0 0 0 / 0.08); }
 
 .ve-body { grid-column: 2; display: grid; min-width: 0; min-height: 0; grid-template-columns: minmax(0, 1fr); gap: 12px; }
-.ve-body.has-chat { grid-template-columns: clamp(290px, 25vw, 420px) minmax(0, 1fr); }
+.ve-body.has-chat { grid-template-columns: clamp(260px, 24vw, 420px) minmax(0, 1fr); }
 .ve-body.has-panel { grid-template-columns: minmax(0, 1fr) clamp(340px, 27vw, 440px); }
-.ve-body.has-chat.has-panel { grid-template-columns: clamp(290px, 24vw, 400px) minmax(0, 1fr) clamp(340px, 27vw, 440px); }
+.ve-body.has-chat.has-panel { grid-template-columns: clamp(260px, 24vw, 400px) minmax(0, 1fr) clamp(300px, 27vw, 440px); }
 .ve-card { display: flex; min-width: 0; min-height: 0; flex-direction: column; overflow: hidden; border-radius: var(--ve-radius); background: var(--ve-panel); box-shadow: 0 0 0 1px var(--ve-line), 0 2px 6px -2px rgb(0 0 0 / 0.08); }
 .ve-chat-card .ve-chat { flex: 1; }
+/* One collapse control on every card: a quiet square that firms up on hover. */
+.ve-collapse { display: inline-grid; width: 30px; height: 30px; flex: none; place-items: center; border-radius: 9px; box-shadow: 0 0 0 1px var(--ve-line) inset; color: var(--ve-muted); transition: background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease; }
+.ve-collapse:hover { background: var(--ve-raised); box-shadow: 0 0 0 1px var(--ve-line-strong) inset, 0 1px 2px rgb(0 0 0 / 0.08); color: var(--ve-text); }
+.ve-collapse:active { transform: translateY(1px); }
+.ve-tabs-collapse { align-self: center; margin: 0 2px 5px 6px; }
+.ve-tabs-card { container-type: inline-size; }
+/* A narrow card keeps the icons and drops the labels rather than crowding them. */
+@container (max-width: 400px) {
+  .ve-tabs [role="tab"] { padding: 12px 2px 11px; }
+  .ve-tabs [role="tab"] span { display: none; }
+}
+.ve-zoom .ve-collapse { margin-left: 8px; }
 .ve-center { position: relative; isolation: isolate; display: flex; min-width: 0; min-height: 0; flex-direction: column; overflow: hidden; border-radius: var(--ve-radius); background: var(--ve-stage); color: #eceae3; box-shadow: 0 10px 30px -18px rgb(0 0 0 / 0.6); }
 
 .ve-tabs { display: flex; flex: none; align-items: stretch; gap: 0; padding: 6px 6px 0; border-bottom: 1px solid var(--ve-line); overflow-x: auto; scrollbar-width: none; }
@@ -528,10 +541,6 @@
 .ve-snap-guide { position: absolute; top: 28px; bottom: 0; z-index: 6; width: 0; border-left: 1px dashed #5ec8ff; pointer-events: none; }
 
 /* ---------- Narrow screens ---------- */
-@media (max-width: 1100px) {
-  .ve-body.has-chat.has-panel { grid-template-columns: 280px minmax(0, 1fr); }
-  .ve-body.has-chat.has-panel .ve-tabs-card { position: absolute; top: 68px; right: 16px; bottom: 14px; z-index: 30; width: 340px; box-shadow: 0 0 0 1px var(--ve-line-strong), var(--ve-shadow); }
-}
 @media (max-width: 900px) {
   .ve-editor { grid-template-columns: minmax(0, 1fr); grid-template-rows: 56px minmax(0, 1fr) auto; padding: 0 8px calc(64px + env(safe-area-inset-bottom)) 8px; }
   .ve-top { gap: 6px; padding: 0; }
@@ -548,7 +557,7 @@
   .ve-top-end .ve-btn { min-height: 36px; padding: 0 12px; }
   .ve-aspect { width: 52px; justify-content: center; gap: 4px; padding: 0; }
   .ve-aspect select { position: absolute; inset: 0; width: 100%; opacity: 0; }
-  .ve-rail { position: absolute; right: 0; bottom: 0; left: 0; z-index: 40; flex-direction: row; justify-content: center; gap: 18px; padding: 8px 12px calc(8px + env(safe-area-inset-bottom)); border-top: 1px solid var(--ve-line); background: var(--ve-panel); }
+  .ve-rail { position: absolute; right: 0; bottom: 0; left: 0; z-index: 40; flex-direction: row; justify-content: center; gap: 14px; padding: 8px 12px calc(8px + env(safe-area-inset-bottom)); border-top: 1px solid var(--ve-line); background: var(--ve-panel); }
   .ve-body,
   .ve-body.has-chat,
   .ve-body.has-panel,
@@ -556,6 +565,7 @@
   .ve-chat-card,
   .ve-tabs-card,
   .ve-body.has-chat.has-panel .ve-tabs-card { position: absolute; top: 56px; right: 8px; bottom: calc(64px + env(safe-area-inset-bottom)); left: 8px; z-index: 35; width: auto; box-shadow: 0 0 0 1px var(--ve-line-strong), var(--ve-shadow); }
+  .ve-rail-sep { width: 1px; height: 20px; margin: 0 2px; }
   .ve-timeline { grid-column: 1; height: 220px !important; margin-top: 8px; }
   .ve-tl-resize { display: none; }
   .ve-tl-bar { grid-template-columns: auto; }

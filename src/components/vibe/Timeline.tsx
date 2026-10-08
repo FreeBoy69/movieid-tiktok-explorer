@@ -17,6 +17,7 @@ import {
   Plus,
   Redo2,
   Scissors,
+  PanelBottomClose,
   Trash2,
   Type,
   Undo2,
@@ -194,7 +195,7 @@ function TrackHead({ label, icon, kind, row, project, narrow }: { label: string;
   );
 }
 
-export function Timeline({ snapping, onToggleSnap }: { snapping: boolean; onToggleSnap: () => void }) {
+export function Timeline({ snapping, onToggleSnap, onCollapse }: { snapping: boolean; onToggleSnap: () => void; onCollapse?: () => void }) {
   const project = useVibe((s) => s.project);
   const playhead = useVibe((s) => s.playhead);
   const playing = useVibe((s) => s.playing);
@@ -458,6 +459,11 @@ export function Timeline({ snapping, onToggleSnap }: { snapping: boolean; onTogg
           <button type="button" className="ve-tool" onClick={fit} aria-label="Zoom to fit" title="Fit the edit (Z)">
             <Maximize2 size={15} />
           </button>
+          {onCollapse ? (
+            <button type="button" className="ve-collapse" onClick={onCollapse} aria-label="Hide timeline" title="Hide timeline">
+              <PanelBottomClose size={16} strokeWidth={1.75} />
+            </button>
+          ) : null}
         </div>
       </div>
 
