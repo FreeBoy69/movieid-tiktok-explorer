@@ -811,3 +811,15 @@
     min-height: 280px;
   }
 }
+
+/* ---------- studio layout ----------
+   ToolLayout puts the controls in the chat box frame on top and the results
+   below, like every studio. These undo the old full-height column. */
+.mt .sl-inner { padding-top: 24px; }
+.mt-box.mt-panel { display: block; padding: 0; border-color: var(--ui-line-strong); border-radius: 20px; background: var(--ui-input); box-shadow: var(--ui-shadow-soft); overflow: visible; }
+.mt-box .mt-panel-scroll { flex: none; min-height: 0; overflow: visible; padding: 18px 20px; }
+.mt-box .mt-panel-scroll .mt-primary { position: static; justify-self: end; align-self: flex-end; width: auto; min-width: 160px; margin-top: 4px; padding: 0 22px; height: 44px; border-radius: 999px; box-shadow: none; }
+.mt-results.mt-stage { min-height: 320px; margin-top: 22px; border-radius: 20px; }
+@media (min-width: 1024px) {
+  .mt-results.mt-stage { min-height: 420px; }
+}

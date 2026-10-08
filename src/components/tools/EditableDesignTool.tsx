@@ -10,7 +10,7 @@ export function EditableDesignTool({ theme }: { theme: "light" | "dark" }) {
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [generations, setGenerations] = useState<Generation[]>([]);
   const [now, setNow] = useState(Date.now());
-  const head = useToolHead();
+  const head = useToolHead()?.node;
   useEffect(() => {
     let cancelled = false;
     fetch("/api/studio/catalog")

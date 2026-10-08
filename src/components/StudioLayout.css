@@ -376,3 +376,4 @@
 .sl-box .cs-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .sl-controls > .cs-chips { min-width: 0; }
 .sl-above .cs-app-tabs { margin: 0; padding: 0; }
+.sl-back { margin-bottom: 14px; }

@@ -13,6 +13,7 @@ export type LayoutTab<T extends string = string> = { value: T; label: string; ic
 export function StudioLayout<T extends string>({
   title,
   intro,
+  back,
   big = false,
   above,
   composer,
@@ -28,6 +29,8 @@ export function StudioLayout<T extends string>({
 }: {
   title: ReactNode;
   intro?: ReactNode;
+  /** A back link above the title (tools return to All tools). */
+  back?: ReactNode;
   /** The home page's oversized title. */
   big?: boolean;
   /** Mode switches that change what the box makes (sit just above it). */
@@ -47,6 +50,7 @@ export function StudioLayout<T extends string>({
     <div className={`sl${big ? " is-home" : ""}`} data-theme={theme}>
       <div className="sl-inner">
         <header className="sl-head">
+          {back ? <div className="sl-back">{back}</div> : null}
           <h1 className="sl-title">{title}</h1>
           {intro ? <p className="sl-intro">{intro}</p> : null}
         </header>
