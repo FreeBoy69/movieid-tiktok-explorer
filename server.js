@@ -76,6 +76,10 @@ import { hostedAudioFile, hostedVoiceProfile, hostedVoiceProfiles, isHostedVoice
 import { canUseVoice, claimVoice, inFlightVoiceGeneration, releaseVoice, reusableVoiceGeneration, visibleVoices } from "./server/voiceOwners.js";
 import { registerNativeApp } from "./server/nativeApp.js";
 import { loadPackedAssets, packedAssetsMiddleware } from "./server/builtAssets.js";
+import { registerVoicebox } from "./server/voicebox.js";
+import { registerDownloader } from "./server/downloader.js";
+import { registerVoiceStudio } from "./server/voiceStudio.js";
+import { registerSavedPlaylists } from "./server/savedPlaylists.js";
 // Runs ffmpeg/ffprobe/python/yt-dlp/zip on the media worker when this host lacks them.
 installRemoteMedia();
 dns.setDefaultResultOrder("ipv4first");
@@ -900,31 +904,6 @@ function normalizeDownloaderInfo(data) {
     }
     return { title: String(data?.title || "Untitled video"), uploader: String(data?.uploader || data?.channel || ""), thumbnail: String(data?.thumbnail || ""), duration: Number(data?.duration) || 0, formats: unique.slice(0, 40) };
 }
-function runDownloaderJob(url, mode, formatId, outputTemplate, formatHasAudio = false) {
-    const python = resolvePythonExecutable("-m").cmd;
-    const safeFormat = /^[A-Za-z0-9._-]+$/.test(formatId) ? formatId : "";
-    if (!safeFormat)
-        return Promise.reject(new Error("Select a valid quality."));
-    const args = ["-m", "yt_dlp", "--no-playlist", "--no-check-certificate", "--force-overwrites"];
-    if (mode === "audio")
-        args.push("-f", safeFormat, "-x", "--audio-format", "mp3", "--audio-quality", "0");
-    else if (mode === "video")
-        args.push("-f", safeFormat);
-    else if (formatHasAudio)
-        args.push("-f", safeFormat, "--merge-output-format", "mp4");
-    else
-        args.push("-f", `${safeFormat}+bestaudio/${safeFormat}`, "--merge-output-format", "mp4");
-    args.push("-o", outputTemplate, url);
-    return new Promise((resolve, reject) => {
-        const child = spawn(python, args, { cwd: __dirname, env: { ...process.env }, windowsHide: true });
-        let stderr = "";
-        const timer = setTimeout(() => { try { child.kill("SIGKILL"); } catch { } }, 600000);
-        child.stderr.setEncoding("utf8");
-        child.stderr.on("data", (chunk) => { stderr += chunk; });
-        child.on("error", (error) => { clearTimeout(timer); reject(error); });
-        child.on("close", (code) => { clearTimeout(timer); code === 0 ? resolve() : reject(new Error(stderr || `Download failed (${code})`)); });
-    });
-}
 function runYtDlpWithArgs(args, timeoutMs, options = {}) {
     throwIfAutomationCancelled(options.signal);
     const python = resolvePythonExecutable("-m").cmd;
@@ -1571,16 +1550,6 @@ function captionCleanupRuntime() {
         apiBaseUrl: String(process.env.RUNWAY_API_BASE_URL || "https://api.dev.runwayml.com").trim().replace(/\/+$/, ""),
         engine: "Runway Aleph 2 + masked local composite",
         reason,
-    };
-}
-function captionCleanupStatus() {
-    const runtime = captionCleanupRuntime();
-    return {
-        available: runtime.available,
-        engine: runtime.engine,
-        external: true,
-        requiresCredits: true,
-        reason: runtime.reason,
     };
 }
 function captionCleanupPrompt(zone) {
@@ -3468,27 +3437,6 @@ function mergeTikTokPlaylistsForStorage(previous, next, limit = 10000) {
         videos: Array.from(merged.values()).slice(0, limit),
     };
 }
-function savedPlaylistSlugCandidates(row) {
-    const candidates = new Set();
-    const add = (value) => {
-        const slug = slugifySavedPlaylistTitle(value || "");
-        if (slug)
-            candidates.add(slug);
-    };
-    const analyzed = row?.analyzedUrl || "";
-    const key = row?.key || "";
-    const handle = tiktokHandleFromUrl(analyzed || key);
-    const collectionTitle = tiktokCollectionTitleFromUrl(analyzed) || tiktokCollectionTitleFromUrl(key);
-    add(row?.slug);
-    add(savedSlugForRecord(row));
-    add(savedPlaylistDisplayTitle(row));
-    add(collectionTitle);
-    if (handle && collectionTitle)
-        add(`${handle} ${collectionTitle}`);
-    add(analyzed);
-    add(key);
-    return [...candidates];
-}
 async function savedPlaylistFallbackForTikTokUrl(userId, rawUrl, limit) {
     if (!postgresConfigured())
         return null;
@@ -4509,20 +4457,6 @@ function savedSourceAutoTags(record = {}, state = {}) {
     }
     return normalizeSavedSourceTags(tags, 120);
 }
-async function refreshSavedPlaylistAutoTags(userId, record, state = null) {
-    const key = normalizePlaylistListUrl(record?.key || record?.analyzedUrl || "");
-    if (!key)
-        return [];
-    const scanState = state || await getSavedPlaylistGenreScanState(userId, key).catch(() => savedGenreScanState());
-    const autoTags = savedSourceAutoTags(record, scanState);
-    await runPsql(`
-UPDATE saved_tiktok_playlists
-SET auto_tags = ${jsonbLiteral(autoTags)}, updated_at = now()
-WHERE user_id = ${sqlString(userId)}
-  AND key = ${sqlString(key)};
-`);
-    return autoTags;
-}
 function savedPlaylistDbId(userId, key) {
     return `spl_${crypto.createHash("sha1").update(`${userId || ""}:${key || ""}`).digest("hex").slice(0, 28)}`;
 }
@@ -4575,41 +4509,6 @@ SELECT COALESCE((
 ), 'null'::json);
 `);
     return JSON.parse(out || "null");
-}
-async function getSavedPlaylistRecordBySlug(userId, slug) {
-    const wanted = slugifySavedPlaylistTitle(slug);
-    if (!wanted)
-        return null;
-    const out = await runPsql(`
-SELECT COALESCE((
-  SELECT json_build_object(
-    'key', key,
-    'slug', slug,
-    'analyzedUrl', analyzed_url,
-    'playlist', playlist,
-    'savedAt', FLOOR(EXTRACT(EPOCH FROM saved_at) * 1000)::bigint,
-    'tags', tags,
-    'autoTags', auto_tags,
-    'genreScanState', (
-      SELECT state FROM saved_tiktok_playlist_genre_scans g
-      WHERE g.user_id = saved_tiktok_playlists.user_id
-        AND g.playlist_key = saved_tiktok_playlists.key
-      LIMIT 1
-    )
-  )
-  FROM saved_tiktok_playlists
-  WHERE user_id = ${sqlString(userId)}
-    AND slug = ${sqlString(wanted)}
-  ORDER BY saved_at DESC
-  LIMIT 1
-), 'null'::json);
-`);
-    const exact = JSON.parse(out || "null");
-    if (exact?.playlist?.videos?.length)
-        return exact;
-    const records = await listSavedPlaylistRecords(userId);
-    const match = records.find((record) => savedPlaylistSlugCandidates(record).includes(wanted));
-    return match || null;
 }
 async function saveTikTokPlaylistToDb(userId, rawUrl, playlist, analyzedUrl) {
     const key = normalizePlaylistListUrl(rawUrl);
@@ -4714,37 +4613,6 @@ async function ensureAutomationPrimarySourceCached(agent) {
     const settings = normalizeAutomationSettings(agent.settings || {});
     const playlist = await runTikTokListScript(sourceUrl, settings.searchDepth, "");
     return await cacheAutomationPrimarySource(agent, playlist, sourceUrl);
-}
-async function deleteSavedPlaylistFromDb(userId, key) {
-    const normalized = normalizePlaylistListUrl(key);
-    if (!normalized)
-        return;
-    await runPsql(`DELETE FROM saved_tiktok_playlists WHERE user_id = ${sqlString(userId)} AND key = ${sqlString(normalized)};`);
-}
-async function updateSavedPlaylistTags(userId, key, tags) {
-    const normalized = normalizePlaylistListUrl(key);
-    if (!normalized)
-        throw new Error("Saved source key is missing.");
-    const cleanTags = normalizeSavedSourceTags(tags, 80);
-    const out = await runPsql(`
-UPDATE saved_tiktok_playlists
-SET tags = ${jsonbLiteral(cleanTags)}, updated_at = now()
-WHERE user_id = ${sqlString(userId)}
-  AND key = ${sqlString(normalized)}
-RETURNING json_build_object(
-  'key', key,
-  'slug', slug,
-  'analyzedUrl', analyzed_url,
-  'playlist', playlist,
-  'savedAt', FLOOR(EXTRACT(EPOCH FROM saved_at) * 1000)::bigint,
-  'tags', tags,
-  'autoTags', auto_tags
-);
-`);
-    const record = JSON.parse(out || "null");
-    if (!record)
-        throw new Error("Saved source not found.");
-    return record;
 }
 async function addSavedPlaylistAutoTags(userId, key, tags) {
     const normalized = normalizePlaylistListUrl(key);
@@ -4884,9 +4752,6 @@ RETURNING json_build_object(
     }
     return JSON.parse(out || "null");
 }
-function savedGenreScanDbId(userId, playlistKey) {
-    return `sgs_${crypto.createHash("sha1").update(`${userId || ""}:${playlistKey || ""}`).digest("hex").slice(0, 28)}`;
-}
 function savedGenreScanState(value = {}) {
     const state = value && typeof value === "object" && !Array.isArray(value) ? value : {};
     return {
@@ -4911,361 +4776,12 @@ SELECT COALESCE((
 `);
     return savedGenreScanState(JSON.parse(out || "{}"));
 }
-async function saveSavedPlaylistGenreScanState(userId, record, state, status = "ready") {
-    const playlistKey = normalizePlaylistListUrl(record?.key || record?.analyzedUrl || "");
-    if (!playlistKey)
-        throw new Error("Saved playlist key is missing.");
-    const id = savedGenreScanDbId(userId, playlistKey);
-    const slug = String(record?.slug || savedSlugForRecord(record) || "").trim();
-    const cleanState = savedGenreScanState(state);
-    await runPsql(`
-INSERT INTO saved_tiktok_playlist_genre_scans (id, user_id, playlist_key, playlist_slug, status, state, created_at, updated_at)
-VALUES (
-  ${sqlString(id)}, ${sqlString(userId)}, ${sqlString(playlistKey)}, ${sqlString(slug)},
-  ${sqlString(status)}, ${jsonbLiteral(cleanState)}, now(), now()
-)
-ON CONFLICT (user_id, playlist_key) DO UPDATE SET
-  playlist_slug = EXCLUDED.playlist_slug,
-  status = EXCLUDED.status,
-  state = EXCLUDED.state,
-  updated_at = now();
-`);
-    await refreshSavedPlaylistAutoTags(userId, record, cleanState).catch(() => []);
-    return cleanState;
-}
-function savedPlaylistGenreScanPayload(record, state = {}) {
-    const scanState = savedGenreScanState(state);
-    const videos = Array.isArray(record?.playlist?.videos) ? record.playlist.videos : [];
-    const memberships = scanState.memberships;
-    return {
-        key: record?.key || "",
-        slug: record?.slug || savedSlugForRecord(record),
-        title: savedPlaylistDisplayTitle(record),
-        summary: savedPlaylistGenreScanSummary(videos, memberships),
-        groups: groupSavedPlaylistGenreMemberships(memberships),
-        memberships,
-        errors: scanState.errors,
-        startedAt: scanState.startedAt || 0,
-        updatedAt: scanState.updatedAt || 0,
-    };
-}
-function savedGenreScanVideoUrl(video = {}) {
-    const direct = String(video.playUrl || video.sourceUrl || video.url || "").trim();
-    if (direct)
-        return direct;
-    const handle = String(video.authorHandle || video.uploaderId || "").replace(/^@/, "").trim();
-    const id = String(video.id || "").trim();
-    return handle && id ? `https://www.tiktok.com/@${handle}/video/${id}` : "";
-}
-const SAVED_STORY_GENRE_BUCKETS = [
-    "Action",
-    "Adventure",
-    "Comedy",
-    "Crime",
-    "Drama",
-    "Fantasy",
-    "Historical",
-    "Horror",
-    "Isekai",
-    "Martial Arts",
-    "Mystery",
-    "Psychological",
-    "Romance",
-    "Sci-Fi",
-    "Slice of Life",
-    "Sports",
-    "Supernatural",
-    "Thriller",
-    "War",
-];
-function savedStoryGenrePrompt(video, transcript) {
-    const title = String(video?.title || "").trim();
-    const author = String(video?.authorHandle || video?.author || "").trim();
-    return `Classify this short-form recap clip by story genre from its narration transcript.
-
-Choose 1 to 4 genre buckets only from this allowed list:
-${SAVED_STORY_GENRE_BUCKETS.join(", ")}
-
-Rules:
-- Classify the story being told, not the TikTok creator or hashtag style.
-- Use Sports only when competition, training, athletic stakes, or match/race progress drives the story.
-- Use Romance only when the relationship arc is central.
-- Use Thriller, Mystery, Psychological, Horror, or Crime only when their story evidence is clear.
-- Use Isekai only when transfer/reincarnation into another world is explicit.
-- Do not identify the movie/anime title. This scan is for fast story grouping only.
-- If the transcript is too thin to classify, return an empty genres array.
-
-Return JSON only:
-{"genres":["Drama"],"summary":"One short sentence about the story arc.","storySignals":["training arc"],"confidence":0.0}
-
-Source title/caption: ${transcriptExcerpt(title, 500) || "Unknown"}
-Creator: ${transcriptExcerpt(author, 160) || "Unknown"}
-Transcript:
-${transcriptExcerpt(transcript, 9000)}`;
-}
-function normalizeSavedStoryGenreLabels(values) {
-    const bucketMap = new Map(SAVED_STORY_GENRE_BUCKETS.map((genre) => [genre.toLowerCase(), genre]));
-    const normalized = [];
-    for (const raw of Array.isArray(values) ? values : []) {
-        const key = String(raw || "").replace(/\s+/g, " ").trim().toLowerCase();
-        const genre = bucketMap.get(key);
-        if (genre && !normalized.includes(genre))
-            normalized.push(genre);
-    }
-    return normalized.slice(0, 4);
-}
-async function transcribeSavedGenreStoryVideo(video) {
-    const rawUrl = savedGenreScanVideoUrl(video);
-    if (!rawUrl)
-        throw new Error("Saved clip URL is missing.");
-    const tempFile = makeLinkAnalysisVideoPath();
-    let audioFirstError = "";
-    try {
-        try {
-            await runYtDlpAudioDownload(rawUrl, tempFile);
-        }
-        catch (error) {
-            audioFirstError = error instanceof Error ? error.message : String(error || "");
-            await runTikTokDownloadWithAudioRetry({ ...video, playUrl: rawUrl }, tempFile, { preferYtDlp: true });
-        }
-        const mediaPath = resolveDownloadedOutput(tempFile);
-        const transcript = await transcribeMediaFileForAnalysis(mediaPath);
-        if (!transcript)
-            throw new Error("Local transcription did not detect narration.");
-        return transcript;
-    }
-    catch (error) {
-        const message = error instanceof Error ? error.message : String(error || "Story transcription failed");
-        if (audioFirstError && !message.includes(audioFirstError)) {
-            throw new Error(`${message} Audio-first attempt: ${audioFirstError}`.slice(0, 1200));
-        }
-        throw error;
-    }
-    finally {
-        cleanupDownloadArtifacts(tempFile);
-    }
-}
-async function inferSavedPlaylistStoryGenres(video) {
-    const transcript = await transcribeSavedGenreStoryVideo(video);
-    const raw = await generateDeepSeekJson(savedStoryGenrePrompt(video, transcript), {
-        temperature: 0.1,
-        maxTokens: 420,
-    });
-    return genreMembershipFromStoryResult(video, {
-        genres: normalizeSavedStoryGenreLabels(raw?.genres),
-        summary: transcriptExcerpt(raw?.summary || "", 500),
-        storySignals: Array.isArray(raw?.storySignals) ? raw.storySignals.slice(0, 6) : [],
-        confidence: Number(raw?.confidence || 0),
-        transcriptExcerpt: transcriptExcerpt(transcript, 1200),
-    });
-}
-async function scanSavedPlaylistGenreVideo(video) {
-    const rawUrl = savedGenreScanVideoUrl(video);
-    if (!rawUrl)
-        throw new Error("Saved clip URL is missing.");
-    const cached = await getCachedMovieIdentification(movieCacheLookupFromUrl(rawUrl)).catch(() => null);
-    if (cached) {
-        const official = genreMembershipFromMovieResult(video, cached);
-        if (official.status === "verified")
-            return official;
-    }
-    return await inferSavedPlaylistStoryGenres(video);
-}
-async function scanSavedPlaylistGenreBatch(userId, record, options = {}) {
-    const videos = Array.isArray(record?.playlist?.videos) ? record.playlist.videos : [];
-    if (!videos.length)
-        throw new Error("Saved playlist has no clips.");
-    const previous = await getSavedPlaylistGenreScanState(userId, record.key || record.analyzedUrl);
-    const batchSize = Math.min(Math.max(Number(options.batchSize) || 4, 1), 12);
-    const pending = pendingSavedPlaylistGenreVideos(videos, previous.memberships, batchSize);
-    const updates = [];
-    const errors = [...previous.errors];
-    for (const video of pending) {
-        try {
-            updates.push(await scanSavedPlaylistGenreVideo(video));
-        }
-        catch (error) {
-            const message = error instanceof Error ? error.message : String(error || "Story genre scan failed");
-            updates.push({
-                videoKey: String(video.id || savedGenreScanVideoUrl(video) || "").trim(),
-                video,
-                status: "needs_review",
-                genres: [],
-                reason: "story_genre_scan_failed",
-                error: message.slice(0, 500),
-                scannedAt: Date.now(),
-            });
-            errors.push({
-                videoKey: String(video.id || savedGenreScanVideoUrl(video) || "").trim(),
-                title: String(video.title || "").slice(0, 200),
-                message: message.slice(0, 500),
-                at: Date.now(),
-            });
-        }
-    }
-    const nextState = {
-        memberships: mergeSavedPlaylistGenreMemberships(previous.memberships, updates),
-        errors: errors.slice(-80),
-        startedAt: previous.startedAt || Date.now(),
-        updatedAt: Date.now(),
-    };
-    const summary = savedPlaylistGenreScanSummary(videos, nextState.memberships);
-    await saveSavedPlaylistGenreScanState(userId, record, nextState, summary.pending ? "scanning" : "ready");
-    return savedPlaylistGenreScanPayload(record, nextState);
-}
 function commentCachePushAuthorized(req) {
     const expected = String(process.env.TIKTOK_COMMENT_PUSH_TOKEN || "").trim();
     if (!expected)
         return false;
     const provided = String(req.headers["x-comment-push-token"] || req.body?.token || "").trim();
     return provided && provided === expected;
-}
-async function listPendingCommentCacheVideos(record) {
-    const videos = Array.isArray(record?.playlist?.videos) ? record.playlist.videos : [];
-    const pending = [];
-    for (const video of videos) {
-        const rawUrl = savedGenreScanVideoUrl(video);
-        const videoId = extractTikTokVideoIdFromUrl(rawUrl || "");
-        if (!videoId)
-            continue;
-        const cached = await getCachedTikTokComments(videoId).catch(() => null);
-        if (cached?.threads?.length)
-            continue;
-        pending.push({
-            videoId,
-            url: rawUrl,
-            slug: slugifySavedPost(video),
-            title: String(video.title || "").slice(0, 200),
-        });
-    }
-    return pending;
-}
-async function identifySavedPlaylistVideoMovie(video, options = {}) {
-    const rawUrl = savedGenreScanVideoUrl(video);
-    if (!rawUrl)
-        throw new Error("Saved clip URL is missing.");
-    const cacheLookup = { ...movieCacheLookupFromUrl(rawUrl), cacheOnly: options.cacheOnly !== false };
-    const skipMovieCache = options.skipMovieCache === true;
-    if (!skipMovieCache) {
-        const cachedMovie = await getCachedMovieIdentification(cacheLookup).catch(() => null);
-        if (cachedMovie?.title)
-            return { result: attachMovieIdentificationSource(cachedMovie, "movie-cache"), source: "movie-cache" };
-    }
-    if (options.geminiFallback === false)
-        throw new Error("Movie ID unavailable and video scan fallback disabled.");
-    const tempFile = makeLinkAnalysisVideoPath();
-    try {
-        let downloader = "yt-dlp";
-        if (/tiktok\.com/i.test(rawUrl)) {
-            const candidateUrls = Array.isArray(video?.cleanPlaybackUrls) ? video.cleanPlaybackUrls : [];
-            downloader = await runTikTokDownload(rawUrl, tempFile, candidateUrls);
-        }
-        else {
-            downloader = await runYtDlpSocialDownload(rawUrl, tempFile);
-        }
-        const downloadedFile = resolveDownloadedOutput(tempFile);
-        const stat = fs.statSync(downloadedFile);
-        const maxBytes = tikTokDownloadMaxBytes();
-        if (stat.size > maxBytes) {
-            throw new Error(`Downloaded video is too large (${Math.round(stat.size / 1024 / 1024)}MB; limit ${Math.round(maxBytes / 1024 / 1024)}MB).`);
-        }
-        const result = await identifyMovieFromVideoFile(downloadedFile, "video/mp4", { ...cacheLookup, skipCommentLookup: true });
-        return { result: attachMovieIdentificationSource(result, downloader), source: downloader };
-    }
-    finally {
-        try {
-            cleanupDownloadArtifacts(tempFile);
-        }
-        catch {
-            /* best-effort cleanup */
-        }
-    }
-}
-function savedPlaylistMovieScanSummary(videos = [], analyses = {}, recent = []) {
-    const total = videos.length;
-    const doneSlugs = new Set(Object.keys(analyses || {}));
-    for (const item of recent) {
-        if (item?.slug && item.ok)
-            doneSlugs.add(item.slug);
-    }
-    let analyzed = 0;
-    for (const video of videos) {
-        if (doneSlugs.has(slugifySavedPost(video)))
-            analyzed += 1;
-    }
-    return {
-        total,
-        analyzed,
-        pending: Math.max(total - analyzed, 0),
-    };
-}
-async function scanSavedPlaylistMovieBatch(userId, record, options = {}) {
-    const videos = Array.isArray(record?.playlist?.videos) ? record.playlist.videos : [];
-    if (!videos.length)
-        throw new Error("Saved playlist has no clips.");
-    const playlistKey = normalizePlaylistListUrl(record?.key || record?.analyzedUrl || "");
-    const analyses = await listSavedPostAnalyses(userId, playlistKey).catch(() => ({}));
-    const batchSize = Math.min(Math.max(Number(options.batchSize) || 1, 1), 6);
-    const wantedSlugs = new Set((Array.isArray(options.slugs) ? options.slugs : options.slug ? [options.slug] : [])
-        .map((value) => String(value || "").trim())
-        .filter(Boolean));
-    let pendingVideos = videos.filter((video) => !analyses[slugifySavedPost(video)]);
-    if (wantedSlugs.size)
-        pendingVideos = pendingVideos.filter((video) => wantedSlugs.has(slugifySavedPost(video)));
-    pendingVideos = pendingVideos.slice(0, batchSize);
-    const processed = [];
-    const errors = [];
-    for (const video of pendingVideos) {
-        const slug = slugifySavedPost(video);
-        try {
-            const { result, source } = await identifySavedPlaylistVideoMovie(video, {
-                cacheOnly: true,
-                geminiFallback: options.geminiFallback !== false,
-                skipMovieCache: options.skipMovieCache === true,
-            });
-            const saved = await saveSavedPostAnalysis(userId, {
-                slug,
-                postSlug: slug,
-                playlistKey,
-                video,
-                result,
-                analyzedAt: Date.now(),
-            });
-            processed.push({
-                slug,
-                ok: true,
-                source,
-                title: String(result?.title || "").slice(0, 160),
-                commentHint: Boolean(result?.commentHint),
-                analysis: saved,
-            });
-        }
-        catch (error) {
-            const message = error instanceof Error ? error.message : String(error || "Movie scan failed");
-            processed.push({ slug, ok: false, error: message.slice(0, 500) });
-            errors.push({
-                slug,
-                title: String(video.title || "").slice(0, 200),
-                message: message.slice(0, 500),
-                at: Date.now(),
-            });
-        }
-    }
-    const mergedAnalyses = { ...analyses };
-    for (const item of processed) {
-        if (item.ok && item.analysis?.result)
-            mergedAnalyses[item.slug] = item.analysis;
-    }
-    return {
-        key: record?.key || "",
-        slug: record?.slug || savedSlugForRecord(record),
-        title: savedPlaylistDisplayTitle(record),
-        summary: savedPlaylistMovieScanSummary(videos, mergedAnalyses),
-        pendingComments: [],
-        processed,
-        errors: errors.slice(-40),
-        analyses: mergedAnalyses,
-    };
 }
 function normalizeAutomationSettings(input = {}) {
     const settings = input && typeof input === "object" && !Array.isArray(input) ? input : {};
@@ -12437,59 +11953,6 @@ function normalizeVoiceboxEngine(value) {
         return "qwen";
     return String(value || "").trim();
 }
-// Voice previews. A cloned voice plays its own reference clip (instant, free);
-// preset and hosted voices speak one short line, generated once and cached.
-const VOICE_PREVIEW_LINE = "Here's how I sound narrating your next video. Clear, steady, and ready when you are.";
-const voicePreviewJobs = new Map();
-function voicePreviewDir() {
-    return path.join(runtimeTmpRoot, "voice-previews");
-}
-async function voicePreviewFile(profile) {
-    const key = crypto.createHash("sha256").update(`${profile.id}|${profile.sampleCount || 0}|${VOICE_PREVIEW_LINE}`).digest("hex").slice(0, 32);
-    for (const extension of ["wav", "mp3"]) {
-        const file = path.join(voicePreviewDir(), `${key}.${extension}`);
-        if (fs.existsSync(file) && fs.statSync(file).size > 0)
-            return file;
-    }
-    if (voicePreviewJobs.has(key))
-        return voicePreviewJobs.get(key);
-    const job = (async () => {
-        fs.mkdirSync(voicePreviewDir(), { recursive: true });
-        const write = (bytes, contentType) => {
-            if (!bytes?.length)
-                throw new Error("The voice preview came back empty.");
-            const file = path.join(voicePreviewDir(), `${key}.${/mpeg|mp3/i.test(contentType || "") ? "mp3" : "wav"}`);
-            fs.writeFileSync(file, bytes);
-            return file;
-        };
-        if (isHostedVoice(profile.id)) {
-            const hosted = await synthesizeHostedVoice({ profileId: profile.id, text: VOICE_PREVIEW_LINE });
-            return write(hosted.audio, hosted.extension === "mp3" ? "audio/mpeg" : "audio/wav");
-        }
-        if (String(profile.voiceType || "").toLowerCase() === "cloned") {
-            const { data } = await voiceboxJson(`/profiles/${encodeURIComponent(profile.id)}/samples`, { method: "GET" });
-            const sample = Array.isArray(data) ? data.find((item) => item?.id) : null;
-            if (sample) {
-                const { response } = await voiceboxFetch(`/samples/${encodeURIComponent(sample.id)}`, { method: "GET" });
-                if (response.ok)
-                    return write(Buffer.from(await response.arrayBuffer()), response.headers.get("content-type"));
-            }
-        }
-        const generated = await generateVoiceboxSpeech({ profileId: profile.id, profile, text: VOICE_PREVIEW_LINE, timeoutMs: 180000 });
-        const id = String(generated.generation?.id || "");
-        const { response } = await voiceboxFetch(`/audio/${encodeURIComponent(id)}`, { method: "GET" });
-        if (!response.ok)
-            throw new Error("The voice preview could not be downloaded.");
-        return write(Buffer.from(await response.arrayBuffer()), response.headers.get("content-type"));
-    })();
-    voicePreviewJobs.set(key, job);
-    try {
-        return await job;
-    }
-    finally {
-        voicePreviewJobs.delete(key);
-    }
-}
 function voiceboxProfileIsReady(profile) {
     return Boolean(profile?.id) && (String(profile.voiceType || "").toLowerCase() !== "cloned" || Number(profile.sampleCount || 0) > 0);
 }
@@ -16676,11 +16139,6 @@ function voiceStudioRootDir() {
     return dir;
 }
 const VOICE_MUSIC_HOSTS = new Set(["api.openverse.org", "openverse.org", "prod-1.storage.jamendo.com", "mp3d.jamendo.com", "archive.org", "files.freemusicarchive.org"]);
-function voiceMusicMoodFromRequest(query, transcript) {
-    const requested = String(query || "").trim();
-    const inferred = inferMusicMood(transcript || requested);
-    return requested ? { ...inferred, query: requested } : inferred;
-}
 function voiceMusicUrlAllowed(value) {
     try {
         const parsed = new URL(String(value || ""));
@@ -21823,53 +21281,7 @@ async function startServer() {
             res.status(500).json({ ok: false, ms: Date.now() - started, error: error instanceof Error ? error.message : String(error) });
         }
     });
-    app.post("/api/downloader/inspect", async (req, res) => {
-        const url = await validDownloaderUrl(req.body?.url);
-        if (!url)
-            return res.status(400).json({ error: "Enter a valid video URL." });
-        try {
-            res.json(normalizeDownloaderInfo(await runYtDlpJson(url)));
-        }
-        catch (error) {
-            console.error("Downloader inspection failed:", error);
-            res.status(500).json({ error: error instanceof Error ? error.message : "Could not inspect this video." });
-        }
-    });
-    app.post("/api/downloader/download", async (req, res) => {
-        const url = await validDownloaderUrl(req.body?.url);
-        const mode = ["combined", "video", "audio"].includes(req.body?.mode) ? req.body.mode : "combined";
-        const formatId = String(req.body?.formatId || "");
-        const formatHasAudio = req.body?.formatHasAudio === true;
-        if (!url)
-            return res.status(400).json({ error: "Enter a valid video URL." });
-        // The hosted app directory is read-only, and the remote media worker only
-        // returns files written under the temp root, so downloads land there.
-        const downloadDir = path.join(runtimeTmpRoot, "downloads");
-        fs.mkdirSync(downloadDir, { recursive: true });
-        const base = path.join(downloadDir, `media_download_${crypto.randomUUID()}`);
-        try {
-            await runDownloaderJob(url, mode, formatId, `${base}.%(ext)s`, formatHasAudio);
-            const file = fs.readdirSync(downloadDir).map((name) => path.join(downloadDir, name)).find((candidate) => candidate.startsWith(`${base}.`) && fs.statSync(candidate).isFile());
-            if (!file)
-                throw new Error("The downloaded file could not be found.");
-            const extension = path.extname(file) || (mode === "audio" ? ".mp3" : ".mp4");
-            res.download(file, `AutoYT-download${extension}`, () => {
-                try { if (fs.existsSync(file)) fs.unlinkSync(file); } catch { }
-            });
-        }
-        catch (error) {
-            try {
-                for (const name of fs.readdirSync(downloadDir)) {
-                    const candidate = path.join(downloadDir, name);
-                    if (candidate.startsWith(`${base}.`)) fs.unlinkSync(candidate);
-                }
-            }
-            catch { }
-            console.error("Downloader job failed:", error);
-            if (!res.headersSent)
-                res.status(500).json({ error: error instanceof Error ? error.message : "Download failed." });
-        }
-    });
+    registerDownloader(app, { __dirname, normalizeDownloaderInfo, resolvePythonExecutable, runYtDlpJson, runtimeTmpRoot, validDownloaderUrl });
     app.post("/api/rewrite", async (req, res) => {
         try {
             const text = String(req.body?.text || "").trim();
@@ -21907,317 +21319,7 @@ async function startServer() {
         }
         return userId;
     }
-    // Public on purpose (health checks): it says only whether the service is up, never where it is.
-    app.get("/api/voicebox/status", async (_req, res) => {
-        try {
-            await voiceboxJson("/profiles", { method: "GET" });
-            res.json({ online: true });
-        }
-        catch (error) {
-            res.status(503).json({ online: false, error: "The voice cloning service is offline right now." });
-        }
-    });
-    app.get("/api/voicebox/profiles", async (req, res) => {
-        const userId = await voiceUser(req, res);
-        if (!userId)
-            return;
-        try {
-            const { profiles: all, voiceboxOnline } = await listAllVoiceProfiles();
-            const profiles = await visibleVoices(all, userId);
-            res.json({ success: true, baseUrl: voiceboxOnline ? "voicebox" : "hosted", voiceboxOnline, profiles });
-        }
-        catch (error) {
-            res.status(503).json({ success: false, profiles: [], error: error instanceof Error ? error.message : "Voices are unavailable" });
-        }
-    });
-    app.get("/api/voicebox/profiles/:id/preview", async (req, res) => {
-        if (!(await voiceOwnerUser(req, res, String(req.params.id || "").trim())))
-            return;
-        try {
-            const id = String(req.params.id || "").trim();
-            // Only known voices, so previews can't be used as a free TTS endpoint.
-            const profile = id ? await findVoiceboxProfile(id) : null;
-            if (!profile)
-                return res.status(404).json({ error: "That voice is no longer available." });
-            if (!voiceboxProfileIsReady(profile))
-                return res.status(409).json({ error: "Add a voice sample before previewing this cloned voice." });
-            const file = await voicePreviewFile(profile);
-            res.setHeader("Cache-Control", "private, max-age=86400");
-            res.type(file.endsWith(".mp3") ? "audio/mpeg" : "audio/wav");
-            res.sendFile(file);
-        }
-        catch (error) {
-            console.error("Voice preview failed:", error instanceof Error ? error.message : error);
-            res.status(503).json({ error: error instanceof Error ? error.message : "Voice preview is unavailable right now." });
-        }
-    });
-    app.post("/api/voicebox/profiles", async (req, res) => {
-        const userId = await voiceUser(req, res);
-        if (!userId)
-            return;
-        try {
-            const name = String(req.body?.name || "").trim() || generateVoiceName(await takenVoiceNames());
-            const voiceType = String(req.body?.voiceType || req.body?.voice_type || "cloned").trim() || "cloned";
-            const presetEngine = normalizeVoiceboxEngine(req.body?.presetEngine || req.body?.preset_engine || "");
-            const defaultEngine = normalizeVoiceboxEngine(req.body?.defaultEngine || req.body?.default_engine || presetEngine || "");
-            const payload = {
-                name: name.slice(0, 100),
-                description: String(req.body?.description || "").trim() || null,
-                language: String(req.body?.language || "en").trim() || "en",
-                voice_type: voiceType,
-            };
-            if (presetEngine)
-                payload.preset_engine = presetEngine;
-            if (req.body?.presetVoiceId || req.body?.preset_voice_id)
-                payload.preset_voice_id = String(req.body?.presetVoiceId || req.body?.preset_voice_id || "").trim();
-            if (defaultEngine)
-                payload.default_engine = defaultEngine;
-            if (req.body?.personality)
-                payload.personality = String(req.body.personality).trim();
-            const { data, base } = await voiceboxJson("/profiles", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(payload),
-            });
-            const profile = normalizeVoiceboxProfile(data);
-            if (profile.id)
-                await claimVoice(profile.id, userId);
-            res.json({ success: true, baseUrl: base, profile: { ...profile, owned: true } });
-        }
-        catch (error) {
-            res.status(503).json({ success: false, error: error instanceof Error ? error.message : "Voice profile creation failed" });
-        }
-    });
-    app.patch("/api/voicebox/profiles/:id", async (req, res) => {
-        if (!(await voiceOwnerUser(req, res, String(req.params.id || "").trim())))
-            return;
-        try {
-            const profileId = String(req.params.id || "").trim();
-            const name = String(req.body?.name || "").trim();
-            if (!profileId)
-                return res.status(400).json({ success: false, error: "Voice profile ID is required." });
-            if (!name)
-                return res.status(400).json({ success: false, error: "Voice name is required." });
-            const payload = {
-                name: name.slice(0, 100),
-            };
-            if (req.body?.description !== undefined)
-                payload.description = String(req.body.description || "").trim() || null;
-            let updated = null;
-            let baseUrl = "";
-            try {
-                const { data, base } = await voiceboxJson(`/profiles/${encodeURIComponent(profileId)}`, {
-                    method: "PATCH",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(payload),
-                });
-                updated = data;
-                baseUrl = base;
-            }
-            catch (patchError) {
-                const { data, base } = await voiceboxJson(`/profiles/${encodeURIComponent(profileId)}`, {
-                    method: "PUT",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(payload),
-                });
-                updated = data;
-                baseUrl = base;
-            }
-            res.json({ success: true, baseUrl, profile: normalizeVoiceboxProfile(updated || { id: profileId, ...payload }) });
-        }
-        catch (error) {
-            res.status(503).json({ success: false, error: error instanceof Error ? error.message : "Voice profile rename failed" });
-        }
-    });
-    app.delete("/api/voicebox/profiles/:id", async (req, res) => {
-        if (!(await voiceOwnerUser(req, res, String(req.params.id || "").trim())))
-            return;
-        try {
-            const profileId = String(req.params.id || "").trim();
-            if (!profileId)
-                return res.status(400).json({ success: false, error: "Voice profile ID is required." });
-            const { data, base } = await voiceboxJson(`/profiles/${encodeURIComponent(profileId)}`, { method: "DELETE" });
-            await releaseVoice(profileId);
-            res.json({ success: true, baseUrl: base, deleted: true, profile: data || { id: profileId } });
-        }
-        catch (error) {
-            res.status(503).json({ success: false, error: error instanceof Error ? error.message : "Voice profile deletion failed" });
-        }
-    });
-    app.post("/api/voicebox/profiles/:id/samples", async (req, res) => {
-        if (!(await voiceOwnerUser(req, res, String(req.params.id || "").trim())))
-            return;
-        const tempFiles = [];
-        try {
-            const profileId = String(req.params.id || "").trim();
-            let referenceText = String(req.body?.referenceText || req.body?.reference_text || "").trim();
-            const audioBase64 = String(req.body?.audioBase64 || "").trim();
-            const filename = String(req.body?.filename || "voice-sample.wav").replace(/[^\w.\-]+/g, "-").slice(0, 120);
-            const mimeType = String(req.body?.mimeType || "audio/wav").trim();
-            if (!profileId)
-                return res.status(400).json({ success: false, error: "Voice profile ID is required." });
-            if (!audioBase64)
-                return res.status(400).json({ success: false, error: "Audio sample is required." });
-            let audioBuffer = Buffer.from(audioBase64, "base64");
-            if (!audioBuffer.length)
-                return res.status(400).json({ success: false, error: "Audio sample is empty." });
-            let uploadName = filename;
-            let uploadType = mimeType;
-            if (req.body?.removeNoise) {
-                // Cuts rumble and hiss, then applies FFT denoising before the sample is cloned.
-                const tmpDir = runtimeTmpRoot;
-                if (!fs.existsSync(tmpDir))
-                    fs.mkdirSync(tmpDir, { recursive: true });
-                const noisyId = crypto.randomBytes(16).toString("hex");
-                const noisyPath = path.join(tmpDir, `${noisyId}${path.extname(filename) || ".audio"}`);
-                const cleanPath = path.join(tmpDir, `${noisyId}-clean.wav`);
-                fs.writeFileSync(noisyPath, audioBuffer);
-                tempFiles.push(noisyPath, cleanPath);
-                await new Promise((resolve, reject) => {
-                    const child = spawn(process.env.FFMPEG_PATH || "ffmpeg", ["-y", "-i", noisyPath, "-vn", "-af", "highpass=f=70,lowpass=f=12000,afftdn=nr=12:nf=-30,loudnorm=I=-18:TP=-2", "-ac", "1", "-ar", "44100", cleanPath], { stdio: ["ignore", "ignore", "pipe"] });
-                    let stderr = "";
-                    child.stderr.on("data", (chunk) => { stderr = (stderr + chunk).slice(-1500); });
-                    child.on("error", reject);
-                    child.on("close", (code) => code === 0 ? resolve() : reject(new Error(`Noise removal failed: ${stderr.slice(-300)}`)));
-                });
-                audioBuffer = fs.readFileSync(cleanPath);
-                uploadName = filename.replace(/\.[^.]+$/, "") + "-clean.wav";
-                uploadType = "audio/wav";
-            }
-            if (!referenceText) {
-                const tmpDir = runtimeTmpRoot;
-                if (!fs.existsSync(tmpDir))
-                    fs.mkdirSync(tmpDir, { recursive: true });
-                const sampleId = crypto.randomBytes(16).toString("hex");
-                const ext = path.extname(uploadName) || (uploadType.includes("mpeg") ? ".mp3" : uploadType.includes("mp4") ? ".m4a" : ".wav");
-                const samplePath = path.join(tmpDir, `${sampleId}${ext}`);
-                const normalizedAudioPath = path.join(tmpDir, `${sampleId}.wav`);
-                fs.writeFileSync(samplePath, audioBuffer);
-                tempFiles.push(samplePath, normalizedAudioPath);
-                await extractAudioForTranscription(samplePath, normalizedAudioPath);
-                const transcript = await runLocalWhisperTranscription(normalizedAudioPath);
-                if (!transcript?.success || !String(transcript.text || "").trim()) {
-                    throw new Error(transcript?.error || "Could not detect speech in this voice sample.");
-                }
-                referenceText = String(transcript.text || "").trim();
-            }
-            const form = new globalThis.FormData();
-            form.append("reference_text", referenceText);
-            form.append("file", new Blob([audioBuffer], { type: uploadType }), uploadName);
-            const { data, base } = await voiceboxJson(`/profiles/${encodeURIComponent(profileId)}/samples`, {
-                method: "POST",
-                body: form,
-            });
-            res.json({ success: true, baseUrl: base, sample: data, referenceText });
-        }
-        catch (error) {
-            res.status(503).json({ success: false, error: error instanceof Error ? error.message : "Voice sample upload failed" });
-        }
-        finally {
-            for (const file of tempFiles) {
-                if (file && fs.existsSync(file)) {
-                    try { fs.unlinkSync(file); } catch (_error) {}
-                }
-            }
-        }
-    });
-    app.post("/api/voicebox/generate", async (req, res) => {
-        if (!(await voiceOwnerUser(req, res, String(req.body?.profileId || req.body?.profile_id || "").trim())))
-            return;
-        try {
-            const profileId = String(req.body?.profileId || req.body?.profile_id || "").trim();
-            const text = String(req.body?.text || "").trim();
-            if (!profileId)
-                return res.status(400).json({ success: false, error: "Select a voice before generating audio." });
-            if (!text)
-                return res.status(400).json({ success: false, error: "Text is required." });
-            const generated = await generateVoiceboxSpeech({ ...req.body, profileId, text });
-            res.json({
-                success: true,
-                pending: generated.pending,
-                baseUrl: generated.baseUrl,
-                generation: generated.generation,
-                audioUrl: generated.audioUrl,
-            });
-        }
-        catch (error) {
-            res.status(503).json({ success: false, error: error instanceof Error ? error.message : "Speech generation failed" });
-        }
-    });
-    app.get("/api/voicebox/history/:id", async (req, res) => {
-        if (!(await voiceUser(req, res)))
-            return;
-        try {
-            const id = String(req.params.id || "").trim();
-            if (!id)
-                return res.status(400).json({ success: false, error: "Generation ID is required." });
-            const { data, base } = await voiceboxJson(`/history/${encodeURIComponent(id)}`, { method: "GET" });
-            res.json({ success: true, baseUrl: base, generation: data, audioUrl: `/api/voicebox/audio/${encodeURIComponent(id)}` });
-        }
-        catch (error) {
-            res.status(503).json({ success: false, error: error instanceof Error ? error.message : "Voice generation status unavailable" });
-        }
-    });
-    app.get("/api/voicebox/audio/:id", async (req, res) => {
-        if (!(await voiceUser(req, res)))
-            return;
-        try {
-            const id = String(req.params.id || "").trim();
-            if (!id)
-                return res.status(400).json({ error: "Generation ID is required." });
-            if (id.startsWith("hosted-")) {
-                const hosted = hostedAudioFile(id);
-                if (!hosted)
-                    return res.status(404).json({ error: "Generated audio is no longer available" });
-                res.setHeader("Content-Type", hosted.contentType);
-                res.setHeader("Cache-Control", "private, max-age=3600");
-                return res.sendFile(hosted.file);
-            }
-            const { response } = await voiceboxFetch(`/audio/${encodeURIComponent(id)}`, { method: "GET" });
-            if (!response.ok)
-                return res.status(response.status).json({ error: "Generated audio unavailable" });
-            const audioBuffer = Buffer.from(await response.arrayBuffer());
-            const size = audioBuffer.length;
-            if (!size)
-                return res.status(404).json({ error: "Generated audio is empty" });
-            const contentType = response.headers.get("content-type") || "audio/wav";
-            const disposition = response.headers.get("content-disposition") || `inline; filename="generation_${id}.wav"`;
-            res.setHeader("Accept-Ranges", "bytes");
-            res.setHeader("Content-Type", contentType);
-            res.setHeader("Content-Disposition", disposition.replace(/^attachment/i, "inline"));
-            res.setHeader("Cache-Control", "public, max-age=3600");
-            const range = String(req.headers.range || "").trim();
-            if (range) {
-                const match = range.match(/^bytes=(\d*)-(\d*)$/);
-                if (!match)
-                    return res.status(416).setHeader("Content-Range", `bytes */${size}`).end();
-                let start = match[1] ? Number(match[1]) : NaN;
-                let end = match[2] ? Number(match[2]) : NaN;
-                if (!Number.isFinite(start) && Number.isFinite(end)) {
-                    start = Math.max(0, size - end);
-                    end = size - 1;
-                }
-                if (Number.isFinite(start) && !Number.isFinite(end))
-                    end = size - 1;
-                if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end < start || start >= size) {
-                    res.setHeader("Content-Range", `bytes */${size}`);
-                    return res.status(416).end();
-                }
-                end = Math.min(end, size - 1);
-                const chunk = audioBuffer.subarray(start, end + 1);
-                res.status(206);
-                res.setHeader("Content-Range", `bytes ${start}-${end}/${size}`);
-                res.setHeader("Content-Length", String(chunk.length));
-                return res.end(chunk);
-            }
-            res.status(200);
-            res.setHeader("Content-Length", String(size));
-            res.end(audioBuffer);
-        }
-        catch (error) {
-            res.status(503).json({ error: error instanceof Error ? error.message : "Generated audio unavailable" });
-        }
-    });
+    registerVoicebox(app, { extractAudioForTranscription, findVoiceboxProfile, generateVoiceboxSpeech, listAllVoiceProfiles, normalizeVoiceboxEngine, normalizeVoiceboxProfile, runLocalWhisperTranscription, runtimeTmpRoot, takenVoiceNames, voiceOwnerUser, voiceUser, voiceboxFetch, voiceboxJson, voiceboxProfileIsReady });
     const ALL_ZERNIO_KEYS = [
         "sk_d062b4f33ebd16a1a8419cb57e1e6e3da9981dba442b5da1dc39ef21908b2b86", // Key 1
         "sk_342e95a91a2befd763c508023962ecfe63f296bbbb93616cdc6ba200e3f03bc1", // Key 2
@@ -24254,60 +23356,7 @@ WHERE id = ${sqlString(req.params.id)}
             res.status(status >= 400 && status < 600 ? status : 500).json({ error: error instanceof Error ? error.message : "Could not delete upload" });
         }
     });
-    app.get("/api/automation/voice/status", async (req, res) => {
-        try {
-            const session = await getSessionRecord(req);
-            if (!session?.user)
-                return res.status(401).json({ error: "Sign in required" });
-            try {
-                const { profiles, voiceboxOnline } = await listAllVoiceProfiles();
-                res.json({ online: true, voiceboxOnline, profiles, stemEngine: process.env.DEMUCS_PATH ? "AI stem separation" : "Center-channel extraction", captionCleanup: captionCleanupStatus(), avatarProviders: avatarProviderStatus(), openRouter: { configured: openRouterConfigured() } });
-            }
-            catch (error) {
-                res.json({ online: false, profiles: [], stemEngine: process.env.DEMUCS_PATH ? "AI stem separation" : "Center-channel extraction", captionCleanup: captionCleanupStatus(), avatarProviders: avatarProviderStatus(), openRouter: { configured: openRouterConfigured() }, error: error instanceof Error ? error.message : "Voicebox is unavailable" });
-            }
-        }
-        catch (error) {
-            res.status(500).json({ error: error instanceof Error ? error.message : "Could not load Voice Studio status" });
-        }
-    });
-    app.get("/api/automation/voice/music/search", async (req, res) => {
-        try {
-            const session = await getSessionRecord(req);
-            if (!session?.user)
-                return res.status(401).json({ error: "Sign in required" });
-            const mood = voiceMusicMoodFromRequest(req.query.mood, req.query.transcript);
-            let query = String(req.query.q || mood.query).trim().slice(0, 100) || "cinematic instrumental";
-            // Openverse category=music often returns 0 for long mood phrases like "… background music".
-            query = query.replace(/\s+background\s+music\s*$/i, "").trim() || "cinematic instrumental";
-            const page = Math.max(1, Math.min(10, Number(req.query.page) || 1));
-            async function searchOpenverse(searchQuery, useCategory) {
-                const url = new URL("https://api.openverse.org/v1/audio/");
-                url.searchParams.set("q", searchQuery);
-                if (useCategory) url.searchParams.set("category", "music");
-                url.searchParams.set("license", "cc0,by");
-                url.searchParams.set("page", String(page));
-                url.searchParams.set("page_size", "12");
-                const response = await fetch(url, { signal: AbortSignal.timeout(15000), headers: { "User-Agent": "Autoyt Voice Studio/1.0" } });
-                if (!response.ok)
-                    throw new Error(`Openverse returned HTTP ${response.status}.`);
-                return response.json();
-            }
-            let payload = await searchOpenverse(query, true);
-            if (!(Array.isArray(payload?.results) ? payload.results : []).length) {
-                const shortened = query.replace(/\s+instrumental\s*$/i, "").trim() || query;
-                if (shortened !== query) payload = await searchOpenverse(shortened, true);
-            }
-            if (!(Array.isArray(payload?.results) ? payload.results : []).length) {
-                payload = await searchOpenverse(query, false);
-            }
-            const tracks = (Array.isArray(payload?.results) ? payload.results : []).map(normalizeOpenverseTrack).filter(Boolean).filter((track) => voiceMusicUrlAllowed(track.url));
-            res.json({ query, mood, page, pageCount: Number(payload?.page_count || 1), resultCount: Number(payload?.result_count || tracks.length), tracks, providers: [{ id: "openverse", label: "Openverse", kind: "in-app", license: "CC0 or CC BY", url: "https://openverse.org/audio" }, { id: "pixabay", label: "Pixabay Music", kind: "external", url: pixabayMusicSearchUrl(query), note: "Pixabay has no public music API; download a track there, then import it below." }] });
-        }
-        catch (error) {
-            res.status(502).json({ error: error instanceof Error ? error.message : "Could not search royalty-free music" });
-        }
-    });
+    registerVoiceStudio(app, { captionCleanupRuntime, cleanupVoiceStudioFiles, getSessionRecord, listAllVoiceProfiles, listNarrationStyles, loadVoiceStudioJob, publicVoiceStudioJob, reconcileVoiceStudioJob, stopVoiceStudioJob, voiceMusicUrlAllowed, voiceStudioRootDir });
     // Avatar photos an agent swaps into its remakes. Stored in the asset store so
     // they survive restarts; the agent's settings keep the list.
     app.post("/api/automation/agents/:id/remake/faces", async (req, res) => {
@@ -24436,13 +23485,6 @@ WHERE id = ${sqlString(req.params.id)}
             res.status(status >= 400 && status < 600 ? status : 500).json({ error: error instanceof Error ? error.message : "Could not start Voice Studio" });
         }
     });
-    app.get("/api/automation/voice/narration-styles", async (req, res) => {
-        try {
-            const session = await getSessionRecord(req);
-            if (!session?.user) return res.status(401).json({ error: "Sign in required" });
-            res.json({ styles: listNarrationStyles(session.user.id) });
-        } catch (error) { res.status(500).json({ error: error instanceof Error ? error.message : "Could not load narration styles" }); }
-    });
     app.get("/api/automation/uploads/:id/voice/jobs", async (req, res) => {
         try {
             const session = await getSessionRecord(req);
@@ -24467,60 +23509,6 @@ WHERE id = ${sqlString(req.params.id)}
         }
         catch (error) {
             res.status(500).json({ error: error instanceof Error ? error.message : "Could not load the latest Voice Studio job" });
-        }
-    });
-    app.get("/api/automation/voice/jobs/:id", async (req, res) => {
-        try {
-            const session = await getSessionRecord(req);
-            if (!session?.user)
-                return res.status(401).json({ error: "Sign in required" });
-            cleanupVoiceStudioFiles();
-            const job = loadVoiceStudioJob(req.params.id);
-            if (!job || job.userId !== session.user.id)
-                return res.status(404).json({ error: "Voice Studio job not found" });
-            res.json({ job: publicVoiceStudioJob(reconcileVoiceStudioJob(job)) });
-        }
-        catch (error) {
-            res.status(500).json({ error: error instanceof Error ? error.message : "Could not load Voice Studio job" });
-        }
-    });
-    app.post("/api/automation/voice/jobs/:id/stop", async (req, res) => {
-        try {
-            const session = await getSessionRecord(req);
-            if (!session?.user)
-                return res.status(401).json({ error: "Sign in required" });
-            const job = loadVoiceStudioJob(req.params.id);
-            if (!job || job.userId !== session.user.id)
-                return res.status(404).json({ error: "Voice Studio job not found" });
-            res.json({ job: publicVoiceStudioJob(stopVoiceStudioJob(job)) });
-        }
-        catch (error) {
-            res.status(500).json({ error: error instanceof Error ? error.message : "Could not stop Voice Studio job" });
-        }
-    });
-    app.get("/api/automation/voice/avatar-input/:token", (req, res) => {
-        const filePath = resolveAvatarMedia(req.params.token, path.join(voiceStudioRootDir(), "provider-inputs"));
-        res.setHeader("Cache-Control", "private, no-store");
-        res.setHeader("X-Robots-Tag", "noindex, nofollow");
-        if (!filePath) return res.status(404).end();
-        res.type("audio/mpeg").sendFile(filePath);
-    });
-    app.get("/api/automation/voice/files/:name", async (req, res) => {
-        try {
-            const session = await getSessionRecord(req);
-            if (!session?.user)
-                return res.status(401).json({ error: "Sign in required" });
-            const filename = path.basename(String(req.params.name || ""));
-            if (!/^voice_[a-zA-Z0-9-]+\.(mp4|wav|mp3|m4a|srt)$/i.test(filename))
-                return res.status(400).json({ error: "Invalid media file" });
-            const filePath = path.join(voiceStudioRootDir(), filename);
-            if (!fs.existsSync(filePath))
-                return res.status(404).json({ error: "Media file expired or was not found" });
-            res.setHeader("Cache-Control", "private, max-age=3600");
-            res.sendFile(filePath);
-        }
-        catch (error) {
-            res.status(500).json({ error: error instanceof Error ? error.message : "Could not load media file" });
         }
     });
     app.post("/api/automation/uploads/:id/movie-id/correct", async (req, res) => {
@@ -24651,43 +23639,7 @@ WHERE id = ${sqlString(req.params.id)}
             res.status(500).json({ error: message });
         }
     });
-    app.get("/api/saved/tiktok-playlists", async (req, res) => {
-        try {
-            const session = await getSessionRecord(req);
-            if (!session?.user)
-                return res.status(401).json({ error: "Sign in required" });
-            const records = await listSavedPlaylistRecords(session.user.id);
-            res.json({ summaries: records.map(savedPlaylistSummaryFromRecord) });
-        }
-        catch (error) {
-            res.status(503).json({ error: error instanceof Error ? error.message : "Saved playlist database unavailable" });
-        }
-    });
-    app.get("/api/saved/tiktok-playlists/by-url", async (req, res) => {
-        try {
-            const session = await getSessionRecord(req);
-            if (!session?.user)
-                return res.status(401).json({ error: "Sign in required" });
-            const rawUrl = typeof req.query.url === "string" ? req.query.url : "";
-            const record = await getSavedPlaylistRecordByKey(session.user.id, rawUrl);
-            res.json({ record });
-        }
-        catch (error) {
-            res.status(503).json({ error: error instanceof Error ? error.message : "Saved playlist database unavailable" });
-        }
-    });
-    app.get("/api/saved/tiktok-playlists/by-slug/:slug", async (req, res) => {
-        try {
-            const session = await getSessionRecord(req);
-            if (!session?.user)
-                return res.status(401).json({ error: "Sign in required" });
-            const record = await getSavedPlaylistRecordBySlug(session.user.id, req.params.slug);
-            res.json({ record });
-        }
-        catch (error) {
-            res.status(503).json({ error: error instanceof Error ? error.message : "Saved playlist database unavailable" });
-        }
-    });
+    registerSavedPlaylists(app, { addSavedPlaylistAutoTags, cleanupDownloadArtifacts, extractTikTokVideoIdFromUrl, generateDeepSeekJson, getCachedMovieIdentification, getCachedTikTokComments, getSavedPlaylistGenreScanState, getSavedPlaylistRecordByKey, getSessionRecord, identifyMovieFromVideoFile, jsonbLiteral, listActiveTikTokSourceDeepScans, listSavedPlaylistRecords, listSavedPostAnalyses, makeLinkAnalysisVideoPath, movieCacheLookupFromUrl, normalizePlaylistListUrl, normalizeSavedSourceTags, publicTikTokSourceDeepScan, queueTikTokSourceDeepScan, resolveDownloadedOutput, runPsql, runTikTokDownload, runTikTokDownloadWithAudioRetry, runYtDlpAudioDownload, runYtDlpSocialDownload, saveSavedPostAnalysis, saveTikTokPlaylistToDb, savedGenreScanState, savedPlaylistDisplayTitle, savedPlaylistSummaryFromRecord, savedSlugForRecord, savedSourceAutoTags, slugifySavedPlaylistTitle, slugifySavedPost, sqlString, tikTokDownloadMaxBytes, tiktokCollectionTitleFromUrl, tiktokHandleFromUrl, tiktokSourceDeepScanKey, transcribeMediaFileForAnalysis, transcriptExcerpt });
     app.get("/api/saved/tiktok-posts/:slug", async (req, res) => {
         try {
             const session = await getSessionRecord(req);
@@ -24707,45 +23659,6 @@ WHERE id = ${sqlString(req.params.id)}
         }
         catch (error) {
             res.status(503).json({ error: error instanceof Error ? error.message : "Saved playlist database unavailable" });
-        }
-    });
-    app.post("/api/saved/tiktok-playlists", async (req, res) => {
-        try {
-            const session = await getSessionRecord(req);
-            if (!session?.user)
-                return res.status(401).json({ error: "Sign in required" });
-            const { rawUrl, playlist, analyzedUrl } = req.body || {};
-            const record = await saveTikTokPlaylistToDb(session.user.id, rawUrl, playlist, analyzedUrl);
-            res.json({ record, summary: savedPlaylistSummaryFromRecord(record) });
-        }
-        catch (error) {
-            res.status(503).json({ error: error instanceof Error ? error.message : "Could not save playlist" });
-        }
-    });
-    app.patch("/api/saved/tiktok-playlists/tags", async (req, res) => {
-        try {
-            const session = await getSessionRecord(req);
-            if (!session?.user)
-                return res.status(401).json({ error: "Sign in required" });
-            const key = String(req.body?.key || "").trim();
-            const record = await updateSavedPlaylistTags(session.user.id, key, req.body?.tags || []);
-            res.json({ record, summary: savedPlaylistSummaryFromRecord(record) });
-        }
-        catch (error) {
-            res.status(503).json({ error: error instanceof Error ? error.message : "Could not update saved source tags" });
-        }
-    });
-    app.patch("/api/saved/tiktok-playlists/auto-tags", async (req, res) => {
-        try {
-            const session = await getSessionRecord(req);
-            if (!session?.user)
-                return res.status(401).json({ error: "Sign in required" });
-            const key = String(req.body?.key || "").trim();
-            const record = await addSavedPlaylistAutoTags(session.user.id, key, req.body?.tags || []);
-            res.json({ record, summary: record ? savedPlaylistSummaryFromRecord(record) : null });
-        }
-        catch (error) {
-            res.status(503).json({ error: error instanceof Error ? error.message : "Could not update saved source auto tags" });
         }
     });
     app.get("/api/saved/tiktok-post-analyses", async (req, res) => {
@@ -24783,83 +23696,6 @@ WHERE id = ${sqlString(req.params.id)}
             res.status(status >= 400 && status < 600 ? status : 503).json({ error: error instanceof Error ? error.message : "Could not save post analysis" });
         }
     });
-    app.post("/api/saved/tiktok-playlists/deep-scan", async (req, res) => {
-        try {
-            const session = await getSessionRecord(req);
-            if (!session?.user)
-                return res.status(401).json({ error: "Sign in required" });
-            const url = String(req.body?.url || req.body?.rawUrl || req.body?.analyzedUrl || "").trim();
-            if (!url)
-                return res.status(400).json({ error: "URL is required" });
-            const job = queueTikTokSourceDeepScan(session.user.id, url, {
-                seedVideoUrl: req.body?.seedVideoUrl,
-                targetCount: req.body?.targetCount,
-                knownCount: req.body?.knownCount,
-            });
-            res.status(202).json({ scan: publicTikTokSourceDeepScan(job) });
-        }
-        catch (error) {
-            res.status(503).json({ error: error instanceof Error ? error.message : "Could not start TikTok deep scan" });
-        }
-    });
-    app.get("/api/saved/tiktok-playlists/deep-scan", async (req, res) => {
-        try {
-            const session = await getSessionRecord(req);
-            if (!session?.user)
-                return res.status(401).json({ error: "Sign in required" });
-            const url = typeof req.query.url === "string" ? req.query.url.trim() : "";
-            const scans = listActiveTikTokSourceDeepScans(session.user.id);
-            if (!url)
-                return res.json({ scans });
-            const key = tiktokSourceDeepScanKey(session.user.id, url);
-            const match = scans.find((scan) => tiktokSourceDeepScanKey(session.user.id, scan.url) === key) || null;
-            res.json({ scan: match, scans });
-        }
-        catch (error) {
-            res.status(503).json({ error: error instanceof Error ? error.message : "Could not load TikTok deep scan" });
-        }
-    });
-    app.get("/api/saved/tiktok-playlists/genre-scan", async (req, res) => {
-        try {
-            const session = await getSessionRecord(req);
-            if (!session?.user)
-                return res.status(401).json({ error: "Sign in required" });
-            const key = typeof req.query.key === "string" ? req.query.key : "";
-            const slug = typeof req.query.slug === "string" ? req.query.slug : "";
-            const record = key
-                ? await getSavedPlaylistRecordByKey(session.user.id, key)
-                : slug
-                    ? await getSavedPlaylistRecordBySlug(session.user.id, slug)
-                    : null;
-            if (!record)
-                return res.status(404).json({ error: "Saved playlist not found" });
-            const state = await getSavedPlaylistGenreScanState(session.user.id, record.key || record.analyzedUrl);
-            res.json({ scan: savedPlaylistGenreScanPayload(record, state) });
-        }
-        catch (error) {
-            res.status(503).json({ error: error instanceof Error ? error.message : "Saved genre scan unavailable" });
-        }
-    });
-    app.post("/api/saved/tiktok-playlists/genre-scan", async (req, res) => {
-        try {
-            const session = await getSessionRecord(req);
-            if (!session?.user)
-                return res.status(401).json({ error: "Sign in required" });
-            const key = String(req.body?.key || "").trim();
-            const slug = String(req.body?.slug || "").trim();
-            const record = key
-                ? await getSavedPlaylistRecordByKey(session.user.id, key)
-                : slug
-                    ? await getSavedPlaylistRecordBySlug(session.user.id, slug)
-                    : null;
-            if (!record)
-                return res.status(404).json({ error: "Saved playlist not found" });
-            res.json({ scan: await scanSavedPlaylistGenreBatch(session.user.id, record, { batchSize: req.body?.batchSize }) });
-        }
-        catch (error) {
-            res.status(503).json({ error: error instanceof Error ? error.message : "Could not scan saved playlist genres" });
-        }
-    });
     app.post("/api/tiktok/comments/cache", async (req, res) => {
         try {
             if (!commentCachePushAuthorized(req))
@@ -24883,106 +23719,6 @@ WHERE id = ${sqlString(req.params.id)}
         }
         catch (error) {
             res.status(503).json({ error: error instanceof Error ? error.message : "Could not store TikTok comment cache" });
-        }
-    });
-    app.get("/api/saved/tiktok-playlists/movie-scan/pending", async (req, res) => {
-        try {
-            const session = await getSessionRecord(req);
-            if (!session?.user)
-                return res.status(401).json({ error: "Sign in required" });
-            const key = String(req.query.key || "").trim();
-            const slug = String(req.query.slug || "").trim();
-            const record = key
-                ? await getSavedPlaylistRecordByKey(session.user.id, key)
-                : slug
-                    ? await getSavedPlaylistRecordBySlug(session.user.id, slug)
-                    : null;
-            if (!record)
-                return res.status(404).json({ error: "Saved playlist not found" });
-            const pendingComments = await listPendingCommentCacheVideos(record);
-            res.json({
-                key: record.key || "",
-                slug: record.slug || savedSlugForRecord(record),
-                title: savedPlaylistDisplayTitle(record),
-                pendingComments,
-                pendingCount: pendingComments.length,
-            });
-        }
-        catch (error) {
-            res.status(503).json({ error: error instanceof Error ? error.message : "Could not list pending comment cache videos" });
-        }
-    });
-    app.get("/api/saved/tiktok-playlists/movie-scan", async (req, res) => {
-        try {
-            const session = await getSessionRecord(req);
-            if (!session?.user)
-                return res.status(401).json({ error: "Sign in required" });
-            const key = String(req.query.key || "").trim();
-            const slug = String(req.query.slug || "").trim();
-            const record = key
-                ? await getSavedPlaylistRecordByKey(session.user.id, key)
-                : slug
-                    ? await getSavedPlaylistRecordBySlug(session.user.id, slug)
-                    : null;
-            if (!record)
-                return res.status(404).json({ error: "Saved playlist not found" });
-            const playlistKey = normalizePlaylistListUrl(record.key || record.analyzedUrl || "");
-            const analyses = await listSavedPostAnalyses(session.user.id, playlistKey).catch(() => ({}));
-            const videos = Array.isArray(record?.playlist?.videos) ? record.playlist.videos : [];
-            res.json({
-                scan: {
-                    key: record.key || "",
-                    slug: record.slug || savedSlugForRecord(record),
-                    title: savedPlaylistDisplayTitle(record),
-                    summary: savedPlaylistMovieScanSummary(videos, analyses),
-                    pendingComments: await listPendingCommentCacheVideos(record),
-                    analyses,
-                },
-            });
-        }
-        catch (error) {
-            res.status(503).json({ error: error instanceof Error ? error.message : "Saved movie scan unavailable" });
-        }
-    });
-    app.post("/api/saved/tiktok-playlists/movie-scan", async (req, res) => {
-        try {
-            const session = await getSessionRecord(req);
-            if (!session?.user)
-                return res.status(401).json({ error: "Sign in required" });
-            const key = String(req.body?.key || "").trim();
-            const slug = String(req.body?.slug || "").trim();
-            const record = key
-                ? await getSavedPlaylistRecordByKey(session.user.id, key)
-                : slug
-                    ? await getSavedPlaylistRecordBySlug(session.user.id, slug)
-                    : null;
-            if (!record)
-                return res.status(404).json({ error: "Saved playlist not found" });
-            res.json({
-                scan: await scanSavedPlaylistMovieBatch(session.user.id, record, {
-                    batchSize: req.body?.batchSize,
-                    slug: req.body?.slug,
-                    slugs: req.body?.slugs,
-                    geminiFallback: req.body?.geminiFallback !== false,
-                    skipMovieCache: req.body?.skipMovieCache === true,
-                }),
-            });
-        }
-        catch (error) {
-            res.status(503).json({ error: error instanceof Error ? error.message : "Could not scan saved playlist movies" });
-        }
-    });
-    app.delete("/api/saved/tiktok-playlists", async (req, res) => {
-        try {
-            const session = await getSessionRecord(req);
-            if (!session?.user)
-                return res.status(401).json({ error: "Sign in required" });
-            const key = typeof req.query.key === "string" ? req.query.key : "";
-            await deleteSavedPlaylistFromDb(session.user.id, key);
-            res.json({ ok: true });
-        }
-        catch (error) {
-            res.status(503).json({ error: error instanceof Error ? error.message : "Could not remove playlist" });
         }
     });
     app.get("/api/niches", async (_req, res) => {
