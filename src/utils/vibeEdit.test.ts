@@ -308,3 +308,42 @@ describe("timeline editing", () => {
     expect(parseTimecode("")).toBeNull();
   });
 });
+
+// Locked tracks sit out every edit, ripples included.
+function edit() {
+  let p = addAsset(addAsset(addAsset(emptyProject(), video("a", 10)), video("b", 6)), video("c", 4));
+  p = placeAsset(p, "a").project; // track 0, 0-10
+  p = placeAsset(p, "b").project; // track 0, 10-16
+  const c = placeAsset(p, "c", { track: 1, at: 12 });
+  p = c.project;
+  return setTrackState(p, "v1", { locked: true });
+}
+
+describe("locked tracks stay put", () => {
+  it("ripple delete leaves a locked track's clip where it was", () => {
+    const p = edit();
+    const locked = p.clips.find((x) => x.track === 1)!;
+    const next = rippleDeleteItems(p, [p.clips[0].id]);
+    expect(next.clips.find((x) => x.id === locked.id)!.start).toBe(locked.start);
+  });
+  it("ripple trim leaves a locked track's clip where it was", () => {
+    const p = edit();
+    const locked = p.clips.find((x) => x.track === 1)!;
+    expect(rippleTrim(p, p.clips[0].id, "end", -3).clips.find((x) => x.id === locked.id)!.start).toBe(locked.start);
+  });
+  it("closing a gap leaves a locked track's clip where it was", () => {
+    let p = edit();
+    p = moveItem(p, p.clips[1].id, 11);
+    const locked = p.clips.find((x) => x.track === 1)!;
+    expect(closeGap(p, 10.5).clips.find((x) => x.id === locked.id)!.start).toBe(locked.start);
+  });
+  it("split skips locked tracks", () => {
+    const p = edit();
+    expect(splitAt(p, 13).clips.filter((x) => x.track === 1)).toHaveLength(1);
+  });
+  it("duplicate skips locked items", () => {
+    const p = edit();
+    const locked = p.clips.find((x) => x.track === 1)!;
+    expect(duplicateItems(p, [locked.id]).ids).toHaveLength(0);
+  });
+});

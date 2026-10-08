@@ -453,34 +453,27 @@ export function deleteItems(p: VibeProject, ids: string[]): VibeProject {
   });
 }
 
-/** Delete track-0 clips and pull everything after each one left to close the gap. */
+/** Delete track-0 clips and pull everything after each one left to close the
+ * gap. Locked tracks keep their place, and a locked clip is not deleted. */
 export function rippleDelete(p: VibeProject, id: string): VibeProject {
+  if (isLocked(p, id)) return p;
   const clip = p.clips.find((c) => c.id === id);
   if (!clip || clip.track !== 0) return deleteItems(p, [id]);
-  const gap = clipLength(clip);
-  const after = (t: number) => t >= clipEnd(clip) - 1e-3;
-  const shift = <T extends { start: number }>(x: T): T => (after(x.start) ? { ...x, start: round(x.start - gap) } : x);
-  const next = deleteItems(p, [id]);
-  return touch(next, {
-    clips: next.clips.map(shift),
-    audio: next.audio.map(shift),
-    texts: next.texts.map((t) => (after(t.start) ? { ...t, start: round(t.start - gap), end: round(t.end - gap) } : t)),
-    captions: {
-      ...next.captions,
-      cues: next.captions.cues.map((c) =>
-        after(c.start)
-          ? { ...c, start: round(c.start - gap), end: round(c.end - gap), words: c.words?.map((w) => ({ ...w, t0: round(w.t0 - gap), t1: round(w.t1 - gap) })) }
-          : c,
-      ),
-    },
-  });
+  return shiftAfter(deleteItems(p, [id]), clipEnd(clip), -clipLength(clip));
 }
 
 /** Cut every clip/audio/text under `time` (or only `ids`) into two. */
 export function splitAt(p: VibeProject, time: number, ids?: string[]): VibeProject {
   const wanted = ids && new Set(ids);
+  const locked = (key: string) => Boolean(trackState(p, key).locked);
+  const lockedIds = new Set([
+    ...p.clips.filter((c) => locked(trackKey("video", c.track))).map((c) => c.id),
+    ...p.audio.filter((c) => locked(trackKey("audio", c.lane))).map((c) => c.id),
+    ...(locked("text") ? p.texts.map((t) => t.id) : []),
+  ]);
+  // A locked track is never cut.
   const hit = (id: string, start: number, end: number) =>
-    (!wanted || wanted.has(id)) && time > start + MIN_ITEM_SECONDS && time < end - MIN_ITEM_SECONDS;
+    !lockedIds.has(id) && (!wanted || wanted.has(id)) && time > start + MIN_ITEM_SECONDS && time < end - MIN_ITEM_SECONDS;
   const splitTimed = <T extends VibeClip | VibeAudioClip>(list: T[], prefix: string): T[] =>
     list.flatMap((c) => {
       if (!hit(c.id, c.start, clipEnd(c))) return [c];
@@ -653,7 +646,7 @@ function rowFree(list: (VibeClip | VibeAudioClip)[], rowOf: (c: VibeClip | VibeA
 /** Copy items to just after the selection, on the same rows when there is
  * room, otherwise on the next free row up. Returns the copies' ids. */
 export function duplicateItems(p: VibeProject, ids: string[]): { project: VibeProject; ids: string[] } {
-  const wanted = new Set(ids);
+  const wanted = new Set(ids.filter((id) => !isLocked(p, id)));
   const group = spans(p).filter((s) => wanted.has(s.id));
   if (!group.length) return { project: p, ids: [] };
   const offset = round(Math.max(...group.map((s) => s.end)) - Math.min(...group.map((s) => s.start)));
@@ -699,13 +692,17 @@ export function duplicateItems(p: VibeProject, ids: string[]): { project: VibePr
 export function shiftAfter(p: VibeProject, time: number, delta: number): VibeProject {
   const after = (t: number) => t >= time - 1e-3;
   const at = (t: number) => round(Math.max(0, t + delta));
+  // Locked tracks keep their place, the way a locked track sits out a ripple in Premiere.
+  const free = (key: string) => !trackState(p, key).locked;
+  const texts = free("text");
+  const cues = free("cue");
   return touch(p, {
-    clips: p.clips.map((c) => (after(c.start) ? { ...c, start: at(c.start) } : c)),
-    audio: p.audio.map((c) => (after(c.start) ? { ...c, start: at(c.start) } : c)),
-    texts: p.texts.map((t) => (after(t.start) ? { ...t, start: at(t.start), end: at(t.end) } : t)),
+    clips: p.clips.map((c) => (after(c.start) && free(trackKey("video", c.track)) ? { ...c, start: at(c.start) } : c)),
+    audio: p.audio.map((c) => (after(c.start) && free(trackKey("audio", c.lane)) ? { ...c, start: at(c.start) } : c)),
+    texts: p.texts.map((t) => (texts && after(t.start) ? { ...t, start: at(t.start), end: at(t.end) } : t)),
     captions: {
       ...p.captions,
-      cues: p.captions.cues.map((c) => (after(c.start) ? { ...c, start: at(c.start), end: at(c.end), words: c.words?.map((w) => ({ ...w, t0: at(w.t0), t1: at(w.t1) })) } : c)),
+      cues: p.captions.cues.map((c) => (cues && after(c.start) ? { ...c, start: at(c.start), end: at(c.end), words: c.words?.map((w) => ({ ...w, t0: at(w.t0), t1: at(w.t1) })) } : c)),
     },
     markers: (p.markers || []).map((m) => (after(m.time) ? { ...m, time: at(m.time) } : m)),
   });
