@@ -983,8 +983,7 @@ ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.up
       return sendText(state, chatId, `Linked to ${pending.email}. Message me anything you'd type in the AutoYT agent chat. Voice notes work too.\n\n/agents switch agent · /new fresh chat · /stop cancel · /help`);
     }
     if (!link) return sendText(state, chatId, "This is a private AutoYT bot. An admin links it from the AutoYT admin console.");
-    // Losing admin access unlinks the chat.
-    if (!(await adminRole(link.email))) return sendText(state, chatId, "This account no longer has admin access, so the bot is disabled for it.");
+    if (await userStatus(link.userId) === "suspended") return sendText(state, chatId, "This AutoYT account is suspended, so the bot is paused for it. Contact support from autoyt.cc.");
 
     if (callback) {
       void tg(state.botToken, "answerCallbackQuery", { callback_query_id: callback.id }).catch(() => {});
@@ -1035,6 +1034,16 @@ ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.up
     })().catch((error) => console.warn("[telegram] update failed:", error instanceof Error ? error.message : error));
   }
 
+  // A one-time t.me link: pressing Start in Telegram links that chat to this user.
+  async function telegramLinkFor(user) {
+    const state = await telegramState();
+    if (!state.botToken) throw adminError("The Telegram bot isn't set up yet.", 409);
+    const code = crypto.randomBytes(12).toString("hex");
+    state.codes = [...(state.codes || []).filter((item) => item.expiresAt > Date.now() && item.userId !== user.id), { code, userId: user.id, email: String(user.email || "").toLowerCase(), name: user.name || "", expiresAt: Date.now() + 15 * 60 * 1000 }];
+    await saveTelegramState(state, String(user.email || "").toLowerCase());
+    return { url: `https://t.me/${state.botUsername}?start=${code}`, expiresInMinutes: 15 };
+  }
+
   const publicTelegram = (state, admin) => ({
     connected: Boolean(state.botToken),
     botUsername: state.botUsername || "",
@@ -1068,7 +1077,7 @@ ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.up
       try {
         const session = await deps.session(req);
         if (!session?.user) return res.status(401).json({ error: "Sign in required" });
-        await handler(req, res, session.user);
+        await handler(req, res, session.user, session);
       } catch (error) {
         res.status(Number(error?.statusCode) || 500).json({ error: error instanceof Error ? error.message : "Request failed" });
       }
@@ -1122,6 +1131,52 @@ SELECT COALESCE((SELECT json_build_object(
         },
         pricing: { tokensPerCredit: TOKENS_PER_CREDIT, tokensPerUsd: billing.tokensPerUsd, flatTokens: billing.flatTokens },
       });
+    }));
+
+    // ----- account settings page -----
+    app.get("/api/account/overview", userRoute(async (_req, res, user, session) => {
+      const row = await json(`SELECT COALESCE((SELECT json_build_object(
+  'createdAt', u.created_at,
+  'sessions', (SELECT count(*) FROM app_sessions s WHERE s.user_id = u.id AND s.expires_at > now()),
+  'channels', (SELECT count(*) FROM youtube_accounts a WHERE a.user_id = u.id)
+) FROM app_users u WHERE u.id = ${sqlString(user.id)}), '{}'::json)::text;`, {});
+      res.json({ user: { id: user.id, email: user.email, name: user.name, avatarUrl: user.avatarUrl || "" }, createdAt: row.createdAt || null, sessions: Number(row.sessions) || 1, channels: Number(row.channels) || 0, currentSession: Boolean(session?.id) });
+    }));
+    app.get("/api/billing/history", userRoute(async (_req, res, user) => {
+      const id = sqlString(user.id);
+      const [orders, ledger, byFeature, daily] = await Promise.all([
+        (await paymentSchemaReady())
+          ? list(`SELECT b.reference, b.kind, p.name AS "planName", b.credits_tokens AS "creditsTokens", b.amount_cents AS "amountCents", b.currency, b.status, b.provider, b.created_at AS "createdAt", b.paid_at AS "paidAt" FROM billing_orders b LEFT JOIN billing_plans p ON p.id = b.plan_id WHERE b.user_id = ${id} ORDER BY b.created_at DESC LIMIT 50`)
+          : Promise.resolve([]),
+        list(`SELECT id, kind, tokens, balance_after AS "balanceAfter", note, created_at AS "createdAt" FROM token_ledger WHERE user_id = ${id} ORDER BY created_at DESC LIMIT 50`),
+        list(`SELECT COALESCE(NULLIF(feature, ''), 'other') AS feature, SUM(tokens_charged)::bigint AS tokens, count(*)::int AS events FROM ai_usage_events WHERE user_id = ${id} AND created_at > now() - interval '30 days' GROUP BY 1 ORDER BY 2 DESC LIMIT 12`),
+        list(`SELECT to_char(date_trunc('day', created_at), 'YYYY-MM-DD') AS day, SUM(tokens_charged)::bigint AS tokens FROM ai_usage_events WHERE user_id = ${id} AND created_at > now() - interval '30 days' GROUP BY 1 ORDER BY 1`),
+      ]);
+      const num = (rows, keys) => rows.map((row) => ({ ...row, ...Object.fromEntries(keys.map((key) => [key, Number(row[key]) || 0])) }));
+      res.json({ orders: num(orders, ["creditsTokens", "amountCents"]), ledger: num(ledger, ["tokens", "balanceAfter"]), usage: { byFeature: num(byFeature, ["tokens", "events"]), daily: num(daily, ["tokens"]) } });
+    }));
+    app.post("/api/account/sessions/revoke-others", userRoute(async (_req, res, user, session) => {
+      if (!session?.id) throw adminError("Sign in again first.", 401);
+      const out = await runPsql(`WITH gone AS (DELETE FROM app_sessions WHERE user_id = ${sqlString(user.id)} AND id <> ${sqlString(session.id)} RETURNING 1) SELECT count(*) FROM gone;`);
+      res.json({ signedOut: Number(String(out).trim()) || 0 });
+    }));
+    app.get("/api/account/telegram", userRoute(async (_req, res, user) => {
+      const state = await telegramState();
+      const link = (state.links || []).find((item) => item.userId === user.id);
+      res.json({ available: Boolean(state.botToken), botUsername: state.botUsername || "", linked: link ? { telegramName: link.telegramName || "", linkedAt: link.linkedAt } : null });
+    }));
+    app.post("/api/account/telegram/link", userRoute(async (_req, res, user) => {
+      res.json(await telegramLinkFor(user));
+    }));
+    app.delete("/api/account/telegram", userRoute(async (_req, res, user) => {
+      const state = await telegramState();
+      const mine = (state.links || []).filter((item) => item.userId === user.id);
+      if (mine.length) {
+        state.links = state.links.filter((item) => item.userId !== user.id);
+        await saveTelegramState(state, String(user.email || "").toLowerCase());
+        for (const link of mine) await tg(state.botToken, "sendMessage", { chat_id: link.chatId, text: "This chat was unlinked from AutoYT." }).catch(() => {});
+      }
+      res.json({ available: Boolean(state.botToken), botUsername: state.botUsername || "", linked: null });
     }));
 
     app.get("/api/billing/lingbase/config", (_req, res) => {
@@ -2063,12 +2118,7 @@ FROM creator_stage_jobs j LEFT JOIN app_users u ON u.id = j.user_id LEFT JOIN cr
       res.json(publicTelegram({}, admin));
     }));
     app.post("/api/admin/telegram/link", adminRoute("settings.manage", async (req, res, admin) => {
-      const state = await telegramState();
-      if (!state.botToken) throw adminError("Connect a bot first.");
-      const code = crypto.randomBytes(12).toString("hex");
-      state.codes = [...(state.codes || []).filter((item) => item.expiresAt > Date.now() && item.userId !== admin.id), { code, userId: admin.id, email: admin.email, name: admin.name || "", expiresAt: Date.now() + 15 * 60 * 1000 }];
-      await saveTelegramState(state, admin.email);
-      res.json({ url: `https://t.me/${state.botUsername}?start=${code}`, expiresInMinutes: 15 });
+      res.json(await telegramLinkFor(admin));
     }));
     app.delete("/api/admin/telegram/links/:chatId", adminRoute("settings.manage", async (req, res, admin) => {
       const state = await telegramState();

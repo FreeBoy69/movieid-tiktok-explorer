@@ -22446,7 +22446,7 @@ async function startServer() {
                 return res.status(401).send("Sign in before connecting a social account.");
             const zernioApiKey = await getZernioKeyWithFreeSlot();
             const profileId = await createZernioConnectProfileId(zernioApiKey, platform);
-            const redirectUri = `${publicAppUrl(req)}/api/auth/social/${platform}/callback?zKey=${encodeURIComponent(zernioApiKey)}`;
+            const redirectUri = `${publicAppUrl(req)}/api/auth/social/${platform}/callback?zKey=${encodeURIComponent(zernioApiKey)}&next=${encodeURIComponent(safeOAuthNext(req.query.next, "/channels"))}`;
             const connectResponse = await fetch(`https://zernio.com/api/v1/connect/${platform}?profileId=${encodeURIComponent(profileId)}&redirect_url=${encodeURIComponent(redirectUri)}`, {
                 headers: { Authorization: `Bearer ${zernioApiKey}` },
             });
@@ -22511,7 +22511,7 @@ ON CONFLICT (user_id, channel_id) DO UPDATE SET
   platform = EXCLUDED.platform,
   updated_at = now();
 `);
-            res.redirect("/channels");
+            res.redirect(safeOAuthNext(req.query.next, "/channels"));
         }
         catch (error) {
             const message = encodeURIComponent(error instanceof Error ? error.message : "Social callback failed");
@@ -22532,7 +22532,7 @@ ON CONFLICT (user_id, channel_id) DO UPDATE SET
             const profileId = await createZernioConnectProfileId(zernioApiKey, "TikTok");
 
             // Get connect URL for TikTok from Zernio
-            const redirectUri = `${publicAppUrl(req)}/api/auth/tiktok/callback?zKey=${zernioApiKey}`;
+            const redirectUri = `${publicAppUrl(req)}/api/auth/tiktok/callback?zKey=${zernioApiKey}&next=${encodeURIComponent(safeOAuthNext(req.query.next, "/channels"))}`;
             const connectResponse = await fetch(`https://zernio.com/api/v1/connect/tiktok?profileId=${profileId}&redirect_url=${encodeURIComponent(redirectUri)}`, {
                 headers: { "Authorization": `Bearer ${zernioApiKey}` }
             });
@@ -22608,7 +22608,7 @@ ON CONFLICT (user_id, channel_id) DO UPDATE SET
   updated_at = now();
 `);
             await runPsql(`UPDATE app_sessions SET active_youtube_account_id = ${sqlString(accountId)}, updated_at = now() WHERE id = ${sqlString(session.id)};`);
-            res.redirect("/channels");
+            res.redirect(safeOAuthNext(req.query.next, "/channels"));
         }
         catch (error) {
             const message = encodeURIComponent(error instanceof Error ? error.message : "TikTok callback failed");

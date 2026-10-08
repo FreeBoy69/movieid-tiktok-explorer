@@ -263,7 +263,7 @@ describe("telegram bridge", () => {
     const app = express();
     const admin = createAdminConsole({
       runPsql, sqlString: (v: unknown) => `'${String(v ?? "").replace(/'/g, "''")}'`, jsonbLiteral: (v: unknown) => `'${JSON.stringify(v)}'::jsonb`,
-      session: async (req: express.Request) => (req.get("x-user") ? { id: "ses_1", user: { id: "usr_1", email: "owner@example.com", name: "Owner" } } : null),
+      session: async (req: express.Request) => (req.get("x-user") === "2" ? { id: "ses_2", user: { id: "usr_2", email: "member@example.com", name: "Member" } } : req.get("x-user") ? { id: "ses_1", user: { id: "usr_1", email: "owner@example.com", name: "Owner" } } : null),
       env: { ADMIN_EMAILS: "owner@example.com", APP_URL: "https://autoyt.test" }, priceCatalog: null, fetch: fakeFetch,
       createAuthSession: async () => "ses_tg", signedValue: (v: string) => `signed.${v}`, selfUrl: () => base,
     });
@@ -319,9 +319,62 @@ describe("telegram bridge", () => {
     await new Promise((resolve) => setTimeout(resolve, 100));
     expect(sent.filter((call) => String(call.body.text || "").startsWith("You said:"))).toHaveLength(1);
 
+    // Any signed-in user can link their own chat from Account settings; the bot then acts as them.
+    const asUser = { "x-user": "2", "content-type": "application/json" };
+    expect(await (await fetch(`${base}/api/account/telegram`, { headers: asUser })).json()).toEqual({ available: true, botUsername: "autoyt_bot", linked: null });
+    const userLink = await (await fetch(`${base}/api/account/telegram/link`, { method: "POST", headers: asUser })).json();
+    await post({ update_id: 5, message: { chat: { id: 77, type: "private" }, from: { username: "member" }, text: `/start ${userLink.url.split("start=")[1]}` } });
+    await until(() => sent.some((call) => String(call.body.text || "").startsWith("Linked to member@example.com")));
+    expect(await (await fetch(`${base}/api/account/telegram`, { headers: asUser })).json()).toMatchObject({ linked: { telegramName: "member" } });
+    await post({ update_id: 6, message: { chat: { id: 77, type: "private" }, text: "status please" } });
+    await until(() => sent.some((call) => call.body.chat_id === 77 && String(call.body.text || "").startsWith("You said: status please")));
+    expect(await (await fetch(`${base}/api/account/telegram`, { method: "DELETE", headers: asUser })).json()).toMatchObject({ linked: null });
+    await post({ update_id: 7, message: { chat: { id: 77, type: "private" }, text: "still there?" } });
+    await until(() => sent.some((call) => call.body.chat_id === 77 && String(call.body.text || "").includes("private AutoYT bot")));
+
     const status = await (await fetch(`${base}/api/admin/telegram`, { headers: asAdmin })).json();
     expect(status.links).toEqual([expect.objectContaining({ chatId: "42", email: "owner@example.com", telegramName: "Wei", mine: true })]);
     expect(JSON.stringify(status)).not.toContain("ses_tg");
     expect(JSON.stringify(status)).not.toContain("AAAA");
+  });
+});
+
+describe("account settings API", () => {
+  let server: http.Server | null = null;
+  afterEach(() => {
+    server?.close();
+    server = null;
+  });
+  it("returns the signed-in user's own history and signs out only their other sessions", async () => {
+    const queries: string[] = [];
+    const runPsql = async (sql: string) => {
+      queries.push(sql);
+      if (sql.includes("to_regclass('billing_orders')")) return "t";
+      if (sql.includes("FROM billing_orders b")) return JSON.stringify([{ reference: "ayt_1", kind: "credits", planName: null, creditsTokens: "500000", amountCents: "900", currency: "USD", status: "paid", createdAt: "2026-10-01", paidAt: "2026-10-01" }]);
+      if (sql.includes("FROM ai_usage_events") && sql.includes("GROUP BY 1 ORDER BY 2 DESC")) return JSON.stringify([{ feature: "agent-chat", tokens: "1200", events: "3" }]);
+      if (sql.includes("WITH gone AS")) return "4";
+      return "";
+    };
+    const app = express();
+    const admin = createAdminConsole({
+      runPsql, sqlString: (v: unknown) => `'${String(v ?? "").replace(/'/g, "''")}'`, jsonbLiteral: (v: unknown) => `'${JSON.stringify(v)}'::jsonb`,
+      session: async (req: express.Request) => (req.get("x-user") ? { id: "ses_me", user: { id: "usr_9", email: "me@example.com", name: "Me" } } : null),
+      env: {}, priceCatalog: null,
+    });
+    app.use(express.json());
+    admin.register(app);
+    server = http.createServer(app).listen(0);
+    await new Promise((resolve) => server!.once("listening", resolve));
+    const base = `http://127.0.0.1:${(server!.address() as { port: number }).port}`;
+
+    expect((await fetch(`${base}/api/billing/history`)).status).toBe(401);
+    const history = await (await fetch(`${base}/api/billing/history`, { headers: { "x-user": "1" } })).json();
+    expect(history.orders[0]).toMatchObject({ reference: "ayt_1", creditsTokens: 500000, amountCents: 900 });
+    expect(history.usage.byFeature).toEqual([{ feature: "agent-chat", tokens: 1200, events: 3 }]);
+    expect(queries.filter((sql) => /billing_orders b|token_ledger|ai_usage_events/.test(sql)).every((sql) => sql.includes("'usr_9'"))).toBe(true);
+
+    const revoked = await (await fetch(`${base}/api/account/sessions/revoke-others`, { method: "POST", headers: { "x-user": "1" } })).json();
+    expect(revoked).toEqual({ signedOut: 4 });
+    expect(queries.find((sql) => sql.includes("WITH gone AS"))).toContain("user_id = 'usr_9' AND id <> 'ses_me'");
   });
 });

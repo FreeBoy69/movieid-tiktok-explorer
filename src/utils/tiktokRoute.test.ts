@@ -344,3 +344,17 @@ describe("return target safety", () => {
     expect(readDeepLinkFromLocation("/compile", search).returnTo).toBeUndefined();
   });
 });
+
+describe("account settings routes", () => {
+  it("round-trips each account section and ignores unknown ones", () => {
+    expect(readDeepLinkFromLocation("/account", "")).toEqual({ view: "account" });
+    expect(buildDeepLinkHref({ view: "account" })).toBe("/account");
+    expect(buildDeepLinkHref({ view: "account", accountSection: "profile" })).toBe("/account");
+    for (const section of ["billing", "usage", "channels", "telegram", "security"] as const) {
+      const href = buildDeepLinkHref({ view: "account", accountSection: section });
+      expect(href).toBe(`/account/${section}`);
+      expect(parseHref(href)).toEqual({ view: "account", accountSection: section });
+    }
+    expect(readDeepLinkFromLocation("/account/nope", "")).toEqual({ view: "account" });
+  });
+});

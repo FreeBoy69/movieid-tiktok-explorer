@@ -53,9 +53,9 @@ import {
   Zap,
   WandSparkles,
 } from "lucide-react";
-import type { FilmRoute, MainView, StudioTab, ToolId } from "./tiktokRoute";
+import type { AccountSection, FilmRoute, MainView, StudioTab, ToolId } from "./tiktokRoute";
 
-export type NavTarget = { view: MainView; studioTab?: StudioTab; toolId?: ToolId; shotTemplateId?: string; filmFormat?: FilmRoute };
+export type NavTarget = { view: MainView; studioTab?: StudioTab; toolId?: ToolId; shotTemplateId?: string; filmFormat?: FilmRoute; accountSection?: AccountSection };
 export type NavEntry = { id: string; label: string; description: string; icon: ReactNode; target: NavTarget; badge?: string };
 export type NavGroup = { id: string; label: string; columns: Array<{ title: string; entries: NavEntry[] }> };
 

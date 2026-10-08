@@ -12,9 +12,9 @@ import "./AccountServices.css";
 // toast shown when the server blocks an AI call.
 
 type Theme = "light" | "dark";
-type Billing = { planId: string; planName: string; status: string; monthlyTokens: number; balance: number; allowanceRemaining: number; bonusBalance: number; unlimited: boolean; periodEnd: string; periodUsed: number; subscriptionInterval?: string };
+export type Billing = { planId: string; planName: string; status: string; monthlyTokens: number; balance: number; allowanceRemaining: number; bonusBalance: number; unlimited: boolean; periodEnd: string; periodUsed: number; subscriptionInterval?: string };
 type Pack = { id: string; name: string; credits: number; priceCents: number; blurb?: string; available: boolean };
-type BillingOffer = { billing: Billing; plans: Array<{ id: string; name: string; description: string; priceCents: number; annualPriceCents: number; monthlyTokens: number; features?: string[] }>; payment: { available: boolean; provider: string; testMode: boolean; packs: Pack[]; packsRequirePlan?: boolean } };
+export type BillingOffer = { billing: Billing; plans: Array<{ id: string; name: string; description: string; priceCents: number; annualPriceCents: number; monthlyTokens: number; features?: string[] }>; payment: { available: boolean; provider: string; testMode: boolean; packs: Pack[]; packsRequirePlan?: boolean } };
 type Ticket = { id: string; subject: string; category: string; status: string; lastMessageAt: string; lastAuthor?: string };
 type Thread = Ticket & { messages: Array<{ id: string; authorType: "user" | "admin"; body: string; createdAt: string }> };
 
@@ -67,10 +67,13 @@ export function installUsageNotices() {
   };
 }
 
-export function TokenSummary({ theme = "dark", email = "" }: { theme?: Theme; email?: string }) {
+/** Opens Credits & plans from anywhere; BillingOnboarding owns the one dialog. */
+export function openBilling(tab: "plans" | "packs" = "plans") {
+  window.dispatchEvent(new CustomEvent("autoyt-open-billing", { detail: { tab } }));
+}
+
+export function TokenSummary({ email = "" }: { theme?: Theme; email?: string }) {
   const [offer, setOffer] = useState<BillingOffer | null>(null);
-  const [billingOpen, setBillingOpen] = useState(false);
-  const [billingTab, setBillingTab] = useState<"plans" | "packs">("plans");
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     let alive = true;
@@ -78,20 +81,13 @@ export function TokenSummary({ theme = "dark", email = "" }: { theme?: Theme; em
       .then((r) => (r.ok ? r.json() : Promise.reject()))
       .then((data) => { if (alive) { setOffer(data); setFailed(false); } })
       .catch(() => { if (alive) setFailed(true); });
-    const open = (event: Event) => {
-      const tab = (event as CustomEvent).detail?.tab;
-      if (tab === "packs" || tab === "plans") setBillingTab(tab);
-      setBillingOpen(true);
-    };
     void load();
     window.addEventListener("autoyt-billing-changed", load);
-    window.addEventListener("autoyt-open-billing", open as EventListener);
     return () => {
       alive = false;
       window.removeEventListener("autoyt-billing-changed", load);
-      window.removeEventListener("autoyt-open-billing", open as EventListener);
     };
-  }, []);
+  }, [email]);
   if (failed) return null;
   if (!offer) {
     return (
@@ -116,15 +112,17 @@ export function TokenSummary({ theme = "dark", email = "" }: { theme?: Theme; em
         <span className={low ? "is-low" : undefined} style={{ width: `${pct}%` }} />
       </span>
       {!billing.unlimited && billing.status === "active" ? <small>Allowance renews {new Date(billing.periodEnd).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</small> : null}
-      {purchasesAllowed() ? <button type="button" className="as-billing-open" onClick={() => { setBillingTab(low ? "packs" : "plans"); setBillingOpen(true); }}>Credits & plans</button> : null}
-      {purchasesAllowed() ? <BillingDialog open={billingOpen} onClose={() => setBillingOpen(false)} theme={theme} offer={offer} email={email} initialTab={billingTab} onOffer={setOffer} /> : null}
+      {purchasesAllowed() ? <button type="button" className="as-billing-open" onClick={() => openBilling(low ? "packs" : "plans")}>Credits & plans</button> : null}
     </div>
   );
 }
 
+// Always mounted for signed-in users: opens itself while no plan is chosen, and is
+// the one Credits & plans dialog every openBilling() call opens.
 export function BillingOnboarding({ theme, email }: { theme: Theme; email: string }) {
   const [offer, setOffer] = useState<BillingOffer | null>(null);
   const [open, setOpen] = useState(false);
+  const [tab, setTab] = useState<"plans" | "packs">("plans");
   useEffect(() => {
     if (!email || !purchasesAllowed()) return;
     let active = true;
@@ -135,21 +133,30 @@ export function BillingOnboarding({ theme, email }: { theme: Theme; email: strin
       const data = await response.json();
       if (!active) return;
       setOffer(data);
-      setOpen(data.billing?.planId === "pending");
+      if (data.billing?.planId === "pending") setOpen(true);
     };
     const onVisible = () => { if (document.visibilityState === "visible") void load().catch(() => {}); };
+    const onChanged = () => void load().catch(() => {});
+    const onOpen = (event: Event) => {
+      const requested = (event as CustomEvent).detail?.tab;
+      if (requested === "packs" || requested === "plans") setTab(requested);
+      setOpen(true);
+      void load().catch(() => {});
+    };
     void load().catch(() => {});
     const timer = window.setInterval(() => void load().catch(() => {}), 5 * 60 * 1000);
     window.addEventListener("focus", onVisible);
-    window.addEventListener("autoyt-billing-changed", load);
+    window.addEventListener("autoyt-billing-changed", onChanged);
+    window.addEventListener("autoyt-open-billing", onOpen as EventListener);
     return () => {
       active = false;
       window.clearInterval(timer);
       window.removeEventListener("focus", onVisible);
-      window.removeEventListener("autoyt-billing-changed", load);
+      window.removeEventListener("autoyt-billing-changed", onChanged);
+      window.removeEventListener("autoyt-open-billing", onOpen as EventListener);
     };
   }, [email]);
-  return offer ? <BillingDialog open={open} onClose={() => setOpen(false)} theme={theme} offer={offer} email={email} initialTab="plans" onOffer={setOffer} /> : null;
+  return offer ? <BillingDialog open={open} onClose={() => setOpen(false)} theme={theme} offer={offer} email={email} initialTab={tab} onOffer={setOffer} /> : null;
 }
 
 export function BillingReturnVerifier({ email = "" }: { email?: string }) {

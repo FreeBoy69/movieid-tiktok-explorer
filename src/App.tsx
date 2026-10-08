@@ -46,6 +46,7 @@ import { GuestToolView, SignInDialog } from "./components/GuestToolView";
 import { LegalPage } from "./components/LegalPage";
 import { TextToSpeechStudio } from "./components/TextToSpeechStudio";
 import { PromptLibrary } from "./components/PromptLibrary";
+import { AccountPage } from "./components/AccountPage";
 import { AppHeader } from "./components/AppHeader";
 import { SiteNotice } from "./components/AccountServices";
 import type { NavTarget } from "./utils/appNavigation";
@@ -413,6 +414,13 @@ function WorkspaceApp() {
         setRouteLink(link);
         return;
       }
+      if (target.view === "account") {
+        const link = { view: "account" as const, ...(target.accountSection ? { accountSection: target.accountSection } : {}) };
+        setActiveView("account");
+        writeDeepLink(link);
+        setRouteLink(link);
+        return;
+      }
       if (target.view === "tool") {
         if (!target.toolId) return switchView("tools");
         const link = { view: "tool" as const, toolId: target.toolId };
@@ -539,7 +547,7 @@ function WorkspaceApp() {
   const hasAutomationWorkspaceSidebar = activeView === "automation" && automationDetailOpen;
   // Full-height apps still sit inside the same gutters as Image Studio; the creator workspace and studio pages pad themselves.
   const isInsetEdgeView = !focusMode && !hasAutomationWorkspaceSidebar && ["movie", "downloader", "tiktok", "youtube", "niches", "compile", "tts", "prompts", "automation", "rewriter", "voiceover"].includes(activeView);
-  const isEdgeToEdgeView = ["movie", "downloader", "tool", "tiktok", "youtube", "niches", "compile", "tts", "prompts", "automation", "rewriter", "voiceover", "discover", "projects", "create", "styles", "drama", "products", "studio", "vibe-edit"].includes(activeView) || (activeView === "channels" && channelDetailOpen);
+  const isEdgeToEdgeView = ["movie", "downloader", "tool", "tiktok", "youtube", "niches", "compile", "tts", "prompts", "automation", "rewriter", "voiceover", "discover", "projects", "create", "styles", "drama", "products", "studio", "vibe-edit", "account"].includes(activeView) || (activeView === "channels" && channelDetailOpen);
 
   return (
     <div ref={workspaceRootRef} className={cn("relative flex h-dvh min-w-0 flex-col overflow-hidden", isDarkMode ? "bg-[#0f1113] text-white" : "bg-[#F9F8F6] text-[#1A1A1A]")} data-build="compile-audio-20260502">
@@ -774,6 +782,18 @@ function WorkspaceApp() {
             ) : activeView === "voiceover" ? null : activeView === "rewriter" ? (
               <motion.div key="rewriter-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full min-h-0 overflow-hidden">
                 <RewriterEngine initialTranscript={rewriterInput} phases={rewriterPhases} onBack={() => switchView("movie")} />
+              </motion.div>
+            ) : activeView === "account" ? (
+              <motion.div key="account-view" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="h-full min-h-0 overflow-hidden">
+                <AccountPage
+                  auth={session}
+                  theme={channelTheme}
+                  section={routeLink.view === "account" ? routeLink.accountSection : undefined}
+                  onSection={(accountSection) => handleNavigate({ view: "account", accountSection })}
+                  onRefresh={refreshAuth}
+                  onThemeChange={setChannelTheme}
+                  onLogout={() => void logout()}
+                />
               </motion.div>
             ) : activeView === "prompts" ? (
               <motion.div key="prompts-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full min-h-0 overflow-hidden">

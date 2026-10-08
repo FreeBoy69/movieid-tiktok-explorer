@@ -28,13 +28,16 @@
  *   /rewriter                              -> AI Rewriter
  *   /tts                                   -> Text to Speech
  *   /prompts                               -> Prompt Library
+ *   /account[/<section>]                   -> Account settings (profile, billing, usage, channels, telegram, security)
  *   /studio/<app>                          -> Creator Studio app (image, video, lipsync, agents, ...)
  *   /tools/<tool>                          -> a mini app from the Tools suite (background-remover, transcriber, ...)
  *   /vibe-edit[/<project>]                 -> Vibe Edit, the chat-driven video editor
  */
 
-export const MAIN_VIEWS = ["tools", "tool", "movie", "downloader", "tiktok", "youtube", "niches", "feed", "channels", "publish", "compile", "automation", "rewriter", "voiceover", "tts", "prompts", "discover", "projects", "create", "styles", "drama", "products", "studio", "vibe-edit"] as const;
+export const MAIN_VIEWS = ["tools", "tool", "movie", "downloader", "tiktok", "youtube", "niches", "feed", "channels", "publish", "compile", "automation", "rewriter", "voiceover", "tts", "prompts", "discover", "projects", "create", "styles", "drama", "products", "studio", "vibe-edit", "account"] as const;
 export type MainView = (typeof MAIN_VIEWS)[number];
+export const ACCOUNT_SECTIONS = ["profile", "billing", "usage", "channels", "telegram", "security"] as const;
+export type AccountSection = (typeof ACCOUNT_SECTIONS)[number];
 export type ListTab = "collection" | "channel";
 export type TikTokSection = "analyze" | "saved";
 export type AutomationSection = "chat" | "overview" | "analytics" | "report" | "setup" | "voice" | "compile" | "uploads" | "runs";
@@ -78,6 +81,7 @@ export type FilmRoute = (typeof FILM_ROUTES)[number];
 
 export interface TikTokDeepLink {
   view: MainView;
+  accountSection?: AccountSection;
   projectId?: string;
   projectStage?: string;
   sceneId?: string;
@@ -243,6 +247,11 @@ export function readDeepLinkFromLocation(pathname: string, search = ""): TikTokD
 
   if (pathParts[0] === "prompts") {
     return { view: "prompts" };
+  }
+
+  if (pathParts[0] === "account") {
+    const section = (ACCOUNT_SECTIONS as readonly string[]).includes(pathParts[1] || "") ? pathParts[1] as AccountSection : undefined;
+    return { view: "account", ...(section ? { accountSection: section } : {}) };
   }
 
   if (pathParts[0] === "studio") {
@@ -450,6 +459,7 @@ export function buildDeepLinkHref(link: TikTokDeepLink): string {
   if (link.view === "movie") return "/movie";
   if (link.view === "tts") return "/studio/audio";
   if (link.view === "prompts") return "/prompts";
+  if (link.view === "account") return link.accountSection && link.accountSection !== "profile" ? `/account/${link.accountSection}` : "/account";
   if (link.view === "studio") return `/studio/${link.studioTab || "apps"}${link.studioGenerationId ? `/generations/${encodeURIComponent(link.studioGenerationId)}` : ""}`;
   if (link.view === "rewriter") return "/rewriter";
   if (link.view === "voiceover") {

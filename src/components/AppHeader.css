@@ -917,3 +917,40 @@
     animation: none !important;
   }
 }
+
+/* The name and email open Account settings. */
+.ah .ah-account-panel button.ah-account-head {
+  margin-bottom: 4px;
+  padding: 8px;
+  border-radius: 12px;
+  text-align: left;
+}
+.ah .ah-account-panel button.ah-account-head > svg.ah-account-head-go {
+  margin-left: auto;
+  color: var(--ah-muted);
+  transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.ah .ah-account-panel button.ah-account-head:hover > svg.ah-account-head-go,
+.ah .ah-account-panel button.ah-account-head:focus-visible > svg.ah-account-head-go {
+  color: var(--ah-text);
+  transform: translateX(2px);
+}
+.ah-m-account-open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: -4px;
+  padding: 4px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ah-m-account-open:hover {
+  background: var(--ah-hover);
+}

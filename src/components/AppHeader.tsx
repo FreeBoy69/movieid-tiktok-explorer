@@ -263,17 +263,18 @@ export function AppHeader({
           </button>
           {signedIn ? <div className="ah-account">
             <button type="button" className="ah-avatar" onClick={() => setAccountOpen(!accountOpen)} aria-haspopup="menu" aria-expanded={accountOpen} aria-label="Account" title={account.name}>
-              <Avatar src={account.channelImage || account.image} label={account.channel || account.name} />
+              <Avatar src={account.image} label={account.name} />
             </button>
             {accountOpen && (
               <div className="ah-account-panel" role="menu">
-                <div className="ah-account-head">
+                <button type="button" role="menuitem" className="ah-account-head" onClick={() => { setAccountOpen(false); go({ view: "account" }); }} title="Account settings">
                   <Avatar src={account.image} label={account.name} />
                   <span>
                     <strong>{account.name}</strong>
                     <small>{account.email}</small>
                   </span>
-                </div>
+                  <ChevronRight size={16} className="ah-account-head-go" aria-hidden="true" />
+                </button>
                 <TokenSummary theme={theme} email={account.email} />
                 <button type="button" role="menuitem" onClick={(event) => { onOpenChannels(event.currentTarget.querySelector("svg")?.getBoundingClientRect() || event.currentTarget.getBoundingClientRect()); setAccountOpen(false); }}>
                   <Users size={16} />
@@ -533,11 +534,13 @@ function MobileMenu({ theme, view, studioTab, toolId, account, signedIn, onSignI
       <footer className="ah-m-foot">
         {signedIn ? (
           <div className="ah-m-account">
-            <Avatar src={account.image} label={account.name} />
-            <span className="ah-m-item-text">
-              <strong>{account.name}</strong>
-              <span>{account.channel || account.email}</span>
-            </span>
+            <button type="button" className="ah-m-account-open" onClick={() => onPick({ view: "account" })} aria-label="Account settings">
+              <Avatar src={account.image} label={account.name} />
+              <span className="ah-m-item-text">
+                <strong>{account.name}</strong>
+                <span>{account.email}</span>
+              </span>
+            </button>
             <button type="button" className="ah-icon" onClick={onLogout} aria-label="Log out" title="Log out"><LogOut size={17} /></button>
           </div>
         ) : (
