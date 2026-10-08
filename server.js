@@ -25410,18 +25410,6 @@ WHERE id = ${sqlString(req.params.id)}
         }
     });
 
-    app.post("/api/transcribe", express.json(), async (req, res) => {
-        const { url } = req.body;
-        if (!url) return res.status(400).json({ error: "Missing url parameter" });
-
-        // Google rate-limits the compute egress IP ("Sign in to confirm you're not
-        // a bot"), so YouTube downloads cannot run there however capable the worker
-        // is -- this is an IP-reputation problem, not a toolchain one. Route those
-        // to the queue, where a worker on a clean IP drains them. TikTok, direct
-        // files and uploads are not blocked, so they keep the faster inline path
-        // through the remote media worker.
-        // YouTube captions first (after Agent Reach): yt-dlp's info JSON lists the
-        // caption tracks, and the track itself is a plain fetch, so a captioned
     // Dropped video/audio files (Rewriter): same Whisper path as voice notes, capped
     // at 100 MB and 15 minutes so an upload never fills the hosted app's RAM-backed /tmp.
     app.post("/api/transcribe/upload", express.raw({
@@ -25457,6 +25445,18 @@ WHERE id = ${sqlString(req.params.id)}
                 await fs.promises.unlink(inputPath).catch(() => {});
         }
     });
+    app.post("/api/transcribe", express.json(), async (req, res) => {
+        const { url } = req.body;
+        if (!url) return res.status(400).json({ error: "Missing url parameter" });
+
+        // Google rate-limits the compute egress IP ("Sign in to confirm you're not
+        // a bot"), so YouTube downloads cannot run there however capable the worker
+        // is -- this is an IP-reputation problem, not a toolchain one. Route those
+        // to the queue, where a worker on a clean IP drains them. TikTok, direct
+        // files and uploads are not blocked, so they keep the faster inline path
+        // through the remote media worker.
+        // YouTube captions first (after Agent Reach): yt-dlp's info JSON lists the
+        // caption tracks, and the track itself is a plain fetch, so a captioned
         // video comes back in seconds and never queues. Whisper remains the fallback.
         if (isYouTubeSourceUrl(url)) {
             try {
