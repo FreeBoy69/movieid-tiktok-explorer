@@ -1639,44 +1639,6 @@
   transform: translateX(3px);
 }
 
-/* ---------- Lightbox ---------- */
-.cs-lightbox {
-  position: fixed;
-  inset: 0;
-  z-index: 100;
-  display: grid;
-  place-items: center;
-  padding: 48px 24px;
-  background: rgb(12 12 13 / 0.86);
-  animation: cs-fade 180ms ease-out;
-}
-@keyframes cs-fade {
-  from { opacity: 0; }
-}
-.cs-lightbox img {
-  max-width: 100%;
-  max-height: 100%;
-  border-radius: var(--cs-radius-sm);
-  box-shadow: 0 30px 80px -20px rgb(0 0 0 / 0.6);
-}
-.cs-lightbox-bar {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  display: flex;
-  gap: 6px;
-}
-.cs-lightbox .cs-icon {
-  width: 40px;
-  height: 40px;
-  background: rgb(255 255 255 / 0.12);
-  color: #fafaf7;
-}
-.cs-lightbox .cs-icon:hover {
-  background: rgb(255 255 255 / 0.22);
-  color: #fff;
-}
-
 /* ---------- Small screens ---------- */
 @media (max-width: 860px) {
   .cs-header {

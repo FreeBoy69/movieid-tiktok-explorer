@@ -22,7 +22,8 @@ import {
   Wand2,
 } from "lucide-react";
 import { Empty, Modal, creatorApi } from "./CreatorWorkspace";
-import { PlayButton, Zoom } from "./DramaCast";
+import { PlayButton } from "./DramaCast";
+import { Lightbox } from "./studio/studioShared";
 import { FILM_FORMATS } from "../utils/filmFormats.js";
 import { CameraPicker, clock, filmLink, formatOfRoute, type LyricLine } from "./FilmParts";
 import { DRAMA_MODELS, estimateSceneSeconds, fmtClock, sceneWords } from "../utils/dramaProduction";
@@ -737,7 +738,7 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
           </div>
         </Modal>
       )}
-      {zoom && <Zoom src={zoom} onClose={() => setZoom("")} />}
+      {zoom && <Lightbox src={zoom} onClose={() => setZoom("")} />}
     </>
   );
 }

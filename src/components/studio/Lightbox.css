@@ -1,0 +1,55 @@
+/* Full-size image/clip preview shared by every studio (studioShared Lightbox).
+   Self-contained so it renders the same outside the CreatorStudio stylesheet. */
+.cs-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 64px 24px 32px;
+  background: rgb(12 12 13 / 0.86);
+  animation: cs-fade 180ms ease-out;
+}
+@keyframes cs-fade {
+  from { opacity: 0; }
+}
+.cs-lightbox img,
+.cs-lightbox .cs-lightbox-media {
+  max-width: min(1200px, 100%);
+  max-height: calc(100vh - 96px);
+  max-height: calc(100dvh - 96px);
+  border-radius: 10px;
+  box-shadow: 0 30px 80px -20px rgb(0 0 0 / 0.6);
+}
+.cs-lightbox .cs-lightbox-media .vp {
+  max-height: calc(100dvh - 96px);
+}
+.cs-lightbox-bar {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  gap: 6px;
+}
+.cs-lightbox .cs-lightbox-bar .cs-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 8px;
+  background: rgb(255 255 255 / 0.12);
+  color: #fafaf7;
+  transition: background-color 140ms;
+}
+.cs-lightbox .cs-lightbox-bar .cs-icon:hover {
+  background: rgb(255 255 255 / 0.22);
+  color: #fff;
+}
+.cs-lightbox .cs-lightbox-bar .cs-icon:focus-visible {
+  outline: 2px solid #fafaf7;
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cs-lightbox { animation: none; }
+}

@@ -7,7 +7,7 @@ import { creatorApi } from "./CreatorWorkspace";
 import { VoicePicker } from "./VoicePicker";
 import { MAX_DRAMA_CAST, speakerName } from "../utils/dramaTemplates";
 import { toast } from "../utils/toast";
-import { VideoPlayer } from "./VideoPlayer";
+import { Lightbox } from "./studio/studioShared";
 
 export type DramaCharacter = { id: string; name: string; role: string; appearance: string; outfit: string; voice?: string };
 export type DramaLocation = { id: string; name: string; description: string };
@@ -363,7 +363,7 @@ function CharacterCard({
         </div>
       </div>
       )}
-      {zoom && <Zoom src={zoom} onClose={() => setZoom("")} />}
+      {zoom && <Lightbox src={zoom} onClose={() => setZoom("")} />}
     </li>
   );
 }
@@ -466,23 +466,8 @@ export function LocationsPanel({
           })}
         </ul>
       )}
-      {zoom && <Zoom src={zoom} onClose={() => setZoom("")} />}
+      {zoom && <Lightbox src={zoom} onClose={() => setZoom("")} />}
     </section>
   );
 }
 
-export function Zoom({ src, onClose }: { src: string; onClose: () => void }) {
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => event.key === "Escape" && onClose();
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, []);
-  return (
-    <div className="maker-modal-backdrop dr-zoom" onMouseDown={onClose} role="dialog" aria-modal="true" aria-label="Image preview">
-      {/\.mp4($|\?)/.test(src) ? <div onMouseDown={(e) => e.stopPropagation()}><VideoPlayer src={src} autoPlay size="fit" label="Clip preview" /></div> : <img src={src} alt="" onMouseDown={(e) => e.stopPropagation()} />}
-      <button type="button" className="dr-zoom-close" onClick={onClose}>
-        Close
-      </button>
-    </div>
-  );
-}

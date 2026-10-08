@@ -1,6 +1,8 @@
 // Shared data, API helpers, and controls for Creator Studio apps.
 import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AudioLines, Check, ChevronDown, Download, Film, Link2, Loader2, Plus, Search, Sparkles, Upload, X } from "lucide-react";
+import { VideoPlayer } from "../VideoPlayer";
+import "./Lightbox.css";
 import { CREDIT_ESTIMATE_TITLE, creditEstimateLabel, providerCreditEstimate, type StudioPricing } from "./studioPricing";
 
 export type ImageModel = { id: string; name: string; provider: string; description: string; aspectRatios: string[]; resolutions: string[]; qualities: string[]; maxImages: number; maxReferences: number };
@@ -384,9 +386,15 @@ export function Lightbox({ src, onClose }: { src: string; onClose: () => void })
   }, [onClose]);
   return (
     <div className="cs-lightbox" role="dialog" aria-modal="true" aria-label="Full size preview" onClick={onClose}>
-      <img src={src} alt="Full size preview" onClick={(event) => event.stopPropagation()} />
+      {/\.(mp4|webm|mov)($|\?)/i.test(src) ? (
+        <div className="cs-lightbox-media" onClick={(event) => event.stopPropagation()}>
+          <VideoPlayer src={src} autoPlay size="fit" label="Clip preview" />
+        </div>
+      ) : (
+        <img src={src} alt="Full size preview" onClick={(event) => event.stopPropagation()} />
+      )}
       <div className="cs-lightbox-bar" onClick={(event) => event.stopPropagation()}>
-        <a className="cs-icon" href={`${src}?download=1`} aria-label="Download" title="Download">
+        <a className="cs-icon" href={`${src}${src.includes("?") ? "&" : "?"}download=1`} aria-label="Download" title="Download">
           <Download className="h-4 w-4" />
         </a>
         <button ref={close} type="button" className="cs-icon" onClick={onClose} aria-label="Close preview" title="Close"><X className="h-4 w-4" /></button>

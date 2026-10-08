@@ -89,7 +89,7 @@ import {
   suggestAgentName,
 } from "../utils/agentCreateJourney";
 import { announceBackgroundProcess } from "../utils/backgroundProcesses";
-import { useErrorToast } from "../utils/toast";
+import { toast, useErrorToast } from "../utils/toast";
 import { CompilationStudio } from "./CompilationStudio";
 import { openBackgroundProcessCenter } from "./BackgroundProcessCenter";
 import { agentUploadMedia, buildAgentAnalyticsViz, readAgentUploadMetric } from "../utils/agentAnalyticsViz";
@@ -551,6 +551,13 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
   const [deleting, setDeleting] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  // Errors and confirmations go through the app's one toast system.
+  useErrorToast(error, () => setError(""), { title: "Action needs attention" });
+  useEffect(() => {
+    if (!notice) return;
+    toast.success(notice);
+    setNotice("");
+  }, [notice]);
   const [form, setForm] = useState<any>({
     youtubeAccountId: auth.activeAccount?.id || "",
     name: suggestAgentName(auth.activeAccount?.channelTitle),
@@ -626,15 +633,6 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
     if (initialTab) setActiveTab(initialTab);
     if (initialUploadId) setSelectedUploadId(initialUploadId);
   }, [initialTab, initialUploadId, initialSlug]);
-
-  useEffect(() => {
-    if (!error && !notice) return;
-    const timeout = window.setTimeout(() => {
-      setError("");
-      setNotice("");
-    }, error ? 8000 : 5000);
-    return () => window.clearTimeout(timeout);
-  }, [error, notice]);
 
   const loadPlaylists = useCallback(async (accountId = form.youtubeAccountId) => {
     if (!accountId) {
@@ -1220,13 +1218,6 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
       </header>
       ) : null}
 
-      <AgentToastViewport
-        error={error}
-        notice={notice}
-        theme={theme}
-        onDismissError={() => setError("")}
-        onDismissNotice={() => setNotice("")}
-      />
 
       {/* ── Content ── */}
       <div className="min-h-0 flex-1 overflow-hidden">
@@ -2828,22 +2819,6 @@ function ReliabilityPanel({ analytics, reliability, agent, theme }: { analytics:
 function AnalyticsEmpty({ theme, text }: { theme: AgentTheme; text: string }) {
   const tokens = getAgentTheme(theme);
   return <div className={cn("mt-4 grid min-h-48 place-items-center rounded-lg border border-dashed p-6 text-center text-sm font-semibold", tokens.surfaceSoft, tokens.muted)}>{text}</div>;
-}
-
-function AgentToastViewport({ error, notice, theme, onDismissError, onDismissNotice }: { error: string; notice: string; theme: AgentTheme; onDismissError: () => void; onDismissNotice: () => void }) {
-  const tokens = getAgentTheme(theme);
-  if (!error && !notice) return null;
-  const message = error || notice;
-  const dismiss = error ? onDismissError : onDismissNotice;
-  return (
-    <div className="pointer-events-none fixed bottom-5 right-4 z-[80] w-[min(390px,calc(100vw-2rem))]">
-      <div className={cn("pointer-events-auto flex items-start gap-3 rounded-xl border p-4 shadow-2xl", tokens.surface, error ? "border-[#f9dc0b]/55" : "border-[#f9dc0b]/35")}>
-        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[#f9dc0b] text-[#1A1A1A]">{error ? <AlertCircle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}</span>
-        <div className="min-w-0 flex-1"><p className={cn("text-sm font-black", tokens.text)}>{error ? "Action needs attention" : "Action complete"}</p><p className={cn("mt-1 text-xs font-semibold leading-5", tokens.muted)}>{message}</p></div>
-        <button type="button" onClick={dismiss} className={cn("grid h-7 w-7 shrink-0 place-items-center rounded-md transition hover:bg-[#f9dc0b] hover:text-[#1A1A1A]", tokens.muted)} aria-label="Dismiss notification"><X className="h-4 w-4" /></button>
-      </div>
-    </div>
-  );
 }
 
 function buildAgentAnalytics(uploads: AutomationUpload[], runs: AutomationRun[]) {

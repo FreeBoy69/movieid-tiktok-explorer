@@ -1338,32 +1338,6 @@
   line-height: 1.5;
 }
 
-/* ---------- Zoom ---------- */
-.dr-zoom {
-  flex-direction: column;
-  gap: 12px;
-}
-.dr-zoom img,
-.dr-zoom video {
-  max-width: min(1200px, 100%);
-  max-height: calc(100vh - 110px);
-  border-radius: 10px;
-  box-shadow: 0 24px 60px rgb(0 0 0 / 0.4);
-}
-.maker-workspace .dr-zoom-close,
-.dr-zoom-close {
-  min-height: 34px;
-  padding: 6px 14px;
-  border-radius: 8px;
-  background: rgb(255 255 255 / 0.12);
-  color: #f4f2ee;
-  font: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  border: 0;
-  cursor: pointer;
-}
-
 /* ---------- Episode editor ---------- */
 .dr-quality {
   min-width: 190px;
@@ -1827,12 +1801,6 @@
 .maker-workspace .dr-concept-modal .dr-idea-settings :is(input, select):focus { border-color: var(--mk-line-strong); box-shadow: none; outline: none; }
 .maker-workspace .dr-concept-modal .dr-concept-refine textarea:focus,
 .maker-workspace .dr-concept-modal .dr-concept-refine textarea:focus-visible { border: 0; box-shadow: none; outline: none; }
-.dr-zoom .vp {
-  max-height: calc(100vh - 110px);
-  border-radius: 10px;
-  box-shadow: 0 24px 60px rgb(0 0 0 / 0.4);
-}
-
 /* ---------- Create Film ---------- */
 .fl-back { align-self: center; margin: -8px auto 8px; }
 .fl-formats { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; margin: 8px 0 40px; padding: 0; list-style: none; }
