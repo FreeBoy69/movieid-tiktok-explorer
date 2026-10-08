@@ -788,20 +788,26 @@ async function stageDescribe(userId, project, signal) {
   }
   // The film's title off its own title card, then the film looked up again when no name confirmed it
   // (a share link names nothing; a model's guess from the dialogue can miss).
-  if (analysis && analysis.screenTitle === undefined) {
-    analysis.screenTitle = await readScreenTitle(analysis, described, (times) => lookAt(userId, project, times, signal), { signal }).catch((error) => {
-      if (signal.aborted) throw error;
-      console.warn(`[movie-recap] title card skipped: ${error.message}`);
-      return "";
-    });
-    await writeJson(userId, project.id, "analysis.json", analysis);
-    const typed = project.options.filmTitle && !project.options.filmTitleAuto;
-    if (analysis.screenTitle && !typed && project.film?.from !== "name") {
-      project.film = { ...project.film, checked: 0 };
-      await recapTmdbId(userId, project, signal).catch((error) => console.warn(`[movie-recap] film lookup skipped: ${error.message}`));
-    }
-  }
+  if (analysis) await titleFromScreen(userId, project, analysis, described, signal);
   await save(userId, project, { stage: "writing" });
+}
+
+/** Reads the title card (opening, else closing credits) once per TITLE_CHECK, and looks the film up again
+ *  by it when no name confirmed it: a share link names nothing, and a guess from the dialogue can miss. */
+async function titleFromScreen(userId, project, analysis, described, signal) {
+  if (analysis.screenTitle || analysis.titleCheck === TITLE_CHECK) return;
+  analysis.screenTitle = await readScreenTitle(analysis, described, (times) => lookAt(userId, project, times, signal, { width: 960 }), { signal }).catch((error) => {
+    if (signal.aborted) throw error;
+    console.warn(`[movie-recap] title card skipped: ${error.message}`);
+    return "";
+  });
+  analysis.titleCheck = TITLE_CHECK;
+  await writeJson(userId, project.id, "analysis.json", analysis);
+  const typed = project.options.filmTitle && !project.options.filmTitleAuto;
+  if (analysis.screenTitle && !typed && project.film?.from !== "name") {
+    project.film = { ...project.film, checked: 0 };
+    await recapTmdbId(userId, project, signal).catch((error) => console.warn(`[movie-recap] film lookup skipped: ${error.message}`));
+  }
 }
 
 /** Empty-frame stretches, less those holding a frame a line was matched to (an object the line names). */
@@ -2235,33 +2241,50 @@ const captionFontPath = () => ["dist/fonts/captions", "public/fonts/captions"].m
 const SHOT_THRESHOLD = 5;
 
 /** Real frames from the film on the media worker, one per time (null where unreadable), and its aspect. */
-async function lookAt(userId, project, times, signal) {
+async function lookAt(userId, project, times, signal, { width = 0 } = {}) {
   const out = await scratch(userId, project.id, "check");
   try {
-    const result = await worker(["frames", "--project", project.id, "--options", JSON.stringify({ times: times.map((t) => Math.round(t * 1000) / 1000) }), "--out", out], { timeoutMs: 15 * 60 * 1000, signal });
+    const result = await worker(["frames", "--project", project.id, "--options", JSON.stringify({ times: times.map((t) => Math.round(t * 1000) / 1000), ...(width ? { width } : {}) }), "--out", out], { timeoutMs: 15 * 60 * 1000, signal });
     return { frames: await Promise.all(result.frames.map((name) => (name ? fs.readFile(path.join(out, name)).catch(() => null) : null))), aspect: Number(result.aspect) || 16 / 9 };
   } finally {
     await fs.rm(out, { recursive: true, force: true });
   }
 }
 
-/** The film's own title as its opening shows it (the main title card), read off frames with on-screen
- *  text in the first minutes; "" when none shows it. */
+/** Bumped when the title-card reading changes, so recaps it found nothing for are read again. */
+export const TITLE_CHECK = 2;
+
+/** The film's own title as it shows it: the main title card in the opening, else the one the closing
+ *  credits put after the lead's name (Mutiny shows its title only there, after logos and a cold open).
+ *  Read off frames with on-screen text; "" when neither shows it. */
 export async function readScreenTitle(analysis, described, look, { signal = undefined, request = requestOpenRouter } = {}) {
-  const opening = Math.min(analysis.duration * 0.15, 900);
-  let shots = analysis.shots.filter((shot) => shot.t < opening && described[`tag:${shot.i}`]?.t);
-  // No tagged title cards: a spread of the first five minutes.
-  if (!shots.length) shots = analysis.shots.filter((shot, i) => shot.t < 300 && i % 7 === 0);
-  if (!shots.length) return "";
-  const step = Math.max(1, Math.ceil(shots.length / 16));
-  const times = shots.filter((_, i) => i % step === 0).slice(0, 16).map((shot) => shot.t);
-  const { frames } = await look(times);
-  const content = [{ type: "text", text: "These frames are from the opening of a film. If one shows the film's own title (its main title card), return it exactly as written. A studio or distributor logo, a person's name, a credit, or a sign in the scene is not the title. Return JSON {\"title\": \"<the title>\" or null}." }];
-  frames.forEach((frame, n) => frame && content.push({ type: "text", text: `Frame ${n}:` }, { type: "image_url", image_url: { url: `data:image/jpeg;base64,${frame.toString("base64")}` } }));
-  if (content.length < 2) return "";
   const model = process.env.MOVIE_RECAP_VISION_MODEL || "google/gemini-3.8-flash";
-  const { value } = await request({ kind: "vision", model, json: true, maxTokens: 300, temperature: 0, reasoningEffort: "low", signal, messages: [{ role: "user", content }], validate: (v) => { if (!v || typeof v !== "object") throw new Error("No answer"); } });
-  return typeof value.title === "string" ? clip(value.title, 120) : "";
+  const ask = async (times, where) => {
+    if (!times.length) return "";
+    const { frames } = await look(times);
+    const content = [{ type: "text", text: `These frames are from ${where} of a film. If one shows the film's own title (its main title card, which closing credits often show right after the lead actor's name), return it exactly as written. A studio or distributor logo, a person's name, a crew credit, or a sign in the scene is not the title. Return JSON {"title": "<the title>" or null}.` }];
+    frames.forEach((frame, n) => frame && content.push({ type: "text", text: `Frame ${n}:` }, { type: "image_url", image_url: { url: `data:image/jpeg;base64,${frame.toString("base64")}` } }));
+    if (content.length < 2) return "";
+    const { value } = await request({ kind: "vision", model, json: true, maxTokens: 300, temperature: 0, reasoningEffort: "low", signal, messages: [{ role: "user", content }], validate: (v) => { if (!v || typeof v !== "object") throw new Error("No answer"); } });
+    return typeof value.title === "string" ? clip(value.title, 120) : "";
+  };
+  const spread = (shots, most) => {
+    const step = Math.max(1, Math.ceil(shots.length / most));
+    return shots.filter((_, i) => i % step === 0).slice(0, most).map((shot) => shot.t);
+  };
+  const tagged = (shot) => described[`tag:${shot.i}`]?.t;
+  const opening = Math.min(analysis.duration * 0.15, 900);
+  let first = analysis.shots.filter((shot) => shot.t < opening && tagged(shot));
+  // No tagged title cards: a spread of the first five minutes.
+  if (!first.length) first = analysis.shots.filter((shot, i) => shot.t < 300 && i % 7 === 0);
+  const fromOpening = await ask(spread(first, 16), "the opening");
+  if (fromOpening) return fromOpening;
+  // The closing credits: their first cards (names, the title) come before the dense crawl, so the
+  // earliest text frames of the last fifth are the ones to read, every one of them.
+  const tail = analysis.duration * 0.8;
+  let last = analysis.shots.filter((shot) => shot.t >= tail && tagged(shot)).slice(0, 24);
+  if (!last.length) last = analysis.shots.filter((shot, i) => shot.t >= analysis.duration * 0.88 && i % 3 === 0).slice(0, 24);
+  return ask(last.map((shot) => shot.t), "the end");
 }
 
 /** Stops a render up front when the AI provider can't take requests (out of credits): matching, the
@@ -2459,6 +2482,10 @@ export function recapQa(project, output) {
 }
 
 async function stageFinish(userId, project, signal) {
+  if (!project.film?.tmdbId) {
+    const analysis = await readJson(userId, project.id, "analysis.json");
+    if (analysis) await titleFromScreen(userId, project, analysis, await readJson(userId, project.id, "descriptions.json", {}), signal).catch((error) => { if (signal.aborted) throw error; });
+  }
   const outputs = [];
   const media = {};
   // The finished video and the edit's picture track are hundreds of MB: they stay on the media worker

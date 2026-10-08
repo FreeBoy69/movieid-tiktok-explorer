@@ -426,6 +426,19 @@ describe("title card", () => {
     // Only text frames from the opening are looked at.
     expect(asked).toEqual([200]);
   });
+
+  it("reads the closing credits' title card when the opening shows none", async () => {
+    const { readScreenTitle } = await import("./movieRecap.js");
+    // Mutiny: studio logos, a cold open, and the title only after "JASON STATHAM" in the end credits.
+    const analysis = { duration: 5700, shots: [{ i: 0, t: 12 }, { i: 1, t: 3000 }, { i: 2, t: 5385 }, { i: 3, t: 5391 }, { i: 4, t: 5600 }] } as any;
+    const described = { "tag:0": { t: true }, "tag:1": { t: true }, "tag:2": { t: true }, "tag:3": { t: true }, "tag:4": { t: true } };
+    const looked: number[][] = [];
+    const look = async (times: number[]) => { looked.push(times); return { frames: times.map(() => Buffer.from("jpg")), aspect: 16 / 9 }; };
+    const request = async ({ messages }: any) => ({ value: { title: messages[0].content[0].text.includes("the end") ? "MUTINY" : null } });
+    expect(await readScreenTitle(analysis, described, look, { request: request as any })).toBe("MUTINY");
+    // The opening first, then every text frame of the last fifth; the middle of the film never.
+    expect(looked).toEqual([[12], [5385, 5391, 5600]]);
+  });
 });
 
 describe("opening montage", () => {

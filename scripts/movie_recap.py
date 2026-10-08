@@ -1092,14 +1092,17 @@ def cmd_frames(args):
     movie = movie_path(pdir)
     if not movie:
         return emit({"error": "The film is no longer on the media worker. Analyze it again."})
-    times = [max(0.0, float(t)) for t in (json.loads(args.options or "{}").get("times") or [])][:600]
+    options = json.loads(args.options or "{}")
+    times = [max(0.0, float(t)) for t in (options.get("times") or [])][:600]
+    # 448 px is plenty for the matching checks; reading small text (credits) asks for more.
+    width = min(1920, max(160, int(options.get("width") or 448)))
     os.makedirs(args.out, exist_ok=True)
 
     def grab(item):
         index, at = item
         subprocess.run([
             "ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-ss", f"{at:.3f}", "-i", movie, "-frames:v", "1", "-an",
-            "-vf", "scale=448:-2,setsar=1", "-q:v", "4", os.path.join(args.out, f"f{index:04d}.jpg"),
+            "-vf", f"scale={width}:-2,setsar=1", "-q:v", "4", os.path.join(args.out, f"f{index:04d}.jpg"),
         ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=120)
         return f"f{index:04d}.jpg" if os.path.isfile(os.path.join(args.out, f"f{index:04d}.jpg")) else None
 
