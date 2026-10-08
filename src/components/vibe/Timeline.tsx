@@ -17,7 +17,7 @@ import {
   Plus,
   Redo2,
   Scissors,
-  PanelBottomClose,
+  PanelBottom,
   Trash2,
   Type,
   Undo2,
@@ -461,7 +461,7 @@ export function Timeline({ snapping, onToggleSnap, onCollapse }: { snapping: boo
           </button>
           {onCollapse ? (
             <button type="button" className="ve-collapse" onClick={onCollapse} aria-label="Hide timeline" title="Hide timeline">
-              <PanelBottomClose size={16} strokeWidth={1.75} />
+              <PanelBottom size={17} strokeWidth={1.75} />
             </button>
           ) : null}
         </div>

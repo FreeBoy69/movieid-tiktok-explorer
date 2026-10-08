@@ -1,6 +1,6 @@
 // The assistant: say what you want, it answers and edits the timeline.
 import { useEffect, useRef, useState } from "react";
-import { ArrowUp, Check, Loader2, Sparkles, TriangleAlert, PanelLeftClose } from "lucide-react";
+import { ArrowUp, Check, Loader2, Sparkles, TriangleAlert, PanelLeft } from "lucide-react";
 import { askAssistant } from "./api";
 import { getVoices, runActions } from "./commands";
 import { useVibe, vibe } from "./store";
@@ -65,7 +65,7 @@ export function ChatPanel({ onClose }: { onClose?: () => void }) {
       <header className="ve-chat-head">
         {onClose ? (
           <button type="button" className="ve-collapse" onClick={onClose} aria-label="Hide assistant" title="Hide assistant">
-            <PanelLeftClose size={16} strokeWidth={1.75} />
+            <PanelLeft size={17} strokeWidth={1.75} />
           </button>
         ) : null}
         <span className="ve-chat-title">

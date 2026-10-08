@@ -3,7 +3,7 @@
 // your edits; the editor is a full-screen workspace: tool rail and panel on
 // the left, preview in the middle, assistant on the right, timeline below.
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { Check, ChevronDown, Clapperboard, CloudOff, Download, Film, Loader2, Plus, SlidersHorizontal, Square, Trash2, Upload, WandSparkles, ChevronLeft, Link2, LayoutGrid, PanelBottomClose, PanelBottomOpen, Search, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Pencil } from "lucide-react";
+import { Check, ChevronDown, Clapperboard, CloudOff, Download, Film, Loader2, Plus, SlidersHorizontal, Square, Trash2, Upload, WandSparkles, ChevronLeft, Link2, LayoutGrid, PanelBottom, PanelLeft, PanelLeftClose, PanelLeftOpen, PanelRight, Search, Pencil } from "lucide-react";
 import { toast } from "../../utils/toast";
 import { writeDeepLink } from "../../utils/tiktokRoute";
 import { loadVoiceProfiles } from "../../utils/voiceProfiles";
@@ -550,10 +550,10 @@ function Editor({ onBack, onOpenEdit, onNew }: { onBack: () => void; onOpenEdit:
       <Sidebar open={navOpen} onToggle={() => setNavOpen((o) => !o)} onAll={onBack} onOpenEdit={onOpenEdit} onNew={onNew}>
         <SideItem icon={<Upload size={18} strokeWidth={1.75} />} label="Import files" onClick={() => importer.current?.click()} />
         <SideItem icon={<WandSparkles size={18} strokeWidth={1.75} />} label="Auto edit" on={tab === "auto"} onClick={() => setTab(tab === "auto" ? "media" : "auto")} />
-        <span className="ve-nav-sep" aria-hidden="true" />
-        <SideItem icon={chatOpen ? <PanelLeftClose size={18} strokeWidth={1.75} /> : <PanelLeftOpen size={18} strokeWidth={1.75} />} label="Assistant" on={chatOpen} onClick={() => setChatOpen((o) => !o)} />
-        <SideItem icon={tab ? <PanelRightClose size={18} strokeWidth={1.75} /> : <PanelRightOpen size={18} strokeWidth={1.75} />} label="Tools" on={Boolean(tab)} onClick={() => setTab(tab ? null : "media")} />
-        <SideItem icon={timelineOpen ? <PanelBottomClose size={18} strokeWidth={1.75} /> : <PanelBottomOpen size={18} strokeWidth={1.75} />} label="Timeline" on={timelineOpen} onClick={() => setTimelineOpen((o) => !o)} />
+        <span className="ve-nav-sep ve-nav-phone" aria-hidden="true" />
+        <SideItem icon={<PanelLeft size={18} strokeWidth={1.75} />} label="Assistant" on={chatOpen} className="ve-nav-phone" onClick={() => setChatOpen((o) => !o)} />
+        <SideItem icon={<PanelRight size={18} strokeWidth={1.75} />} label="Tools" on={Boolean(tab)} className="ve-nav-phone" onClick={() => setTab(tab ? null : "media")} />
+        <SideItem icon={<PanelBottom size={18} strokeWidth={1.75} />} label="Timeline" on={timelineOpen} className="ve-nav-phone" onClick={() => setTimelineOpen((o) => !o)} />
         <input
           ref={importer}
           type="file"
@@ -576,7 +576,13 @@ function Editor({ onBack, onOpenEdit, onNew }: { onBack: () => void; onOpenEdit:
           <aside className="ve-card ve-chat-card" aria-label="Assistant">
             <ChatPanel onClose={() => setChatOpen(false)} />
           </aside>
-        ) : null}
+        ) : (
+          <aside className="ve-card ve-fold" aria-label="Assistant, hidden">
+            <button type="button" className="ve-collapse" onClick={() => setChatOpen(true)} aria-label="Show assistant" title="Show assistant">
+              <PanelLeft size={17} strokeWidth={1.75} />
+            </button>
+          </aside>
+        )}
         <main className="ve-center">
           <Preview />
         </main>
@@ -594,7 +600,7 @@ function Editor({ onBack, onOpenEdit, onNew }: { onBack: () => void; onOpenEdit:
                 <span>Details</span>
               </button>
               <button type="button" className="ve-collapse ve-tabs-collapse" onClick={() => setTab(null)} aria-label="Hide tools" title="Hide tools">
-                <PanelRightClose size={16} strokeWidth={1.75} />
+                <PanelRight size={17} strokeWidth={1.75} />
               </button>
             </div>
             {tab === "props" ? (
@@ -606,10 +612,24 @@ function Editor({ onBack, onOpenEdit, onNew }: { onBack: () => void; onOpenEdit:
               </div>
             )}
           </aside>
-        ) : null}
+        ) : (
+          <aside className="ve-card ve-fold" aria-label="Tools, hidden">
+            <button type="button" className="ve-collapse" onClick={() => setTab("media")} aria-label="Show tools" title="Show media, captions, and more">
+              <PanelRight size={17} strokeWidth={1.75} />
+            </button>
+          </aside>
+        )}
       </div>
 
-      {timelineOpen ? <Timeline snapping={snapping} onToggleSnap={() => setSnapping((s) => !s)} onCollapse={() => setTimelineOpen(false)} /> : null}
+      {timelineOpen ? (
+        <Timeline snapping={snapping} onToggleSnap={() => setSnapping((s) => !s)} onCollapse={() => setTimelineOpen(false)} />
+      ) : (
+        <section className="ve-card ve-fold ve-fold-h" aria-label="Timeline, hidden">
+          <button type="button" className="ve-collapse" onClick={() => setTimelineOpen(true)} aria-label="Show timeline" title="Show timeline">
+            <PanelBottom size={17} strokeWidth={1.75} />
+          </button>
+        </section>
+      )}
       {over ? (
         <div className="ve-dropzone" aria-hidden="true">
           <Upload size={28} />
