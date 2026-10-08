@@ -795,6 +795,21 @@
 .as-head-tabs { border-bottom: 0; }
 @media (max-width: 640px) { .as-head-tabs { flex: 1; } }
 
+/* ---------- Layout: the header, the Generate grid (script + rail), and its parts ----------
+   Kept with the premium pass below so the page never depends on rules elsewhere. */
+.as-root .as-title { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.as-root .as-mark { display: grid; flex: none; place-items: center; }
+.as-root .as-title h1 { margin: 0; }
+.as-root .as-title p { margin: 2px 0 0; }
+.as-root .as-generate { display: grid; flex: 1; min-height: 0; }
+.as-root .as-write { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.as-root .as-write-foot { display: flex; align-items: center; }
+.as-root .as-write-foot .as-cost { margin-left: auto; }
+.as-root .as-rail { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; }
+.as-root .as-rail-body { display: grid; gap: 14px; }
+.as-root .as-rail-tabs { margin: 0 0 4px; }
+.as-root :is(.as-icon, .as-primary, .as-use, .as-sphere-btn, .as-history):focus-visible { outline: 2px solid var(--ui-focus, var(--ui-accent)); outline-offset: 2px; }
+
 /* ---------- Premium pass: the HyperFrames-style finish on the studio layout ----------
    The same surfaces, title, and rounded tabs as the Create page (--ui-* tokens),
    with the script and the settings rail as floating rounded panels. */
@@ -846,7 +861,7 @@
 
 @media (max-width: 900px) {
   .cs-audio-workspace.as-root { padding: 0 12px 12px; }
-  .as-root .as-generate { grid-template-columns: minmax(0, 1fr); }
+  .as-root .as-generate { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(320px, 1fr) auto; }
   .as-root .as-script { padding: 24px 22px; font-size: 18px; }
   .as-root .as-write-foot { padding-left: 22px; }
 }
