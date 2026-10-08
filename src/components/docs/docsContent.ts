@@ -344,6 +344,8 @@ export const DOCS: DocPage[] = [
         title: "Marketing",
         blocks: [
           { list: ["**Marketing Studio:** turn a product photo into an ad, with a presenter if you like.", "**Promo Studio:** launch videos in motion graphics.", "**Explainer Studio:** narrated product walkthroughs in your voice."] },
+          { h3: "Editing motion graphics" },
+          { p: "Promo films, explainers, and Vibe Motion graphics can be edited right in their player: choose **Edit in the player** on a result, then click any text, shape, or picture. Drag it to move it, drag its corner to resize it, and change its words, colour, or when it's on screen. **Save and render** makes the new video; your edits stay with the graphic, so you can come back and change them." },
         ],
       },
       {

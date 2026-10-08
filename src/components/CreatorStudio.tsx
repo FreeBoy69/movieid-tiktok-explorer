@@ -87,9 +87,13 @@ export function CreatorStudio({ theme = "light", tab: routeTab, generationId, on
   }, []);
   useEffect(() => {
     void refresh();
+    // Edits saved in a motion graphic's player change its outputs.
+    const onChange = () => void refresh();
+    window.addEventListener("autoyt:studio-changed", onChange);
+    return () => window.removeEventListener("autoyt:studio-changed", onChange);
   }, [refresh]);
 
-  const active = generations.some((item) => item.status === "queued" || item.status === "running");
+  const active = generations.some((item) => item.status === "queued" || item.status === "running" || item.rendering);
   useEffect(() => {
     if (!active) return;
     const poll = window.setInterval(() => void refresh(), 4000);

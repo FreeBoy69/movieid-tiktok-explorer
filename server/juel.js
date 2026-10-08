@@ -281,6 +281,8 @@ export const JUEL_ROUTES = {
   "POST /api/saved/tiktok-post-analyses": ["research", "change", "Saves a movie-ID analysis result for a TikTok post."],
   "POST /api/studio/generations": ["studio", "paid", "Starts a new Creator Studio generation such as an image, video, audio, design, or explainer."],
   "POST /api/studio/generations/:id/design": ["studio", "change", "Saves your edited HTML back into an Editable Design generation."],
+  "GET /api/studio/generations/:id/motion": ["studio", "read", "Reads a Promo, Explainer, or Vibe Motion graphic's document and the edits made to it in its player."],
+  "POST /api/studio/generations/:id/motion": ["studio", "change", "Saves edits to a motion graphic's elements (moved, resized, recoloured, reworded, or timed; body {edits: {selectorPath: {dx, dy, scale, text, color, hidden, from, to}}}) and re-renders a film."],
   "POST /api/studio/generations/:id/export": ["studio", "paid", "Renders a motion graphic, promo, or explainer generation to MP4 or GIF."],
   "POST /api/studio/generations/:id/stop": ["studio", "change", "Stops a Creator Studio generation that is still running."],
   "POST /api/studio/imports": ["studio", "paid", "Imports an image or downloads a video from a pasted link into your studio library."],

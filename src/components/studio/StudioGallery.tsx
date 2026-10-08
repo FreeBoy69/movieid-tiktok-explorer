@@ -11,6 +11,7 @@ import {
   Loader2,
   Maximize2,
   Mic,
+  MousePointer2,
   PenLine,
   RotateCcw,
   Sparkles,
@@ -20,6 +21,7 @@ import {
 } from "lucide-react";
 import { AudioPlayer } from "../AudioPlayer";
 import { MotionPreview } from "./MotionPreview";
+import { MotionEditor } from "./MotionEditor";
 import { type Asset, elapsed, type Generation, type Output, timeAgo } from "./studioShared";
 import { VideoPlayer } from "../VideoPlayer";
 import { toast } from "../../utils/toast";
@@ -82,6 +84,12 @@ function details(item: Generation, modelName: string, now: number) {
     .join(" · ");
 }
 
+// Promo and Explainer films and Vibe Motion graphics can be edited element by element in their own player.
+const isEditableMotion = (item: Generation) => item.status === "done" && !item.rendering && ((item.tab === "promo" || item.tab === "explainer") ? Boolean(item.source) : item.tab === "vibe-motion" && (item.outputs || []).some((o) => o.file.endsWith(".html")));
+const openMotionEditor = (item: Generation) => window.dispatchEvent(new CustomEvent("autoyt:edit-motion", { detail: { id: item.id, title: item.prompt?.slice(0, 80) || "Motion graphic" } }));
+/** Something changed a generation outside the studio's own requests: the studio reloads its history. */
+export const announceStudioChange = () => window.dispatchEvent(new Event("autoyt:studio-changed"));
+
 function Actions({ item, output, handlers, onClose }: { item: Generation; output?: Output; handlers: GalleryHandlers; onClose?: () => void }) {
   const kind = output ? kindOf(output) : "";
   const act = (fn: () => void) => (event: MouseEvent) => {
@@ -99,6 +107,9 @@ function Actions({ item, output, handlers, onClose }: { item: Generation; output
       ) : null}
       {output && kind === "audio" ? (
         <button type="button" className="ui-icon-btn cs-icon" aria-label="Use in Lip Sync" title="Use in Lip Sync" onClick={act(() => handlers.onSend("lipsync", "audioFile", output))}><Mic className="h-3.5 w-3.5" /></button>
+      ) : null}
+      {output && isEditableMotion(item) ? (
+        <button type="button" className="ui-icon-btn cs-icon" aria-label="Edit in the player" title="Edit in the player" onClick={act(() => { onClose?.(); openMotionEditor(item); })}><MousePointer2 className="h-3.5 w-3.5" /></button>
       ) : null}
       {output && item.tab === "vibe-motion" && kind === "html" ? (
         <button type="button" className="ui-icon-btn cs-icon" aria-label="Revise this motion graphic" title="Revise" onClick={act(() => { onClose?.(); handlers.onRevise(output.file); })}><PenLine className="h-3.5 w-3.5" /></button>
@@ -232,6 +243,12 @@ function StatusTile({ item, handlers, now }: { item: Generation; handlers: Galle
 
 export function StudioGallery({ items, now, handlers, extraAudio = [] }: { items: Generation[]; now: number; handlers: GalleryHandlers; extraAudio?: Array<{ id: string; title: string; meta: string; url: string; onLipSync: () => void }> }) {
   const tiles = useMemo(() => galleryTiles(items), [items]);
+  const [editing, setEditing] = useState<{ id: string; title: string } | null>(null);
+  useEffect(() => {
+    const onEdit = (event: Event) => setEditing((event as CustomEvent<{ id: string; title: string }>).detail);
+    window.addEventListener("autoyt:edit-motion", onEdit);
+    return () => window.removeEventListener("autoyt:edit-motion", onEdit);
+  }, []);
   const viewable = tiles.filter((tile): tile is Extract<Tile, { kind: "media" }> => tile.kind === "media");
   const [open, setOpen] = useState<string | null>(handlers.routeGenerationId || null);
   useEffect(() => setOpen(handlers.routeGenerationId || null), [handlers.routeGenerationId]);
@@ -255,6 +272,7 @@ export function StudioGallery({ items, now, handlers, extraAudio = [] }: { items
   const index = viewable.findIndex((tile) => tile.key === open || tile.item.id === open);
   return (
     <>
+      {editing ? <MotionEditor generationId={editing.id} title={editing.title} onClose={() => setEditing(null)} onSaved={announceStudioChange} /> : null}
       <div className="cs-masonry">
         {extraAudio.map((clip) => (
           <div key={clip.id} className="cs-tile cs-tile-audio">

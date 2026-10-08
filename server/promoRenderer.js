@@ -7,6 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import puppeteer from "puppeteer-core";
 import { creatorCommand } from "./creatorWorkspace.js";
+import { stripMotionEdits } from "../src/utils/videoGraphics.js";
 
 const HOST = "data-promo-host";
 const KIT = "data-promo-kit";
@@ -103,7 +104,7 @@ export function hostPromoDocument(html, { width, height, duration, fontCss = "",
 }
 
 /** The model's own document, for revisions: the host blocks removed. */
-export const stripPromoHost = (html) => String(html).replace(new RegExp(`<(style|script)[^>]*\\s(?:${HOST}|${KIT})[^>]*>[\\s\\S]*?</\\1>`, "g"), "");
+export const stripPromoHost = (html) => stripMotionEdits(html).replace(new RegExp(`<(style|script)[^>]*\\s(?:${HOST}|${KIT})[^>]*>[\\s\\S]*?</\\1>`, "g"), "");
 export function promoKit(html) {
   const match = String(html).match(new RegExp(`<script[^>]*\\s${KIT}[^>]*>([\\s\\S]*?)</script>`));
   try {

@@ -210,3 +210,135 @@ window.seek(0);
 })();
 </script></body></html>`;
 }
+
+// ---------- Editable motion graphics ----------
+// Any generated motion graphic (Promo and Explainer films and data cards that draw with `seek(t)`, HyperFrames
+// compositions on a GSAP timeline, and Vibe Motion's free-running CSS) can be edited after it's made: pick an
+// element in the player, move it, resize it, recolour it, change its words, or choose when it's on screen.
+// Edits are a layer on top of the animation, kept in the document as JSON and re-applied after every frame the
+// animation draws, so the renderer films them too. Elements are addressed by their position under the stage
+// (":scope > div:nth-child(2) > span:nth-child(1)"), which a deterministic film rebuilds the same way each time.
+// Movement uses the CSS `translate` and `scale` properties, which add to the animation's own `transform`.
+
+/** One element's edits: offset in stage pixels, scale, words, colour, hidden, and the time window it shows in. */
+export function cleanMotionEdits(raw) {
+  const items = {};
+  const source = raw && typeof raw === "object" ? raw.items || raw : {};
+  for (const [path, edit] of Object.entries(source).slice(0, 200)) {
+    if (!/^:scope( > [a-z][a-z0-9-]*:nth-child\(\d{1,4}\))+$/i.test(path) || path.length > 600 || !edit || typeof edit !== "object") continue;
+    const num = (v, min, max) => (Number.isFinite(Number(v)) ? Math.min(max, Math.max(min, Number(v))) : undefined);
+    const out = {
+      dx: num(edit.dx, -10000, 10000),
+      dy: num(edit.dy, -10000, 10000),
+      scale: num(edit.scale, 0.05, 20),
+      text: typeof edit.text === "string" ? edit.text.slice(0, 2000) : undefined,
+      color: typeof edit.color === "string" && /^#[0-9a-f]{3,8}$/i.test(edit.color) ? edit.color : undefined,
+      hidden: edit.hidden === true ? true : undefined,
+      from: num(edit.from, 0, 36000),
+      to: num(edit.to, 0, 36000),
+    };
+    for (const key of Object.keys(out)) if (out[key] === undefined || (key === "scale" && out[key] === 1) || ((key === "dx" || key === "dy") && out[key] === 0)) delete out[key];
+    if (Object.keys(out).length) items[path] = out;
+  }
+  return items;
+}
+
+/** The edits a document carries (empty when it has none). */
+export function readMotionEdits(html) {
+  const match = String(html || "").match(/<script type="application\/json" data-mg-edits>([\s\S]*?)<\/script>/i);
+  if (!match) return {};
+  try {
+    return cleanMotionEdits(JSON.parse(match[1].replace(/<\\\//g, "</")));
+  } catch {
+    return {};
+  }
+}
+
+/** The document without its edits layer (for revisions, which rewrite the film). */
+export const stripMotionEdits = (html) => String(html || "")
+  .replace(/<script type="application\/json" data-mg-edits>[\s\S]*?<\/script>/gi, "")
+  .replace(/<script data-mg-runtime>[\s\S]*?<\/script>/gi, "");
+
+/** Applies the edits layer after every frame: wraps seek(t) and __promoSeek(t), listens to the GSAP root timeline,
+ *  and keeps applying on animation frames for free-running CSS. */
+export const MOTION_EDIT_RUNTIME = `(function(){
+var touched={},original=new WeakMap(),now=0;
+function rootEl(){return document.getElementById("stage")||document.querySelector("[data-composition-id]")||document.body}
+function find(p){try{return rootEl().querySelector(p)}catch(e){return null}}
+function items(){return window.__mgEdits||{}}
+function clear(p){var el=find(p);if(!el)return;["translate","scale","color","visibility"].forEach(function(k){el.style.removeProperty(k)});if(original.has(el)){el.textContent=original.get(el);original.delete(el)}}
+function apply(t){if(typeof t==="number"&&isFinite(t))now=t;var e=items(),p;for(p in touched)if(!e[p]){clear(p);delete touched[p]}
+for(p in e){var el=find(p),x=e[p];if(!el)continue;touched[p]=1;var s=el.style;
+if(x.dx||x.dy)s.setProperty("translate",(x.dx||0)+"px "+(x.dy||0)+"px","important");else s.removeProperty("translate");
+if(x.scale&&x.scale!==1)s.setProperty("scale",String(x.scale),"important");else s.removeProperty("scale");
+if(x.color)s.setProperty("color",x.color,"important");else s.removeProperty("color");
+var off=x.hidden||(x.from!=null&&now<x.from)||(x.to!=null&&now>x.to);if(off)s.setProperty("visibility","hidden","important");else s.removeProperty("visibility");
+if(typeof x.text==="string"){if(!original.has(el))original.set(el,el.textContent);if(el.textContent!==x.text)el.textContent=x.text}else if(original.has(el)){el.textContent=original.get(el);original.delete(el)}}}
+function wrap(n){var f=window[n];if(typeof f!=="function"||f.__mg)return;var g=function(t){var r=f.apply(this,arguments);apply(t);return r};g.__mg=1;window[n]=g}
+window.__mgApply=apply;
+function hook(){wrap("seek");wrap("__promoSeek");try{var tl=window.__timelines&&window.__timelines.root;if(tl&&tl.eventCallback&&!tl.__mg){tl.__mg=1;tl.eventCallback("onUpdate",function(){apply(tl.time())})}}catch(e){}}
+hook();addEventListener("load",hook);
+var seeks=function(){return typeof window.seek==="function"||typeof window.__promoSeek==="function"||!!(window.__timelines&&window.__timelines.root)};
+var t0=performance.now();(function loop(){apply(seeks()?undefined:(performance.now()-t0)/1000);requestAnimationFrame(loop)})();
+})();`;
+
+/** The document with its edits layer set (or removed when there are no edits). */
+export function withMotionEdits(html, edits) {
+  const items = cleanMotionEdits(edits);
+  const bare = stripMotionEdits(html);
+  if (!Object.keys(items).length) return bare;
+  const json = JSON.stringify(items).replace(/<\//g, "<\\/");
+  const layer = `<script type="application/json" data-mg-edits>${json}</script><script data-mg-runtime>window.__mgEdits=${json};${MOTION_EDIT_RUNTIME}</script>`;
+  return /<\/body>/i.test(bare) ? bare.replace(/<\/body>(?![\s\S]*<\/body>)/i, `${layer}</body>`) : `${bare}${layer}`;
+}
+
+/** The editor's side of the player (only in the editor, never rendered): it drives time, picks and drags
+ *  elements, and talks to the page over postMessage, since the film runs sandboxed without our origin. */
+export const MOTION_EDIT_BRIDGE = `(function(){
+var parentWin=window.parent,sel=null,T=0,playing=false,last=0,drag=null;
+function post(m){m.mg=1;parentWin.postMessage(m,"*")}
+function rootEl(){return document.getElementById("stage")||document.querySelector("[data-composition-id]")||document.body}
+function duration(){var r=rootEl();return (window.__PROMO__&&window.__PROMO__.duration)||(window.__VIBE__&&window.__VIBE__.duration)||Number(r.getAttribute("data-duration"))||10}
+function seekTo(t){T=Math.max(0,Math.min(duration(),t));try{if(typeof window.__promoSeek==="function")window.__promoSeek(T);else if(typeof window.seek==="function")window.seek(T);else{var tl=window.__timelines&&window.__timelines.root;if(tl)tl.seek(T,false);else document.getAnimations().forEach(function(a){try{a.pause();a.currentTime=T*1000}catch(e){}})}}catch(e){}
+if(window.__mgApply)window.__mgApply(T);box();post({type:"time",t:T})}
+function pathOf(el){var r=rootEl(),parts=[];while(el&&el!==r&&el.parentElement){var i=1,s=el;while((s=s.previousElementSibling))i++;parts.unshift(el.tagName.toLowerCase()+":nth-child("+i+")");el=el.parentElement}return el===r&&parts.length?":scope > "+parts.join(" > "):null}
+function find(p){try{return rootEl().querySelector(p)}catch(e){return null}}
+function hex(c){var m=String(c).match(/\\d+(\\.\\d+)?/g);if(!m)return "#ffffff";return "#"+m.slice(0,3).map(function(v){return ("0"+Math.round(+v).toString(16)).slice(-2)}).join("")}
+var frame=document.createElement("div");frame.setAttribute("data-mg-ui","");frame.style.cssText="position:fixed;pointer-events:none;border:2px solid #4c8dff;border-radius:2px;box-shadow:0 0 0 1px rgba(0,0,0,.35);z-index:2147483646;display:none";
+var grip=document.createElement("div");grip.setAttribute("data-mg-ui","");grip.style.cssText="position:fixed;width:12px;height:12px;border-radius:50%;background:#4c8dff;border:2px solid #fff;z-index:2147483647;cursor:nwse-resize;display:none";
+var hover=document.createElement("div");hover.setAttribute("data-mg-ui","");hover.style.cssText="position:fixed;pointer-events:none;border:1px dashed rgba(76,141,255,.9);z-index:2147483645;display:none";
+function mount(){document.body.appendChild(hover);document.body.appendChild(frame);document.body.appendChild(grip)}
+function box(){var el=sel&&find(sel);if(!el){frame.style.display=grip.style.display="none";return}var b=el.getBoundingClientRect();frame.style.display=grip.style.display="block";frame.style.left=b.left-2+"px";frame.style.top=b.top-2+"px";frame.style.width=b.width+4+"px";frame.style.height=b.height+4+"px";grip.style.left=b.right-6+"px";grip.style.top=b.bottom-6+"px"}
+function info(el){var p=pathOf(el);if(!p)return null;var leaf=!el.children.length&&el.textContent.trim().length>0,cs=getComputedStyle(el),e=(window.__mgEdits||{})[p]||{};var o=window.__mgOriginal&&window.__mgOriginal[p];
+var tag=el.tagName.toLowerCase(),n=el.querySelectorAll("*").length,label=leaf?"\u201c"+el.textContent.trim().slice(0,36)+"\u201d":tag==="img"||tag==="svg"||tag==="canvas"||tag==="video"?"Picture":n?"Group of "+(el.children.length)+(el.children.length===1?" item":" items"):"Shape";
+return{path:p,tag:tag,isText:leaf,text:leaf?(typeof e.text==="string"?e.text:el.textContent):"",color:hex(cs.color),label:label,hasParent:el.parentElement&&el.parentElement!==rootEl()}}
+function select(el){var i=el?info(el):null;sel=i?i.path:null;box();post({type:"selected",info:i})}
+function pick(t){if(!t||t.closest&&t.closest("[data-mg-ui]"))return null;var r=rootEl();if(t===r||!r.contains(t))return null;return t}
+function scaleK(){var r=rootEl();return r.getBoundingClientRect().width/(r.offsetWidth||1)||1}
+document.addEventListener("pointermove",function(ev){if(drag)return;var t=pick(ev.target);if(!t){hover.style.display="none";return}var b=t.getBoundingClientRect();hover.style.display="block";hover.style.left=b.left+"px";hover.style.top=b.top+"px";hover.style.width=b.width+"px";hover.style.height=b.height+"px"},true);
+document.addEventListener("pointerdown",function(ev){ev.preventDefault();ev.stopPropagation();var resizing=ev.target===grip,t=resizing?find(sel):pick(ev.target);if(!t){select(null);return}if(!resizing&&pathOf(t)!==sel)select(t);var e=(window.__mgEdits||{})[sel]||{};var b=t.getBoundingClientRect();drag={resizing:resizing,x:ev.clientX,y:ev.clientY,dx:e.dx||0,dy:e.dy||0,scale:e.scale||1,w:b.width||1,moved:false};try{document.documentElement.setPointerCapture(ev.pointerId)}catch(e){}},true);
+document.addEventListener("pointermove",function(ev){if(!drag||!sel)return;var k=scaleK(),mx=ev.clientX-drag.x,my=ev.clientY-drag.y;if(!drag.moved&&Math.abs(mx)+Math.abs(my)<3)return;drag.moved=true;var all=window.__mgEdits=window.__mgEdits||{},e=all[sel]=Object.assign({},all[sel]||{});
+if(drag.resizing)e.scale=Math.max(.05,Math.round(drag.scale*(drag.w+mx)/drag.w*100)/100);else{e.dx=Math.round(drag.dx+mx/k);e.dy=Math.round(drag.dy+my/k)}if(window.__mgApply)window.__mgApply();box()},true);
+document.addEventListener("pointerup",function(){if(drag&&drag.moved&&sel){var e=(window.__mgEdits||{})[sel]||{};post({type:"patch",path:sel,patch:drag.resizing?{scale:e.scale}:{dx:e.dx,dy:e.dy}})}drag=null},true);
+document.addEventListener("click",function(ev){ev.preventDefault();ev.stopPropagation()},true);
+document.addEventListener("keydown",function(ev){if(!sel)return;var step=ev.shiftKey?10:1,d={ArrowLeft:[-step,0],ArrowRight:[step,0],ArrowUp:[0,-step],ArrowDown:[0,step]}[ev.key];if(!d)return;ev.preventDefault();var e=(window.__mgEdits||{})[sel]||{};post({type:"patch",path:sel,patch:{dx:(e.dx||0)+d[0],dy:(e.dy||0)+d[1]}})},true);
+function tick(ts){if(playing){var dt=last?(ts-last)/1000:0;var n=T+dt;if(n>=duration())n=0;seekTo(n)}last=ts;requestAnimationFrame(tick)}
+addEventListener("message",function(ev){var m=ev.data;if(!m||!m.mg||ev.source!==parentWin)return;
+if(m.type==="edits"){window.__mgEdits=m.items||{};if(window.__mgApply)window.__mgApply(T);box();if(sel){var el=find(sel);post({type:"selected",info:el?info(el):null})}}
+else if(m.type==="seek"){playing=false;seekTo(+m.t||0)}else if(m.type==="play"){playing=true;last=0}else if(m.type==="pause"){playing=false}
+else if(m.type==="select"){select(m.path?find(m.path):null)}else if(m.type==="parent"){var c=sel&&find(sel);if(c&&c.parentElement&&c.parentElement!==rootEl())select(c.parentElement)}});
+addEventListener("resize",box);
+function ready(){mount();seekTo(0);post({type:"ready",duration:duration()});requestAnimationFrame(tick)}
+if(document.readyState==="complete")setTimeout(ready,50);else addEventListener("load",function(){setTimeout(ready,50)});
+})();`;
+
+/** The document as the editor shows it: no autoplay, a strict CSP, the edits layer, and the bridge. */
+export function motionEditorDocument(html, edits, csp) {
+  const head = `${csp || ""}<script>window.__PROMO_RENDER__=true;</script>`;
+  const withHead = /<head[^>]*>/i.test(html) ? String(html).replace(/<head[^>]*>/i, (tag) => tag + head) : String(html).replace(/<html[^>]*>/i, (tag) => `${tag}<head>${head}</head>`);
+  const items = cleanMotionEdits(edits);
+  const json = JSON.stringify(items).replace(/<\//g, "<\\/");
+  const layer = `<script data-mg-runtime>window.__mgEdits=${json};${MOTION_EDIT_RUNTIME}</script><script>${MOTION_EDIT_BRIDGE}</script>`;
+  const bare = stripMotionEdits(withHead);
+  return /<\/body>/i.test(bare) ? bare.replace(/<\/body>(?![\s\S]*<\/body>)/i, `${layer}</body>`) : `${bare}${layer}`;
+}

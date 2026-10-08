@@ -60,6 +60,8 @@ export type Generation = {
   soundtrack?: Output;
   film?: { duration: number; aspect: string; chapters: Array<{ title: string; start: number }>; fallbacks?: number[] };
   notice?: string;
+  /** A film re-rendering after edits made in its player. */
+  rendering?: boolean;
   error?: string;
   createdAt: string;
 };

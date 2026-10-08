@@ -25,6 +25,7 @@ import { findPromoStyle } from "../src/utils/promoStyles.js";
 import { recordingFrames, runExplainerFilm, runExplainerPlan } from "./explainerStudio.js";
 import { compactDesignHtml, DESIGN_CANVASES, designHtmlMessages, designPlanMessages, designSettings, extractDesignDocument, extractJsonObject, imageSize, inlineDesignAssets, listDesignLayers, normalizeDesignPlan, sanitizeDesignHtml, validateDesignHtml } from "./editableDesign.js";
 import { STUDIO_PERSONAS } from "./juel.js";
+import { cleanMotionEdits, readMotionEdits, stripMotionEdits, withMotionEdits } from "../src/utils/videoGraphics.js";
 import { EXPLAINER_ASPECTS, EXPLAINER_LENGTHS, EXPLAINER_MAX_SECONDS, EXPLAINER_MAX_WORDS, findExplainerTemplate, normalizeExplainerScript, scriptWords } from "../src/utils/explainerPresets.js";
 
 const API = "https://openrouter.ai/api/v1";
@@ -670,7 +671,7 @@ export function hostMotionDocument(html, [width, height], seconds) {
     /data-composition-id=/i.test(attrs) ? tag : `<div id="stage"${attrs} data-autoyt-host="1" data-composition-id="root" data-width="${width}" data-height="${height}" data-duration="${seconds}">`);
   return /<head[^>]*>/i.test(rooted) ? rooted.replace(/<head[^>]*>/i, (tag) => tag + host) : rooted.replace(/<html[^>]*>/i, (tag) => `${tag}<head>${host}</head>`);
 }
-export const stripHost = (html) => String(html)
+export const stripHost = (html) => stripMotionEdits(html)
   .replace(new RegExp(`<(style|script) ${HOST_MARK}>[\\s\\S]*?</\\1>`, "g"), "")
   .replace(/<div\s+id=["']stage["']([^>]*?) data-autoyt-host="1" data-composition-id="root" data-width="\d+" data-height="\d+" data-duration="[\d.]+">/i, (_tag, attrs) => `<div id="stage"${attrs}>`);
 
@@ -1974,6 +1975,46 @@ export function registerCreatorStudio(app, express) {
       if (assetStoreConfigured()) void removeFile(storeKey(userId, previous.file));
     }
     res.json({ output });
+  }));
+
+  // Edits made in the player (move, resize, recolour, reword, timing) saved into the motion graphic's document.
+  // A film re-renders to MP4 in the background; a Vibe Motion graphic keeps its HTML and exports on request.
+  app.post("/api/studio/generations/:id/motion", route(async (req, res, userId) => {
+    const item = (await history(userId)).find((entry) => entry.id === req.params.id);
+    if (!item || !["promo", "explainer", "vibe-motion"].includes(item.tab)) throw fail("Motion graphic not found", 404);
+    const film = item.tab !== "vibe-motion";
+    const current = film ? item.source : item.outputs?.find((output) => extOf(output.file) === "html");
+    if (!current?.file) throw fail("Finish generating it first");
+    if (film && (promoExports.has(`${userId}:${item.id}`) || explainerExports.has(`${userId}:${item.id}`))) throw fail("It's still rendering your last edits. Try again in a moment.", 409);
+    const edits = cleanMotionEdits(req.body?.edits);
+    const html = await fs.readFile(await readableFile(userId, current.file), "utf8");
+    const name = `${newId("gen")}.html`;
+    const target = userFile(userId, name);
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    await fs.writeFile(target, withMotionEdits(html, edits));
+    await persist(userId, target);
+    const next = { file: name, url: studioFileUrl(name), type: MIME.html };
+    let saved;
+    if (film) {
+      // The old video goes; the edited film plays from its HTML until the new MP4 replaces it.
+      // `rendering` (not status "running", which a restart would mark failed) keeps the gallery checking back.
+      saved = await update(userId, item.id, { source: next, outputs: [next, ...(item.outputs || []).filter((output) => !["html", "mp4"].includes(extOf(output.file)))], rendering: true, notice: "Rendering your edits" });
+      const render = item.tab === "promo" ? exportPromo : exportExplainer;
+      void render(userId, saved, "mp4")
+        .then(() => update(userId, item.id, { rendering: false, notice: "" }))
+        .catch((error) => update(userId, item.id, { rendering: false, notice: `The edits are saved, but the video didn't render: ${publicMessage(error.message)}` }));
+    } else {
+      saved = await update(userId, item.id, { outputs: [next, ...(item.outputs || []).filter((output) => output.file !== current.file)] });
+    }
+    res.json({ generation: saved, edits });
+  }));
+
+  app.get("/api/studio/generations/:id/motion", route(async (req, res, userId) => {
+    const item = (await history(userId)).find((entry) => entry.id === req.params.id);
+    const current = item?.tab === "vibe-motion" ? item.outputs?.find((output) => extOf(output.file) === "html") : item?.source;
+    if (!current?.file) throw fail("Motion graphic not found", 404);
+    const html = await fs.readFile(await readableFile(userId, current.file), "utf8");
+    res.json({ html, edits: readMotionEdits(html), aspect: item.film?.aspect || item.settings?.aspectRatio || "16:9", duration: Number(item.film?.duration || item.settings?.duration) || 0 });
   }));
 
   app.post("/api/studio/generations/:id/export", route(async (req, res, userId) => {
