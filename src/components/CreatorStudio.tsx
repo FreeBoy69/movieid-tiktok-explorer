@@ -1,7 +1,7 @@
 // Creator Studio: every app from Open Generative AI (github.com/anil-matcha/open-generative-ai, MIT)
 // under one page, running on our /api/studio routes. The app header's Image,
 // Video, Audio, and Agents menus choose the app (see utils/appNavigation).
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowRight } from "lucide-react";
 import { STUDIO_TABS, writeDeepLink, type StudioTab } from "../utils/tiktokRoute";
 import { STUDIO_APPS, STUDIO_CATEGORIES, type StudioApp } from "./studio/studioApps";
@@ -17,6 +17,7 @@ import type { GalleryHandlers } from "./studio/StudioGallery";
 import { studioDraftFor, takePendingTemplate } from "../utils/promptTemplates";
 import { sendAsset } from "./tools/toolHandoff";
 import { isToolId } from "../utils/tiktokRoute";
+import { onJuelChange, provideJuelContext } from "./JuelPanel";
 import "./CreatorStudio.css";
 
 type AppId = StudioApp["id"];
@@ -100,6 +101,41 @@ export function CreatorStudio({ theme = "light", tab: routeTab, generationId, on
   }, [active, refresh]);
 
   const go = useCallback((next: StudioTab) => onTabChange?.(next), [onTabChange]);
+
+  // Juel knows which studio app is open, can open another or write the prompt into this one, and the
+  // history reloads when Juel starts a generation.
+  const draftsNow = useRef(drafts);
+  draftsNow.current = drafts;
+  useEffect(() => {
+    const app = STUDIO_APPS[tab as AppId];
+    const stopContext = provideJuelContext(() => ({
+      surface: "studio",
+      label: app?.label || "Creator Studio",
+      details: { app: tab, prompt: String(draftsNow.current[tab]?.prompt || "").slice(0, 600) || null },
+      clientTools: {
+        specialist: "studio",
+        actions: {
+          open_app: { args: `{app: ${STUDIO_TABS.join("|")}}`, about: "Open a Creator Studio app", risk: "change" },
+          ...(app ? { write_prompt: { args: "{prompt}", about: `Write the prompt into ${app.label} (the user presses ${app.action || "Generate"})`, risk: "change" } } : {}),
+        },
+      },
+    }));
+    const onActions = (event: Event) => {
+      const { surface, actions } = (event as CustomEvent<{ surface: string; actions: { type: string; args?: any }[] }>).detail || {};
+      if (surface !== "studio") return;
+      for (const action of actions || []) {
+        if (action.type === "open_app" && STUDIO_TABS.includes(action.args?.app)) go(action.args.app);
+        else if (action.type === "write_prompt" && typeof action.args?.prompt === "string") patch({ prompt: action.args.prompt.slice(0, 4000) });
+      }
+    };
+    window.addEventListener("juel:page-actions", onActions);
+    const stopReload = onJuelChange(() => void refresh());
+    return () => {
+      stopContext();
+      stopReload();
+      window.removeEventListener("juel:page-actions", onActions);
+    };
+  }, [tab, go, patch, refresh]);
   const busyApps = useMemo(() => new Set(generations.filter((g) => g.status === "queued" || g.status === "running").map((g) => g.tab)), [generations]);
   const send = useCallback((target: AppId, field: string, asset: Asset) => {
     // Results can also open in a tool from the Tools suite (e.g. Magic Edit).

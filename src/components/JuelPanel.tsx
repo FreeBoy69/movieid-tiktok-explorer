@@ -44,6 +44,15 @@ export function provideJuelContext(provider: () => JuelContext) {
 
 const runOnPage = (surface: string, actions: PageAction[]) => window.dispatchEvent(new CustomEvent("juel:page-actions", { detail: { surface, actions } }));
 
+/** Juel finished a turn or ran an approved card, so what the open page shows may be out of date. Pages that
+ *  load their data once pass a reload here. Returns the unsubscribe function. */
+export function onJuelChange(reload: () => void) {
+  const handler = () => reload();
+  window.addEventListener("juel:changed", handler);
+  return () => window.removeEventListener("juel:changed", handler);
+}
+const announceChange = () => window.dispatchEvent(new CustomEvent("juel:changed"));
+
 /** The page's context from the route, when the page itself hasn't announced one. */
 function routeContext(): JuelContext {
   const link = readDeepLink();
@@ -141,7 +150,10 @@ export function JuelPanel({ onClose, embedded = false, headStart }: { onClose?: 
           if (item.type === "step") setLive((l) => (l ? { ...l, steps: [...l.steps, { specialist: item.specialist, text: item.text }] } : l));
           else if (item.type === "card") setLive((l) => (l ? { ...l, cards: [...l.cards, item.card] } : l));
           else if (item.type === "page") runOnPage(item.surface, item.actions);
-          else if (item.type === "done") setThread(item.thread);
+          else if (item.type === "done") {
+            setThread(item.thread);
+            announceChange();
+          }
         }
       }
     } catch (err) {
@@ -163,6 +175,7 @@ export function JuelPanel({ onClose, embedded = false, headStart }: { onClose?: 
       setThread(data.thread);
       // An approved page action runs on the open page now.
       if (approve && card.kind === "page" && card.pageAction) runOnPage(context.surface, [card.pageAction]);
+      else if (approve) announceChange();
     } catch (err) {
       setError(err instanceof Error ? err.message : "That didn't run");
     } finally {

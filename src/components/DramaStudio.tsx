@@ -32,6 +32,7 @@ import { toast } from "../utils/toast";
 import { FILM_FORMATS, formatCount } from "../utils/filmFormats.js";
 import { CinemaLookPanel, FilmHub, filmLink, formatIcon, formatOfRoute, LyricsEditor, SongPanel, SongStart, TempoRow, type BeatGrid, type FilmCinema, type FilmFormatId, type LyricLine, type Song } from "./FilmParts";
 import type { FilmRoute } from "../utils/tiktokRoute";
+import { onJuelChange, provideJuelContext } from "./JuelPanel";
 import "./DramaStudio.css";
 import { confirm as confirmDialog } from "./ui/Dialog";
 import { EmptyState, Segmented, Tabs } from "./ui/controls";
@@ -732,6 +733,35 @@ function SeriesPage({ accountId, id, onError }: { accountId: string; id: string;
       clearTimeout(polling.current);
     };
   }, [id, accountId]);
+
+  // Juel works from this film: it reads the series, can switch this page's tab, and the page reloads
+  // when Juel changes something.
+  const seriesTitle = series?.title || "";
+  useEffect(() => {
+    const tabs = ["episodes", "cast", "locations", "look", "song", "bible"] as const;
+    const stopContext = provideJuelContext(() => ({
+      surface: "film",
+      entityId: id,
+      label: seriesTitle ? `Film: ${seriesTitle}` : "Create Film",
+      details: { tab, accountId },
+      clientTools: { specialist: "film", actions: { open_tab: { args: `{tab: ${tabs.join("|")}}`, about: "Show a tab of this film's page", risk: "change" } } },
+    }));
+    const onActions = (event: Event) => {
+      const { surface, actions } = (event as CustomEvent<{ surface: string; actions: { type: string; args?: any }[] }>).detail || {};
+      if (surface !== "film") return;
+      for (const action of actions || []) if (action.type === "open_tab" && tabs.includes(action.args?.tab)) setTab(action.args.tab);
+    };
+    window.addEventListener("juel:page-actions", onActions);
+    const stopReload = onJuelChange(() => {
+      void load();
+      refreshProduction?.();
+    });
+    return () => {
+      stopContext();
+      stopReload();
+      window.removeEventListener("juel:page-actions", onActions);
+    };
+  }, [id, accountId, tab, seriesTitle]);
 
   async function patch(body: Record<string, unknown>) {
     if (!series) return;

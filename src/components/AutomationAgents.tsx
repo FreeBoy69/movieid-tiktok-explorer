@@ -102,6 +102,7 @@ import {
   type AgentPerformanceReport,
 } from "./AgentStructuredContent";
 import { MovieAnalysisTabs } from "./MovieAnalysisTabs";
+import { onJuelChange, provideJuelContext } from "./JuelPanel";
 import { SourcePicker, type SourceOption } from "./SourcePicker";
 import { SourcePoolUsage } from "./SourcePoolUsage";
 import { scheduleHourFromUtcLabel } from "../utils/automationDecisionPolicy.js";
@@ -168,6 +169,7 @@ const DEFAULT_SETTINGS = {
 };
 
 export type AutomationTab = "chat" | "overview" | "analytics" | "report" | "setup" | "voice" | "compile" | "uploads" | "runs";
+const JUEL_AGENT_TABS: AutomationTab[] = ["overview", "analytics", "report", "setup", "voice", "compile", "uploads", "runs", "chat"];
 type SetupSubTab = "basics" | "source" | "schedule" | "learning" | "comments" | "safety";
 type AgentRunOptions = { stayInChat?: boolean; throwOnError?: boolean };
 
@@ -769,6 +771,48 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
     void loadAll();
     void syncActiveRuns();
   }, [loadAll, syncActiveRuns]);
+
+  // Juel works from the open agent: it reads the agent, can switch this page's tab or open an upload, and
+  // the page reloads when Juel changes something.
+  const selectedAgentId = selectedAgent?.id || "";
+  const selectedAgentName = selectedAgent?.name || "";
+  useEffect(() => {
+    if (!selectedAgentId) return;
+    const stopContext = provideJuelContext(() => ({
+      surface: "automation",
+      entityId: selectedAgentId,
+      label: `Agent: ${selectedAgentName || "automation"}`,
+      details: { tab: activeTab, uploadOpen: selectedUploadId || null },
+      clientTools: {
+        specialist: "automation",
+        actions: {
+          open_tab: { args: `{tab: ${JUEL_AGENT_TABS.join("|")}}`, about: "Show a tab of this agent's page", risk: "change" },
+          open_upload: { args: "{uploadId}", about: "Open one of this agent's uploads", risk: "change" },
+        },
+      },
+    }));
+    const onActions = (event: Event) => {
+      const { surface, actions } = (event as CustomEvent<{ surface: string; actions: { type: string; args?: any }[] }>).detail || {};
+      if (surface !== "automation") return;
+      for (const action of actions || []) {
+        if (action.type === "open_tab" && JUEL_AGENT_TABS.includes(action.args?.tab)) selectAgentTab(action.args.tab);
+        else if (action.type === "open_upload" && action.args?.uploadId) {
+          setActiveTab("uploads");
+          openUploadDetail(String(action.args.uploadId));
+        }
+      }
+    };
+    window.addEventListener("juel:page-actions", onActions);
+    const stopReload = onJuelChange(() => {
+      void loadAll();
+      void loadAgentDetail(selectedAgentId);
+    });
+    return () => {
+      stopContext();
+      stopReload();
+      window.removeEventListener("juel:page-actions", onActions);
+    };
+  }, [activeTab, loadAgentDetail, loadAll, openUploadDetail, selectAgentTab, selectedAgentId, selectedAgentName, selectedUploadId]);
 
   useEffect(() => {
     const timer = window.setInterval(() => void syncActiveRuns(), 3000);
