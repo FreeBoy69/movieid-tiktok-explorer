@@ -82,6 +82,20 @@ const HEAD_WIDE = 168;
 const HEAD_NARROW = 44;
 const narrowQuery = "(max-width: 900px)";
 const HEIGHT_KEY = "vibe-edit-timeline-height";
+/** The tallest the timeline may be in a window this tall: the preview and the
+ * header keep at least 360px, so a height saved on a big screen never squeezes
+ * the picture away on a smaller one. */
+const maxTimelineHeight = (windowH: number) => Math.max(170, windowH - 360);
+
+function useWindowHeight() {
+  const [h, setH] = useState(() => (typeof window === "undefined" ? 900 : window.innerHeight));
+  useEffect(() => {
+    const on = () => setH(window.innerHeight);
+    window.addEventListener("resize", on);
+    return () => window.removeEventListener("resize", on);
+  }, []);
+  return h;
+}
 const DENSITY_KEY = "vibe-edit-track-size";
 const SKIM_KEY = "vibe-edit-skimming";
 
@@ -448,6 +462,7 @@ export function Timeline({ snapping, onToggleSnap, onCollapse }: { snapping: boo
   const magnetic = useVibe((s) => s.magnetic);
   const HEAD = useHeadWidth();
   const narrow = HEAD === HEAD_NARROW;
+  const windowH = useWindowHeight();
   const [height, setHeight] = useState(() => {
     try {
       return Number(window.localStorage.getItem(HEIGHT_KEY)) || 0;
@@ -701,7 +716,7 @@ export function Timeline({ snapping, onToggleSnap, onCollapse }: { snapping: boo
     const startH = (e.currentTarget.parentElement as HTMLElement).getBoundingClientRect().height;
     let last = startH;
     const move = (ev: PointerEvent) => {
-      last = Math.min(window.innerHeight * 0.7, Math.max(170, startH + (startY - ev.clientY)));
+      last = Math.min(maxTimelineHeight(window.innerHeight), Math.max(170, startH + (startY - ev.clientY)));
       setHeight(last);
     };
     const up = () => {
@@ -1101,7 +1116,7 @@ export function Timeline({ snapping, onToggleSnap, onCollapse }: { snapping: boo
   const fitPps = (scroller.current ? scroller.current.clientWidth - HEAD - 48 : 900) / Math.max(1, duration);
   const zoomPct = Math.max(1, Math.round((pps / Math.max(1, fitPps)) * 100));
   const videoH = (DENSITIES.find((d) => d.id === density) || DENSITIES[1]).video;
-  const style: CSSProperties = { ...(height ? { height } : {}), ["--ve-head" as string]: `${HEAD}px` };
+  const style: CSSProperties = { ...(height ? { height: Math.min(height, maxTimelineHeight(windowH)) } : {}), ["--ve-head" as string]: `${HEAD}px` };
 
   // What the middle of the toolbar reports: the selection, or the edit.
   const selSpans = [
