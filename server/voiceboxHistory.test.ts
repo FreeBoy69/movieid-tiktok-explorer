@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { inFlightVoiceGeneration, reusableVoiceGeneration } from "./voiceboxHistory.js";
+import { inFlightVoiceGeneration, reusableVoiceGeneration } from "./voiceOwners.js";
 
 describe("completed Voicebox line reuse", () => {
   const query = { profileId: "voice-a", text: "Hello.", language: "en", instruct: "calm", engine: "qwen", modelSize: "0.6B" };
