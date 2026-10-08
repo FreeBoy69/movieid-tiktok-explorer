@@ -221,6 +221,55 @@ const TICKET_STATUSES = ["open", "pending", "resolved", "closed"];
 const TICKET_PRIORITIES = ["low", "normal", "high", "urgent"];
 const TICKET_CATEGORIES = ["general", "billing", "bug", "account", "feature"];
 
+// ---------- Telegram bridge helpers ----------
+// An admin links their Telegram chat once; every message they send there runs the
+// same agent chat the website runs, signed in as them.
+export const TELEGRAM_TEXT_LIMIT = 4000;
+
+export function telegramChunks(text, limit = TELEGRAM_TEXT_LIMIT) {
+  const chunks = [];
+  let rest = String(text || "").trim();
+  while (rest.length > limit) {
+    const cut = Math.max(rest.lastIndexOf("\n", limit), rest.lastIndexOf(" ", limit));
+    const at = cut > limit / 2 ? cut : limit;
+    chunks.push(rest.slice(0, at).trimEnd());
+    rest = rest.slice(at).trimStart();
+  }
+  if (rest) chunks.push(rest);
+  return chunks.length ? chunks : ["(empty reply)"];
+}
+
+// Website path for the buttons that only navigate: Telegram opens them as links.
+export function telegramActionPath(action = {}, agentSlug = "") {
+  const payload = action.payload || {};
+  if (action.type === "agent_tab") return agentSlug ? `/agent/${encodeURIComponent(agentSlug)}/${payload.tab || "overview"}` : "/agent";
+  if (action.type !== "navigate") return "";
+  const view = String(payload.view || "");
+  if (["projects", "create", "styles"].includes(view) && payload.projectId) return `/projects/${encodeURIComponent(payload.projectId)}/${encodeURIComponent(payload.projectStage || "brief")}`;
+  if (view === "discover" && payload.query) return `/discover?q=${encodeURIComponent(payload.query)}`;
+  if (view === "tiktok") return payload.section === "saved" ? "/tiktok/saved" : "/tiktok";
+  if (view === "automation") return agentSlug ? `/agent/${encodeURIComponent(agentSlug)}/overview` : "/agent";
+  if (view === "tts") return "/studio/audio";
+  if (view === "tools") return "/";
+  return view ? `/${view}` : "";
+}
+
+// The reply as plain text: Telegram can't show the website's HTML reports, so their
+// title, summary and stat cards are folded into the message.
+export function telegramReplyText(data = {}) {
+  const parts = [String(data.reply || "").trim() || "Done."];
+  const presentation = data.presentation && typeof data.presentation === "object" ? data.presentation : null;
+  if (presentation?.title || presentation?.summary) {
+    const summary = String(presentation.summary || "").trim();
+    parts.push([presentation.title ? `📊 ${presentation.title}` : "", summary && summary !== parts[0] ? summary : ""].filter(Boolean).join("\n"));
+  }
+  const cards = (Array.isArray(data.cards) ? data.cards : []).filter((card) => card?.label);
+  if (cards.length) parts.push(cards.map((card) => `• ${card.label}: ${card.value ?? ""}`).join("\n"));
+  const tools = (Array.isArray(data.toolResults) ? data.toolResults : []).filter((tool) => tool?.title && tool?.summary);
+  for (const tool of tools.slice(0, 4)) parts.push(`${tool.error ? "⚠️" : "🔧"} ${tool.title}\n${tool.summary}`);
+  return parts.filter(Boolean).join("\n\n");
+}
+
 export function createAdminConsole(deps) {
   const { runPsql, sqlString, jsonbLiteral } = deps;
   const env = deps.env || process.env;
@@ -664,7 +713,7 @@ WHERE user_id = ${sqlString(user.id)} AND (lingbase_user_id = '' OR lingbase_use
   async function maintenanceMiddleware(req, res, next) {
     try {
       if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") return next();
-      if (/^\/api\/(auth|admin|app)\//.test(req.path) || req.path === "/api/billing/paystack/webhook") return next();
+      if (/^\/api\/(auth|admin|app)\//.test(req.path) || req.path === "/api/billing/paystack/webhook" || req.path === "/api/telegram/webhook") return next();
       const governance = await getSettings("governance");
       if (!governance.maintenanceMode) return next();
       const admin = await resolveAdmin(req).catch(() => null);
@@ -674,6 +723,324 @@ WHERE user_id = ${sqlString(user.id)} AND (lingbase_user_id = '' OR lingbase_use
       next();
     }
   }
+
+  // ---------- telegram ----------
+  // State lives in app_settings under "telegram" (never returned by /api/admin/settings):
+  // the bot token, the webhook secret, pending link codes and the linked chats. Each
+  // link holds an app session for its admin, so messages from that chat call the
+  // website's own routes over loopback and behave exactly like typing on autoyt.cc.
+  const telegramActions = new Map(); // short id -> { chatId, action, agentId, at }
+  const telegramTurns = new Map(); // chatId -> AbortController of the running turn
+  const telegramSeen = new Map(); // update_id -> at, Telegram retries deliveries
+  const fetchImpl = deps.fetch || fetch;
+
+  async function telegramState() {
+    try {
+      return await json(`SELECT COALESCE((SELECT value FROM app_settings WHERE key = 'telegram'), '{}'::jsonb)::text;`, {});
+    } catch {
+      return {};
+    }
+  }
+  async function saveTelegramState(state, by = "telegram") {
+    await runPsql(`
+INSERT INTO app_settings (key, value, updated_by, updated_at) VALUES ('telegram', ${jsonbLiteral(state)}, ${sqlString(by)}, now())
+ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = now();`);
+  }
+  async function updateLink(chatId, patch) {
+    const state = await telegramState();
+    state.links = (state.links || []).map((link) => (String(link.chatId) === String(chatId) ? { ...link, ...patch } : link));
+    await saveTelegramState(state);
+    return state.links.find((link) => String(link.chatId) === String(chatId));
+  }
+  async function tg(token, method, payload = {}) {
+    const response = await fetchImpl(`https://api.telegram.org/bot${token}/${method}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!data.ok) throw adminError(`Telegram ${method}: ${data.description || response.status}`, 502);
+    return data.result;
+  }
+  const appUrlOf = (state) => String(state.appUrl || env.APP_URL || env.PUBLIC_APP_URL || "https://autoyt.cc").replace(/\/+$/, "");
+
+  // Calls one of the app's own routes as the linked admin. A 401 means the stored
+  // session expired (30 days), so mint a fresh one and retry once.
+  async function asUser(link, method, path, { body, raw, contentType, accept, signal } = {}) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const response = await fetchImpl(`${deps.selfUrl()}${path}`, {
+        method,
+        signal,
+        headers: {
+          cookie: `movieid_session=${encodeURIComponent(deps.signedValue(link.sessionId))}`,
+          ...(raw ? { "content-type": contentType || "application/octet-stream" } : body === undefined ? {} : { "content-type": "application/json" }),
+          ...(accept ? { accept } : {}),
+        },
+        body: raw || (body === undefined ? undefined : JSON.stringify(body)),
+      });
+      if (response.status !== 401 || attempt) return response;
+      link.sessionId = await deps.createAuthSession(link.userId);
+      await updateLink(link.chatId, { sessionId: link.sessionId });
+    }
+  }
+  async function asUserJson(link, method, path, options) {
+    const response = await asUser(link, method, path, options);
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw adminError(data.error || `Request failed (${response.status})`, response.status);
+    return data;
+  }
+
+  function rememberAction(chatId, agentId, action) {
+    const now = Date.now();
+    for (const [key, value] of telegramActions) if (now - value.at > 24 * 3600 * 1000) telegramActions.delete(key);
+    const id = crypto.randomBytes(6).toString("hex");
+    telegramActions.set(id, { chatId: String(chatId), agentId, action, at: now });
+    return id;
+  }
+  function keyboardFor(state, link, agent, actions = [], { openChat = false } = {}) {
+    const rows = [];
+    for (const action of actions.slice(0, 8)) {
+      const path = telegramActionPath(action, agent.slug || agent.id);
+      rows.push([path ? { text: action.label, url: `${appUrlOf(state)}${path}` } : { text: action.label, callback_data: `a:${rememberAction(link.chatId, agent.id, action)}` }]);
+    }
+    if (openChat) rows.push([{ text: "Open full report on AutoYT", url: `${appUrlOf(state)}/agent/${encodeURIComponent(agent.slug || agent.id)}/chat` }]);
+    return rows.length ? { inline_keyboard: rows } : undefined;
+  }
+  async function sendText(state, chatId, text, replyMarkup) {
+    const chunks = telegramChunks(text);
+    for (let i = 0; i < chunks.length; i++)
+      await tg(state.botToken, "sendMessage", { chat_id: chatId, text: chunks[i], disable_web_page_preview: true, ...(i === chunks.length - 1 && replyMarkup ? { reply_markup: replyMarkup } : {}) });
+  }
+
+  async function currentAgent(state, link) {
+    const { agents = [] } = await asUserJson(link, "GET", "/api/automation/agents");
+    const agent = agents.find((item) => item.id === link.agentId) || agents[0] || null;
+    if (agent && agent.id !== link.agentId) {
+      link.agentId = agent.id;
+      link.conversationId = "";
+      await updateLink(link.chatId, { agentId: agent.id, conversationId: "" });
+    }
+    return { agent, agents };
+  }
+  async function appendToChat(link, agent, messages) {
+    const { chats = [] } = await asUserJson(link, "GET", `/api/automation/agents/${encodeURIComponent(agent.id)}/chats`);
+    const stored = chats.find((chat) => chat.id === link.conversationId);
+    const thread = [...(stored?.messages || []), ...messages];
+    await asUserJson(link, "PUT", `/api/automation/agents/${encodeURIComponent(agent.id)}/chats/${encodeURIComponent(link.conversationId)}`, { body: { title: stored?.title || "", messages: thread } });
+    return thread;
+  }
+  const messageId = () => `tg_${crypto.randomBytes(8).toString("hex")}`;
+
+  // One chat turn: the same request the website's chat box sends, with its progress
+  // lines shown by editing a status message, then the reply saved to the agent's chat
+  // history so it also appears on autoyt.cc.
+  async function telegramTurn(state, link, text) {
+    const chatId = link.chatId;
+    if (telegramTurns.has(String(chatId))) return sendText(state, chatId, "I'm still working on your last message. Send /stop to cancel it.");
+    const controller = new AbortController();
+    telegramTurns.set(String(chatId), controller);
+    let statusId = null;
+    const typing = setInterval(() => tg(state.botToken, "sendChatAction", { chat_id: chatId, action: "typing" }).catch(() => {}), 4500);
+    try {
+      const { agent } = await currentAgent(state, link);
+      if (!agent) return await sendText(state, chatId, "You don't have an agent yet. Create one on AutoYT first, then message me again.", { inline_keyboard: [[{ text: "Create an agent", url: `${appUrlOf(state)}/agent` }]] });
+      if (!link.conversationId) {
+        link.conversationId = messageId();
+        await updateLink(chatId, { conversationId: link.conversationId });
+      }
+      void tg(state.botToken, "sendChatAction", { chat_id: chatId, action: "typing" }).catch(() => {});
+      const userMessage = { id: messageId(), role: "user", content: text, timestamp: Date.now() };
+      const thread = await appendToChat(link, agent, [userMessage]);
+      statusId = (await tg(state.botToken, "sendMessage", { chat_id: chatId, text: `⏳ ${agent.name}: working…` }).catch(() => null))?.message_id || null;
+      const response = await asUser(link, "POST", `/api/automation/agents/${encodeURIComponent(agent.id)}/chat`, {
+        accept: "application/x-ndjson",
+        signal: controller.signal,
+        body: { conversationId: link.conversationId, messages: thread.slice(-16).map(({ role, content }) => ({ role, content })) },
+      });
+      let data = null;
+      if (!(response.headers.get("content-type") || "").includes("ndjson")) {
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) throw adminError(body.error || `The agent failed (${response.status})`, response.status);
+        data = body;
+      } else {
+        let buffer = "";
+        let editedAt = 0;
+        const decoder = new TextDecoder();
+        for await (const chunk of response.body) {
+          buffer += decoder.decode(chunk, { stream: true });
+          let newline;
+          while ((newline = buffer.indexOf("\n")) >= 0) {
+            const line = buffer.slice(0, newline).trim();
+            buffer = buffer.slice(newline + 1);
+            if (!line) continue;
+            const event = JSON.parse(line);
+            if (event.type === "error") throw adminError(event.error || "The agent failed.", 503);
+            if (event.type === "result") data = event.data;
+            if (event.type === "progress" && statusId && Date.now() - editedAt > 1500) {
+              editedAt = Date.now();
+              void tg(state.botToken, "editMessageText", { chat_id: chatId, message_id: statusId, text: `⏳ ${event.message}…` }).catch(() => {});
+            }
+          }
+        }
+      }
+      if (!data) throw adminError("The agent stopped before answering.", 503);
+      const reply = String(data.reply || "").replace(/\n\nNot applied: [\s\S]*$/, "").trim() || String(data.reply || "");
+      await appendToChat(link, agent, [{
+        id: messageId(), role: "assistant", content: reply, timestamp: Date.now(),
+        format: data.format === "report" ? "report" : "text", html: data.html || "", cards: data.cards, presentation: data.presentation,
+        actions: data.actions, blocks: data.blocks, applied: data.applied, unapplied: data.unapplied, engine: data.engine,
+      }]).catch((error) => console.warn("[telegram] could not save the reply to chat history:", error instanceof Error ? error.message : error));
+      if (statusId) await tg(state.botToken, "deleteMessage", { chat_id: chatId, message_id: statusId }).catch(() => {});
+      statusId = null;
+      await sendText(state, chatId, telegramReplyText(data), keyboardFor(state, link, agent, data.actions || [], { openChat: Boolean(data.html) }));
+    } catch (error) {
+      const stopped = controller.signal.aborted;
+      const message = stopped ? "Stopped." : error instanceof Error ? error.message : "Something went wrong.";
+      if (statusId) await tg(state.botToken, "editMessageText", { chat_id: chatId, message_id: statusId, text: stopped ? "⏹ Stopped." : `⚠️ ${message}` }).catch(() => sendText(state, chatId, `⚠️ ${message}`));
+      else await sendText(state, chatId, stopped ? "⏹ Stopped." : `⚠️ ${message}`).catch(() => {});
+    } finally {
+      clearInterval(typing);
+      telegramTurns.delete(String(chatId));
+    }
+  }
+
+  // A tapped button does what clicking it in the website chat does.
+  async function telegramButton(state, link, entry) {
+    const { action, agentId } = entry;
+    const { agents = [] } = await asUserJson(link, "GET", "/api/automation/agents");
+    const agent = agents.find((item) => item.id === agentId);
+    if (!agent) return sendText(state, link.chatId, "That agent no longer exists.");
+    if (action.type === "internal_tool") {
+      const payload = action.payload || {};
+      return telegramTurn(state, link, `Run ${payload.tool || action.label} internally${payload.query ? ` for ${payload.query}` : ""}${payload.url ? ` ${payload.url}` : ""}`);
+    }
+    const base = `/api/automation/agents/${encodeURIComponent(agent.id)}`;
+    let note = "";
+    if (action.type === "run_candidate") {
+      await asUserJson(link, "POST", `${base}/run`, { body: {} });
+      note = "Candidate run started through the normal automation pipeline.";
+    } else if (action.type === "stop_candidate") {
+      await asUserJson(link, "POST", `${base}/stop`, { body: {} });
+      note = "Stop requested. The candidate will exit after its current safe step, before publishing begins.";
+    } else if (action.type === "run_compilation") {
+      const s = agent.settings || {};
+      const queued = await asUserJson(link, "POST", `${base}/run-compilation`, { body: {
+        minMinutes: s.compilationMinMinutes, maxMinutes: s.compilationMaxMinutes, maxClips: s.compilationMaxClips,
+        title: s.compilationTitle, description: s.compilationDescription, layout: s.compilationLayout,
+        playlistId: s.targetPlaylistMode === "existing" ? s.targetPlaylistId : "",
+        createPlaylistTitle: s.targetPlaylistMode === "create" ? s.targetPlaylistTitle : "",
+        categoryId: s.categoryId, madeForKids: s.madeForKids === true,
+      } });
+      const jobId = String(queued.job?.id || "");
+      note = `Compilation queued${jobId ? ` as ${jobId.slice(0, 8)}` : ""}. It will continue in the background.`;
+    } else if (action.type === "performance_check") {
+      const result = await asUserJson(link, "POST", "/api/automation/performance/check", { body: {} });
+      const n = Number(result.refreshed || 0);
+      note = `Refreshed ${n} upload${n === 1 ? "" : "s"} from the connected platforms${Number(result.failed || 0) ? `; ${result.failed} could not be refreshed` : ""}.`;
+    } else if (action.type === "creator_stage") {
+      // Tapping is the approval for paid media work, same as the website button.
+      const { projectId, projectStage, mediaAction } = action.payload || {};
+      await asUserJson(link, "POST", `/api/maker/projects/${encodeURIComponent(projectId)}/jobs/${encodeURIComponent(projectStage)}`, { body: { confirmed: true, accountId: agent.youtubeAccountId, ...(mediaAction ? { action: mediaAction } : {}) } });
+      note = `${String(action.label).replace(/^Approve\s+/i, "")} is queued. It isn't finished yet; ask me for project status.`;
+    } else {
+      note = "Refreshed.";
+    }
+    if (link.conversationId && agent.id === link.agentId)
+      await appendToChat(link, agent, [{ id: messageId(), role: "assistant", content: note, timestamp: Date.now() }]).catch(() => {});
+    await sendText(state, link.chatId, `✅ ${note}`);
+  }
+
+  async function telegramVoice(state, link, fileId) {
+    const file = await tg(state.botToken, "getFile", { file_id: fileId });
+    const audio = await fetchImpl(`https://api.telegram.org/file/bot${state.botToken}/${file.file_path}`);
+    if (!audio.ok) throw adminError("Couldn't download the voice note from Telegram.", 502);
+    const { text } = await asUserJson(link, "POST", "/api/automation/agents/chat/transcribe", { raw: Buffer.from(await audio.arrayBuffer()), contentType: "audio/ogg" });
+    await sendText(state, link.chatId, `🎙 “${text}”`);
+    return telegramTurn(state, link, text);
+  }
+
+  async function telegramUpdate(update) {
+    const state = await telegramState();
+    if (!state.botToken) return;
+    const message = update.message;
+    const callback = update.callback_query;
+    const chat = message?.chat || callback?.message?.chat;
+    if (!chat || chat.type !== "private") return;
+    const chatId = chat.id;
+    let link = (state.links || []).find((item) => String(item.chatId) === String(chatId));
+    const text = String(message?.text || "").trim();
+
+    if (/^\/start\s+\S+/.test(text)) {
+      const code = text.split(/\s+/)[1];
+      const pending = (state.codes || []).find((item) => item.code === code && item.expiresAt > Date.now());
+      if (!pending) return sendText(state, chatId, "That link has expired. Open the admin console and press Link Telegram again.");
+      const sessionId = await deps.createAuthSession(pending.userId);
+      const from = message.from || {};
+      link = { chatId, userId: pending.userId, email: pending.email, name: pending.name || "", telegramName: [from.first_name, from.last_name].filter(Boolean).join(" ") || from.username || "", sessionId, agentId: "", conversationId: "", linkedAt: new Date().toISOString() };
+      state.links = [...(state.links || []).filter((item) => String(item.chatId) !== String(chatId)), link];
+      state.codes = (state.codes || []).filter((item) => item.code !== code);
+      await saveTelegramState(state, pending.email);
+      return sendText(state, chatId, `Linked to ${pending.email}. Message me anything you'd type in the AutoYT agent chat. Voice notes work too.\n\n/agents switch agent · /new fresh chat · /stop cancel · /help`);
+    }
+    if (!link) return sendText(state, chatId, "This is a private AutoYT bot. An admin links it from the AutoYT admin console.");
+    // Losing admin access unlinks the chat.
+    if (!(await adminRole(link.email))) return sendText(state, chatId, "This account no longer has admin access, so the bot is disabled for it.");
+
+    if (callback) {
+      void tg(state.botToken, "answerCallbackQuery", { callback_query_id: callback.id }).catch(() => {});
+      const [kind, id] = String(callback.data || "").split(":");
+      const entry = telegramActions.get(id);
+      if (!entry || entry.chatId !== String(chatId)) return sendText(state, chatId, "That button has expired. Ask me again.");
+      if (kind === "u") {
+        await updateLink(chatId, { agentId: entry.agentId, conversationId: "" });
+        return sendText(state, chatId, `Now talking to ${entry.action.label}. New chat started.`);
+      }
+      return telegramButton(state, link, entry);
+    }
+    if (message?.voice || message?.audio) return telegramVoice(state, link, (message.voice || message.audio).file_id);
+    if (!text) return sendText(state, chatId, "Send text or a voice note.");
+    if (/^\/(start|help)\b/.test(text))
+      return sendText(state, chatId, "Message me anything you'd type in the AutoYT agent chat: reports, settings changes, runs, research.\n\n/agents switch agent\n/new start a fresh chat\n/stop cancel the running reply");
+    if (/^\/stop\b/.test(text)) {
+      const running = telegramTurns.get(String(chatId));
+      if (!running) return sendText(state, chatId, "Nothing is running.");
+      return running.abort();
+    }
+    if (/^\/new\b/.test(text)) {
+      await updateLink(chatId, { conversationId: "" });
+      return sendText(state, chatId, "Started a new chat.");
+    }
+    if (/^\/agents\b/.test(text)) {
+      const { agent, agents } = await currentAgent(state, link);
+      if (!agents.length) return sendText(state, chatId, "You don't have any agents yet.");
+      return sendText(state, chatId, `Talking to ${agent?.name || "—"}. Pick another:`, {
+        inline_keyboard: agents.slice(0, 20).map((item) => [{ text: `${item.id === agent?.id ? "✓ " : ""}${item.name}`, callback_data: `u:${rememberAction(chatId, item.id, { label: item.name })}` }]),
+      });
+    }
+    return telegramTurn(state, link, text);
+  }
+
+  function telegramWebhook(req, res) {
+    res.sendStatus(200);
+    void (async () => {
+      const state = await telegramState();
+      const secret = String(req.get("x-telegram-bot-api-secret-token") || "");
+      if (!state.webhookSecret || secret.length !== state.webhookSecret.length || !crypto.timingSafeEqual(Buffer.from(secret), Buffer.from(state.webhookSecret))) return;
+      const updateId = Number(req.body?.update_id);
+      const now = Date.now();
+      for (const [key, at] of telegramSeen) if (now - at > 3600 * 1000) telegramSeen.delete(key);
+      if (telegramSeen.has(updateId)) return;
+      telegramSeen.set(updateId, now);
+      await telegramUpdate(req.body || {});
+    })().catch((error) => console.warn("[telegram] update failed:", error instanceof Error ? error.message : error));
+  }
+
+  const publicTelegram = (state, admin) => ({
+    connected: Boolean(state.botToken),
+    botUsername: state.botUsername || "",
+    botName: state.botName || "",
+    links: (state.links || []).map((link) => ({ chatId: String(link.chatId), email: link.email, name: link.name, telegramName: link.telegramName, linkedAt: link.linkedAt, mine: link.userId === admin.id })),
+  });
 
   // ---------- routes ----------
   function adminRoute(permission, handler) {
@@ -1661,6 +2028,58 @@ FROM creator_stage_jobs j LEFT JOIN app_users u ON u.id = j.user_id LEFT JOIN cr
         list(`SELECT id, action, target_type AS "targetType", target_id AS "targetId", detail, created_at AS "createdAt" FROM admin_audit_log WHERE admin_email = ${sqlString(email)} ORDER BY created_at DESC LIMIT 40`),
       ]);
       res.json({ email, role: role || member?.role || "", source: owners().has(email) ? "ADMIN_EMAILS" : "team", member, user, stats, byAction, recent });
+    }));
+
+    // ----- admin: telegram -----
+    app.post("/api/telegram/webhook", telegramWebhook);
+    app.get("/api/admin/telegram", adminRoute("view", async (_req, res, admin) => {
+      res.json(publicTelegram(await telegramState(), admin));
+    }));
+    app.put("/api/admin/telegram", adminRoute("settings.manage", async (req, res, admin) => {
+      const botToken = String(req.body?.botToken || "").trim();
+      if (!/^\d{5,}:[A-Za-z0-9_-]{30,}$/.test(botToken)) throw adminError("That doesn't look like a bot token. Copy the whole token BotFather gave you.");
+      const me = await tg(botToken, "getMe");
+      const previous = await telegramState();
+      const appUrl = String(env.APP_URL || env.PUBLIC_APP_URL || `${req.protocol}://${req.get("host")}`).replace(/\/+$/, "");
+      const webhookSecret = crypto.randomBytes(24).toString("hex");
+      await tg(botToken, "setWebhook", { url: `${appUrl}/api/telegram/webhook`, secret_token: webhookSecret, allowed_updates: ["message", "callback_query"], drop_pending_updates: true });
+      await tg(botToken, "setMyCommands", { commands: [
+        { command: "agents", description: "Switch agent" },
+        { command: "new", description: "Start a fresh chat" },
+        { command: "stop", description: "Cancel the running reply" },
+        { command: "help", description: "What I can do" },
+      ] }).catch(() => {});
+      const sameBot = previous.botUsername === me.username;
+      const state = { botToken, botUsername: me.username, botName: me.first_name || "", webhookSecret, appUrl, links: sameBot ? previous.links || [] : [], codes: [] };
+      await saveTelegramState(state, admin.email);
+      await audit(admin, "telegram.connect", "settings", "telegram", { bot: me.username }, req);
+      res.json(publicTelegram(state, admin));
+    }));
+    app.delete("/api/admin/telegram", adminRoute("settings.manage", async (req, res, admin) => {
+      const state = await telegramState();
+      if (state.botToken) await tg(state.botToken, "deleteWebhook", { drop_pending_updates: true }).catch(() => {});
+      await saveTelegramState({}, admin.email);
+      await audit(admin, "telegram.disconnect", "settings", "telegram", { bot: state.botUsername || "" }, req);
+      res.json(publicTelegram({}, admin));
+    }));
+    app.post("/api/admin/telegram/link", adminRoute("settings.manage", async (req, res, admin) => {
+      const state = await telegramState();
+      if (!state.botToken) throw adminError("Connect a bot first.");
+      const code = crypto.randomBytes(12).toString("hex");
+      state.codes = [...(state.codes || []).filter((item) => item.expiresAt > Date.now() && item.userId !== admin.id), { code, userId: admin.id, email: admin.email, name: admin.name || "", expiresAt: Date.now() + 15 * 60 * 1000 }];
+      await saveTelegramState(state, admin.email);
+      res.json({ url: `https://t.me/${state.botUsername}?start=${code}`, expiresInMinutes: 15 });
+    }));
+    app.delete("/api/admin/telegram/links/:chatId", adminRoute("settings.manage", async (req, res, admin) => {
+      const state = await telegramState();
+      const removed = (state.links || []).find((link) => String(link.chatId) === String(req.params.chatId));
+      state.links = (state.links || []).filter((link) => link !== removed);
+      await saveTelegramState(state, admin.email);
+      if (removed) {
+        await audit(admin, "telegram.unlink", "user", removed.userId, { email: removed.email }, req);
+        await tg(state.botToken, "sendMessage", { chat_id: removed.chatId, text: "This chat was unlinked from AutoYT." }).catch(() => {});
+      }
+      res.json(publicTelegram(state, admin));
     }));
 
     // ----- admin: system -----

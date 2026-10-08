@@ -2,7 +2,7 @@
 import http from "node:http";
 import express from "express";
 import { afterEach, describe, expect, it } from "vitest";
-import { createAdminConsole, DEFAULT_SETTINGS, featureFromRequest, normalizeSettings, parseAdminEmails, planEconomics, planPrice, priceUsage, roleCan } from "./adminConsole.js";
+import { createAdminConsole, DEFAULT_SETTINGS, telegramActionPath, telegramChunks, telegramReplyText, featureFromRequest, normalizeSettings, parseAdminEmails, planEconomics, planPrice, priceUsage, roleCan } from "./adminConsole.js";
 import { catalogEntry, matchModel, resolveModelRate } from "./providerPrices.js";
 import { guardUsage, installUsageHandlers, meterUsage, runWithUsageContext, UsageBlockedError, withUsageUser } from "../src/utils/usageMeter.js";
 
@@ -216,5 +216,112 @@ describe("admin routes", () => {
     });
     expect(response.status).toBe(410);
     expect(await response.json()).toMatchObject({ error: expect.stringContaining("LingBase") });
+  });
+});
+
+describe("telegram bridge", () => {
+  it("splits long replies on line breaks and maps navigation buttons to website paths", () => {
+    const chunks = telegramChunks(`${"a".repeat(30)}\n${"b".repeat(30)}`, 40);
+    expect(chunks).toEqual(["a".repeat(30), "b".repeat(30)]);
+    expect(telegramActionPath({ type: "agent_tab", payload: { tab: "runs" } }, "recaps")).toBe("/agent/recaps/runs");
+    expect(telegramActionPath({ type: "navigate", payload: { view: "projects", projectId: "prj_1", projectStage: "script" } })).toBe("/projects/prj_1/script");
+    expect(telegramActionPath({ type: "run_candidate", payload: {} })).toBe("");
+    expect(telegramReplyText({ reply: "Views are up.", presentation: { title: "Weekly", summary: "Up 20%" }, cards: [{ label: "30d views", value: "12K" }] }))
+      .toBe("Views are up.\n\n📊 Weekly\nUp 20%\n\n• 30d views: 12K");
+  });
+
+  let server: http.Server | null = null;
+  afterEach(() => {
+    server?.close();
+    server = null;
+  });
+  const until = async (check: () => unknown) => {
+    for (let i = 0; i < 100 && !check(); i++) await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(check()).toBeTruthy();
+  };
+
+  it("links an admin's chat and runs their messages through the website's agent chat", async () => {
+    const settings = new Map<string, string>();
+    const runPsql = async (sql: string) => {
+      const write = sql.match(/INSERT INTO app_settings \(key, value, updated_by, updated_at\) VALUES \('telegram', '(.*)'::jsonb/s);
+      if (write) settings.set("telegram", write[1]);
+      if (sql.includes("WHERE key = 'telegram'")) return settings.get("telegram") || "{}";
+      return "";
+    };
+    const sent: Array<{ method: string; body: any }> = [];
+    let botMessage = 0;
+    const fakeFetch = async (url: string, init: any = {}) => {
+      if (!String(url).startsWith("https://api.telegram.org/")) return fetch(url, init);
+      const method = String(url).split("/").pop()!;
+      const body = init.body ? JSON.parse(init.body) : {};
+      sent.push({ method, body });
+      const result = method === "getMe" ? { username: "autoyt_bot", first_name: "AutoYT" } : method === "sendMessage" ? { message_id: ++botMessage } : true;
+      return new Response(JSON.stringify({ ok: true, result }));
+    };
+    const saved: any[] = [];
+    let chatCookie = "";
+    const app = express();
+    const admin = createAdminConsole({
+      runPsql, sqlString: (v: unknown) => `'${String(v ?? "").replace(/'/g, "''")}'`, jsonbLiteral: (v: unknown) => `'${JSON.stringify(v)}'::jsonb`,
+      session: async (req: express.Request) => (req.get("x-user") ? { id: "ses_1", user: { id: "usr_1", email: "owner@example.com", name: "Owner" } } : null),
+      env: { ADMIN_EMAILS: "owner@example.com", APP_URL: "https://autoyt.test" }, priceCatalog: null, fetch: fakeFetch,
+      createAuthSession: async () => "ses_tg", signedValue: (v: string) => `signed.${v}`, selfUrl: () => base,
+    });
+    app.use(express.json());
+    admin.register(app);
+    app.get("/api/automation/agents", (_req, res) => res.json({ agents: [{ id: "agt_1", slug: "recaps", name: "Recaps", settings: {} }] }));
+    app.get("/api/automation/agents/:id/chats", (_req, res) => res.json({ chats: saved.length ? [saved[saved.length - 1]] : [] }));
+    app.put("/api/automation/agents/:id/chats/:chatId", (req, res) => {
+      saved.push({ id: req.params.chatId, ...req.body });
+      res.json({ chat: req.body });
+    });
+    app.post("/api/automation/agents/:id/chat", (req, res) => {
+      chatCookie = String(req.headers.cookie || "");
+      res.setHeader("Content-Type", "application/x-ndjson");
+      res.write(`${JSON.stringify({ type: "progress", message: "Reading agent context" })}\n`);
+      res.end(`${JSON.stringify({ type: "result", data: { reply: `You said: ${req.body.messages.at(-1).content}`, actions: [{ type: "run_candidate", label: "Run candidate", payload: {} }, { type: "agent_tab", label: "Open runs", payload: { tab: "runs" } }] } })}\n`);
+    });
+    server = http.createServer(app).listen(0);
+    await new Promise((resolve) => server!.once("listening", resolve));
+    const base = `http://127.0.0.1:${(server!.address() as { port: number }).port}`;
+    const asAdmin = { "x-user": "1", "x-admin-request": "1", "content-type": "application/json" };
+
+    const connected = await fetch(`${base}/api/admin/telegram`, { method: "PUT", headers: asAdmin, body: JSON.stringify({ botToken: `123456:${"A".repeat(35)}` }) });
+    expect(await connected.json()).toMatchObject({ connected: true, botUsername: "autoyt_bot", links: [] });
+    const webhook = sent.find((call) => call.method === "setWebhook")!.body;
+    expect(webhook.url).toBe("https://autoyt.test/api/telegram/webhook");
+    const { url } = await (await fetch(`${base}/api/admin/telegram/link`, { method: "POST", headers: asAdmin })).json();
+    const code = url.split("start=")[1];
+    const post = (update: unknown, secret = webhook.secret_token) => fetch(`${base}/api/telegram/webhook`, { method: "POST", headers: { "content-type": "application/json", "x-telegram-bot-api-secret-token": secret }, body: JSON.stringify(update) });
+    const chat = { id: 42, type: "private" };
+
+    await post({ update_id: 1, message: { chat: { id: 7, type: "private" }, text: "hi" } }, "wrong-secret");
+    await post({ update_id: 2, message: { chat: { id: 7, type: "private" }, text: "hi" } });
+    await until(() => sent.some((call) => call.method === "sendMessage" && call.body.chat_id === 7));
+    expect(sent.find((call) => call.body.chat_id === 7)!.body.text).toContain("private AutoYT bot");
+
+    await post({ update_id: 3, message: { chat, from: { first_name: "Wei" }, text: `/start ${code}` } });
+    await until(() => sent.some((call) => String(call.body.text || "").startsWith("Linked to owner@example.com")));
+
+    await post({ update_id: 4, message: { chat, text: "how are my views" } });
+    await until(() => sent.some((call) => String(call.body.text || "").startsWith("You said: how are my views")));
+    const reply = sent.find((call) => String(call.body.text || "").startsWith("You said:"))!.body;
+    expect(reply.reply_markup.inline_keyboard).toEqual([
+      [{ text: "Run candidate", callback_data: expect.stringMatching(/^a:[0-9a-f]{12}$/) }],
+      [{ text: "Open runs", url: "https://autoyt.test/agent/recaps/runs" }],
+    ]);
+    expect(chatCookie).toBe("movieid_session=signed.ses_tg");
+    await until(() => saved.at(-1)?.messages?.length === 2);
+    expect(saved.at(-1).messages.map((m: any) => [m.role, m.content])).toEqual([["user", "how are my views"], ["assistant", "You said: how are my views"]]);
+
+    // A repeated delivery of the same update is ignored.
+    await post({ update_id: 4, message: { chat, text: "how are my views" } });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(sent.filter((call) => String(call.body.text || "").startsWith("You said:"))).toHaveLength(1);
+
+    const status = await (await fetch(`${base}/api/admin/telegram`, { headers: asAdmin })).json();
+    expect(status.links).toEqual([expect.objectContaining({ chatId: "42", email: "owner@example.com", telegramName: "Wei", mine: true })]);
+    expect(JSON.stringify(status)).not.toContain("ses_tg");
+    expect(JSON.stringify(status)).not.toContain("AAAA");
   });
 });

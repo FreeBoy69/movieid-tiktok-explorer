@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { adminFetch, can } from "../api";
+import { adminFetch, can, fmt } from "../api";
 import { toast } from "../../utils/toast";
 import { Button, Card, cx, Field, Guarded, Modal, Page, Toggle, useAdminQuery } from "../ui";
 import type { PageProps } from "../AdminApp";
@@ -30,6 +30,7 @@ export function GovernancePage({ admin }: PageProps) {
       <Guarded query={query} label="Loading settings">
         {({ governance, providers }) => <GovernanceForm initial={governance} providers={providers} canEdit={can(admin, "settings.manage")} onSaved={query.reload} />}
       </Guarded>
+      <TelegramCard canEdit={can(admin, "settings.manage")} />
     </Page>
   );
 }
@@ -153,5 +154,91 @@ function ModelList({ models, onChange }: { models: string[]; onChange: (models: 
         <Button size="sm" disabled={!value.trim()} onClick={add}>Turn off</Button>
       </div>
     </div>
+  );
+}
+
+type TelegramStatus = {
+  connected: boolean;
+  botUsername: string;
+  botName: string;
+  links: Array<{ chatId: string; email: string; name: string; telegramName: string; linkedAt: string; mine: boolean }>;
+};
+
+// Telegram bridge: a linked admin's messages to the bot run the same agent chat as
+// the website, signed in as that admin.
+function TelegramCard({ canEdit }: { canEdit: boolean }) {
+  const query = useAdminQuery<TelegramStatus>("/api/admin/telegram");
+  const [token, setToken] = useState("");
+  const [busy, setBusy] = useState("");
+  const run = async (key: string, task: () => Promise<void>) => {
+    setBusy(key);
+    try {
+      await task();
+    } catch (error) {
+      toast.error(error);
+    } finally {
+      setBusy("");
+    }
+  };
+  const connect = () => run("connect", async () => {
+    await adminFetch("/api/admin/telegram", { method: "PUT", body: { botToken: token.trim() } });
+    setToken("");
+    toast.success("Bot connected. Now link your Telegram.");
+    query.reload();
+  });
+  const link = () => run("link", async () => {
+    // Open the tab inside the click so pop-up blockers allow it, then point it at the bot.
+    const tab = window.open("", "_blank");
+    try {
+      const { url } = await adminFetch<{ url: string }>("/api/admin/telegram/link", { method: "POST" });
+      if (tab) tab.location.href = url;
+      else window.location.href = url;
+      toast.success("Press Start in Telegram to finish linking.");
+    } catch (error) {
+      tab?.close();
+      throw error;
+    }
+  });
+  return (
+    <Card title="Telegram" action={<Button size="sm" variant="ghost" onClick={query.reload}>Refresh</Button>}>
+      <Guarded query={query} label="Loading Telegram">
+        {(status) => status.connected ? (
+          <div className="adm-stack">
+            <p className="adm-help">
+              Message <a className="adm-link" href={`https://t.me/${status.botUsername}`} target="_blank" rel="noreferrer">@{status.botUsername}</a> anything you'd type in the agent chat on AutoYT: reports, settings changes, runs, research. Voice notes work too. The bot acts as the linked admin's account, so only link your own Telegram.
+            </p>
+            {status.links.length ? (
+              <ul className="adm-list is-dense">
+                {status.links.map((item) => (
+                  <li key={item.chatId}>
+                    <span className="adm-list-main"><span>{item.email}{item.mine ? " (you)" : ""}</span><small>{item.telegramName ? `Telegram: ${item.telegramName} · ` : ""}linked {fmt.ago(item.linkedAt).toLowerCase()}</small></span>
+                    <Button size="sm" variant="ghost" disabled={!canEdit} loading={busy === item.chatId} onClick={() => run(item.chatId, async () => {
+                      await adminFetch(`/api/admin/telegram/links/${encodeURIComponent(item.chatId)}`, { method: "DELETE" });
+                      query.reload();
+                    })}>Unlink</Button>
+                  </li>
+                ))}
+              </ul>
+            ) : <p className="adm-muted">No Telegram chats are linked yet.</p>}
+            <div className="adm-inline">
+              <Button variant="primary" disabled={!canEdit} loading={busy === "link"} onClick={link}>{status.links.some((item) => item.mine) ? "Link again" : "Link my Telegram"}</Button>
+              <Button variant="ghost" disabled={!canEdit} loading={busy === "disconnect"} onClick={() => run("disconnect", async () => {
+                if (!window.confirm(`Disconnect @${status.botUsername}? Every linked chat stops working.`)) return;
+                await adminFetch("/api/admin/telegram", { method: "DELETE" });
+                query.reload();
+              })}>Disconnect bot</Button>
+            </div>
+          </div>
+        ) : (
+          <div className="adm-stack">
+            <p className="adm-help">Talk to your agent from Telegram. In Telegram, message <a className="adm-link" href="https://t.me/BotFather" target="_blank" rel="noreferrer">@BotFather</a>, send /newbot, pick a name, then paste the token it gives you here.</p>
+            <div className="adm-inline-form">
+              <input className="adm-input" type="password" autoComplete="off" value={token} onChange={(e) => setToken(e.target.value)} onKeyDown={(e) => e.key === "Enter" && token.trim() && void connect()} placeholder="123456789:AA…" aria-label="Bot token from BotFather" disabled={!canEdit} />
+              <Button variant="primary" disabled={!canEdit || !token.trim()} loading={busy === "connect"} onClick={connect}>Connect bot</Button>
+            </div>
+          </div>
+        )}
+      </Guarded>
+    </Card>
   );
 }

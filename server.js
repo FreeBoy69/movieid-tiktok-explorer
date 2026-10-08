@@ -21590,6 +21590,8 @@ async function startServer() {
     adminConsole = createAdminConsole({
         runPsql, sqlString, jsonbLiteral,
         session: getSessionRecordUnchecked,
+        // Telegram bridge: replays a linked admin's messages through the app's own routes.
+        createAuthSession, signedValue, selfUrl: () => `http://127.0.0.1:${PORT}`,
         systemStatus: async () => ({
             reach: await cachedReachDoctor(),
             mediaWorker: remoteMediaStatus(),
