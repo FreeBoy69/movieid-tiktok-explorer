@@ -1,25 +1,48 @@
 // Juel: the one AutoYT agent, from the header anywhere in the app (or ⌘J). It knows the page you're on
 // (pages with an open item announce it with a "juel:context" event), streams what its specialists do,
 // and shows paid, publish, and delete actions as cards that run only when approved.
-import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { FormEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ArrowUp, Check, Loader2, Plus, Sparkles, X } from "lucide-react";
 import { readDeepLink } from "../utils/tiktokRoute";
 import "./JuelPanel.css";
 
-type Card = { id: string; specialist: string; method: string; path: string; route: string; risk: string; does: string; why: string; status: "pending" | "running" | "done" | "failed" | "declined"; result?: string };
+type PageAction = { type: string; args: Record<string, unknown> };
+type Card = { id: string; kind?: "page"; specialist: string; method?: string; path?: string; route?: string; pageAction?: PageAction; risk: string; does: string; why: string; status: "pending" | "running" | "done" | "failed" | "declined"; result?: string };
 type Step = { specialist: string; text: string };
-type Message = { role: "user" | "assistant"; content: string; steps?: Step[]; cards?: string[]; error?: boolean; at: string };
+type Message = { role: "user" | "assistant"; content: string; steps?: Step[]; cards?: string[]; applied?: number; error?: boolean; at: string };
 type Thread = { id: string; title: string; messages: Message[]; cards: Record<string, Card> };
-export type JuelContext = { surface: string; entityId?: string; label?: string; details?: unknown };
+/** What a page offers Juel to do on it, in the browser: which specialist uses it, and each action's args,
+ *  what it does, and its risk (paid, publish, and delete ones wait for approval). */
+export type JuelPageTools = { specialist: string; actions: Record<string, { args: string; about: string; risk: "read" | "change" | "paid" | "publish" | "delete" }> };
+export type JuelContext = { surface: string; entityId?: string; label?: string; details?: unknown; clientTools?: JuelPageTools };
 
 const SPECIALIST: Record<string, string> = { automation: "Automation", publisher: "Publisher", recap: "Recap", editor: "Editor", producer: "Producer", studio: "Studio", film: "Film", research: "Research", community: "Community", account: "Account", admin: "Admin" };
 const RISK: Record<string, string> = { paid: "Uses credits", publish: "Publishes", delete: "Deletes" };
 
+// The latest page announcement, kept so a panel opened later still starts from it, and a page's live
+// context provider (read at the moment a message is sent, so Juel sees the edit as it is now).
+let lastContext: JuelContext | null = null;
+let contextProvider: (() => JuelContext) | null = null;
+
 /** Announce what the open page shows, so Juel starts from it. Call with null when it closes. */
 export function setJuelContext(context: JuelContext | null) {
+  lastContext = context;
   window.dispatchEvent(new CustomEvent("juel:context", { detail: context }));
 }
+
+/** A page with live state (Vibe Edit) gives Juel a function returning its current context, and handles
+ *  "juel:page-actions" events ({ surface, actions }) to run Juel's edits. Returns the unregister function. */
+export function provideJuelContext(provider: () => JuelContext) {
+  contextProvider = provider;
+  setJuelContext(provider());
+  return () => {
+    if (contextProvider === provider) contextProvider = null;
+    setJuelContext(null);
+  };
+}
+
+const runOnPage = (surface: string, actions: PageAction[]) => window.dispatchEvent(new CustomEvent("juel:page-actions", { detail: { surface, actions } }));
 
 /** The page's context from the route, when the page itself hasn't announced one. */
 function routeContext(): JuelContext {
@@ -55,13 +78,15 @@ export function JuelButton() {
   );
 }
 
-function JuelPanel({ onClose }: { onClose: () => void }) {
+/** Juel's conversation. The header panel uses it; a page can embed it in place of its own chat
+ *  (Vibe Edit's assistant card), where it fills its container and has no close button. */
+export function JuelPanel({ onClose, embedded = false, headStart }: { onClose?: () => void; embedded?: boolean; headStart?: ReactNode }) {
   const [thread, setThread] = useState<Thread | null>(null);
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
   const [live, setLive] = useState<{ text: string; steps: Step[]; cards: Card[] } | null>(null);
   const [error, setError] = useState("");
-  const [announced, setAnnounced] = useState<JuelContext | null>(null);
+  const [announced, setAnnounced] = useState<JuelContext | null>(lastContext);
   const [deciding, setDeciding] = useState("");
   const bottom = useRef<HTMLDivElement>(null);
   const field = useRef<HTMLTextAreaElement>(null);
@@ -70,14 +95,16 @@ function JuelPanel({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     const onContext = (event: Event) => setAnnounced((event as CustomEvent<JuelContext | null>).detail || null);
     window.addEventListener("juel:context", onContext);
-    const onKey = (event: KeyboardEvent) => event.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    field.current?.focus();
+    const onKey = (event: KeyboardEvent) => event.key === "Escape" && onClose?.();
+    if (!embedded) {
+      window.addEventListener("keydown", onKey);
+      field.current?.focus();
+    }
     return () => {
       window.removeEventListener("juel:context", onContext);
       window.removeEventListener("keydown", onKey);
     };
-  }, [onClose]);
+  }, [onClose, embedded]);
 
   useEffect(() => {
     bottom.current?.scrollIntoView({ block: "end" });
@@ -91,8 +118,10 @@ function JuelPanel({ onClose }: { onClose: () => void }) {
     setError("");
     setMessage("");
     setLive({ text, steps: [], cards: [] });
+    // The page's state right now (an edit changes between messages), else what it announced.
+    const now = contextProvider?.() || context;
     try {
-      const response = await fetch("/api/juel/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: text, threadId: thread?.id, context }) });
+      const response = await fetch("/api/juel/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: text, threadId: thread?.id, context: now }) });
       if (!response.ok || !response.body) {
         const data = await response.json().catch(() => ({}));
         throw new Error(data.error || "Juel couldn't answer");
@@ -111,6 +140,7 @@ function JuelPanel({ onClose }: { onClose: () => void }) {
           const item = JSON.parse(line);
           if (item.type === "step") setLive((l) => (l ? { ...l, steps: [...l.steps, { specialist: item.specialist, text: item.text }] } : l));
           else if (item.type === "card") setLive((l) => (l ? { ...l, cards: [...l.cards, item.card] } : l));
+          else if (item.type === "page") runOnPage(item.surface, item.actions);
           else if (item.type === "done") setThread(item.thread);
         }
       }
@@ -131,6 +161,8 @@ function JuelPanel({ onClose }: { onClose: () => void }) {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "That didn't run");
       setThread(data.thread);
+      // An approved page action runs on the open page now.
+      if (approve && card.kind === "page" && card.pageAction) runOnPage(context.surface, [card.pageAction]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "That didn't run");
     } finally {
@@ -139,12 +171,13 @@ function JuelPanel({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <aside className="juel" role="dialog" aria-label="Juel">
+    <aside className={`juel${embedded ? " juel-embedded" : ""}`} role={embedded ? undefined : "dialog"} aria-label="Juel">
       <header className="juel-head">
+        {headStart}
         <span className="juel-title"><Sparkles size={16} aria-hidden="true" />Juel</span>
         <span className="juel-where" title="Juel starts from what you have open">{context.label || context.surface}</span>
         <button type="button" className="juel-icon" onClick={() => { setThread(null); setError(""); }} aria-label="New conversation" title="New conversation"><Plus size={16} /></button>
-        <button type="button" className="juel-icon" onClick={onClose} aria-label="Close Juel" title="Close (Esc)"><X size={16} /></button>
+        {onClose ? <button type="button" className="juel-icon" onClick={onClose} aria-label="Close Juel" title="Close (Esc)"><X size={16} /></button> : null}
       </header>
       <div className="juel-body">
         {!thread?.messages.length && !live ? (
@@ -159,6 +192,7 @@ function JuelPanel({ onClose }: { onClose: () => void }) {
           <div key={i} className={`juel-reply${m.error ? " is-error" : ""}`}>
             {m.steps?.length ? <Steps steps={m.steps} /> : null}
             <p>{m.content}</p>
+            {m.applied ? <p className="juel-applied"><Check size={13} aria-hidden="true" />Made {m.applied} edit{m.applied === 1 ? "" : "s"} on the page</p> : null}
             {(m.cards || []).map((id) => thread.cards[id]).filter(Boolean).map((card) => (
               <ActionCard key={card.id} card={card} busy={deciding === card.id} onDecide={(approve) => void decide(card, approve)} />
             ))}

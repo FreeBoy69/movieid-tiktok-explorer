@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { callRoute, JUEL_EXCLUDED, JUEL_RISKS, JUEL_ROUTES, JUEL_SPECIALISTS, juelTools, juelTurn, matchRoute, needsApproval } from "./juel.js";
+import { callRoute, JUEL_EXCLUDED, JUEL_RISKS, JUEL_ROUTES, JUEL_SPECIALISTS, juelTools, juelTurn, matchRoute, needsApproval, pageTools } from "./juel.js";
 
 /** Every route the server registers, as "METHOD /path". */
 function registeredRoutes() {
@@ -105,6 +105,26 @@ describe("Juel's turn", () => {
     expect(prompts.find((p) => p.includes("the Publisher specialist"))).toContain("Mutiny is trending");
     expect(steps.some((s) => s.text.startsWith("asks Research"))).toBe(true);
     expect(turn.reply).toContain("approve the card");
+  });
+
+  it("lets the specialist the page names edit the open page, and only that one", async () => {
+    const clientTools = pageTools({ specialist: "editor", actions: { add_text: { args: "{text, start, end}", about: "Put a title on screen", risk: "change" }, voiceover: { args: "{script}", about: "Speak a script", risk: "nope" }, "bad name!": { about: "x" } } });
+    // Unknown risks count as paid (they ask first); malformed action names are dropped.
+    expect(clientTools).toEqual({ specialist: "editor", actions: { add_text: { args: "{text, start, end}", about: "Put a title on screen", risk: "change" }, voiceover: { args: "{script}", about: "Speak a script", risk: "paid" } } });
+    const prompts: string[] = [];
+    const think = async (prompt: string) => {
+      prompts.push(prompt);
+      if (prompt.includes("Plan the turn")) return { plan: [{ specialist: "research", task: "Find a hook" }, { specialist: "editor", task: "Add the title" }] };
+      if (prompt.includes("the Editor specialist")) return { page: [{ type: "add_text", args: { text: "DAY 1", start: 0, end: 2 }, why: "Title" }], done: true, note: "Added the title." };
+      if (prompt.includes("Write the reply")) return { reply: "Added DAY 1 at the start." };
+      return { done: true, note: "Hook: day one." };
+    };
+    const sent: any[] = [];
+    const turn: any = await juelTurn({ message: "Add a DAY 1 title", context: { surface: "editor", clientTools }, think, call: async () => ({}), page: async (a: any) => { sent.push(a); return { sent: true }; } });
+    expect(sent).toEqual([{ type: "add_text", args: { text: "DAY 1", start: 0, end: 2 }, why: "Title", specialist: "editor" }]);
+    expect(prompts.find((p) => p.includes("the Editor specialist"))).toContain("ACTIONS ON THE OPEN PAGE");
+    expect(prompts.find((p) => p.includes("the Research specialist"))).not.toContain("ACTIONS ON THE OPEN PAGE");
+    expect(turn.reply).toContain("DAY 1");
   });
 
   it("answers directly when there's nothing to do in the app", async () => {

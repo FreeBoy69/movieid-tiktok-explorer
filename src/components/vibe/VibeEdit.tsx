@@ -9,8 +9,9 @@ import { writeDeepLink } from "../../utils/tiktokRoute";
 import { loadVoiceProfiles } from "../../utils/voiceProfiles";
 import { compactTracks, deleteItems, duplicateItems, editPoints, isLocked, emptyProject, formatTime, frameSize, moveItems, normalizeProject, projectDuration, rippleDeleteItems, splitAt, toggleMarker, trimToTime, VIBE_ASPECTS, type VibeAspect } from "../../utils/vibeEdit";
 import { deleteProject, getRender, listProjects, loadProject, saveProject, startRender, stopRender, type ProjectSummary, type RenderJob } from "./api";
-import { ChatPanel } from "./ChatPanel";
-import { setVoices } from "./commands";
+import { getVoices, runActions, setVoices } from "./commands";
+import { JuelPanel, provideJuelContext, type JuelPageTools } from "../JuelPanel";
+import { summarizeProject, VIBE_ACTIONS } from "../../utils/vibeEditActions";
 import { renderOverlayFrames } from "./overlay";
 import { Inspector, PANELS, PanelBody, uploadFiles, type PanelId } from "./Panels";
 import { Preview } from "./Preview";
@@ -422,8 +423,37 @@ function Sidebar({ open, onToggle, onAll, onOpenEdit, onNew, children }: { open:
   );
 }
 
+// The edits Juel's Editor specialist can make on the open project, run here through the same commands
+// the old assistant used. Ones that spend credits (speech, transcription, generation) wait for approval.
+const PAID_EDITS = new Set(["voiceover", "generate_captions", "remove_pauses", "generate_image", "generate_video"]);
+const JUEL_EDITS: JuelPageTools = {
+  specialist: "editor",
+  actions: Object.fromEntries(Object.entries(VIBE_ACTIONS).map(([type, a]) => [type, { args: a.args, about: a.about, risk: PAID_EDITS.has(type) ? "paid" : "change" }])),
+};
+
 function Editor({ onBack, onOpenEdit, onNew }: { onBack: () => void; onOpenEdit: (id: string) => void; onNew: () => void }) {
   const name = useVibe((s) => s.project.name);
+  const projectId = useVibe((s) => s.project.id);
+  // Juel works on this edit: it reads the project as it is when a message is sent, and its edits run here.
+  useEffect(() => {
+    const stop = provideJuelContext(() => {
+      const project = vibe.get().project;
+      return { surface: "editor", entityId: project.id, label: `Vibe Edit · ${project.name || "untitled"}`, details: summarizeProject(project, { playhead: vibe.get().playhead, selection: vibe.get().selection, voices: getVoices().map((v) => v.name).slice(0, 40) }), clientTools: JUEL_EDITS };
+    });
+    const onActions = (event: Event) => {
+      const { surface, actions } = (event as CustomEvent<{ surface: string; actions: Array<{ type: string; args: Record<string, unknown> }> }>).detail || {};
+      if (surface !== "editor" || !actions?.length) return;
+      void runActions(actions).then(({ done, failed }) => {
+        if (failed.length) toast.error(failed.join(" · "));
+        else if (done.length) toast.success(done.join(" · "));
+      });
+    };
+    window.addEventListener("juel:page-actions", onActions);
+    return () => {
+      stop();
+      window.removeEventListener("juel:page-actions", onActions);
+    };
+  }, [projectId]);
   const aspect = useVibe((s) => s.project.aspect);
   // The assistant is the card on the left; the right card holds the tool panels and the
   // selected item's details as tabs.
@@ -590,7 +620,7 @@ function Editor({ onBack, onOpenEdit, onNew }: { onBack: () => void; onOpenEdit:
       <div className={`ve-body${chatOpen ? " has-chat" : ""}${tab ? " has-panel" : ""}${timelineOpen ? "" : " is-tall"}`}>
         {chatOpen ? (
           <aside className="ve-card ve-chat-card" aria-label="Assistant">
-            <ChatPanel onClose={() => setChatOpen(false)} />
+            <JuelPanel embedded headStart={<button type="button" className="ve-collapse" onClick={() => setChatOpen(false)} aria-label="Hide Juel" title="Hide Juel"><PanelLeft size={17} strokeWidth={1.75} /></button>} />
           </aside>
         ) : (
           <aside className="ve-card ve-fold" aria-label="Assistant, hidden">

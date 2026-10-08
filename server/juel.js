@@ -521,13 +521,28 @@ const SURFACE_READS = {
   film: (id) => `/api/drama/series/${encodeURIComponent(id)}`,
 };
 
+/** The actions a page offers (cleaned): which specialist uses them, and per action its args, what it does,
+ *  and its risk. Unknown risks count as paid, so nothing new runs without approval by mistake. */
+export function pageTools(raw) {
+  if (!raw || typeof raw !== "object" || !JUEL_SPECIALISTS[raw.specialist]) return null;
+  const actions = {};
+  for (const [type, a] of Object.entries(raw.actions || {}).slice(0, 40)) {
+    if (!/^[a-z][a-z0-9_]{1,40}$/.test(type) || !a || typeof a !== "object") continue;
+    actions[type] = { args: String(a.args || "{}").slice(0, 400), about: String(a.about || "").slice(0, 200), risk: JUEL_RISKS.includes(a.risk) ? a.risk : "paid" };
+  }
+  return Object.keys(actions).length ? { specialist: raw.specialist, actions } : null;
+}
+
 const MAX_ROUNDS = 4;
 const MAX_ASKS = 3;
 
 /** One specialist's work on a task: up to MAX_ROUNDS of reading a route's code, calling routes, and asking
  *  another specialist, then a note of what it found or did for the shared board. */
-async function specialistWork({ specialist, task, board, context, call, think, admin, onStep, depth = 0, asks = { n: 0 } }) {
+async function specialistWork({ specialist, task, board, context, call, page, think, admin, onStep, depth = 0, asks = { n: 0 } }) {
   const tools = juelTools({ specialist, admin }).map((t) => `${t.route} [${t.risk}${t.approval ? ", needs approval" : ""}] ${t.does}`).join("\n");
+  // The open page's own actions (Vibe Edit's timeline edits), when the page offers them to this specialist.
+  const pageActions = page && context?.clientTools?.specialist === specialist ? Object.entries(context.clientTools.actions || {}) : [];
+  const pageList = pageActions.map(([type, a]) => `${type} ${a.args || "{}"} [${a.risk || "change"}${needsApproval(a.risk) ? ", needs approval" : ""}] ${a.about || ""}`).join("\n");
   const others = Object.entries(JUEL_SPECIALISTS).filter(([id]) => id !== specialist && (admin || id !== "admin")).map(([id, s]) => `${id}: ${s.brief}`).join("\n");
   const log = [];
   let note = "";
@@ -536,7 +551,7 @@ async function specialistWork({ specialist, task, board, context, call, think, a
 
 YOUR TASK: ${task}
 
-WHERE THE USER IS: ${clipText(context, 3000)}
+WHERE THE USER IS: ${clipText({ ...(context || {}), clientTools: undefined }, 3000)}
 
 THE TEAM'S BOARD (what other specialists found or did this turn):
 ${board.length ? board.map((b) => `- ${b.specialist}: ${b.note}`).join("\n") : "(empty)"}
@@ -544,7 +559,10 @@ ${board.length ? board.map((b) => `- ${b.specialist}: ${b.note}`).join("\n") : "
 YOUR ROUTES (method path [risk] what it does). Path params like :id are filled in by you:
 ${tools || "(none)"}
 
-OTHER SPECIALISTS you can ask one question:
+${pageList ? `ACTIONS ON THE OPEN PAGE (type {args} [risk] what it does). They run in the user's browser on what's open (the open item is in WHERE THE USER IS); prefer them to routes for editing what's open:
+${pageList}
+
+` : ""}OTHER SPECIALISTS you can ask one question:
 ${others}
 
 WHAT YOU DID SO FAR THIS TASK:
@@ -552,7 +570,7 @@ ${log.length ? log.join("\n") : "(nothing yet)"}
 
 Rules: call a route only to do the task. Reads and changes run now; routes that need approval become a card the user approves, so propose them freely when the task calls for them, with exact bodies. Never invent ids: read them first. When you don't know a route's body fields, ask to read its code first ("read": ["POST /api/x/:id"]). Stop as soon as the task is done.
 
-Return JSON only: {"read":["METHOD /path", ...], "calls":[{"method":"GET","path":"/api/...","query":{},"body":{},"why":"short"}], "ask":{"specialist":"id","question":"..."} or null, "done":true|false, "note":"one or two sentences for the board: what you found or did, with key facts and ids"}`;
+Return JSON only: {"read":["METHOD /path", ...], "calls":[{"method":"GET","path":"/api/...","query":{},"body":{},"why":"short"}],${pageList ? ` "page":[{"type":"action type","args":{},"why":"short"}],` : ""} "ask":{"specialist":"id","question":"..."} or null, "done":true|false, "note":"one or two sentences for the board: what you found or did, with key facts and ids"}`;
     const plan = await think(prompt);
     note = String(plan?.note || note || "").slice(0, 600);
     for (const key of (Array.isArray(plan?.read) ? plan.read : []).slice(0, 3)) {
@@ -569,27 +587,40 @@ Return JSON only: {"read":["METHOD /path", ...], "calls":[{"method":"GET","path"
         log.push(`CALL ${c.method} ${c.path} refused: ${error instanceof Error ? error.message : error}`);
       }
     }
+    const pageCalls = pageActions.length ? (Array.isArray(plan?.page) ? plan.page : []).slice(0, 12) : [];
+    for (const p of pageCalls) {
+      onStep?.({ specialist, text: p.why || String(p.type) });
+      try {
+        const result = await page({ type: String(p.type), args: p.args && typeof p.args === "object" ? p.args : {}, why: p.why, specialist });
+        log.push(`PAGE ${p.type} -> ${result.pending ? `waiting for the user's approval (card ${result.pending})` : "sent to the open page, which applies it now"}`);
+      } catch (error) {
+        log.push(`PAGE ${p.type} refused: ${error instanceof Error ? error.message : error}`);
+      }
+    }
     const ask = plan?.ask;
     if (ask?.specialist && JUEL_SPECIALISTS[ask.specialist] && ask.specialist !== specialist && depth < 2 && asks.n < MAX_ASKS && (admin || ask.specialist !== "admin")) {
       asks.n += 1;
       onStep?.({ specialist, text: `asks ${JUEL_SPECIALISTS[ask.specialist].name}: ${clipText(ask.question, 160)}` });
-      const answer = await specialistWork({ specialist: ask.specialist, task: String(ask.question), board, context, call, think, admin, onStep, depth: depth + 1, asks });
+      const answer = await specialistWork({ specialist: ask.specialist, task: String(ask.question), board, context, call, page, think, admin, onStep, depth: depth + 1, asks });
       log.push(`ASKED ${ask.specialist}: ${ask.question} -> ${answer}`);
       board.push({ specialist: ask.specialist, note: `(for ${specialist}) ${answer}` });
     }
-    if (plan?.done || (!calls.length && !ask && !(plan?.read || []).length)) break;
+    if (plan?.done || (!calls.length && !pageCalls.length && !ask && !(plan?.read || []).length)) break;
   }
   return note || "Nothing to report.";
 }
 
 /** One turn of a Juel conversation. Returns { reply, steps, board }: approval-waiting calls are cards the
  *  caller's `call` made.
- *  @param {{ message: string, history?: Array<{ role: string, content: string }>, context?: object, admin?: boolean, think: (prompt: string) => Promise<any>, call: (call: any) => Promise<any>, onStep?: (step: { specialist: string, text: string }) => void }} turn */
-export async function juelTurn({ message, history = [], context = {}, admin = false, think, call, onStep }) {
+ *  @param {{ message: string, history?: Array<{ role: string, content: string }>, context?: any, admin?: boolean, think: (prompt: string) => Promise<any>, call: (call: any) => Promise<any>, page?: (action: any) => Promise<any>, onStep?: (step: { specialist: string, text: string }) => void }} turn */
+export async function juelTurn({ message, history = [], context = {}, admin = false, think, call, page, onStep }) {
   const team = Object.entries(JUEL_SPECIALISTS).filter(([id]) => admin || id !== "admin").map(([id, s]) => `${id}: ${s.brief}`).join("\n");
+  // The page's action list goes to its specialist's prompt, not into everyone's context.
+  const { clientTools, ...where } = context || {};
+  const onPage = clientTools?.specialist && JUEL_SPECIALISTS[clientTools.specialist] ? `\nThe open page lets the ${clientTools.specialist} specialist edit it directly (${Object.keys(clientTools.actions || {}).length} actions), so send edits of what's open there.` : "";
   const plan = await think(`You are Juel, the AutoYT app's agent: a manager who answers the user and hands work to specialists.
 
-WHERE THE USER IS: ${clipText(context, 3000)}
+WHERE THE USER IS: ${clipText(where, 3000)}${onPage}
 
 THE TEAM:
 ${team}
@@ -611,7 +642,7 @@ Return JSON only: {"reply":"your answer when no plan is needed, else empty","pla
   };
   for (const item of work) {
     step({ specialist: item.specialist, text: String(item.task).slice(0, 200) });
-    const note = await specialistWork({ specialist: item.specialist, task: String(item.task), board, context, call, think, admin, onStep: step });
+    const note = await specialistWork({ specialist: item.specialist, task: String(item.task), board, context, call, page, think, admin, onStep: step });
     board.push({ specialist: item.specialist, note });
   }
   const final = await think(`You are Juel, the AutoYT app's agent. Your specialists finished this turn.
@@ -689,9 +720,10 @@ export function registerJuel(app, deps) {
     const send = (event) => res.write(`${JSON.stringify(event)}\n`);
     const cookie = String(req.headers.cookie || "");
     const turnCards = [];
-    const context = { surface, label: String(where.label || "").slice(0, 120), entityId, details: where.details ?? null };
+    const context = { surface, label: String(where.label || "").slice(0, 120), entityId, details: where.details ?? null, clientTools: pageTools(where.clientTools) };
     try {
-      if (SURFACE_READS[surface] && entityId) {
+      // A page that sends its live state (the open edit) needs no second look at the saved copy.
+      if (SURFACE_READS[surface] && entityId && !where.details) {
         send({ type: "step", specialist: surface, text: "Looking at what you have open" });
         const open = await callRoute({ method: "GET", path: SURFACE_READS[surface](entityId) }, { baseUrl, cookie, admin: who.admin }).catch(() => null);
         if (open?.status === 200) context.open = clipText(open.data, 6000);
@@ -711,10 +743,26 @@ export function registerJuel(app, deps) {
       }
       return callRoute({ method, path, query, body }, { baseUrl, cookie, admin: who.admin, signal: AbortSignal.timeout(120000) });
     };
+    // Actions on the open page run in the browser: free ones are sent now, risky ones become cards.
+    let applied = 0;
+    const page = async ({ type, args, why, specialist }) => {
+      const action = context.clientTools?.actions?.[type];
+      if (!action) throw new JuelRefusal(`The open page has no "${type}" action.`, "unknown");
+      if (needsApproval(action.risk)) {
+        const card = { id: newId("act"), kind: "page", specialist, pageAction: { type, args }, risk: action.risk, does: action.about || type, why: String(why || "").slice(0, 300), status: "pending", at: new Date().toISOString() };
+        thread.cards[card.id] = card;
+        turnCards.push(card.id);
+        send({ type: "card", card });
+        return { pending: card.id };
+      }
+      applied += 1;
+      send({ type: "page", surface, actions: [{ type, args }] });
+      return { sent: true };
+    };
     const think = (prompt) => deps.generateJson(prompt, { maxTokens: 2500 });
     try {
-      const turn = await deps.withUsage(who.userId, "juel", () => juelTurn({ message, history: thread.messages, context, admin: who.admin, think, call, onStep: (s) => send({ type: "step", ...s }) }));
-      thread.messages.push({ role: "user", content: message, at: new Date().toISOString() }, { role: "assistant", content: turn.reply, steps: turn.steps, cards: turnCards, at: new Date().toISOString() });
+      const turn = await deps.withUsage(who.userId, "juel", () => juelTurn({ message, history: thread.messages, context, admin: who.admin, think, call, page, onStep: (s) => send({ type: "step", ...s }) }));
+      thread.messages.push({ role: "user", content: message, at: new Date().toISOString() }, { role: "assistant", content: turn.reply, steps: turn.steps, cards: turnCards, ...(applied ? { applied } : {}), at: new Date().toISOString() });
     } catch (error) {
       thread.messages.push({ role: "user", content: message, at: new Date().toISOString() }, { role: "assistant", content: `Something went wrong: ${error instanceof Error ? error.message : error}`, error: true, at: new Date().toISOString() });
     }
@@ -737,6 +785,9 @@ export function registerJuel(app, deps) {
     if (card.status !== "pending") return res.json({ thread });
     if (req.body?.approve !== true) {
       card.status = "declined";
+    } else if (card.kind === "page") {
+      // A page action runs in the browser: the panel hands it to the open page once approved.
+      card.status = "done";
     } else {
       card.status = "running";
       try {
