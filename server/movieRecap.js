@@ -1850,7 +1850,9 @@ export async function checkMatchesVisually(project, analysis, described, built, 
     // frames sampled every 3 s, so the descriptions can't find it: Fall 2's shove got the attacker's face.
     // For weak cuts under action words, look densely: real frames every second across the line's film.
     const denseLooks = new Map();
-    const weakAction = fit.map((f, i) => (f !== null && f <= 1 && ACTION_WORDS.test(said[i]) ? i : -1)).filter((i) => i >= 0).slice(0, 8);
+    // Also any cut still rated 0 (the aerial city under "steps out of the executive elevators"): the
+    // described frames had nothing better, the real frames a second apart may.
+    const weakAction = fit.map((f, i) => (f !== null && (f === 0 || (f <= 1 && ACTION_WORDS.test(said[i]))) ? i : -1)).filter((i) => i >= 0).slice(0, 12);
     for (const i of weakAction) {
       signal?.throwIfAborted();
       const editCuts = current.edit[format].cuts;
@@ -2139,7 +2141,7 @@ export function jumpPairs(cuts, only = null) {
 /** Neighbouring frames that differ by this much may still be one camera setup a moment later (the same
  *  face, a little moved: Fall 2's #27 and #108 scored 70-71); the vision model judges those. */
 export const JUMP_MAYBE = 85;
-const JUMP_RUBRIC = "Each pair is the last frame of one clip (A) and the first frame of the next clip (B) in a movie recap. For each pair, say whether the cut from A to B is a jump cut: B shows the same subject from the same or nearly the same camera angle and framing, so the cut looks like a skip in time rather than a new shot. A cut to a different person, a different angle (a reverse shot, wide to close), or a different place is not a jump cut.";
+const JUMP_RUBRIC = "Each pair is the last frame of one clip (A) and the first frame of the next clip (B) in a movie recap. For each pair, say whether the cut from A to B is a jump cut: B comes from the same camera setup as A, so the background, the lens, and the framing match even when the subject has moved, turned, or changed expression, the light has shifted, or time has passed (a film cutting back to the same angle after a reaction shot gives exactly this). It is not a jump cut only when B is clearly a different setup: another person, a reverse shot, a much wider or much closer framing, or another place. When unsure, call it a jump cut.";
 
 /** Which borderline pairs (frames A and B per pair) the vision model sees as jump cuts. */
 export async function confirmJumps(framePairs, { signal = undefined, request = requestOpenRouter } = {}) {

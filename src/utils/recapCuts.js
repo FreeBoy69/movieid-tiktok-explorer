@@ -96,7 +96,11 @@ export function planRecapCuts(input) {
   // angle, a glitch). shotCuts are the film's camera cuts, when the analysis found them.
   const shotCuts = [...(input.shotCuts || [])].sort((a, b) => a - b);
   const firstAfter = (t) => { let lo = 0, hi = shotCuts.length; while (lo < hi) { const mid = (lo + hi) >> 1; if (shotCuts[mid] <= t) lo = mid + 1; else hi = mid; } return lo; };
-  const crosses = (start, end) => { const k = firstAfter(start + 0.05); return k < shotCuts.length && shotCuts[k] < end - 0.05; };
+  // Detected camera cuts land a few frames off (Mutiny's clips caught 1-5 frames of the next shot), so a
+  // cut keeps SHOT_PAD clear of each one on both sides.
+  const SHOT_PAD = 0.2;
+  // (A cut sitting exactly SHOT_PAD inside its shot passes: 1e-6 absorbs the float sums.)
+  const crosses = (start, end) => { const k = firstAfter(start - SHOT_PAD + 1e-6); return k < shotCuts.length && shotCuts[k] < end + SHOT_PAD - 1e-6; };
   /** The shot holding film time t: [its start, its end]. */
   const shotAround = (t) => { const k = firstAfter(t); return [k > 0 ? shotCuts[k - 1] : 0, k < shotCuts.length ? shotCuts[k] : film]; };
   // A sped-up cut reads a little more film than it shows.
@@ -151,7 +155,7 @@ export function planRecapCuts(input) {
         const [, shotEnd] = shotAround(at);
         // A last cut can only shorten as far as leaves a new cut of its own worth showing.
         const most = i + 1 < lengths.length ? length - 0.05 : length - MIN_SHOT_CUT;
-        const room = Math.min((shotEnd - 0.05 - at) / scale, most);
+        const room = Math.min((shotEnd - SHOT_PAD - at) / scale, most);
         return room >= MIN_SHOT_CUT && !overlaps(used, at, at + room, options.minGap) && !revisits(at, at + room) ? room : 0;
       };
       const shorten = (to) => {
@@ -182,7 +186,7 @@ export function planRecapCuts(input) {
       if (Number.isFinite(matched)) {
         // Inside the matched frame's own shot when it is long enough to hold the cut.
         const [shotStart, shotEnd] = shotAround(matched);
-        if (shotEnd - shotStart >= length * scale + 0.1) centred = Math.min(Math.max(centred, shotStart + 0.05), shotEnd - length * scale - 0.05);
+        if (shotEnd - shotStart >= length * scale + 2 * SHOT_PAD) centred = Math.min(Math.max(centred, shotStart + SHOT_PAD), shotEnd - length * scale - SHOT_PAD);
       }
       let start = -1;
       if (Number.isFinite(matched)) {
@@ -191,7 +195,7 @@ export function planRecapCuts(input) {
         if (start < 0) {
           // No long enough shot within 6 s of the matched frame: fit the frame's own short shot.
           const [shotStart] = shotAround(matched);
-          const at = Math.max(shotStart + 0.05, startGuard);
+          const at = Math.max(shotStart + SHOT_PAD, startGuard);
           const room = fitShort(at);
           if (room) { shorten(room); start = at; }
         }
@@ -208,7 +212,7 @@ export function planRecapCuts(input) {
           let best = null;
           for (let t = origin; t < Math.min(start, origin + 12); t += 0.25) {
             const [shotStart] = shotAround(t);
-            const at = Math.max(shotStart + 0.05, t);
+            const at = Math.max(shotStart + SHOT_PAD, t);
             const room = fitShort(at);
             if (room && (!best || room > best.room)) best = { at, room };
           }

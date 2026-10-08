@@ -176,6 +176,19 @@ describe("fast-cut action", () => {
   });
 });
 
+describe("shot edges", () => {
+  it("keeps every cut clear of the film's camera cuts by a few frames", () => {
+    // Camera cuts every 3.7 to 7.3 s; detected cut times run a few frames off, so no cut may start or end
+    // within 0.2 s of one (Mutiny's clips caught 1-5 frames of the neighbouring shot).
+    const shotCuts: number[] = [];
+    for (let t = 0, k = 0; t < 1200; t += 3.7 + (k++ % 5) * 0.9) shotCuts.push(Math.round(t * 100) / 100);
+    const plan = planRecapCuts({ seed: "pad", filmDuration: 1200, startGuard: 5, endGuard: 5, chronological: true, shotCuts,
+      beats: Array.from({ length: 8 }, (_, i) => ({ id: `b${i}`, duration: 9, from: 40 + i * 130, to: 160 + i * 130, anchors: [shotCuts[12 + i * 25] + 0.05] })) });
+    expect(plan.cuts.length).toBeGreaterThan(16);
+    for (const cut of plan.cuts) for (const edge of shotCuts) expect(edge <= cut.start - 0.2 + 1e-6 || edge >= cut.end + 0.2 - 1e-6).toBe(true);
+  });
+});
+
 describe("intro montage cuts", () => {
   it("cuts an intro beat quick", () => {
     const plan = planRecapCuts({ seed: "i", filmDuration: 3000, startGuard: 10, endGuard: 10, chronological: true, beats: [
