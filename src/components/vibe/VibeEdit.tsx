@@ -7,7 +7,7 @@ import { Check, ChevronDown, Clapperboard, CloudOff, Download, Film, Loader2, Pl
 import { toast } from "../../utils/toast";
 import { writeDeepLink } from "../../utils/tiktokRoute";
 import { loadVoiceProfiles } from "../../utils/voiceProfiles";
-import { deleteItems, isLocked, emptyProject, formatTime, frameSize, normalizeProject, projectDuration, splitAt, VIBE_ASPECTS, type VibeAspect } from "../../utils/vibeEdit";
+import { deleteItems, duplicateItems, editPoints, isLocked, emptyProject, formatTime, frameSize, moveItems, normalizeProject, projectDuration, rippleDeleteItems, splitAt, toggleMarker, trimToTime, VIBE_ASPECTS, type VibeAspect } from "../../utils/vibeEdit";
 import { deleteProject, getRender, listProjects, loadProject, saveProject, startRender, stopRender, type ProjectSummary, type RenderJob } from "./api";
 import { ChatPanel } from "./ChatPanel";
 import { setVoices } from "./commands";
@@ -468,7 +468,8 @@ function Editor({ onBack, onOpenEdit, onNew }: { onBack: () => void; onOpenEdit:
     }
   }, []);
 
-  // Keyboard: space, S, delete, undo/redo, arrows.
+  // Keyboard: transport, editing, selection, and markers. The timeline's
+  // shortcut sheet (?) lists every key handled here.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement;
@@ -485,11 +486,38 @@ function Editor({ onBack, onOpenEdit, onNew }: { onBack: () => void; onOpenEdit:
       } else if (mod && e.key.toLowerCase() === "y") {
         e.preventDefault();
         vibe.redo();
+      } else if (mod && e.key.toLowerCase() === "a") {
+        e.preventDefault();
+        const p = s.project;
+        vibe.select([...p.clips, ...p.audio, ...p.texts, ...p.captions.cues].map((i) => i.id).filter((id) => !isLocked(p, id)));
+      } else if (mod && e.key.toLowerCase() === "d") {
+        e.preventDefault();
+        const { project, ids } = duplicateItems(s.project, s.selection);
+        if (ids.length) {
+          vibe.commit(project);
+          vibe.select(ids);
+        }
       } else if (!mod && e.key.toLowerCase() === "s") {
         vibe.commit((p) => splitAt(p, s.playhead, s.selection.length ? s.selection : undefined));
+      } else if (!mod && !e.altKey && (e.key.toLowerCase() === "q" || e.key.toLowerCase() === "w")) {
+        // With nothing selected, Q and W act on the base-track clip under the playhead.
+        const under = s.project.clips.filter((c) => c.track === 0 && s.playhead > c.start && s.playhead < c.start + c.out - c.in).map((c) => c.id);
+        vibe.commit((p) => trimToTime(p, s.selection.length ? s.selection : under, s.playhead, e.key.toLowerCase() === "q" ? "start" : "end"));
+      } else if (!mod && !e.altKey && e.key.toLowerCase() === "m") {
+        vibe.commit((p) => toggleMarker(p, s.playhead));
       } else if ((e.key === "Delete" || e.key === "Backspace") && s.selection.length) {
         e.preventDefault();
-        vibe.commit((p) => deleteItems(p, s.selection.filter((id) => !isLocked(p, id))));
+        if (e.shiftKey) vibe.commit((p) => rippleDeleteItems(p, s.selection));
+        else vibe.commit((p) => deleteItems(p, s.selection.filter((id) => !isLocked(p, id))));
+      } else if (e.altKey && (e.key === "ArrowLeft" || e.key === "ArrowRight") && s.selection.length) {
+        e.preventDefault();
+        const delta = (e.key === "ArrowLeft" ? -1 : 1) * (e.shiftKey ? 1 : 1 / 30);
+        vibe.commit((p) => moveItems(p, s.selection, delta), "nudge");
+      } else if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+        e.preventDefault();
+        const points = editPoints(s.project);
+        const target = e.key === "ArrowUp" ? [...points].reverse().find((t) => t < s.playhead - 1e-3) : points.find((t) => t > s.playhead + 1e-3);
+        if (target !== undefined) vibe.seek(target);
       } else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
         e.preventDefault();
         vibe.seek(s.playhead + (e.key === "ArrowLeft" ? -1 : 1) * (e.shiftKey ? 1 : 1 / 30));

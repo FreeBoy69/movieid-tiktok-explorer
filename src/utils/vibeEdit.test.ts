@@ -24,6 +24,17 @@ import {
   setTrackState,
   trackState,
   type VibeAsset,
+  baseGaps,
+  closeGap,
+  duplicateItems,
+  editPoints,
+  moveItems,
+  parseTimecode,
+  rippleDeleteItems,
+  shiftAfter,
+  toggleMarker,
+  trimToTime,
+  updateMarker,
 } from "./vibeEdit";
 import { sanitizeActions, summarizeProject } from "./vibeEditActions.js";
 import { soundFilters } from "./vibeSound.js";
@@ -185,5 +196,79 @@ describe("voice treatments", () => {
     expect(chain).toContain("acompressor=");
     expect(chain).toContain("alimiter=");
     expect(soundFilters("phone")).not.toContain("acompressor");
+  });
+});
+
+describe("timeline editing", () => {
+  it("moves a group together and stops it at zero", () => {
+    const p = twoClips();
+    const [a, b] = p.clips;
+    const moved = moveItems(p, [a.id, b.id], 2);
+    expect(moved.clips.map((c) => c.start)).toEqual([2, 12]);
+    const back = moveItems(moved, [a.id, b.id], -5);
+    expect(back.clips.map((c) => c.start)).toEqual([0, 10]);
+    const locked = setTrackState(p, "v0", { locked: true });
+    expect(moveItems(locked, [a.id], 3)).toBe(locked);
+  });
+
+  it("duplicates after the selection and climbs a track when the row is taken", () => {
+    const p = twoClips();
+    const [a] = p.clips;
+    const { project, ids } = duplicateItems(p, [a.id]);
+    expect(ids).toHaveLength(1);
+    const copy = project.clips.find((c) => c.id === ids[0])!;
+    // v2 already sits at 10-16 on track 0, so the copy goes up a track.
+    expect(copy).toMatchObject({ start: 10, track: 1, in: a.in, out: a.out });
+  });
+
+  it("ripple deletes several base clips and closes up", () => {
+    let p = twoClips();
+    p = placeAsset(addAsset(p, video("v3", 4)), "v3").project;
+    const [a, , c] = p.clips;
+    const next = rippleDeleteItems(p, [a.id, c.id]);
+    expect(next.clips).toHaveLength(1);
+    expect(next.clips[0].start).toBe(0);
+  });
+
+  it("finds and closes gaps on the base track", () => {
+    const p = twoClips();
+    const gappy = moveItem(p, p.clips[1].id, 13);
+    expect(baseGaps(gappy)).toEqual([{ start: 10, end: 13 }]);
+    const closed = closeGap(gappy, 11);
+    expect(closed.clips[1].start).toBe(10);
+    expect(closeGap(p, 5)).toBe(p);
+  });
+
+  it("trims to the playhead and ripples base clips", () => {
+    const p = twoClips();
+    const [a, b] = p.clips;
+    const startCut = trimToTime(p, [a.id], 4, "start");
+    expect(startCut.clips[0]).toMatchObject({ start: 0, in: 4, out: 10 });
+    expect(startCut.clips[1].start).toBe(6);
+    const endCut = trimToTime(p, [a.id], 7, "end");
+    expect(endCut.clips[0]).toMatchObject({ start: 0, out: 7 });
+    expect(endCut.clips[1].start).toBe(7);
+    expect(trimToTime(p, [b.id], 4, "end")).toBe(p);
+  });
+
+  it("toggles, renames, and snaps to markers, and ripples them", () => {
+    let p = toggleMarker(twoClips(), 3.2);
+    expect(p.markers).toHaveLength(1);
+    expect(snapTime(p, 3.25, 0.1)).toBe(3.2);
+    p = updateMarker(p, p.markers![0].id, { label: "Drop" });
+    expect(p.markers![0].label).toBe("Drop");
+    expect(editPoints(p)).toEqual([0, 3.2, 10, 16]);
+    expect(shiftAfter(p, 2, -1).markers![0].time).toBe(2.2);
+    expect(toggleMarker(p, 3.21).markers).toHaveLength(0);
+    expect(normalizeProject({ ...p, markers: [{ id: "x", time: -1 }, { id: "y", time: 2 }] as never }).markers).toEqual([{ id: "y", time: 2 }]);
+  });
+
+  it("reads typed timecodes", () => {
+    expect(parseTimecode("83.5")).toBe(83.5);
+    expect(parseTimecode("1:23")).toBe(83);
+    expect(parseTimecode("1:01:23")).toBe(3683);
+    expect(parseTimecode("00:00:01:15")).toBe(1.5);
+    expect(parseTimecode("abc")).toBeNull();
+    expect(parseTimecode("")).toBeNull();
   });
 });

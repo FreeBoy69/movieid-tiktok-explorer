@@ -827,12 +827,16 @@ function Slider({ label, value, display, min, max, step, onChange }: { label: st
 const SHORTCUTS: [string, string][] = [
   ["Space", "Play / pause"],
   ["S", "Split at playhead"],
+  ["Q / W", "Trim start / end to playhead"],
   ["⌫", "Delete selected"],
+  ["⇧⌫", "Delete and close the gap"],
+  ["⌘D", "Duplicate"],
   ["← →", "Step a frame"],
-  ["⇧ ← →", "Step a second"],
+  ["↑ ↓", "Previous / next cut"],
+  ["M", "Add a marker"],
   ["Z", "Fit the timeline"],
-  ["⌘ scroll", "Zoom the timeline"],
   ["⌘Z / ⇧⌘Z", "Undo / redo"],
+  ["?", "Every shortcut"],
 ];
 
 function ProjectProps() {
@@ -895,7 +899,7 @@ export function Inspector() {
           <span className="ve-kind">Selection</span>
           <strong>{selection.length} items</strong>
         </div>
-        <p className="ve-hint">Drag any of them on the timeline, or delete them together.</p>
+        <p className="ve-hint">Drag any of them on the timeline to move them together, or right-click one for more.</p>
         <button type="button" className="ve-btn" onClick={() => vibe.commit((p) => deleteItems(p, selection.filter((id) => !isLocked(p, id))))}>
           <Trash2 size={14} /> Delete {selection.length} items
         </button>

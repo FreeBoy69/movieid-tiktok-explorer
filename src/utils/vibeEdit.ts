@@ -145,10 +145,18 @@ export interface VibeProject {
   texts: VibeText[];
   captions: VibeCaptions;
   tracks?: Record<string, VibeTrackState>;
+  /** Named points on the ruler (beats, chapter starts): edits snap to them. */
+  markers?: VibeMarker[];
   /** Where the edit came from: a Movie to Recap render can find better shots for its cuts. */
   source?: { kind: "recap"; recapId: string; format: "long" | "short" };
   createdAt: number;
   updatedAt: number;
+}
+
+export interface VibeMarker {
+  id: string;
+  time: number;
+  label?: string;
 }
 
 export type TrackKind = "video" | "audio" | "text" | "cue";
@@ -233,6 +241,10 @@ export function normalizeProject(raw: Partial<VibeProject> | null | undefined): 
     audio: (Array.isArray(raw.audio) ? raw.audio : []).filter((c) => ids.has(c.assetId)).map((c) => fix({ ...c, lane: Math.max(0, Math.round(c.lane || 0)), volume: c.volume ?? 1 })),
     texts: Array.isArray(raw.texts) ? raw.texts.filter((t) => t && t.end > t.start) : [],
     captions,
+    markers: (Array.isArray(raw.markers) ? raw.markers : [])
+      .filter((m) => m && m.id && Number.isFinite(Number(m.time)) && Number(m.time) >= 0)
+      .map((m) => ({ id: String(m.id), time: Number(m.time), ...(m.label ? { label: String(m.label).slice(0, 60) } : {}) }))
+      .sort((a, b) => a.time - b.time),
   };
 }
 
@@ -570,6 +582,7 @@ export function snapTime(p: VibeProject, time: number, tolerance: number, extra:
   const edges = [0, ...extra];
   for (const c of [...p.clips, ...p.audio]) if (c.id !== ignore) edges.push(c.start, clipEnd(c));
   for (const t of p.texts) if (t.id !== ignore) edges.push(t.start, t.end);
+  for (const m of p.markers || []) edges.push(m.time);
   let best = time;
   let dist = tolerance;
   for (const e of edges) {
@@ -580,6 +593,198 @@ export function snapTime(p: VibeProject, time: number, tolerance: number, extra:
     }
   }
   return round(best);
+}
+
+// ---------- Timeline editing: groups, ripple, gaps, markers ----------
+
+/** Every item's id with its time span, for selection and group edits. */
+function spans(p: VibeProject): { id: string; start: number; end: number }[] {
+  return [
+    ...p.clips.map((c) => ({ id: c.id, start: c.start, end: clipEnd(c) })),
+    ...p.audio.map((c) => ({ id: c.id, start: c.start, end: clipEnd(c) })),
+    ...p.texts.map((t) => ({ id: t.id, start: t.start, end: t.end })),
+    ...p.captions.cues.map((c) => ({ id: c.id, start: c.start, end: c.end })),
+  ];
+}
+
+/** Move several items by the same amount, keeping their spacing. Locked
+ * tracks stay put, and the group stops at zero rather than squashing. */
+export function moveItems(p: VibeProject, ids: string[], delta: number): VibeProject {
+  const wanted = new Set(ids.filter((id) => !isLocked(p, id)));
+  const group = spans(p).filter((s) => wanted.has(s.id));
+  if (!group.length || !delta) return p;
+  const shift = Math.max(delta, -Math.min(...group.map((s) => s.start)));
+  if (!shift) return p;
+  return group.reduce((next, s) => moveItem(next, s.id, round(s.start + shift)), p);
+}
+
+/** Is [start, end) clear on a video track or audio lane? */
+function rowFree(list: (VibeClip | VibeAudioClip)[], rowOf: (c: VibeClip | VibeAudioClip) => number, row: number, start: number, end: number) {
+  return !list.some((c) => rowOf(c) === row && c.start < end - 1e-3 && clipEnd(c) > start + 1e-3);
+}
+
+/** Copy items to just after the selection, on the same rows when there is
+ * room, otherwise on the next free row up. Returns the copies' ids. */
+export function duplicateItems(p: VibeProject, ids: string[]): { project: VibeProject; ids: string[] } {
+  const wanted = new Set(ids);
+  const group = spans(p).filter((s) => wanted.has(s.id));
+  if (!group.length) return { project: p, ids: [] };
+  const offset = round(Math.max(...group.map((s) => s.end)) - Math.min(...group.map((s) => s.start)));
+  const made: string[] = [];
+  let clips = [...p.clips];
+  let audio = [...p.audio];
+  for (const c of p.clips.filter((c) => wanted.has(c.id))) {
+    const start = round(c.start + offset);
+    const end = start + clipLength(c);
+    let track = c.track;
+    while (!rowFree(clips, (x) => (x as VibeClip).track, track, start, end)) track += 1;
+    const copy = { ...c, id: vibeId("c"), start, track };
+    clips.push(copy);
+    made.push(copy.id);
+  }
+  for (const c of p.audio.filter((c) => wanted.has(c.id))) {
+    const start = round(c.start + offset);
+    const end = start + clipLength(c);
+    let lane = c.lane;
+    while (!rowFree(audio, (x) => (x as VibeAudioClip).lane, lane, start, end)) lane += 1;
+    const copy = { ...c, id: vibeId("a"), start, lane };
+    audio.push(copy);
+    made.push(copy.id);
+  }
+  const texts = [...p.texts];
+  for (const t of p.texts.filter((t) => wanted.has(t.id))) {
+    const copy = { ...t, id: vibeId("t"), start: round(t.start + offset), end: round(t.end + offset) };
+    texts.push(copy);
+    made.push(copy.id);
+  }
+  const cues = [...p.captions.cues];
+  for (const c of p.captions.cues.filter((c) => wanted.has(c.id))) {
+    const copy = { ...c, id: vibeId("q"), start: round(c.start + offset), end: round(c.end + offset), words: c.words?.map((w) => ({ ...w, t0: round(w.t0 + offset), t1: round(w.t1 + offset) })) };
+    cues.push(copy);
+    made.push(copy.id);
+  }
+  clips = clips.sort((a, b) => a.start - b.start);
+  audio = audio.sort((a, b) => a.start - b.start);
+  return { project: touch(p, { clips, audio, texts, captions: { ...p.captions, cues: cues.sort((a, b) => a.start - b.start) } }), ids: made };
+}
+
+/** Pull everything that starts at or after `time` by `delta` seconds (negative = left), markers too. */
+export function shiftAfter(p: VibeProject, time: number, delta: number): VibeProject {
+  const after = (t: number) => t >= time - 1e-3;
+  const at = (t: number) => round(Math.max(0, t + delta));
+  return touch(p, {
+    clips: p.clips.map((c) => (after(c.start) ? { ...c, start: at(c.start) } : c)),
+    audio: p.audio.map((c) => (after(c.start) ? { ...c, start: at(c.start) } : c)),
+    texts: p.texts.map((t) => (after(t.start) ? { ...t, start: at(t.start), end: at(t.end) } : t)),
+    captions: {
+      ...p.captions,
+      cues: p.captions.cues.map((c) => (after(c.start) ? { ...c, start: at(c.start), end: at(c.end), words: c.words?.map((w) => ({ ...w, t0: at(w.t0), t1: at(w.t1) })) } : c)),
+    },
+    markers: (p.markers || []).map((m) => (after(m.time) ? { ...m, time: at(m.time) } : m)),
+  });
+}
+
+/** Delete several items, closing the gaps that base-track clips leave behind. */
+export function rippleDeleteItems(p: VibeProject, ids: string[]): VibeProject {
+  const unlocked = ids.filter((id) => !isLocked(p, id));
+  const base = p.clips.filter((c) => c.track === 0 && unlocked.includes(c.id)).sort((a, b) => b.start - a.start);
+  let next = deleteItems(p, unlocked.filter((id) => !base.some((c) => c.id === id)));
+  for (const c of base) next = rippleDelete(next, c.id);
+  return next;
+}
+
+/** Empty stretches on the base track before and between its clips. */
+export function baseGaps(p: VibeProject): { start: number; end: number }[] {
+  const base = p.clips.filter((c) => c.track === 0).sort((a, b) => a.start - b.start);
+  const gaps: { start: number; end: number }[] = [];
+  let cursor = 0;
+  for (const c of base) {
+    if (c.start - cursor > 0.05) gaps.push({ start: round(cursor), end: round(c.start) });
+    cursor = Math.max(cursor, clipEnd(c));
+  }
+  return gaps;
+}
+
+/** Close the base-track gap under `time` by pulling everything after it left. */
+export function closeGap(p: VibeProject, time: number): VibeProject {
+  const gap = baseGaps(p).find((g) => time >= g.start - 1e-3 && time <= g.end + 1e-3);
+  return gap ? shiftAfter(p, gap.end, -(gap.end - gap.start)) : p;
+}
+
+/** Cut an item back to `time`: "start" drops what plays before it, "end" what plays after.
+ * Base-track clips ripple, so the edit closes up behind them. */
+export function trimToTime(p: VibeProject, ids: string[], time: number, side: "start" | "end"): VibeProject {
+  let next = p;
+  const wanted = new Set(ids.filter((id) => !isLocked(p, id)));
+  const hits = spans(p).filter((s) => wanted.has(s.id) && time > s.start + MIN_ITEM_SECONDS && time < s.end - MIN_ITEM_SECONDS);
+  // Right to left, so a ripple never moves an item we have yet to trim.
+  for (const s of hits.sort((a, b) => b.start - a.start)) {
+    const clip = next.clips.find((c) => c.id === s.id);
+    const timed = clip || next.audio.find((c) => c.id === s.id);
+    const ripple = clip?.track === 0;
+    if (side === "start") {
+      const cut = round(time - s.start);
+      if (timed) {
+        next = updateItem(next, s.id, ripple ? { in: timed.in + cut } : { start: time, in: timed.in + cut });
+        if (ripple) next = shiftAfter(next, s.end, -cut);
+      } else next = updateItem(next, s.id, { start: time });
+    } else {
+      const cut = round(s.end - time);
+      if (timed) {
+        next = updateItem(next, s.id, { out: timed.out - cut });
+        if (ripple) next = shiftAfter(next, s.end, -cut);
+      } else next = updateItem(next, s.id, { end: time } as Partial<VibeText>);
+    }
+  }
+  return next;
+}
+
+/** Every cut, item edge, and marker, sorted: where ↑/↓ jump the playhead. */
+export function editPoints(p: VibeProject): number[] {
+  const out = new Set<number>([0]);
+  for (const s of spans(p)) {
+    out.add(round(s.start));
+    out.add(round(s.end));
+  }
+  for (const m of p.markers || []) out.add(round(m.time));
+  return [...out].sort((a, b) => a - b);
+}
+
+/** Add a marker at `time`, or remove the one already within a frame of it. */
+export function toggleMarker(p: VibeProject, time: number): VibeProject {
+  const markers = p.markers || [];
+  const near = markers.find((m) => Math.abs(m.time - time) < 1 / FPS);
+  if (near) return touch(p, { markers: markers.filter((m) => m.id !== near.id) });
+  return touch(p, { markers: [...markers, { id: vibeId("m"), time: round(Math.max(0, time)) }].sort((a, b) => a.time - b.time) });
+}
+
+export function updateMarker(p: VibeProject, id: string, patch: { time?: number; label?: string }): VibeProject {
+  const markers = (p.markers || []).map((m) => {
+    if (m.id !== id) return m;
+    const next = { ...m, ...(patch.time !== undefined ? { time: round(Math.max(0, patch.time)) } : {}) };
+    if (patch.label !== undefined) {
+      if (patch.label.trim()) next.label = patch.label.trim().slice(0, 60);
+      else delete next.label;
+    }
+    return next;
+  });
+  return touch(p, { markers: markers.sort((a, b) => a.time - b.time) });
+}
+
+export const removeMarker = (p: VibeProject, id: string) => touch(p, { markers: (p.markers || []).filter((m) => m.id !== id) });
+
+/** Parse what someone types into the timecode box: "1:23", "83.5", "00:01:23:12". */
+export function parseTimecode(text: string): number | null {
+  const raw = text.trim();
+  if (!raw) return null;
+  if (/^\d+(\.\d+)?$/.test(raw)) return Number(raw);
+  const parts = raw.split(":").map((x) => x.trim());
+  if (parts.some((x) => !/^\d+(\.\d+)?$/.test(x))) return null;
+  const n = parts.map(Number);
+  if (n.length === 2) return n[0] * 60 + n[1];
+  if (n.length === 3) return n[0] * 3600 + n[1] * 60 + n[2];
+  if (n.length === 4) return n[0] * 3600 + n[1] * 60 + n[2] + n[3] / FPS;
+  return null;
 }
 
 export function formatTime(t: number, frames = false): string {
