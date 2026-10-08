@@ -4,7 +4,7 @@
 // elements are nudged back into sync when they drift.
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { Grid3x3, Maximize2, Minimize2, Pause, Play } from "lucide-react";
-import { assetById, clipEnd, formatTimecode, frameSize, projectDuration, trackState, updateItem, VIBE_ASPECTS, type VibeProject } from "../../utils/vibeEdit";
+import { assetById, clipEnd, formatTimecode, frameSize, parseTimecode, projectDuration, trackState, updateItem, VIBE_ASPECTS, type VibeProject } from "../../utils/vibeEdit";
 import { gradeFilter } from "../../utils/vibeAutoEdit";
 import { buildSoundChain } from "../../utils/vibeSound.js";
 import { drawOverlay, textBox } from "./overlay";
@@ -420,9 +420,7 @@ export function Preview() {
           <button type="button" className="ve-viewer-play" onClick={() => vibe.play(!playing)} disabled={total <= 0} aria-label={playing ? "Pause" : "Play"} title={playing ? "Pause (Space)" : "Play (Space)"}>
             {playing ? <Pause size={16} fill="currentColor" /> : <Play size={16} fill="currentColor" />}
           </button>
-          <span>
-            {formatTimecode(playhead)} <small>/ {formatTimecode(total)}</small>
-          </span>
+          <Timecode playhead={playhead} total={total} />
         </span>
         <span className="ve-viewer-tools">
           <button type="button" className={`ve-tool${guides ? " is-on" : ""}`} onClick={toggleGuides} aria-pressed={guides} aria-label="Safe zones and thirds" title="Safe zones and thirds">
@@ -434,5 +432,41 @@ export function Preview() {
         </span>
       </div>
     </div>
+  );
+}
+
+/** The playhead's timecode; click it to type a time to jump to ("1:23", "83.5", "00:01:23:12"). */
+function Timecode({ playhead, total }: { playhead: number; total: number }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const commit = () => {
+    if (draft === null) return;
+    const t = parseTimecode(draft);
+    if (t !== null) vibe.seek(t);
+    setDraft(null);
+  };
+  return (
+    <span className="ve-viewer-time">
+      {draft !== null ? (
+        <input
+          className="ve-timecode-input"
+          autoFocus
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onFocus={(e) => e.currentTarget.select()}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commit();
+            if (e.key === "Escape") setDraft(null);
+          }}
+          aria-label="Go to time"
+          placeholder="1:23"
+        />
+      ) : (
+        <button type="button" className="ve-timecode" onClick={() => setDraft(formatTimecode(playhead))} title="Click to type a time to jump to" aria-label={`Playhead at ${formatTimecode(playhead)}. Go to a time`}>
+          {formatTimecode(playhead)}
+        </button>
+      )}
+      <small>/ {formatTimecode(total)}</small>
+    </span>
   );
 }

@@ -35,6 +35,8 @@ import {
   toggleMarker,
   trimToTime,
   updateMarker,
+  rippleTrim,
+  setLabel,
 } from "./vibeEdit";
 import { sanitizeActions, summarizeProject } from "./vibeEditActions.js";
 import { soundFilters } from "./vibeSound.js";
@@ -261,6 +263,28 @@ describe("timeline editing", () => {
     expect(shiftAfter(p, 2, -1).markers![0].time).toBe(2.2);
     expect(toggleMarker(p, 3.21).markers).toHaveLength(0);
     expect(normalizeProject({ ...p, markers: [{ id: "x", time: -1 }, { id: "y", time: 2 }] as never }).markers).toEqual([{ id: "y", time: 2 }]);
+  });
+
+  it("ripple-trims a base clip so the edit stays closed up", () => {
+    const p = twoClips();
+    const [a] = p.clips;
+    const shorter = rippleTrim(p, a.id, "end", -3);
+    expect(shorter.clips[0]).toMatchObject({ start: 0, out: 7 });
+    expect(shorter.clips[1].start).toBe(7);
+    const headCut = rippleTrim(p, a.id, "start", 2);
+    expect(headCut.clips[0]).toMatchObject({ start: 0, in: 2, out: 10 });
+    expect(headCut.clips[1].start).toBe(8);
+    // Never past the source: v1 is 10 s long.
+    expect(rippleTrim(p, a.id, "end", 5).clips[0].out).toBe(10);
+  });
+
+  it("labels and unlabels items", () => {
+    const p = twoClips();
+    const id = p.clips[0].id;
+    const red = setLabel(p, [id], "rose");
+    expect(red.clips[0].label).toBe("rose");
+    expect(setLabel(red, [id], null).clips[0].label).toBeUndefined();
+    expect(setLabel(p, [id], "plaid").clips[0].label).toBeUndefined();
   });
 
   it("reads typed timecodes", () => {

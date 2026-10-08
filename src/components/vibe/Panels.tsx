@@ -824,21 +824,6 @@ function Slider({ label, value, display, min, max, step, onChange }: { label: st
   );
 }
 
-const SHORTCUTS: [string, string][] = [
-  ["Space", "Play / pause"],
-  ["S", "Split at playhead"],
-  ["Q / W", "Trim start / end to playhead"],
-  ["⌫", "Delete selected"],
-  ["⇧⌫", "Delete and close the gap"],
-  ["⌘D", "Duplicate"],
-  ["← →", "Step a frame"],
-  ["↑ ↓", "Previous / next cut"],
-  ["M", "Add a marker"],
-  ["Z", "Fit the timeline"],
-  ["⌘Z / ⇧⌘Z", "Undo / redo"],
-  ["?", "Every shortcut"],
-];
-
 function ProjectProps() {
   const project = useVibe((s) => s.project);
   const duration = projectDuration(project);
@@ -876,13 +861,6 @@ function ProjectProps() {
           <div><dt>Clips</dt><dd>{project.clips.length}</dd></div>
           <div><dt>Sounds</dt><dd>{project.audio.length}</dd></div>
           <div><dt>Captions</dt><dd>{project.captions.cues.length}</dd></div>
-        </dl>
-      </Group>
-      <Group title="Shortcuts">
-        <dl className="ve-keys">
-          {SHORTCUTS.map(([k, v]) => (
-            <div key={k}><dt><kbd>{k}</kbd></dt><dd>{v}</dd></div>
-          ))}
         </dl>
       </Group>
     </div>

@@ -56,6 +56,8 @@ export interface VibeClip {
   flagged?: boolean;
   /** A recap cut's footage: where it sits in the film (seconds) and Jev's match score (0-100). */
   match?: { film?: number; score?: number };
+  /** Editor's color label (CLIP_LABELS id), for organizing only. */
+  label?: string;
 }
 
 /** Color correction: contrast and saturation are multipliers (1 = none), brightness an offset (-1..1). */
@@ -80,6 +82,7 @@ export interface VibeAudioClip {
   /** Voice treatment preset id (see vibeSound.ts). */
   preset?: string;
   name?: string;
+  label?: string;
 }
 
 export interface VibeText {
@@ -94,6 +97,7 @@ export interface VibeText {
   size: number;
   color: string;
   look?: "plain" | "boxed" | "outline";
+  label?: string;
 }
 
 export interface VibeWord {
@@ -151,6 +155,29 @@ export interface VibeProject {
   source?: { kind: "recap"; recapId: string; format: "long" | "short" };
   createdAt: number;
   updatedAt: number;
+}
+
+/** Color labels for organizing the timeline (Premiere's label colors). They never reach the render. */
+export const CLIP_LABELS: { id: string; name: string; color: string }[] = [
+  { id: "rose", name: "Rose", color: "#d9536a" },
+  { id: "amber", name: "Amber", color: "#d1902a" },
+  { id: "green", name: "Green", color: "#3f9d68" },
+  { id: "teal", name: "Teal", color: "#2f9ea3" },
+  { id: "blue", name: "Blue", color: "#4f7fe0" },
+  { id: "violet", name: "Violet", color: "#8a68d8" },
+];
+
+/** Set or clear (null) the color label on clips, sounds, and titles. */
+export function setLabel(p: VibeProject, ids: string[], label: string | null): VibeProject {
+  const wanted = new Set(ids);
+  const apply = <T extends { id: string; label?: string }>(x: T): T => {
+    if (!wanted.has(x.id)) return x;
+    const next = { ...x };
+    if (label && CLIP_LABELS.some((l) => l.id === label)) next.label = label;
+    else delete next.label;
+    return next;
+  };
+  return touch(p, { clips: p.clips.map(apply), audio: p.audio.map(apply), texts: p.texts.map(apply) });
 }
 
 export interface VibeMarker {
@@ -737,6 +764,30 @@ export function trimToTime(p: VibeProject, ids: string[], time: number, side: "s
     }
   }
   return next;
+}
+
+/** A drag-trim on a base-track clip that keeps the edit closed up behind it
+ * (a magnetic main track): the clip's start stays put and everything after its
+ * old end moves by the change in length. */
+export function rippleTrim(base: VibeProject, id: string, side: "start" | "end", delta: number): VibeProject {
+  const clip = base.clips.find((c) => c.id === id);
+  if (!clip) return base;
+  const asset = assetById(base, clip.assetId);
+  const cap = asset?.kind === "image" ? Infinity : asset?.duration ?? Infinity;
+  let change: number;
+  let next: VibeProject;
+  if (side === "start") {
+    // Dragging the head right drops footage from the front; left brings it back.
+    const inPoint = Math.min(clip.out - MIN_ITEM_SECONDS, Math.max(0, clip.in + delta));
+    change = clip.in - inPoint;
+    next = updateItem(base, id, { in: inPoint });
+  } else {
+    const out = Math.min(cap, Math.max(clip.in + MIN_ITEM_SECONDS, clip.out + delta));
+    change = out - clip.out;
+    next = updateItem(base, id, { out });
+  }
+  if (Math.abs(change) < 1e-6) return next;
+  return shiftAfter(next, clipEnd(clip), change);
 }
 
 /** Every cut, item edge, and marker, sorted: where ↑/↓ jump the playhead. */

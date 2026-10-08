@@ -17,6 +17,17 @@ export interface VibeState {
   save: SaveState;
   /** Long-running work shown in the status strip, keyed by task id. */
   tasks: Record<string, string>;
+  /** Magnetic main track: deletes and trims on the base track close up behind them. */
+  magnetic: boolean;
+}
+
+const MAGNETIC_KEY = "vibe-edit-magnetic";
+function readMagnetic() {
+  try {
+    return window.localStorage.getItem(MAGNETIC_KEY) !== "0";
+  } catch {
+    return true;
+  }
 }
 
 const HISTORY = 100;
@@ -30,6 +41,7 @@ let state: VibeState = {
   pxPerSec: 48,
   save: "saved",
   tasks: {},
+  magnetic: typeof window === "undefined" ? true : readMagnetic(),
 };
 const listeners = new Set<() => void>();
 let lastKey = "";
@@ -99,6 +111,15 @@ export const vibe = {
   play(on = !state.playing) {
     if (on && state.playhead >= projectDuration(state.project) - 0.05) state = { ...state, playhead: 0 };
     state = { ...state, playing: on && projectDuration(state.project) > 0 };
+    emit();
+  },
+  setMagnetic(on: boolean) {
+    try {
+      window.localStorage.setItem(MAGNETIC_KEY, on ? "1" : "0");
+    } catch {
+      // Preference only.
+    }
+    state = { ...state, magnetic: on };
     emit();
   },
   task(id: string, label: string | null) {

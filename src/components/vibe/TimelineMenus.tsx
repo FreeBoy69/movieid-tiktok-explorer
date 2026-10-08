@@ -1,10 +1,11 @@
 // The timeline's right-click menu and its keyboard reference. Both float in
 // fixed position so the timeline's scroll box never clips them.
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
-import { X } from "lucide-react";
+import { Ban, X } from "lucide-react";
 
 export type MenuEntry =
   | { label: string; icon?: ReactNode; keys?: string; danger?: boolean; disabled?: boolean; onSelect: () => void }
+  | { swatches: { id: string; name: string; color: string }[]; current?: string; onPick: (id: string | null) => void }
   | "sep";
 
 export function ContextMenu({ x, y, items, label, onClose }: { x: number; y: number; items: MenuEntry[]; label: string; onClose: () => void }) {
@@ -63,6 +64,39 @@ export function ContextMenu({ x, y, items, label, onClose }: { x: number; y: num
       {items.map((item, i) =>
         item === "sep" ? (
           <span key={`sep-${i}`} className="ve-menu-sep" role="separator" />
+        ) : "swatches" in item ? (
+          <div key={`swatches-${i}`} className="ve-menu-swatches" role="group" aria-label="Color label">
+            {item.swatches.map((sw) => (
+              <button
+                key={sw.id}
+                type="button"
+                role="menuitemradio"
+                aria-checked={item.current === sw.id}
+                className={`ve-swatch${item.current === sw.id ? " is-on" : ""}`}
+                style={{ background: sw.color }}
+                onClick={() => {
+                  onClose();
+                  item.onPick(sw.id);
+                }}
+                aria-label={`${sw.name} label`}
+                title={sw.name}
+              />
+            ))}
+            <button
+              type="button"
+              role="menuitemradio"
+              aria-checked={!item.current}
+              className={`ve-swatch ve-swatch-none${item.current ? "" : " is-on"}`}
+              onClick={() => {
+                onClose();
+                item.onPick(null);
+              }}
+              aria-label="No label"
+              title="No label"
+            >
+              <Ban size={12} aria-hidden="true" />
+            </button>
+          </div>
         ) : (
           <button
             key={item.label}
@@ -104,8 +138,8 @@ const SHORTCUTS: { group: string; keys: [string, string][] }[] = [
       ["W", "Trim the end to the playhead"],
       ["⌥ ← →", "Nudge the selection a frame"],
       ["⌘ D", "Duplicate"],
-      ["⌫", "Delete"],
-      ["Shift ⌫", "Delete and close the gap"],
+      ["⌫", "Delete (closes the gap when Magnetic is on)"],
+      ["Shift ⌫", "Delete the other way: leave or close the gap"],
       ["⌘ Z", "Undo"],
       ["Shift ⌘ Z", "Redo"],
     ],
@@ -117,6 +151,8 @@ const SHORTCUTS: { group: string; keys: [string, string][] }[] = [
       ["Drag", "Select clips inside a box"],
       ["Shift click", "Add to the selection"],
       ["M", "Add or remove a marker"],
+      ["Shift S", "Skimming: the preview follows the pointer"],
+      ["N", "Snapping on or off"],
       ["Z", "Fit the edit"],
       ["⌘ scroll", "Zoom around the pointer"],
     ],

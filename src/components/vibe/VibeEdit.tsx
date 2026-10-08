@@ -497,7 +497,7 @@ function Editor({ onBack, onOpenEdit, onNew }: { onBack: () => void; onOpenEdit:
           vibe.commit(project);
           vibe.select(ids);
         }
-      } else if (!mod && e.key.toLowerCase() === "s") {
+      } else if (!mod && !e.shiftKey && e.key.toLowerCase() === "s") {
         vibe.commit((p) => splitAt(p, s.playhead, s.selection.length ? s.selection : undefined));
       } else if (!mod && !e.altKey && (e.key.toLowerCase() === "q" || e.key.toLowerCase() === "w")) {
         // With nothing selected, Q and W act on the base-track clip under the playhead.
@@ -507,7 +507,9 @@ function Editor({ onBack, onOpenEdit, onNew }: { onBack: () => void; onOpenEdit:
         vibe.commit((p) => toggleMarker(p, s.playhead));
       } else if ((e.key === "Delete" || e.key === "Backspace") && s.selection.length) {
         e.preventDefault();
-        if (e.shiftKey) vibe.commit((p) => rippleDeleteItems(p, s.selection));
+        // The magnetic main track closes gaps; Shift does the opposite of the current mode.
+        const close = s.magnetic !== e.shiftKey;
+        if (close) vibe.commit((p) => rippleDeleteItems(p, s.selection));
         else vibe.commit((p) => deleteItems(p, s.selection.filter((id) => !isLocked(p, id))));
       } else if (e.altKey && (e.key === "ArrowLeft" || e.key === "ArrowRight") && s.selection.length) {
         e.preventDefault();

@@ -469,15 +469,10 @@
 .ve-color code { color: var(--ve-muted); font-family: var(--ve-mono); font-size: 11.5px; }
 .ve-seg-block { display: flex; width: 100%; }
 .ve-seg-block button { flex: 1; justify-content: center; padding: 0 6px; font-size: 12px; }
-.ve-stats,
-.ve-keys { display: grid; gap: 6px; margin: 0; }
-.ve-stats { grid-template-columns: 1fr 1fr; gap: 10px; }
+.ve-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 0; }
 .ve-stats div { display: grid; gap: 2px; padding: 8px 10px; border-radius: 8px; background: var(--ve-sunken); }
 .ve-stats dt { color: var(--ve-faint); font-size: 11px; }
 .ve-stats dd { margin: 0; font-family: var(--ve-mono); font-size: 12.5px; font-variant-numeric: tabular-nums; }
-.ve-keys div { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.ve-keys dd { margin: 0; color: var(--ve-muted); font-size: 12px; }
-.ve-keys kbd { display: inline-block; min-width: 22px; padding: 2px 6px; border: 1px solid var(--ve-line-strong); border-bottom-width: 2px; border-radius: 5px; background: var(--ve-raised); color: var(--ve-text); font-family: var(--ve-mono); font-size: 10.5px; text-align: center; }
 
 /* ---------- Chat ---------- */
 .ve-chat-title { display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 700; }
@@ -604,11 +599,14 @@
 .ve-snap-guide { position: absolute; top: 34px; bottom: 0; z-index: 6; width: 0; border-left: 1px dashed #5ec8ff; pointer-events: none; }
 
 /* ---------- Timeline: timecode, markers, hover time ---------- */
-.ve-timecode { width: 100%; height: 22px; padding: 0 6px; border-radius: 6px; color: var(--ve-text); font-family: var(--ve-mono); font-size: 11.5px; font-variant-numeric: tabular-nums; letter-spacing: 0.02em; text-align: left; cursor: text; transition: background 0.16s ease, color 0.16s ease; }
-.ve-timecode:hover { background: var(--ve-raised); color: var(--ve-accent-text); }
-.ve-timecode-input { width: 100%; height: 22px; padding: 0 6px; border: 1px solid var(--ve-line-strong); border-radius: 6px; background: var(--ve-sunken); color: var(--ve-text); font-family: var(--ve-mono); font-size: 11.5px; font-variant-numeric: tabular-nums; outline: none; }
-.ve-timecode-input:focus { border-color: var(--ve-accent); }
-.ve-timecode-input::placeholder { color: var(--ve-faint); }
+/* The preview's timecode doubles as a go-to-time box. The viewer stays dark in both themes. */
+.ve-viewer-time { display: inline-flex; align-items: center; gap: 6px; }
+.ve-timecode { height: 28px; margin: 0 -6px; padding: 0 6px; border-radius: 7px; color: inherit; font: inherit; letter-spacing: inherit; cursor: text; transition: background 0.16s ease, color 0.16s ease; }
+.ve-timecode:hover { background: rgb(255 255 255 / 0.08); color: #f9dc0b; }
+.ve-timecode-input { width: 12.5ch; height: 28px; margin: 0 -6px; padding: 0 6px; border: 1px solid rgb(255 255 255 / 0.2); border-radius: 7px; background: rgb(255 255 255 / 0.06); color: #eceae3; font: inherit; outline: none; }
+.ve-timecode-input:focus,
+.ve-timecode-input:focus-visible { border-color: #f9dc0b; outline: none; }
+.ve-timecode-input::placeholder { color: rgb(236 234 227 / 0.45); }
 .ve-marker { position: absolute; bottom: 2px; z-index: 3; display: inline-flex; max-width: 160px; height: 14px; align-items: center; gap: 3px; padding: 0 5px 0 3px; border-radius: 0 4px 4px 0 !important; background: var(--ve-marker); color: var(--ve-marker-ink); font-size: 10px; font-weight: 650; line-height: 1; cursor: grab; transition: filter 0.16s ease; }
 .ve-marker:hover { filter: brightness(1.12); }
 .ve-marker:active { cursor: grabbing; }
@@ -672,6 +670,57 @@
 .ve-keys-groups dd { margin: 0; color: var(--ve-text); font-size: 12px; line-height: 1.35; }
 .ve-keys-groups kbd { display: inline-block; min-width: 20px; padding: 1px 5px; border: 1px solid var(--ve-line-strong); border-bottom-width: 2px; border-radius: 5px; background: var(--ve-panel); color: var(--ve-text); font-family: var(--ve-mono); font-size: 10.5px; text-align: center; white-space: nowrap; }
 
+/* ---------- Timeline: modes, track heights, overview ---------- */
+.ve-modes { display: inline-flex; gap: 2px; padding: 2px; border-radius: 10px; background: var(--ve-sunken); box-shadow: 0 0 0 1px var(--ve-line) inset; }
+.ve-mode { display: inline-flex; height: 28px; align-items: center; gap: 6px; padding: 0 9px; border-radius: 8px !important; color: var(--ve-muted); font-size: 12px; font-weight: 600; transition: background 0.16s ease, color 0.16s ease; }
+.ve-mode:hover { color: var(--ve-text); }
+.ve-mode.is-on { background: color-mix(in srgb, var(--ve-accent) 14%, var(--ve-raised)); color: var(--ve-accent-text); box-shadow: 0 1px 2px rgb(0 0 0 / 0.18); }
+@media (max-width: 1360px) { .ve-mode span { display: none; } .ve-mode { padding: 0 7px; } }
+.ve-density { display: inline-flex; gap: 2px; padding: 2px; border-radius: 8px; background: var(--ve-sunken); box-shadow: 0 0 0 1px var(--ve-line) inset; }
+.ve-density button,
+.ve-density-one { display: grid; width: 28px; height: 22px; place-items: center; border-radius: 6px !important; color: var(--ve-faint); transition: background 0.16s ease, color 0.16s ease; }
+.ve-density button:hover,
+.ve-density-one:hover { color: var(--ve-text); }
+.ve-density button.is-on { background: var(--ve-raised); color: var(--ve-text); box-shadow: 0 1px 2px rgb(0 0 0 / 0.2); }
+.ve-density-one { width: 100%; }
+.ve-timeline[data-density="compact"] .ve-row-video { height: 44px; }
+.ve-timeline[data-density="compact"] .ve-row-audio { height: 40px; }
+.ve-timeline[data-density="compact"] .ve-row-thin { height: 28px; }
+.ve-timeline[data-density="compact"] .ve-item-label { height: 17px; }
+.ve-timeline[data-density="compact"] .ve-env,
+.ve-timeline[data-density="compact"] .ve-wave { top: 15px; }
+.ve-timeline[data-density="large"] .ve-row-video { height: 96px; }
+.ve-timeline[data-density="large"] .ve-row-audio { height: 76px; }
+.ve-timeline[data-density="large"] .ve-row-thin { height: 36px; }
+.ve-row-main .ve-lane { border-radius: 6px; background: color-mix(in srgb, var(--ve-text) 2.5%, transparent); }
+.ve-row-main.is-magnetic .ve-lane { background: color-mix(in srgb, var(--ve-accent) 3.5%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--ve-accent) 10%, transparent) inset; }
+.ve-row-first-audio { margin-top: 6px; border-top: 1px solid var(--ve-line); }
+.ve-overview { flex: none; padding: 6px 10px 8px calc(var(--ve-head) + 0px); border-top: 1px solid var(--ve-line); border-radius: 0 0 var(--ve-radius) var(--ve-radius); background: var(--ve-panel); cursor: pointer; user-select: none; touch-action: none; }
+.ve-overview-track { position: relative; height: 14px; border-radius: 4px; background: var(--ve-sunken); }
+.ve-ov-clip { position: absolute; min-width: 1px; height: 4px; border-radius: 2px; }
+.ve-ov-video { top: 2px; background: color-mix(in srgb, var(--ve-video) 70%, var(--ve-text)); }
+.ve-ov-audio { top: 8px; background: color-mix(in srgb, var(--ve-voice) 70%, var(--ve-text)); }
+.ve-ov-marker { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--ve-marker); }
+.ve-ov-playhead { position: absolute; top: -2px; bottom: -2px; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--ve-accent); }
+.ve-ov-window { position: absolute; top: -3px; bottom: -3px; border-radius: 5px; background: color-mix(in srgb, var(--ve-text) 7%, transparent); box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--ve-text) 55%, transparent) inset; cursor: grab; transition: box-shadow 0.16s ease; }
+.ve-overview:hover .ve-ov-window { box-shadow: 0 0 0 1.5px var(--ve-text) inset; }
+.ve-timeline:has(.ve-overview) .ve-tl-scroll { border-radius: 0; }
+
+/* ---------- Timeline: clip polish and color labels ---------- */
+.ve-item { border-radius: 6px; }
+.ve-item.has-label:not(.ve-item-video):not(.ve-item-image) { background: color-mix(in srgb, var(--ve-label) 82%, black); color: #fff; }
+.ve-root[data-theme="light"] .ve-item.has-label:not(.ve-item-video):not(.ve-item-image) { background: var(--ve-label); }
+.ve-item-video.has-label .ve-item-label,
+.ve-item-image.has-label .ve-item-label { background: linear-gradient(color-mix(in srgb, var(--ve-label) 92%, transparent), color-mix(in srgb, var(--ve-label) 0%, transparent)); }
+.ve-item.has-label::after { position: absolute; inset: 0; border-radius: inherit; box-shadow: 0 0 0 1px color-mix(in srgb, var(--ve-label) 70%, transparent) inset; content: ""; pointer-events: none; }
+.ve-wave path { opacity: 0.7; }
+.ve-menu-swatches { display: flex; align-items: center; gap: 6px; padding: 6px 9px; }
+.ve-swatch { display: grid; width: 20px; height: 20px; place-items: center; border-radius: 50% !important; box-shadow: 0 0 0 1px rgb(0 0 0 / 0.25) inset; transition: transform 0.14s ease, box-shadow 0.14s ease; }
+.ve-swatch:hover { transform: scale(1.12); }
+.ve-swatch.is-on { box-shadow: 0 0 0 2px var(--ve-raised), 0 0 0 3.5px var(--ve-text); }
+.ve-swatch-none { background: var(--ve-sunken); color: var(--ve-faint); box-shadow: 0 0 0 1px var(--ve-line-strong) inset; }
+.ve-swatch:focus-visible { outline: 2px solid var(--ve-accent); outline-offset: 2px; }
+
 /* ---------- Narrow screens ---------- */
 @media (max-width: 900px) {
   .ve-editor { grid-template-columns: minmax(0, 1fr); grid-template-rows: 56px minmax(0, 1fr) auto; padding: 0 8px calc(64px + env(safe-area-inset-bottom)) 8px; }
@@ -713,7 +762,6 @@
   .ve-tl-resize { display: none; }
   .ve-tl-bar { grid-template-columns: auto; }
   .ve-row-head { justify-content: center; padding: 0; }
-  .ve-timecode { font-size: 10px; padding: 0 2px; text-align: center; }
   .ve-keys-groups { grid-template-columns: minmax(0, 1fr); }
   .ve-keys-panel { position: fixed; right: 12px; bottom: auto; left: 12px; top: 64px; width: auto; }
   .ve-row-video { height: 56px; }
