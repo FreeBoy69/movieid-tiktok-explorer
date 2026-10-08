@@ -214,8 +214,8 @@
 .ve-scrub input[type="range"]::-moz-range-thumb { width: 14px; height: 14px; border: 2px solid var(--ve-stage); border-radius: 50%; background: #f4f2ec; box-shadow: 0 1px 4px rgb(0 0 0 / 0.5); }
 .ve-scrub input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.12); }
 .ve-scrub input[type="range"]:focus-visible { outline: none; }
-.ve-scrub input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px rgb(249 220 11 / 0.35), 0 0 0 1px #f9dc0b; }
-.ve-scrub input[type="range"]:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 3px rgb(249 220 11 / 0.35); }
+.ve-scrub input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px var(--ui-ring), 0 0 0 1px var(--ui-focus); }
+.ve-scrub input[type="range"]:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 3px var(--ui-ring); }
 .ve-scrub input[type="range"]:disabled { cursor: default; opacity: 0.5; }
 .ve-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .ve-viewer-bar { display: grid; height: 56px; flex: none; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; padding: 0 16px; }
@@ -499,7 +499,7 @@
 .ve-timecode:hover { background: rgb(255 255 255 / 0.08); color: #f9dc0b; }
 .ve-timecode-input { width: 12.5ch; height: 28px; margin: 0 -6px; padding: 0 6px; border: 1px solid rgb(255 255 255 / 0.2); border-radius: 7px; background: rgb(255 255 255 / 0.06); color: #eceae3; font: inherit; outline: none; }
 .ve-timecode-input:focus,
-.ve-timecode-input:focus-visible { border-color: #f9dc0b; outline: none; }
+.ve-timecode-input:focus-visible { border-color: var(--ui-focus); outline: none; }
 .ve-timecode-input::placeholder { color: rgb(236 234 227 / 0.45); }
 .ve-marker { position: absolute; bottom: 2px; z-index: 3; display: inline-flex; max-width: 160px; height: 14px; align-items: center; gap: 3px; padding: 0 5px 0 3px; border-radius: 0 4px 4px 0 !important; background: var(--ve-marker); color: var(--ve-marker-ink); font-size: 10px; font-weight: 650; line-height: 1; cursor: grab; transition: filter 0.16s ease; }
 .ve-marker:hover { filter: brightness(1.12); }

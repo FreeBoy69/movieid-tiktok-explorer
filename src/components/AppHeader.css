@@ -398,7 +398,7 @@
 }
 .ah .ah-avatar:hover,
 .ah .ah-avatar[aria-expanded="true"] {
-  box-shadow: 0 0 0 2px var(--ah-accent);
+  box-shadow: 0 0 0 2px var(--ui-line-strong);
 }
 .ah-avatar-img {
   width: 100%;

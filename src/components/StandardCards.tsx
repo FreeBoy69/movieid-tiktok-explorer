@@ -48,7 +48,7 @@ export function StandardVideoCard({
   ariaLabel,
 }: StandardVideoCardProps) {
   const label = ariaLabel || `Open ${title || "video"}`;
-  const interactionClass = "absolute inset-0 z-[1] rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b] focus-visible:ring-offset-2";
+  const interactionClass = "absolute inset-0 z-[1] rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-focus)] focus-visible:ring-offset-2";
 
   return (
     <article
@@ -193,9 +193,9 @@ export function StandardChannelCard({
       className,
     )}>
       {url ? (
-        <a href={url} target="_blank" rel="noreferrer" className="absolute inset-0 z-[1] rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b] focus-visible:ring-offset-2" aria-label={label} />
+        <a href={url} target="_blank" rel="noreferrer" className="absolute inset-0 z-[1] rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-focus)] focus-visible:ring-offset-2" aria-label={label} />
       ) : onOpen ? (
-        <button type="button" onClick={onOpen} className="absolute inset-0 z-[1] rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-[#f9dc0b] focus-visible:ring-offset-2" aria-label={label} />
+        <button type="button" onClick={onOpen} className="absolute inset-0 z-[1] rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-[var(--ui-focus)] focus-visible:ring-offset-2" aria-label={label} />
       ) : null}
 
       <div className="pointer-events-none relative z-10 flex h-full min-h-0 flex-col">

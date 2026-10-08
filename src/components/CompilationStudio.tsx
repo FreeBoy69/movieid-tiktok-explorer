@@ -996,7 +996,7 @@ export function CompilationStudio({
               value={url}
               onChange={(event) => setUrl(event.target.value)}
               placeholder={sourceMode === "search" ? "Type a TikTok search term, e.g. anime recap" : "Paste TikTok playlist, channel, search, or collection URL"}
-              className="h-11 w-full rounded-lg border border-[var(--ui-line)] bg-[var(--ui-bg)] pl-9 pr-4 text-sm font-semibold outline-none transition focus:border-[var(--ui-accent)]"
+              className="h-11 w-full rounded-lg border border-[var(--ui-line)] bg-[var(--ui-bg)] pl-9 pr-4 text-sm font-semibold outline-none transition focus:border-[var(--ui-focus)]"
             />
           </label>
           <label className="relative shrink-0">
@@ -1004,7 +1004,7 @@ export function CompilationStudio({
             <input
               type="number" min={1} max={5000} value={count}
               onChange={(event) => setCount(Number(event.target.value))}
-              className="h-11 w-20 rounded-lg border border-[var(--ui-line)] bg-[var(--ui-bg)] px-3 text-sm font-bold outline-none focus:border-[var(--ui-accent)]"
+              className="h-11 w-20 rounded-lg border border-[var(--ui-line)] bg-[var(--ui-bg)] px-3 text-sm font-bold outline-none focus:border-[var(--ui-focus)]"
               aria-label="Clip count"
               title="Maximum clips to load"
             />
@@ -1055,7 +1055,7 @@ export function CompilationStudio({
                   <h2 className="truncate text-lg font-black text-[var(--ui-text)]">{playlist.title || "Selected source"}</h2>
                 </div>
                 <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap">
-                  <select value={sort} onChange={(event) => changeSort(event.target.value as SortMode)} className="col-span-2 h-11 min-w-0 rounded-lg border border-[var(--ui-line)] bg-[var(--ui-panel)] px-3 text-xs font-bold outline-none focus:border-[var(--ui-accent)] sm:col-span-1">
+                  <select value={sort} onChange={(event) => changeSort(event.target.value as SortMode)} className="col-span-2 h-11 min-w-0 rounded-lg border border-[var(--ui-line)] bg-[var(--ui-panel)] px-3 text-xs font-bold outline-none focus:border-[var(--ui-focus)] sm:col-span-1">
                     <option value="views">Views high to low</option>
                     <option value="newest">Newest first</option>
                     <option value="oldest">Oldest first</option>

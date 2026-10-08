@@ -200,7 +200,7 @@
   outline: none;
 }
 .plib-card-open:focus-visible .plib-cover {
-  outline: 2px solid var(--pl-accent-text);
+  outline: 2px solid var(--ui-focus);
   outline-offset: 3px;
 }
 .plib-cover-media {
@@ -654,7 +654,7 @@
 .plib-composer input:focus,
 .plib-composer textarea:focus {
   outline: none;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--pl-accent) 38%, transparent);
+  box-shadow: 0 0 0 3px var(--ui-ring);
 }
 .plib-chips {
   display: flex;

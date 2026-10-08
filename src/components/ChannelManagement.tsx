@@ -2108,7 +2108,7 @@ function CommentsPanel({ comments, loading, canReply, canManage, readOnlyLabel, 
         {canManage ? <div className="rounded-xl border border-[var(--ui-line)] bg-[var(--ui-panel)] p-3">
           <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--ui-text)]/35">Comment as your channel</label>
           <div className="mt-2 flex gap-2">
-            <input value={newCommentText} onChange={(event) => onNewCommentTextChange(event.target.value)} className="h-10 min-w-0 flex-1 rounded-lg border border-[var(--ui-line)] bg-[var(--ui-panel)] px-3 text-sm outline-none transition focus:border-[var(--ui-accent)]/45" placeholder="Add a public comment" />
+            <input value={newCommentText} onChange={(event) => onNewCommentTextChange(event.target.value)} className="h-10 min-w-0 flex-1 rounded-lg border border-[var(--ui-line)] bg-[var(--ui-panel)] px-3 text-sm outline-none transition focus:border-[var(--ui-focus)]/45" placeholder="Add a public comment" />
             <button type="button" onClick={onPostComment} disabled={!newCommentText.trim() || commentActionBusy === "post"} className="ui-btn is-ink">{commentActionBusy === "post" ? <Loader2 className="h-4 w-4 ui-spin" /> : <Send className="h-4 w-4" />}Post</button>
           </div>
         </div> : null}
@@ -2124,7 +2124,7 @@ function CommentsPanel({ comments, loading, canReply, canManage, readOnlyLabel, 
                 {thread.replies.length ? <div className="mt-3 space-y-2 border-l border-[var(--ui-line)] pl-3">{thread.replies.map((reply) => <ManagedCommentBody key={reply.id} comment={reply} compact canManage={canManage} ownChannelId={ownChannelId} busy={commentActionBusy} onUpdate={onUpdateComment} onDelete={onDeleteComment} onModerate={onModerateComment} />)}</div> : null}
                 {canReply && thread.canReply ? (
                   <div className="mt-3 flex gap-2">
-                    <input value={replyText[parent.id] || ""} onChange={(event) => onReplyTextChange(parent.id, event.target.value)} className="h-10 min-w-0 flex-1 rounded-lg border border-[var(--ui-line)] bg-[var(--ui-panel)] px-3 text-sm outline-none transition focus:border-[var(--ui-accent)]/45" placeholder="Reply as your channel" />
+                    <input value={replyText[parent.id] || ""} onChange={(event) => onReplyTextChange(parent.id, event.target.value)} className="h-10 min-w-0 flex-1 rounded-lg border border-[var(--ui-line)] bg-[var(--ui-panel)] px-3 text-sm outline-none transition focus:border-[var(--ui-focus)]/45" placeholder="Reply as your channel" />
                     <button type="button" onClick={() => onReply(parent.id)} disabled={!replyText[parent.id]?.trim() || replyingTo === parent.id} className="ui-btn is-primary">{replyingTo === parent.id ? <Loader2 className="h-4 w-4 ui-spin" /> : <Send className="h-4 w-4" />}Reply</button>
                   </div>
                 ) : <p className="mt-3 rounded-lg bg-[var(--ui-bg)] px-3 py-2 text-xs font-semibold text-[var(--ui-text)]/45">{canReply ? "Replies are disabled for this thread." : (readOnlyLabel || "Reconnect Google to enable replies.")}</p>}
@@ -2144,7 +2144,7 @@ function ManagedCommentBody({ comment, compact = false, canManage, ownChannelId,
   useEffect(() => setText(comment.textOriginal || comment.textDisplay || ""), [comment.id, comment.textDisplay, comment.textOriginal]);
   if (editing) {
     return <div className="rounded-lg bg-[var(--ui-bg)] p-2.5">
-      <textarea value={text} onChange={(event) => setText(event.target.value)} rows={compact ? 2 : 3} className="w-full resize-y rounded-lg border border-[var(--ui-line)] bg-[var(--ui-panel)] px-3 py-2 text-sm outline-none transition focus:border-[var(--ui-accent)]/45" />
+      <textarea value={text} onChange={(event) => setText(event.target.value)} rows={compact ? 2 : 3} className="w-full resize-y rounded-lg border border-[var(--ui-line)] bg-[var(--ui-panel)] px-3 py-2 text-sm outline-none transition focus:border-[var(--ui-focus)]/45" />
       <div className="mt-2 flex justify-end gap-2"><button type="button" onClick={() => { setEditing(false); setText(comment.textOriginal || comment.textDisplay || ""); }} className="h-8 rounded-lg border border-[var(--ui-line)] px-2.5 text-[11px] font-bold text-[var(--ui-text)]/55">Cancel</button><button type="button" onClick={() => { onUpdate(comment.id, text); setEditing(false); }} disabled={!text.trim() || busy === `edit:${comment.id}`} className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[var(--ui-accent)] px-2.5 text-[11px] font-bold text-[var(--ui-accent-ink)] disabled:opacity-45">{busy === `edit:${comment.id}` ? <Loader2 className="h-3.5 w-3.5 ui-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}Save</button></div>
     </div>;
   }
@@ -3004,7 +3004,7 @@ function ReplyAgentResults({ result, running, isDark, drafts, posting, onDraft, 
                     maxLength={500}
                     rows={2}
                     onChange={(e) => onDraft(item.commentId, { text: e.target.value })}
-                    className={cn("w-full resize-y rounded-lg border px-3 py-2 text-sm font-semibold leading-6 outline-none transition", isDark ? "border-[var(--ui-accent)]/25 bg-[var(--ui-accent)]/[0.07] text-white focus:border-[var(--ui-accent)]/50" : "border-[var(--ui-accent)]/50 bg-[var(--ui-accent-soft)]/60 text-[var(--ui-text)] focus:border-[var(--ui-accent-text)]")}
+                    className={cn("w-full resize-y rounded-lg border px-3 py-2 text-sm font-semibold leading-6 outline-none transition", isDark ? "border-[var(--ui-accent)]/25 bg-[var(--ui-accent)]/[0.07] text-white focus:border-[var(--ui-focus)]/50" : "border-[var(--ui-accent)]/50 bg-[var(--ui-accent-soft)]/60 text-[var(--ui-text)] focus:border-[var(--ui-focus)]")}
                   />
                 ) : (
                   <p className={cn("rounded-lg px-3 py-2 text-sm font-semibold leading-6", isDark ? "bg-[var(--ui-accent)]/[0.08] text-white" : "bg-[var(--ui-accent-soft)]/70 text-[var(--ui-text)]")}>{draft.text}</p>

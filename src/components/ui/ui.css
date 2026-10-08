@@ -337,7 +337,7 @@
   transition: border-color 140ms ease;
 }
 .ui-search-sm { min-height: 34px; padding-left: 10px; }
-.ui-search:focus-within { border-color: var(--ui-accent); }
+.ui-search:focus-within { border-color: var(--ui-focus); }
 .ui-search input[type="search"] {
   min-width: 0;
   flex: 1;

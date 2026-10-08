@@ -43,7 +43,7 @@
 }
 
 .agent-header-channel-switcher .source-picker.is-compact .source-picker-trigger[data-open="true"] {
-  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--ui-accent) 50%, transparent);
+  box-shadow: inset 0 0 0 1px var(--ui-focus);
 }
 
 .agent-header-channel-switcher .source-picker.is-compact .source-picker-picture {

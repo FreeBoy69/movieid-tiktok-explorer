@@ -21,7 +21,7 @@
   -webkit-tap-highlight-color: transparent;
 }
 .vp.vp:focus-visible {
-  outline: 2px solid var(--vp-accent);
+  outline: 2px solid rgb(255 255 255 / 0.7);
   outline-offset: 2px;
 }
 .vp.is-fit {
@@ -211,7 +211,7 @@
   padding: 0 8px;
 }
 .vp.vp :focus-visible {
-  outline: 2px solid var(--vp-accent);
+  outline: 2px solid rgb(255 255 255 / 0.7);
   outline-offset: 1px;
 }
 .vp.vp .vp-time {

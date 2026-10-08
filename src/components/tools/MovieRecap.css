@@ -903,7 +903,7 @@
   border-color: var(--cs-line-strong);
   background: var(--cs-bg);
   outline: none;
-  box-shadow: 0 0 0 3px var(--cs-accent-soft);
+  box-shadow: 0 0 0 3px var(--ui-ring);
 }
 .mr-beat-meta {
   display: flex;
@@ -936,7 +936,7 @@
 .mr-clock:focus {
   border-color: var(--cs-line-strong);
   outline: none;
-  box-shadow: 0 0 0 3px var(--cs-accent-soft);
+  box-shadow: 0 0 0 3px var(--ui-ring);
 }
 .mr-beat-len {
   font-variant-numeric: tabular-nums;

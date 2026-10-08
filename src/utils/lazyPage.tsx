@@ -82,7 +82,7 @@ export class PageBoundary extends Component<BoundaryProps, { error: unknown; key
         <p className={`m-0 max-w-[42ch] text-[13px] leading-relaxed ${dark ? "text-[#9b9a93]" : "text-[#66655e]"}`}>
           {stale ? "Reload to get the new version. Your saved work is safe." : "Something went wrong while opening it. Reloading usually fixes this, and your saved work is safe."}
         </p>
-        <button type="button" onClick={() => window.location.reload()} className="mt-1 h-9 rounded-full bg-[#f9dc0b] px-4 text-[13px] font-semibold text-[#15130a] transition-colors duration-150 hover:bg-[#e7ca00] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#f9dc0b]">
+        <button type="button" onClick={() => window.location.reload()} className="mt-1 h-9 rounded-full bg-[#f9dc0b] px-4 text-[13px] font-semibold text-[#15130a] transition-colors duration-150 hover:bg-[#e7ca00] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ui-focus)]">
           Reload
         </button>
       </div>

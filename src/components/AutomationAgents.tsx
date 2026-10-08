@@ -4477,18 +4477,18 @@ function UploadDetail({
             value={correctionTitle}
             onChange={(event) => setCorrectionTitle(event.target.value)}
             placeholder="Correct title, e.g. Classless Hero"
-            className="h-11 rounded-xl border border-[var(--ui-line)] bg-[var(--ui-panel)] px-4 text-sm font-semibold text-[var(--ui-text)] outline-none transition focus:border-[var(--ui-accent)]"
+            className="h-11 rounded-xl border border-[var(--ui-line)] bg-[var(--ui-panel)] px-4 text-sm font-semibold text-[var(--ui-text)] outline-none transition focus:border-[var(--ui-focus)]"
           />
           <input
             value={correctionYear}
             onChange={(event) => setCorrectionYear(event.target.value)}
             placeholder="Year"
-            className="h-11 rounded-xl border border-[var(--ui-line)] bg-[var(--ui-panel)] px-4 text-sm font-semibold text-[var(--ui-text)] outline-none transition focus:border-[var(--ui-accent)]"
+            className="h-11 rounded-xl border border-[var(--ui-line)] bg-[var(--ui-panel)] px-4 text-sm font-semibold text-[var(--ui-text)] outline-none transition focus:border-[var(--ui-focus)]"
           />
           <select
             value={correctionMediaType}
             onChange={(event) => setCorrectionMediaType(event.target.value)}
-            className="h-11 rounded-xl border border-[var(--ui-line)] bg-[var(--ui-panel)] px-4 text-sm font-semibold text-[var(--ui-text)] outline-none transition focus:border-[var(--ui-accent)]"
+            className="h-11 rounded-xl border border-[var(--ui-line)] bg-[var(--ui-panel)] px-4 text-sm font-semibold text-[var(--ui-text)] outline-none transition focus:border-[var(--ui-focus)]"
           >
             <option value="auto">Auto</option>
             <option value="anime">Anime</option>

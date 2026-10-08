@@ -32,7 +32,7 @@
   --ui-accent: #f9dc0b;
   --ui-accent-ink: #15130a;
   --ui-accent-text: #7a6600;
-  --ui-ring: rgb(249 220 11 / 0.22);
+  --ui-ring: rgb(27 27 24 / 0.07);
   --ui-radius: 18px;
   --ui-shadow: 0 18px 44px -20px rgb(40 36 20 / 0.32), 0 2px 6px rgb(40 36 20 / 0.1);
   --ui-shadow-soft: 0 1px 2px rgb(40 36 20 / 0.06);
@@ -52,7 +52,7 @@ html[data-theme="dark"],
   --ui-text-muted: #9b9a93;
   --ui-text-faint: #6d6c66;
   --ui-accent-text: #f9dc0b;
-  --ui-ring: rgb(249 220 11 / 0.16);
+  --ui-ring: rgb(255 255 255 / 0.07);
   --ui-shadow: 0 18px 48px -18px rgb(0 0 0 / 0.7), 0 2px 6px rgb(0 0 0 / 0.35);
   --ui-shadow-soft: 0 1px 2px rgb(0 0 0 / 0.3);
 }
@@ -71,7 +71,7 @@ html[data-theme="dark"],
   --ui-radius-control: 12px;
   --ui-accent-hover: #ffe53a;
   --ui-accent-soft: rgb(249 220 11 / 0.18);
-  --ui-focus: #7a6600;
+  --ui-focus: rgb(27 27 24 / 0.45);
   --ui-danger: #c53b3b;
   --ui-success: #1e7a47;
   --ui-warning: #a66f00;
@@ -83,7 +83,7 @@ html[data-theme="dark"],
 html[data-theme="dark"],
 [data-theme="dark"] {
   --ui-accent-soft: rgb(249 220 11 / 0.14);
-  --ui-focus: #f9dc0b;
+  --ui-focus: rgb(236 234 227 / 0.5);
   --ui-danger: #ff7b6e;
   --ui-success: #7fd8a2;
   --ui-warning: #f2c14e;

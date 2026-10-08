@@ -1961,7 +1961,7 @@ export default function TikTokExplorer({
                       void runTikTokAnalyze(pasted, { forceNetwork: true });
                     }}
                     placeholder="TikTok profile, playlist, collection, or video URL"
-                    className="h-11 w-full rounded-lg border pl-9 pr-3 text-xs font-semibold outline-none transition focus:border-[var(--ui-accent)] border-[var(--ui-line)]"
+                    className="h-11 w-full rounded-lg border pl-9 pr-3 text-xs font-semibold outline-none transition focus:border-[var(--ui-focus)] border-[var(--ui-line)]"
                     style={{ borderColor: border, background: bgCard, color: text }}
                     aria-label="TikTok URL"
                   />
@@ -1972,7 +1972,7 @@ export default function TikTokExplorer({
                   max={VIDEO_COUNT_MAX}
                   value={videoCount}
                   onChange={(event) => setVideoCount(clampVideoCount(Number(event.target.value)))}
-                  className="h-11 w-full rounded-lg border px-2 text-xs font-black tabular-nums outline-none focus:border-[var(--ui-accent)] border-[var(--ui-line)]"
+                  className="h-11 w-full rounded-lg border px-2 text-xs font-black tabular-nums outline-none focus:border-[var(--ui-focus)] border-[var(--ui-line)]"
                   style={{ borderColor: border, background: bgCard, color: text }}
                   aria-label="Maximum videos"
                 />

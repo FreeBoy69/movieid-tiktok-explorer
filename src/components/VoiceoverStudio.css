@@ -32,7 +32,7 @@
 .voice-workspace select:not(.ui-select) { width: 100%; min-height: var(--ui-field-height); padding: 0 36px 0 12px; border: 1px solid var(--ui-line-strong); border-radius: var(--ui-radius-control); background: var(--ui-input) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238e8b84' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 12px center; color: var(--ui-text); font-size: 14px; appearance: none; }
 .voice-workspace select:not(.ui-select):focus-visible { border-color: var(--ui-focus); box-shadow: 0 0 0 3px var(--ui-ring); outline: none; }
 .voice-import { border-color: var(--vs-line); background: var(--vs-panel); height: 42px; width: 42px; }
-.voice-import[aria-expanded=true], .voice-import.is-open { background: var(--vs-accent); border-color: var(--vs-accent); color: var(--ui-accent-ink); }
+.voice-import[aria-expanded=true], .voice-import.is-open { background: var(--ui-hover); border-color: var(--ui-line-strong); color: var(--ui-text); }
 .vs-topbar .voice-import { height: 34px; width: 34px; }
 .voice-import-form { display: flex; gap: 10px; margin-bottom: 16px; }
 

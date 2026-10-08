@@ -2,12 +2,12 @@
 .source-picker { min-width: 0; width: 100%; }
 .source-picker-trigger { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 64px; padding: 9px 11px; border: 0; border-radius: 14px; background: var(--sp-hover); color: var(--sp-text); text-align: left; cursor: pointer; font-size: 13px; font-weight: 600; box-shadow: var(--ui-shadow-soft), inset 0 0 0 1px var(--ui-line); transition: background-color 160ms ease, box-shadow 160ms ease, transform 160ms ease; }
 .source-picker-trigger:hover { background: color-mix(in oklch, var(--sp-hover) 82%, var(--sp-text)); box-shadow: var(--ui-shadow-soft), inset 0 0 0 1px var(--ui-line-strong); transform: translateY(-1px); }
-.source-picker-trigger[data-open=true] { background: var(--ui-accent-soft); box-shadow: 0 0 0 3px var(--ui-ring), inset 0 0 0 1px var(--ui-focus); }
+.source-picker-trigger[data-open=true] { background: var(--ui-hover); box-shadow: 0 0 0 3px var(--ui-ring), inset 0 0 0 1px var(--ui-focus); }
 .source-picker-trigger:disabled { opacity: .5; cursor: not-allowed; }
 .source-picker-trigger-copy { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 2px; }
 .source-picker-trigger-meta { overflow: hidden; color: var(--sp-muted); font-size: 10px; font-weight: 700; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
 .source-picker-trigger-action { display: grid; place-items: center; width: 36px; height: 36px; flex: none; border-radius: 10px; background: var(--sp-bg); color: var(--sp-muted); box-shadow: inset 0 0 0 1px var(--ui-line); transition: background-color 160ms ease, color 160ms ease, transform 160ms ease; }
-.source-picker-trigger:hover .source-picker-trigger-action, .source-picker-trigger[data-open=true] .source-picker-trigger-action { background: var(--ui-accent); color: var(--ui-accent-ink); }
+.source-picker-trigger:hover .source-picker-trigger-action, .source-picker-trigger[data-open=true] .source-picker-trigger-action { background: var(--ui-chip); color: var(--ui-text); }
 .source-picker-trigger[data-open=true] .source-picker-trigger-action { transform: scale(1.04); }
 .source-picker-name { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .source-picker-picture { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 6px; background: var(--sp-hover); color: var(--sp-muted); flex: none; overflow: hidden; font-size: 11px; font-weight: 700; }

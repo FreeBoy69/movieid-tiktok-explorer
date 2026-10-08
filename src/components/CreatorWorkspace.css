@@ -715,8 +715,8 @@
   box-shadow: var(--mk-shadow);
 }
 .maker-searchbar:focus-within {
-  border-color: var(--mk-accent-text);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--mk-accent) 30%, transparent), var(--mk-shadow);
+  border-color: var(--ui-focus);
+  box-shadow: 0 0 0 3px var(--ui-ring), var(--mk-shadow);
 }
 .maker-searchbar > svg {
   color: var(--mk-muted);
@@ -3322,7 +3322,7 @@
   color: var(--mk-muted);
 }
 .maker-source-option:focus-within {
-  outline: 2px solid var(--mk-accent-text);
+  outline: 2px solid var(--ui-focus);
   outline-offset: 2px;
 }
 .maker-segment-empty {
@@ -4348,7 +4348,7 @@
   pointer-events: none;
 }
 .maker-channel-tile-media:focus-visible {
-  outline: 2px solid var(--mk-accent);
+  outline: 2px solid var(--ui-focus);
   outline-offset: -2px;
   border-radius: 14px;
 }
@@ -4969,7 +4969,7 @@
 }
 .sb-card :focus-visible,
 .sb-actions label:focus-within {
-  outline: 2px solid var(--mk-accent);
+  outline: 2px solid var(--ui-focus);
   outline-offset: 2px;
 }
 .sb-none {
@@ -5143,7 +5143,7 @@
   pointer-events: none;
 }
 .sce-icon:focus-within {
-  outline: 2px solid var(--mk-accent);
+  outline: 2px solid var(--ui-focus);
   outline-offset: 2px;
 }
 

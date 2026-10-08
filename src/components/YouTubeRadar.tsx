@@ -237,7 +237,7 @@ export function YouTubeRadar() {
               value={sourceMode === "search" ? searchQuery : viralFilter}
               onChange={(event) => sourceMode === "search" ? setSearchQuery(event.target.value) : setViralFilter(event.target.value)}
               placeholder={sourceMode === "search" ? "Keywords, topics, or channel angles" : "Optional title, description, or tag filter"}
-              className="h-11 w-full rounded-lg border border-[var(--ui-line)] bg-[var(--ui-panel)] pl-11 pr-4 text-sm font-medium outline-none transition focus:border-[var(--ui-accent)]/45"
+              className="h-11 w-full rounded-lg border border-[var(--ui-line)] bg-[var(--ui-panel)] pl-11 pr-4 text-sm font-medium outline-none transition focus:border-[var(--ui-focus)]/45"
             />
           </label>
           <button
@@ -358,7 +358,7 @@ function FilterSelect({ label, value, onChange, options }: { label: string; valu
         name={id}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="h-10 w-full rounded-lg border border-[var(--ui-line)] bg-[var(--ui-bg)] px-3 text-xs font-semibold text-[var(--ui-text)]/70 outline-none focus:border-[var(--ui-accent)]/35"
+        className="h-10 w-full rounded-lg border border-[var(--ui-line)] bg-[var(--ui-bg)] px-3 text-xs font-semibold text-[var(--ui-text)]/70 outline-none focus:border-[var(--ui-focus)]/35"
       >
         {options.map(([optionValue, optionLabel]) => (
           <option key={optionValue} value={optionValue}>

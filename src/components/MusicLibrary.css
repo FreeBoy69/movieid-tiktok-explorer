@@ -179,8 +179,8 @@
 }
 .ml-file:hover,
 .ml-file:focus-within {
-  border-color: var(--ml-accent);
-  background: var(--ml-accent-wash);
+  border-color: var(--ui-focus);
+  background: var(--ui-hover);
 }
 .ml-file span {
   display: grid;
