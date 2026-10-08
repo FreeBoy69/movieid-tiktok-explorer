@@ -149,6 +149,8 @@ async function handle(job) {
     const before = await snapshot(watch);
     const program = job.program;
     const args = job.args.map(toLocal);
+    // The end of the program's error output, for the log line of a failed run (the app gets all of it).
+    let errTail = "";
     const code = await new Promise((resolve, reject) => {
       child = spawn(program, args, {
         cwd: toLocal(job.cwd),
@@ -160,7 +162,10 @@ async function handle(job) {
       });
       if (job.stdin) child.stdin.end(Buffer.from(job.stdin, "base64"));
       child.stdout.on("data", (chunk) => stdoutBuffer.push(chunk));
-      child.stderr.on("data", (chunk) => stderrBuffer.push(chunk));
+      child.stderr.on("data", (chunk) => {
+        stderrBuffer.push(chunk);
+        errTail = (errTail + chunk.toString()).slice(-600);
+      });
       const ticker = setInterval(() => void flush(false), 1500);
       child.on("error", (error) => {
         clearInterval(ticker);
@@ -182,7 +187,8 @@ async function handle(job) {
     }
     const rest = await flush(true);
     await call("POST", `/internal/exec/${job.id}/finish`, { json: { code: code.exitCode, signal: code.signal, ...rest } });
-    log(`${job.program} ${job.id} exit=${code.exitCode} outputs=${uploaded} in ${((Date.now() - started) / 1000).toFixed(1)}s`);
+    const why = code.exitCode ? errTail.trim().split("\n").filter((line) => line.trim()).pop() || "" : "";
+    log(`${job.program} ${job.id} exit=${code.exitCode} outputs=${uploaded} in ${((Date.now() - started) / 1000).toFixed(1)}s${why ? ` :: ${why.slice(0, 300)}` : ""}`);
   } catch (error) {
     const rest = await flush(true).catch(() => ({}));
     await call("POST", `/internal/exec/${job.id}/finish`, { json: { code: null, error: error.message, ...rest } }).catch(() => {});

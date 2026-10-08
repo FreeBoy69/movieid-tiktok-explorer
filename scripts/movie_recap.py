@@ -637,7 +637,8 @@ def subs_blur(source):
 
 def cut_filter(transforms, width, height, short, seed, cut=None, luma=None):
     rng = random.Random(seed)
-    zoom = 1.0 + (rng.uniform(0.06, 0.1) if transforms.get("zoom", True) else 0.0)
+    # Content ID matched Mutiny's 6-10% zoom easily; the channel standard asks for a much larger picture.
+    zoom = 1.0 + (rng.uniform(0.12, 0.18) if transforms.get("zoom", True) else 0.0)
     # A cut close in the film to the one before it is mirrored (the plan marks it), on top of the global switch.
     mirror = bool(transforms.get("mirror")) != bool((cut or {}).get("flip"))
     lift = lift_filter(luma)
@@ -661,11 +662,21 @@ def cut_filter(transforms, width, height, short, seed, cut=None, luma=None):
                 f"[b]{inner}[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1[v]")
     chain += [f"scale={width}:{height}:force_original_aspect_ratio=increase", f"crop={width}:{height}"]
     if zoom > 1:
-        chain += [f"crop=iw/{zoom:.3f}:ih/{zoom:.3f}", f"scale={width}:{height}"]
+        # The zoomed window drifts across the frame over the clip (a slow pan, the standard's "freeze and
+        # zoom"), so no frame of the recap lines up with a frame of the film: a static crop fingerprints like
+        # the original.
+        length = max(0.5, float((cut or {}).get("duration") or ((cut or {}).get("end", 0) - (cut or {}).get("start", 0)) or 3))
+        x0 = rng.uniform(0.0, 0.4)
+        x0, x1 = (x0, x0 + rng.uniform(0.5, 0.6)) if rng.random() < 0.5 else (x0 + rng.uniform(0.5, 0.6), x0)
+        y0, y1 = rng.uniform(0.3, 0.7), rng.uniform(0.3, 0.7)
+        travel = f"min(1\\,t/{length:.3f})"
+        chain += [f"crop=w=iw/{zoom:.3f}:h=ih/{zoom:.3f}:x='(iw-ow)*({x0:.3f}+({x1 - x0:.3f})*{travel})':y='(ih-oh)*({y0:.3f}+({y1 - y0:.3f})*{travel})'",
+                  f"scale={width}:{height}"]
     if mirror:
         chain.append("hflip")
     if transforms.get("color", True) and not (cut or {}).get("bw"):
         chain.append(f"eq=saturation={rng.uniform(1.04, 1.1):.3f}:contrast={rng.uniform(1.02, 1.06):.3f}:gamma=0.98")
+        chain.append(f"hue=h={rng.uniform(-5, 5):.2f}")
     chain += ["fps=30", "setsar=1"]
     return prefix + source + ",".join(chain) + "[v]"
 

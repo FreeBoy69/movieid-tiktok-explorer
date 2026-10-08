@@ -1122,7 +1122,7 @@ function ScriptReview({ recap, onChange, onRender, onError }: { recap: Recap; on
         </div>
         <div className="mr-side-block mr-side-rules">
           <ShieldCheck size={16} aria-hidden="true" />
-          <p>2 to 4 second cuts, film skipped between every cut, the film's audio removed{recap.options.transforms.zoom ? ", slight zoom" : ""}{recap.options.transforms.color ? ", color shift" : ""}{recap.options.transforms.mirror ? ", mirrored" : ""}.</p>
+          <p>2 to 4 second cuts, film skipped between every cut, the film's audio removed{recap.options.transforms.zoom ? ", zoomed with a slow pan" : ""}{recap.options.transforms.color ? ", color and hue shift" : ""}{recap.options.transforms.mirror ? ", mirrored" : ""}.</p>
         </div>
         <button type="button" className="mt-primary mr-render" disabled={rendering || beats.some((beat) => !beat.text.trim())} onClick={() => void render()}>
           {rendering ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <Clapperboard size={16} aria-hidden="true" />}
