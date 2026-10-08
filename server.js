@@ -21373,6 +21373,13 @@ async function cachedReachDoctor() {
 }
 async function startServer() {
     const app = express();
+    // The hosting edge sends Permissions-Policy: camera=(), microphone=(), which
+    // blocks voice input (agent chat, voice cloning) and recording even after the
+    // user allows the microphone. AutoYT's own pages may use both.
+    app.use((_req, res, next) => {
+        res.setHeader("Permissions-Policy", "camera=(self), microphone=(self), geolocation=()");
+        next();
+    });
     configureCreatorWorkspace({ runPsql, sqlString, jsonbLiteral, getProject: getCreatorProject, updateProject: updateCreatorProject, createProject: createCreatorProject, listProjects: listCreatorProjects, cloneVoice: createDramaVoiceClone,
         session: getSessionRecord, account: usableYouTubeAccount, styles: listChannelStyles, radar: getYouTubeRadar, text: generateRewriteText,
         narrate: generateVoiceStudioNarration, transcribe: transcribeMediaFileWithSegments, separateStems: (sourcePath, workspace) => separateVoiceStudioStems(sourcePath, workspace), learnStyle: learnNarrationStyle, buildStyle: buildChannelStyleProfile,
