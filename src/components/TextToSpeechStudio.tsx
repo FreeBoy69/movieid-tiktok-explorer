@@ -3,18 +3,14 @@ import {
   BookOpen,
   Check,
   ChevronDown,
-  Download,
   FileAudio,
   Loader2,
   Mic,
-  Pause,
   Pencil,
   Play,
   Plus,
   RefreshCw,
-  Repeat,
   RotateCcw,
-  RotateCw,
   Search,
   Shuffle,
   Sparkles,
@@ -22,7 +18,6 @@ import {
   Trash2,
   Upload,
   Volume2,
-  VolumeX,
   X,
 } from "lucide-react";
 import { cn } from "../lib/utils";
@@ -34,6 +29,8 @@ import { canRecord, clockOf, MIN_RECORD_SECONDS, useVoiceRecorder, VOICE_PASSAGE
 import "./CreatorStudio.css";
 import "./AudioStudio.css";
 import { VoicePicker } from "./VoicePicker";
+import { AudioPlayer } from "./AudioPlayer";
+import { LanguagePicker, languageName, VOICEBOX_LANGUAGES } from "./LanguagePicker";
 
 type StudioTab = "generate" | "voices" | "clone";
 type RightRailTab = "settings" | "history";
@@ -65,19 +62,6 @@ const FALLBACK_VOICES: VoiceProfile[] = [
   { id: "demo-prime", name: "Prime", description: "Narration voice, good for recaps", language: "en", voiceType: "preset", defaultEngine: "kokoro" },
   { id: "demo-story", name: "Storyline", description: "Warm explainer tone", language: "en", voiceType: "preset", defaultEngine: "kokoro" },
   { id: "demo-energy", name: "Momentum", description: "Fast short-form delivery", language: "en", voiceType: "preset", defaultEngine: "kokoro" },
-];
-
-const LANGUAGES = [
-  ["en", "English"],
-  ["zh", "Chinese"],
-  ["ja", "Japanese"],
-  ["ko", "Korean"],
-  ["de", "German"],
-  ["fr", "French"],
-  ["es", "Spanish"],
-  ["pt", "Portuguese"],
-  ["it", "Italian"],
-  ["sw", "Swahili"],
 ];
 
 const ENGINES = [
@@ -118,12 +102,6 @@ function relativeTime(value: string) {
   return `${days} day${days === 1 ? "" : "s"} ago`;
 }
 
-function formatClock(value: number) {
-  if (!Number.isFinite(value) || value <= 0) return "0:00";
-  const minutes = Math.floor(value / 60);
-  const seconds = Math.floor(value % 60);
-  return `${minutes}:${String(seconds).padStart(2, "0")}`;
-}
 
 
 async function readJson(response: Response, fallback: string) {
@@ -576,7 +554,10 @@ function GenerateTab(props: {
               />
             </label>
             {hosted ? null : <Select label="Engine" value={props.engine} onChange={props.setEngine} options={ENGINES} dark={dark} compact />}
-            <Select label="Language" value={props.language} onChange={props.setLanguage} options={LANGUAGES} dark={dark} compact />
+            <div className="as-field">
+              <span>Language</span>
+              <LanguagePicker value={props.language} onChange={props.setLanguage} only={VOICEBOX_LANGUAGES} />
+            </div>
             {!props.online ? <p className="as-note is-warn">The voice service isn't connected. Refresh voices in a moment.</p> : null}
           </div>
         ) : (
@@ -598,72 +579,20 @@ function GenerateTab(props: {
   );
 }
 
-const SPEEDS = [0.75, 1, 1.25, 1.5, 2];
-const WAVE_BARS = 160;
-
-// Peaks for the timeline, decoded from the real audio. Falls back to a flat
-// bar when the browser can't decode it (or the file is still loading).
-function useWaveform(url?: string) {
-  const [peaks, setPeaks] = useState<number[] | null>(null);
-  useEffect(() => {
-    setPeaks(null);
-    if (!url || typeof window === "undefined" || !("AudioContext" in window)) return;
-    let cancelled = false;
-    const controller = new AbortController();
-    void fetch(url, { signal: controller.signal })
-      .then((response) => (response.ok ? response.arrayBuffer() : Promise.reject(new Error("audio"))))
-      .then(async (buffer) => {
-        const context = new AudioContext();
-        try {
-          const audio = await context.decodeAudioData(buffer);
-          const data = audio.getChannelData(0);
-          const step = Math.max(1, Math.floor(data.length / WAVE_BARS));
-          const out: number[] = [];
-          for (let i = 0; i < WAVE_BARS; i++) {
-            let peak = 0;
-            for (let j = i * step; j < Math.min(data.length, (i + 1) * step); j += 8) peak = Math.max(peak, Math.abs(data[j]));
-            out.push(peak);
-          }
-          const max = Math.max(0.01, ...out);
-          if (!cancelled) setPeaks(out.map((value) => Math.max(0.06, value / max)));
-        } finally {
-          void context.close();
-        }
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-      controller.abort();
-    };
-  }, [url]);
-  return peaks;
-}
-
+// The studio's hero player is the shared AudioPlayer with every tool switched on.
 export function GenerationPlayer({ item, autoplay, onAutoplayConsumed }: { item: Generation; dark?: boolean; autoplay?: boolean; onAutoplayConsumed?: () => void }) {
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const [playing, setPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(item.duration || 0);
-  const [speed, setSpeed] = useState(1);
-  const [loop, setLoop] = useState(false);
-  const [volume, setVolume] = useState(1);
-  const [muted, setMuted] = useState(false);
-  const peaks = useWaveform(item.audioUrl);
 
+  // Streamed files can arrive without a usable length; history knows it.
   useEffect(() => {
-    setCurrentTime(0);
     setDuration(item.duration || 0);
-    setPlaying(false);
-  }, [item.id, item.duration]);
-
-  useEffect(() => {
     if (item.duration || !item.id || item.id.startsWith("preview-")) return;
     let cancelled = false;
     void fetch(`/api/voicebox/history/${encodeURIComponent(item.id)}`)
       .then((response) => response.ok ? response.json() : null)
       .then((data) => {
-        const nextDuration = Number(data?.generation?.duration || 0);
-        if (!cancelled && Number.isFinite(nextDuration) && nextDuration > 0) setDuration(nextDuration);
+        const next = Number(data?.generation?.duration || 0);
+        if (!cancelled && Number.isFinite(next) && next > 0) setDuration(next);
       })
       .catch(() => undefined);
     return () => {
@@ -671,209 +600,27 @@ export function GenerationPlayer({ item, autoplay, onAutoplayConsumed }: { item:
     };
   }, [item.id, item.duration]);
 
-  useEffect(() => {
-    if (!autoplay || !item.audioUrl || !audioRef.current) return;
-    const audio = audioRef.current;
-    audio.currentTime = 0;
-    void audio.play().then(() => {
-      setPlaying(true);
-      onAutoplayConsumed?.();
-    }).catch(() => {
-      onAutoplayConsumed?.();
-    });
-  }, [autoplay, item.audioUrl, onAutoplayConsumed]);
-
-  useEffect(() => {
-    if (!playing) return;
-    let frameId = 0;
-    const sync = () => {
-      const audio = audioRef.current;
-      if (!audio) return;
-      syncAudioDuration(audio);
-      setCurrentTime(audio.currentTime || 0);
-      if (!audio.paused && !audio.ended) frameId = window.requestAnimationFrame(sync);
-    };
-    frameId = window.requestAnimationFrame(sync);
-    return () => window.cancelAnimationFrame(frameId);
-  }, [playing, item.id, item.audioUrl]);
-
-  useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    audio.playbackRate = speed;
-    audio.loop = loop;
-    audio.volume = volume;
-    audio.muted = muted;
-  }, [speed, loop, volume, muted, item.audioUrl]);
-
-  function togglePlay() {
-    const audio = audioRef.current;
-    if (!audio || !item.audioUrl) return;
-    if (audio.paused) void audio.play().then(() => setPlaying(true)).catch(() => undefined);
-    else {
-      audio.pause();
-      setPlaying(false);
-    }
-  }
-
-  function seek(next: number) {
-    const audio = audioRef.current;
-    if (!audio) return;
-    audio.currentTime = Math.max(0, Math.min(duration || audio.duration || 0, next));
-    setCurrentTime(audio.currentTime);
-  }
-
-  function syncAudioDuration(audio: HTMLAudioElement) {
-    const nextDuration = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : item.duration || 0;
-    if (nextDuration > 0 && Math.abs(nextDuration - duration) > 0.05) setDuration(nextDuration);
-  }
-
-  function onKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
-    const target = event.target as HTMLElement;
-    if (target.tagName === "INPUT" && (target as HTMLInputElement).type === "range" && event.key !== " ") return;
-    if (event.key === " " || event.key === "k") {
-      event.preventDefault();
-      togglePlay();
-    } else if (event.key === "ArrowLeft" || event.key === "j") {
-      event.preventDefault();
-      seek(currentTime - 5);
-    } else if (event.key === "ArrowRight" || event.key === "l") {
-      event.preventDefault();
-      seek(currentTime + 5);
-    } else if (event.key === "m") {
-      setMuted((value) => !value);
-    }
-  }
-
-  const ready = Boolean(item.audioUrl);
-  const nextSpeed = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length];
+  if (!item.audioUrl) return null;
   return (
-    <div className="asp" onKeyDown={onKeyDown} aria-label={`Audio player: ${item.profileName}`} role="group">
-      <audio
-        ref={audioRef}
-        src={item.audioUrl}
-        preload="auto"
-        onLoadedMetadata={(event) => syncAudioDuration(event.currentTarget)}
-        onDurationChange={(event) => syncAudioDuration(event.currentTarget)}
-        onTimeUpdate={(event) => {
-          syncAudioDuration(event.currentTarget);
-          setCurrentTime(event.currentTarget.currentTime || 0);
-        }}
-        onPlay={() => setPlaying(true)}
-        onPause={() => setPlaying(false)}
-        onEnded={() => setPlaying(false)}
-      />
-      <PlayerTimeline currentTime={currentTime} duration={duration} peaks={peaks} disabled={!ready || !duration} onSeek={seek} />
-      <div className="asp-row">
-        <div className="asp-id">
-          <span className="as-sphere is-sm" style={{ background: voiceSphere(item.profileName) }} aria-hidden />
-          <div className="asp-id-text">
-            <strong title={item.text}>{item.text || "Untitled"}</strong>
-            <small>{item.profileName} · {relativeTime(item.createdAt)}</small>
-          </div>
-        </div>
-
-        <div className="asp-transport">
-          <button type="button" className="asp-btn" onClick={() => seek(currentTime - 10)} disabled={!ready} aria-label="Back 10 seconds" title="Back 10s (←)">
-            <RotateCcw className="h-4 w-4" /><span className="asp-btn-num" aria-hidden>10</span>
-          </button>
-          <button type="button" className="asp-play" onClick={togglePlay} disabled={!ready} aria-label={playing ? "Pause" : "Play"} title={playing ? "Pause (space)" : "Play (space)"}>
-            {playing ? <Pause className="h-5 w-5 fill-current" /> : <Play className="h-5 w-5 translate-x-px fill-current" />}
-          </button>
-          <button type="button" className="asp-btn" onClick={() => seek(currentTime + 10)} disabled={!ready} aria-label="Forward 10 seconds" title="Forward 10s (→)">
-            <RotateCw className="h-4 w-4" /><span className="asp-btn-num" aria-hidden>10</span>
-          </button>
-          <span className="asp-clock"><span>{formatClock(currentTime)}</span> / {formatClock(duration)}</span>
-        </div>
-
-        <div className="asp-tools">
-          <button type="button" className="asp-chip" onClick={() => setSpeed(nextSpeed)} aria-label={`Playback speed ${speed}×, change to ${nextSpeed}×`} title="Playback speed">
-            {speed}×
-          </button>
-          <button type="button" className={cn("asp-btn", loop && "is-on")} onClick={() => setLoop((value) => !value)} aria-pressed={loop} aria-label="Loop" title="Loop">
-            <Repeat className="h-4 w-4" />
-          </button>
-          <div className="asp-volume">
-            <button type="button" className="asp-btn" onClick={() => setMuted((value) => !value)} aria-label={muted ? "Unmute" : "Mute"} title={muted ? "Unmute (m)" : "Mute (m)"}>
-              {muted || volume === 0 ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
-            </button>
-            <input
-              type="range"
-              min={0}
-              max={1}
-              step={0.05}
-              value={muted ? 0 : volume}
-              onChange={(event) => {
-                setVolume(Number(event.target.value));
-                setMuted(Number(event.target.value) === 0);
-              }}
-              aria-label="Volume"
-              className="asp-volume-range"
-              style={{ "--v": `${(muted ? 0 : volume) * 100}%` } as React.CSSProperties}
-            />
-          </div>
-          {item.audioUrl ? (
-            <a href={item.audioUrl} download className="asp-btn" aria-label="Download audio" title="Download">
-              <Download className="h-4 w-4" />
-            </a>
-          ) : null}
-        </div>
-      </div>
-    </div>
+    <AudioPlayer
+      src={item.audioUrl}
+      title={<span title={item.text}>{item.text || "Untitled"}</span>}
+      meta={`${item.profileName} · ${relativeTime(item.createdAt)}`}
+      label={item.profileName}
+      leading={<span className="as-sphere is-sm" style={{ background: voiceSphere(item.profileName) }} aria-hidden />}
+      preload="auto"
+      durationHint={duration}
+      autoPlay={autoplay}
+      onAutoPlayed={onAutoplayConsumed}
+      skip
+      loop
+      volume
+      download
+      className="as-hero-audio"
+    />
   );
 }
 
-function PlayerTimeline({ currentTime, duration, peaks, disabled, onSeek }: { currentTime: number; duration: number; peaks: number[] | null; disabled?: boolean; onSeek: (seconds: number) => void }) {
-  const [hover, setHover] = useState<number | null>(null);
-  const safeDuration = Number.isFinite(duration) && duration > 0 ? duration : 0;
-  const safeTime = Math.max(0, Math.min(safeDuration, Number.isFinite(currentTime) ? currentTime : 0));
-  const pct = safeDuration ? (safeTime / safeDuration) * 100 : 0;
-  return (
-    <div
-      className={cn("asp-timeline", disabled && "is-disabled")}
-      onPointerMove={(event) => {
-        if (disabled) return;
-        const rect = event.currentTarget.getBoundingClientRect();
-        setHover(Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)));
-      }}
-      onPointerLeave={() => setHover(null)}
-      style={{ "--p": `${pct}%` } as React.CSSProperties}
-    >
-      {peaks ? (
-        <div className="asp-wave" aria-hidden>
-          {peaks.map((peak, index) => (
-            <span key={index} className={(index + 0.5) / peaks.length * 100 <= pct ? "is-played" : undefined} style={{ height: `${Math.round(peak * 100)}%` }} />
-          ))}
-        </div>
-      ) : (
-        <div className="asp-track" aria-hidden><span /></div>
-      )}
-      <span className="asp-head" aria-hidden />
-      {hover !== null && safeDuration ? (
-        <>
-          <span className="asp-hover-line" style={{ left: `${hover * 100}%` }} aria-hidden />
-          <span className="asp-hover-time" style={{ left: `clamp(22px, ${hover * 100}%, calc(100% - 22px))` }} aria-hidden>{formatClock(hover * safeDuration)}</span>
-        </>
-      ) : null}
-      <input
-        type="range"
-        min={0}
-        max={safeDuration || 1}
-        step="any"
-        value={safeDuration ? safeTime : 0}
-        disabled={disabled}
-        onChange={(event) => onSeek(Number(event.currentTarget.value))}
-        aria-label="Seek"
-        aria-valuetext={`${formatClock(safeTime)} of ${formatClock(safeDuration)}`}
-        className="asp-seek"
-      />
-    </div>
-  );
-}
-
-function languageName(code: string) {
-  return LANGUAGES.find(([id]) => id === code)?.[1] || code.toUpperCase();
-}
 
 // A glossy sphere with a gradient unique to each voice, stable across sessions:
 // the voice id is hashed into two hues and a light position.
@@ -1207,7 +954,7 @@ function CloneTab(props: {
                   </div>
                 ) : rec.recording ? (
                   <div className="as-rec-take">
-                    <audio src={rec.recording.url} controls aria-label="Your recording" />
+                    <AudioPlayer src={rec.recording.url} label="Your recording" compact />
                     <span>{clockOf(rec.recording.seconds)} recorded · press the button to record again</span>
                   </div>
                 ) : (
@@ -1228,7 +975,7 @@ function CloneTab(props: {
               <button type="button" className="as-icon" onClick={() => setUpload(null)} aria-label="Remove this recording" title="Remove">
                 <X className="h-4 w-4" />
               </button>
-              {uploadUrl ? <audio src={uploadUrl} controls aria-label="Uploaded sample" /> : null}
+              {uploadUrl ? <AudioPlayer src={uploadUrl} label="Uploaded sample" compact className="as-file-player" /> : null}
             </div>
           ) : (
             <label
@@ -1261,12 +1008,10 @@ function CloneTab(props: {
                 </button>
               </span>
             </label>
-            <label className="as-field">
+            <div className="as-field">
               <span>Language</span>
-              <select className="as-input" value={props.language} onChange={(event) => props.setLanguage(event.target.value)}>
-                {LANGUAGES.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
-              </select>
-            </label>
+              <LanguagePicker value={props.language} onChange={props.setLanguage} only={VOICEBOX_LANGUAGES} label="Voice language" />
+            </div>
           </div>
           <label className="as-field">
             <span>Notes <em>optional</em></span>

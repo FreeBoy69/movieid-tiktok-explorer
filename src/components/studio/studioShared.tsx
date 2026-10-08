@@ -1,5 +1,5 @@
 // Shared data, API helpers, and controls for Creator Studio apps.
-import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type KeyboardEvent as ReactKeyboardEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AudioLines, Check, ChevronDown, Download, Film, Link2, Loader2, Plus, Search, Sparkles, Upload, X } from "lucide-react";
 import { VideoPlayer } from "../VideoPlayer";
 import "./Lightbox.css";
@@ -107,24 +107,97 @@ export function usePopover() {
   return { open, setOpen, ref };
 }
 
-export function Choice({ label, value, options, onChange, empty }: { label: string; value: string; options: Array<{ value: string; label: string }>; onChange: (value: string) => void; empty?: string }) {
+// The one setting dropdown: a chip that opens a listbox. Skins dress it for each surface
+// (studio prompt bars, the Create Drama composer, Cinema Studio's dock) with the same
+// behaviour everywhere: Escape and outside-click close, arrow keys move, the pick is focused.
+export type ChoiceOption = { value: string; label: string; hint?: string };
+const CHOICE_SKINS = {
+  studio: { root: "cs-pop", chip: "cs-chip", label: "cs-chip-label", value: "", menu: "cs-menu", item: "cs-menu-item" },
+  drama: { root: "dr-pop", chip: "dr-composer-chip is-choice", label: "dr-chip-label", value: "dr-composer-chip-text", menu: "dr-menu", item: "dr-menu-item" },
+  cinema: { root: "cns-pop", chip: "cns-look", label: "cns-look-label", value: "", menu: "cns-panel cns-listpanel", item: "" },
+  "cinema-mini": { root: "cns-pop", chip: "cns-chip", label: "", value: "", menu: "cns-panel cns-mini", item: "" },
+} as const;
+export function Choice({
+  label,
+  value,
+  options,
+  onChange,
+  empty,
+  icon,
+  skin = "studio",
+}: {
+  label: string;
+  value: string;
+  options: ChoiceOption[];
+  onChange: (value: string) => void;
+  empty?: string;
+  icon?: ReactNode;
+  skin?: keyof typeof CHOICE_SKINS;
+}) {
   const { open, setOpen, ref } = usePopover();
+  const menu = useRef<HTMLDivElement>(null);
+  const css = CHOICE_SKINS[skin];
+  const mini = skin === "cinema-mini";
   const current = options.find((option) => option.value === value);
+  const shown = current?.label || empty || (skin === "drama" ? value : "None");
+  const hinted = skin === "cinema" && options.some((option) => option.hint);
+  const chip = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const items = menu.current?.querySelectorAll<HTMLButtonElement>('[role="option"]');
+    const picked = menu.current?.querySelector<HTMLButtonElement>('[aria-selected="true"]');
+    (picked || items?.[0])?.focus({ preventScroll: false });
+  }, [open]);
+  // Closing from inside the list (Escape or a pick) hands focus back to the chip.
+  const onMenuKey = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Escape") chip.current?.focus();
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+    const items = Array.from(menu.current?.querySelectorAll<HTMLButtonElement>('[role="option"]') || []);
+    if (!items.length) return;
+    event.preventDefault();
+    const at = items.indexOf(document.activeElement as HTMLButtonElement);
+    const next = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 : (at + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
+    items[next].focus();
+  };
   return (
-    <div className="cs-pop" ref={ref}>
-      <button type="button" className="cs-chip" aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen(!open)} disabled={!options.length}>
-        <span className="cs-chip-label">{label}</span>
-        <span>{current?.label || empty || "None"}</span>
-        <ChevronDown className="h-3 w-3" />
+    <div className={css.root} ref={ref}>
+      <button
+        ref={chip}
+        type="button"
+        className={css.chip}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label={mini ? `${label}: ${shown}` : undefined}
+        onClick={() => setOpen(!open)}
+        disabled={mini ? options.length < 2 : !options.length}
+      >
+        {icon}
+        {!mini && css.label ? <span className={css.label}>{skin === "cinema" ? `${label}:` : label}</span> : null}
+        <span className={css.value || undefined}>{shown}</span>
+        {skin === "studio" || skin === "drama" ? <ChevronDown className="h-3 w-3" aria-hidden="true" /> : null}
       </button>
       {open ? (
-        <div className="cs-menu" role="listbox" aria-label={label}>
-          {options.map((option) => (
-            <button key={option.value} type="button" role="option" aria-selected={option.value === value} className="cs-menu-item" onClick={() => { onChange(option.value); setOpen(false); }}>
-              <span>{option.label}</span>
-              {option.value === value ? <Check className="h-3.5 w-3.5" /> : null}
-            </button>
-          ))}
+        <div className={css.menu} role="listbox" aria-label={label} ref={menu} onKeyDown={onMenuKey}>
+          {mini ? <p>{label}</p> : null}
+          {options.map((option) => {
+            const on = option.value === value;
+            const check = on ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : null;
+            return (
+              <button key={option.value} type="button" role="option" aria-selected={on} className={css.item || undefined} title={hinted ? undefined : option.hint} onClick={() => { onChange(option.value); setOpen(false); chip.current?.focus(); }}>
+                {hinted ? (
+                  <>
+                    <strong>{option.label}{check}</strong>
+                    {option.hint ? <span>{option.hint}</span> : null}
+                  </>
+                ) : (
+                  <>
+                    <span>{option.label}</span>
+                    {check}
+                  </>
+                )}
+              </button>
+            );
+          })}
         </div>
       ) : null}
     </div>

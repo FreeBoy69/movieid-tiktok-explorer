@@ -1,6 +1,7 @@
 import { AlertCircle, ArrowLeft, BarChart3, CheckCircle2, ChevronLeft, ChevronRight, Download, ExternalLink, FileText, FileVideo, Film, ImageUp, Loader2, MessageCircle, PlaySquare, RefreshCw, Search, Send, Sparkles, Trash2, Trophy, UploadCloud, Wand2, X, Youtube } from "lucide-react";
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AuthSessionPayload, ChannelStyleProfile, ConnectedYouTubeAccount, CreatorProject, FeedInsight, MovieResult, YouTubeCaptionTrack, YouTubeChannelDashboard, YouTubeCommentsResponse, YouTubeDashboardVideo, YouTubePlaylistSummary, YouTubeUploadResult, YouTubeVideoAnalytics, YouTubeVideoOptimization } from "../types";
+import { type PlaylistMode, playlistModeOf, YouTubePublishFields } from "./YouTubePublishForm";
 import { cn } from "../lib/utils";
 import { toast, useErrorToast } from "../utils/toast";
 import { shouldPrefetchChannelVideoPage } from "../utils/channelVideoPaging.js";
@@ -1800,6 +1801,7 @@ function UploadModal({
   onRefreshPlaylists: () => void;
   onSubmit: (event: FormEvent) => void;
 }) {
+  const [playlistMode, setPlaylistMode] = useState<PlaylistMode>(() => playlistModeOf(playlistId, newPlaylistTitle));
   return (
     <div className="fixed inset-0 z-[95] flex items-start justify-center overflow-y-auto bg-[#1A1A1A]/35 px-3 py-4 backdrop-blur-sm sm:px-4 md:py-10">
       <button type="button" className="absolute inset-0 cursor-default" aria-label="Close upload modal" onClick={onClose} />
@@ -1820,30 +1822,38 @@ function UploadModal({
             <span className="max-w-full truncate text-sm font-bold text-[#1A1A1A]">{selectedFileLabel}</span>
             <span className="mt-1 text-xs font-medium text-[#1A1A1A]/42">MP4, MOV, WebM, or any YouTube-supported video.</span>
           </label>
-          <div className="mt-4 grid gap-3">
-            <Field label="Title"><input value={title} onChange={(event) => onTitleChange(event.target.value)} maxLength={100} className="h-11 w-full rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-3 text-sm font-semibold outline-none transition focus:border-[#f9dc0b]/45" placeholder="Video title" /></Field>
-            <Field label="Description"><textarea value={description} onChange={(event) => onDescriptionChange(event.target.value)} rows={5} className="w-full resize-none rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-3 py-3 text-sm outline-none transition focus:border-[#f9dc0b]/45" placeholder="Description, links, credits" /></Field>
-            <Field label="Tags"><input value={tags} onChange={(event) => onTagsChange(event.target.value)} className="h-11 w-full rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-3 text-sm outline-none transition focus:border-[#f9dc0b]/45" placeholder="movie recap, sci fi, explained" /></Field>
-            <label className="flex flex-col gap-3 rounded-xl border border-[#1A1A1A]/10 bg-[#FDFCFA] p-3 sm:flex-row sm:items-center sm:justify-between">
-              <span>
-                <span className="block text-sm font-bold text-[#1A1A1A]">Post as YouTube Short</span>
-                <span className="mt-1 block text-xs font-semibold leading-5 text-[#1A1A1A]/48">Trim long clips to a natural 1-3 minute story beat before upload. Turn off for long-form.</span>
-              </span>
-              <span className={cn("relative inline-flex h-7 w-12 shrink-0 items-center rounded-full border transition", postAsShort ? "border-[#f9dc0b] bg-[#f9dc0b]" : "border-[#1A1A1A]/12 bg-[#1A1A1A]/10")}>
-                <input type="checkbox" checked={postAsShort} onChange={(event) => onPostAsShortChange(event.target.checked)} className="sr-only" />
-                <span className={cn("block h-5 w-5 rounded-full bg-white shadow transition", postAsShort ? "translate-x-5" : "translate-x-1")} />
-              </span>
-            </label>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Visibility"><select value={privacyStatus} onChange={(event) => onPrivacyStatusChange(event.target.value)} className="h-11 w-full rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-3 text-sm font-bold outline-none transition focus:border-[#f9dc0b]/45"><option value="private">Private</option><option value="unlisted">Unlisted</option><option value="public">Public</option></select></Field>
-              <label className="flex h-11 items-center gap-2 self-end rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-3 text-sm font-bold text-[#1A1A1A]/65"><input type="checkbox" checked={madeForKids} onChange={(event) => onMadeForKidsChange(event.target.checked)} className="h-4 w-4 accent-[#f9dc0b]" />Made for kids</label>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
-              <Field label="Add to playlist"><select value={playlistId} onChange={(event) => onPlaylistIdChange(event.target.value)} className="h-11 w-full rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-3 text-sm font-bold outline-none transition focus:border-[#f9dc0b]/45"><option value="">No playlist</option>{playlists.map((playlist) => <option key={playlist.id} value={playlist.id}>{playlist.title} ({playlist.videoCount || 0})</option>)}</select></Field>
-              <button type="button" onClick={onRefreshPlaylists} className="mt-6 inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-[#1A1A1A]/10 bg-white px-3 text-xs font-bold text-[#1A1A1A]/60 transition hover:text-[#1A1A1A]">{loadingPlaylists ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}Refresh</button>
-            </div>
-            <Field label="Or create playlist"><input value={newPlaylistTitle} onChange={(event) => onNewPlaylistTitleChange(event.target.value)} className="h-11 w-full rounded-lg border border-[#1A1A1A]/10 bg-[#FDFCFA] px-3 text-sm outline-none transition focus:border-[#f9dc0b]/45" placeholder="New playlist title for this upload" /></Field>
-          </div>
+          <YouTubePublishFields
+            className="mt-5"
+            title={title}
+            onTitleChange={onTitleChange}
+            description={description}
+            onDescriptionChange={onDescriptionChange}
+            tags={tags}
+            onTagsChange={onTagsChange}
+            postAsShort={postAsShort}
+            onPostAsShortChange={onPostAsShortChange}
+            privacyStatus={privacyStatus}
+            onPrivacyStatusChange={onPrivacyStatusChange}
+            madeForKids={madeForKids}
+            onMadeForKidsChange={onMadeForKidsChange}
+            playlist={{
+              mode: playlistMode,
+              onModeChange: (mode) => {
+                setPlaylistMode(mode);
+                if (mode !== "existing") onPlaylistIdChange("");
+                if (mode !== "create") onNewPlaylistTitleChange("");
+                if (mode === "existing" && !playlists.length) onRefreshPlaylists();
+              },
+              playlists,
+              playlistId,
+              onPlaylistIdChange,
+              newTitle: newPlaylistTitle,
+              onNewTitleChange: onNewPlaylistTitleChange,
+              newTitlePlaceholder: "New playlist for this upload",
+              loading: loadingPlaylists,
+              onRefresh: onRefreshPlaylists,
+            }}
+          />
           {uploadResult ? <div className="mt-4 rounded-xl border border-[#f9dc0b]/35 bg-[#fff9d6] p-4 text-sm text-[#2d2700]"><div className="flex items-center gap-2 font-bold"><CheckCircle2 className="h-4 w-4" /> Uploaded successfully</div><a href={uploadResult.url} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1.5 text-xs font-bold text-[#6a5b00] underline">Open on YouTube <ExternalLink className="h-3.5 w-3.5" /></a></div> : null}
         </div>
         <div className="flex items-center justify-end gap-2 border-t border-[#1A1A1A]/8 bg-[#FDFCFA] px-5 py-4">

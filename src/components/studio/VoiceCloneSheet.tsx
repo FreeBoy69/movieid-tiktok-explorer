@@ -5,6 +5,7 @@ import { type FormEvent, useEffect, useRef, useState } from "react";
 import { Loader2, Mic, Shuffle, Square, Upload, X } from "lucide-react";
 import { isVoiceReady, loadVoiceProfiles } from "../../utils/voiceProfiles";
 import { readJson } from "./studioShared";
+import { AudioPlayer } from "../AudioPlayer";
 import { generateVoiceName } from "../../utils/voiceNames.js";
 import { canRecord, clockOf as clock, useVoiceRecorder, VOICE_PASSAGE as PASSAGE } from "./voiceRecorder";
 
@@ -141,7 +142,7 @@ export function VoiceCloneSheet({ onClose, onCreated }: { onClose: () => void; o
                   {recording ? "Record again" : "Start recording"}
                 </button>
               )}
-              {recording && live === null ? <audio src={recording.url} controls aria-label="Your recording" /> : null}
+              {recording && live === null ? <div style={{ flex: 1, minWidth: 0 }}><AudioPlayer src={recording.url} label="Your recording" compact /></div> : null}
             </div>
             {live !== null ? <p className="exs-note" role="status">Recording. Read the passage at your normal pace, then press Stop.</p> : null}
           </div>

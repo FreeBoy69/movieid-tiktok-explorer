@@ -96,3 +96,26 @@
   color: inherit;
   text-decoration: underline;
 }
+
+/* Fallback when a template has no still: its frame shape instead of a blank tile. */
+.shortfilm-picker-frame {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  color: var(--mk-muted);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--mk-accent) 14%, transparent), transparent 70%),
+    var(--mk-sunken);
+}
+.shortfilm-picker-frame::after {
+  content: "";
+  position: absolute;
+  inset: 22% 34%;
+  border: 1.5px solid currentColor;
+  border-radius: 4px;
+  opacity: 0.55;
+}
+.shortfilm-picker-frame[data-aspect="16:9"]::after {
+  inset: 30% 18%;
+}

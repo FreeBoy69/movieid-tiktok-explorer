@@ -1,18 +1,18 @@
 /* Shared audio player: paper surface, charcoal ink, yellow for the one live thing.
    Falls back to AutoYT tokens when rendered outside the creator workspace. */
 .mk-audio {
-  --ap-surface: var(--mk-surface, var(--vs-panel, #fff));
-  --ap-sunken: var(--mk-sunken, var(--vs-panel-soft, #f2f0eb));
-  --ap-text: var(--mk-text, var(--vs-ink, #1a1a1a));
-  --ap-muted: var(--mk-muted, var(--vs-muted, #5f5d58));
-  --ap-faint: var(--mk-faint, var(--vs-subtle, #8b8983));
-  --ap-line: var(--mk-line, var(--vs-line, #e4e1da));
-  --ap-accent: var(--mk-accent, var(--vs-accent, #f9dc0b));
-  --ap-accent-hover: var(--mk-accent-hover, #ecd00a);
-  --ap-accent-ink: var(--mk-accent-ink, #171717);
-  --ap-bad: var(--mk-bad, #a13a2a);
+  --ap-surface: var(--mk-surface, var(--vs-panel, var(--cs-surface, #fff)));
+  --ap-sunken: var(--mk-sunken, var(--vs-panel-soft, var(--cs-sunken, #f2f0eb)));
+  --ap-text: var(--mk-text, var(--vs-ink, var(--cs-text, #1a1a1a)));
+  --ap-muted: var(--mk-muted, var(--vs-muted, var(--cs-muted, #5f5d58)));
+  --ap-faint: var(--mk-faint, var(--vs-subtle, var(--cs-faint, #8b8983)));
+  --ap-line: var(--mk-line, var(--vs-line, var(--cs-line, #e4e1da)));
+  --ap-accent: var(--mk-accent, var(--vs-accent, var(--cs-accent, #f9dc0b)));
+  --ap-accent-hover: var(--mk-accent-hover, var(--cs-accent-hover, #ecd00a));
+  --ap-accent-ink: var(--mk-accent-ink, var(--cs-accent-ink, #171717));
+  --ap-bad: var(--mk-bad, var(--cs-bad, #a13a2a));
   display: grid;
-  grid-template-columns: 44px minmax(0, 1fr) auto auto;
+  grid-template-columns: 44px minmax(0, 1fr);
   align-items: center;
   gap: 12px;
   width: 100%;
@@ -24,6 +24,7 @@
   color: var(--ap-text);
   font-family: Inter, ui-sans-serif, system-ui, sans-serif;
   transition: border-color 0.2s, box-shadow 0.2s;
+  container: mk-audio / inline-size;
 }
 .mk-audio.is-playing {
   border-color: color-mix(in srgb, var(--ap-accent) 55%, var(--ap-line));
@@ -70,7 +71,17 @@
   }
 }
 
+/* Body: waveform, then time and tools. When the row runs out of room they wrap under the waveform. */
+.mk-audio-body {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 12px;
+  row-gap: 2px;
+}
 .mk-audio-main {
+  flex: 1 1 200px;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -178,6 +189,7 @@
   display: flex;
   align-items: center;
   gap: 2px;
+  margin-left: auto;
 }
 .mk-audio .mk-audio-tool {
   min-width: 32px;
@@ -210,9 +222,65 @@
   min-width: 44px;
 }
 
+.mk-audio .mk-audio-tool:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.mk-audio .mk-audio-tool:focus-visible,
+.mk-audio .mk-audio-play:focus-visible {
+  outline: 2px solid var(--mk-accent-text, var(--cs-accent-text, #7a6600));
+  outline-offset: 2px;
+}
+/* Skip buttons: the circular arrow with the seconds tucked inside it. */
+.mk-audio .mk-audio-skip {
+  position: relative;
+}
+.mk-audio .mk-audio-skip span {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding-top: 1px;
+  font-size: 7px;
+  font-weight: 700;
+}
+.mk-audio-volume {
+  flex-shrink: 0;
+  width: 72px;
+  height: 4px;
+  margin: 0 6px 0 2px;
+  appearance: none;
+  border-radius: 999px;
+  background: linear-gradient(to right, var(--ap-text) var(--mk-audio-level, 100%), color-mix(in srgb, var(--ap-text) 16%, transparent) var(--mk-audio-level, 100%));
+  cursor: pointer;
+}
+.mk-audio-volume::-webkit-slider-thumb {
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: var(--ap-text);
+  border: 2px solid var(--ap-surface);
+}
+.mk-audio-volume::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: var(--ap-text);
+  border: 2px solid var(--ap-surface);
+}
+.mk-audio-volume:focus-visible {
+  outline: 2px solid var(--mk-accent-text, var(--cs-accent-text, #7a6600));
+  outline-offset: 4px;
+}
+.mk-audio-head > :first-child:not(.mk-audio-title):not(.mk-audio-meta) {
+  flex-shrink: 0;
+  align-self: center;
+}
+
 /* Compact: list rows (music previews). No title, no tools, smaller disc. */
 .mk-audio.is-compact {
-  grid-template-columns: 32px minmax(0, 1fr) auto;
+  grid-template-columns: 32px minmax(0, 1fr);
   gap: 10px;
   padding: 4px 8px 4px 4px;
   border-radius: 10px;
@@ -225,6 +293,9 @@
   height: 32px;
   min-height: 32px;
 }
+.mk-audio.is-compact .mk-audio-main {
+  flex-basis: 120px;
+}
 .mk-audio.is-compact .mk-audio-wave {
   height: 20px;
 }
@@ -232,24 +303,24 @@
   font-size: 11px;
 }
 
-/* Narrow screens: time drops under the waveform, tools stay reachable. */
+/* Phones: 72 bars need 214px at a 2px gap; give the waveform less. */
 @media (max-width: 560px) {
-  .mk-audio:not(.is-compact) {
-    grid-template-columns: 44px minmax(0, 1fr) auto;
-    row-gap: 4px;
+  .mk-audio-bars {
+    gap: 1px;
   }
-  .mk-audio-time {
-    grid-column: 2;
-    grid-row: 2;
-  }
-  .mk-audio-tools {
-    grid-column: 3;
-    grid-row: 1 / span 2;
-  }
-  .mk-audio .mk-audio-speed {
+}
+/* In a narrow column the extra tools give the waveform its room back. */
+@container mk-audio (max-width: 620px) {
+  .mk-audio-volume,
+  .mk-audio .mk-audio-skip {
     display: none;
   }
-  /* 72 bars need 214px at a 2px gap; phones give the waveform less. */
+}
+@container mk-audio (max-width: 460px) {
+  .mk-audio .mk-audio-speed,
+  .mk-audio .mk-audio-tool[aria-label="Loop"] {
+    display: none;
+  }
   .mk-audio-bars {
     gap: 1px;
   }

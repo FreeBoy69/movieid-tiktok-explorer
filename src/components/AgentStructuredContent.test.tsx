@@ -85,7 +85,7 @@ describe("AgentChatBlocks", () => {
     expect(channelLink.closest("article")).toHaveClass("aspect-square");
     expect(channelLink.closest("article")?.querySelector("img")).toHaveAttribute("src", "https://images.example.com/cinema-lab.jpg");
     expect(screen.getByRole("link", { name: "Open The ending nobody expected" })).toHaveAttribute("href", "https://www.youtube.com/watch?v=video-1");
-    expect(screen.getByRole("button", { name: "Play audio" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Play / })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Download audio" })).toHaveAttribute("href", "/api/voicebox/audio/audio-1");
   });
 

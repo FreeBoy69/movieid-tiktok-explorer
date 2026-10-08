@@ -6,20 +6,28 @@ import "./ShortfilmTemplatePicker.css";
 export type ShortfilmTemplate = (typeof SHORTFILM_TEMPLATES)[number];
 
 /* "Start from a template": pick a genre shot template, then optionally fill its slots.
-   onPick fires on every change; a null template means start blank. */
+   onPick fires on every change; a null template means start blank.
+   `required` is the scene-format mode (Create Drama): a pick can't be cleared and
+   there are no slots to fill. `suggested` marks one template as the default. */
 export default function ShortfilmTemplatePicker({
   value = "",
   onPick,
+  required = false,
+  suggested = "",
+  label = "Video template",
 }: {
   value?: string;
   onPick: (template: ShortfilmTemplate | null, values: Record<string, string>) => void;
+  required?: boolean;
+  suggested?: string;
+  label?: string;
 }) {
   const [values, setValues] = useState<Record<string, string>>({});
   const [broken, setBroken] = useState<Record<string, boolean>>({});
   const selected = SHORTFILM_TEMPLATES.find((template) => template.id === value) || null;
 
   const choose = (template: ShortfilmTemplate) => {
-    const next = template.id === value ? null : template;
+    const next = template.id === value && !required ? null : template;
     setValues({});
     onPick(next, {});
   };
@@ -30,8 +38,8 @@ export default function ShortfilmTemplatePicker({
   };
 
   return (
-    <section className="shortfilm-picker" aria-label="Start from a template">
-      <div className="maker-art-grid" role="radiogroup" aria-label="Video template">
+    <section className="shortfilm-picker" aria-label={required ? label : "Start from a template"}>
+      <div className="maker-art-grid" role="radiogroup" aria-label={label}>
         {SHORTFILM_TEMPLATES.map((template) => (
           <button
             key={template.id}
@@ -44,7 +52,9 @@ export default function ShortfilmTemplatePicker({
           >
             <span className="maker-art-swatch">
               {broken[template.id] ? (
-                <Film size={20} />
+                <span className="shortfilm-picker-frame" data-aspect={template.aspect} aria-hidden="true">
+                  <Film size={18} />
+                </span>
               ) : (
                 <img
                   src={shortfilmTemplateThumb(template.id)}
@@ -57,13 +67,14 @@ export default function ShortfilmTemplatePicker({
             <strong>{template.name}</strong>
             <small>
               {template.genre} · {template.aspect}
+              {suggested === template.id ? " · suggested" : ""}
             </small>
             {value === template.id && <Check size={14} className="maker-art-check" />}
           </button>
         ))}
       </div>
 
-      {selected && (
+      {selected && !required && (
         <div className="shortfilm-picker-detail">
           <header>
             <div>

@@ -4,7 +4,9 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AlertCircle, Apple, Archive, ArrowLeft, ArrowUpRight, BookOpen, Briefcase, Check, ChevronDown, Clapperboard, Coffee, Download, FolderOpen, GraduationCap, Heart, Hourglass, LayoutGrid, Loader2, Pencil, Play, Plus, Rocket, RotateCcw, Search, Smartphone, Sparkles, X } from "lucide-react";
 import { ArtStyleButton, Empty, Modal, PageHead, creatorApi } from "./CreatorWorkspace";
-import { usePopover } from "./studio/studioShared";
+import { Choice } from "./studio/studioShared";
+import ShortfilmTemplatePicker from "./ShortfilmTemplatePicker";
+import { shortfilmTemplateThumb } from "../utils/shortfilmTemplates.js";
 import { CastPanel, LocationsPanel, useSeriesProduction, type DramaLocation } from "./DramaCast";
 import { DramaEpisode } from "./DramaEpisode";
 import { loadVoiceProfiles } from "../utils/voiceProfiles";
@@ -358,7 +360,8 @@ function DramaIdea({ accountId, format = "series", song = null, onError, project
               </button>
             )}
             {kind.count.max > 1 && (
-              <ChipChoice
+              <Choice
+                skin="drama"
                 label={kind.units}
                 value={String(count)}
                 options={(format === "series" ? EPISODE_CHOICES : Array.from({ length: kind.count.max - kind.count.min + 1 }, (_, i) => kind.count.min + i)).map((n) => ({ value: String(n), label: String(n) }))}
@@ -366,7 +369,8 @@ function DramaIdea({ accountId, format = "series", song = null, onError, project
               />
             )}
             {format !== "music" && (
-              <ChipChoice
+              <Choice
+                skin="drama"
                 label={format === "short" ? "Length" : `${kind.unit} length`}
                 value={String(episodeSeconds)}
                 options={lengths.map((option) => ({ value: String(option.seconds), label: option.label }))}
@@ -466,7 +470,7 @@ function DramaIdea({ accountId, format = "series", song = null, onError, project
                 {kind.count.max > 1 && <label>{kind.units} <input type="number" inputMode="numeric" min={kind.count.min} max={kind.count.max} value={episodeCount} onChange={(event) => setEpisodeCount(Number(event.target.value))} onBlur={() => setEpisodeCount(count)} /></label>}
                 {format !== "music" && <label>Length <select value={episodeSeconds} onChange={(event) => setEpisodeSeconds(Number(event.target.value))}>{lengths.map((option) => <option key={option.seconds} value={option.seconds}>{option.label}</option>)}</select></label>}
                 <label>Look <ArtStyleButton value={artStyleId} onChange={setArtStyleId} label="" /></label>
-                <label>Scene format <select value={shotTemplateId} onChange={(event) => setShotTemplateId(event.target.value)}>{DRAMA_SHOT_TEMPLATES.map((format) => <option key={format.id} value={format.id}>{format.name}</option>)}</select></label>
+                <label>Scene format <SceneFormatButton value={shotTemplateId} onChange={setShotTemplateId} suggested={kind.shotTemplateId} /></label>
               </div>
               <div className="dr-concept-refine">
                 <textarea
@@ -496,32 +500,41 @@ function DramaIdea({ accountId, format = "series", song = null, onError, project
   );
 }
 
-const EPISODE_CHOICES = [3, 5, 8, 10, 12, 15, 20, 25, 30].filter((n) => n >= DRAMA_EPISODE_RANGE.min && n <= DRAMA_EPISODE_RANGE.max);
-// Image Studio's setting chip (studioShared Choice) with the drama page's tokens.
-function ChipChoice({ label, value, options, onChange }: { label: string; value: string; options: Array<{ value: string; label: string }>; onChange: (value: string) => void }) {
-  const { open, setOpen, ref } = usePopover();
-  const current = options.find((option) => option.value === value);
+/** The scene format (a genre shot template) as a chip that opens the template gallery, like the Look button beside it. */
+function SceneFormatButton({ value, onChange, suggested }: { value: string; onChange: (id: string) => void; suggested?: string }) {
+  const [open, setOpen] = useState(false);
+  const [broken, setBroken] = useState(false);
+  const current = DRAMA_SHOT_TEMPLATES.find((format) => format.id === value);
+  useEffect(() => setBroken(false), [value]);
   return (
-    <div className="dr-pop" ref={ref}>
-      <button type="button" className="dr-composer-chip is-choice" aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen(!open)}>
-        <span className="dr-chip-label">{label}</span>
-        <span className="dr-composer-chip-text">{current?.label || value}</span>
-        <ChevronDown size={12} aria-hidden="true" />
+    <>
+      <button type="button" className="maker-art-button" onClick={() => setOpen(true)} aria-haspopup="dialog" aria-label={`Scene format: ${current?.name || "Choose"}`}>
+        <span className="maker-art-button-thumb" aria-hidden="true">
+          {current && !broken ? <img src={shortfilmTemplateThumb(current.id)} alt="" onError={() => setBroken(true)} /> : <Clapperboard size={13} />}
+        </span>
+        <strong>{current?.name || "Choose"}</strong>
+        {current ? <small className="dr-format-aspect">{current.aspect}</small> : null}
+        <ChevronDown size={13} aria-hidden="true" />
       </button>
       {open && (
-        <div className="dr-menu" role="listbox" aria-label={label}>
-          {options.map((option) => (
-            <button key={option.value} type="button" role="option" aria-selected={option.value === value} className="dr-menu-item" onClick={() => { onChange(option.value); setOpen(false); }}>
-              <span>{option.label}</span>
-              {option.value === value && <Check size={14} aria-hidden="true" />}
-            </button>
-          ))}
-        </div>
+        <Modal title="Choose a scene format" wide onClose={() => setOpen(false)}>
+          <ShortfilmTemplatePicker
+            required
+            label="Scene format"
+            value={value}
+            suggested={suggested}
+            onPick={(template) => {
+              if (template) onChange(template.id);
+              setOpen(false);
+            }}
+          />
+        </Modal>
       )}
-    </div>
+    </>
   );
 }
 
+const EPISODE_CHOICES = [3, 5, 8, 10, 12, 15, 20, 25, 30].filter((n) => n >= DRAMA_EPISODE_RANGE.min && n <= DRAMA_EPISODE_RANGE.max);
 type StarterIdea = { name: string; pitch: string; category: string };
 function GenrePicker({ onClose, onPick }: { onClose: () => void; onPick: (idea: StarterIdea) => void }) {
   const [category, setCategory] = useState(DRAMA_GENRE_STARTERS[0].category);
@@ -644,27 +657,10 @@ function NewSeriesModal({ accountId, template, onClose, onError }: { accountId: 
               {artStyleId === template.artStyleId ? <small>The template's own look</small> : null}
             </div>
           </div>
-          <fieldset className="maker-field dr-format-field">
-            <legend>Scene format</legend>
-            <div className="dr-format-picker" role="group" aria-label="Scene format">
-              {DRAMA_SHOT_TEMPLATES.map((format) => (
-                <button
-                  key={format.id}
-                  type="button"
-                  className="dr-format-choice"
-                  aria-pressed={shotTemplateId === format.id}
-                  onClick={() => setShotTemplateId(format.id)}
-                >
-                  <span className="dr-format-frame" data-aspect={format.aspect} aria-hidden="true"><span /></span>
-                  <span className="dr-format-copy">
-                    <strong>{format.name}</strong>
-                    <small>{format.aspect}{format.id === template.shotTemplateId ? " · template" : ""}</small>
-                  </span>
-                  <Check className="dr-format-check" size={15} aria-hidden="true" />
-                </button>
-              ))}
-            </div>
-          </fieldset>
+          <div className="maker-field">
+            Scene format
+            <SceneFormatButton value={shotTemplateId} onChange={setShotTemplateId} suggested={template.shotTemplateId} />
+          </div>
           <fieldset className="maker-field dr-lengths">
             <legend>Episode length</legend>
             <div className="dr-segmented" role="group" aria-label="Episode length">

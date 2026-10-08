@@ -1,4 +1,4 @@
-import { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import {
   AlignLeft,
@@ -11,13 +11,9 @@ import {
   FileText,
   Loader2,
   Mic,
-  Pause,
   Play,
   RotateCcw,
-  SkipBack,
-  SkipForward,
   Sparkles,
-  Upload,
   Volume2,
   Zap,
 } from "lucide-react";
@@ -26,6 +22,9 @@ import { cn } from "../lib/utils";
 import { useErrorToast } from "../utils/toast";
 import { loadVoiceProfiles } from "../utils/voiceProfiles";
 import { VoicePicker } from "./VoicePicker";
+import { AudioPlayer } from "./AudioPlayer";
+import { LanguagePicker, VOICEBOX_LANGUAGES } from "./LanguagePicker";
+import { FileDrop } from "./FileDrop";
 
 interface Props {
   initialTranscript?: string;
@@ -89,13 +88,6 @@ function calculateMetrics(text: string) {
   };
 }
 
-function formatClock(value: number) {
-  if (!Number.isFinite(value) || value <= 0) return "0:00";
-  const minutes = Math.floor(value / 60);
-  const seconds = Math.floor(value % 60);
-  return `${minutes}:${String(seconds).padStart(2, "0")}`;
-}
-
 function relativeTime(value: string) {
   const delta = Math.max(1, Math.floor((Date.now() - new Date(value).getTime()) / 1000));
   if (delta < 60) return "just now";
@@ -119,7 +111,6 @@ export function RewriterEngine({ initialTranscript = "", phases = [], onBack }: 
   const [view, setView] = useState<"input" | "processing" | "editor">("input");
   const [editorTab, setEditorTab] = useState<EditorTab>("script");
   const [videoLink, setVideoLink] = useState("");
-  const [isDragActive, setIsDragActive] = useState(false);
   const [progress, setProgress] = useState(0);
   const [progressMessage, setProgressMessage] = useState("");
   const [versions, setVersions] = useState<ScriptVersion[]>([]);
@@ -204,9 +195,9 @@ export function RewriterEngine({ initialTranscript = "", phases = [], onBack }: 
     throw new Error("Transcription timed out. The job may still be running — try again shortly.");
   }
 
-  async function handleProcessVideo(event?: FormEvent) {
+  async function handleProcessVideo(event?: FormEvent, file?: File) {
     event?.preventDefault();
-    if (!videoLink.trim() && !isDragActive) return;
+    if (!videoLink.trim() && !file) return;
     setError("");
     setView("processing");
     setProgress(5);
@@ -222,11 +213,17 @@ export function RewriterEngine({ initialTranscript = "", phases = [], onBack }: 
     }, 900);
 
     try {
-      const response = await fetch("/api/transcribe", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: videoLink.trim() }),
-      });
+      const response = file
+        ? await fetch("/api/transcribe/upload", {
+            method: "POST",
+            headers: { "Content-Type": file.type || "application/octet-stream", "X-File-Name": encodeURIComponent(file.name) },
+            body: file,
+          })
+        : await fetch("/api/transcribe", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url: videoLink.trim() }),
+          });
       let data = await readJson(response, "Transcription failed");
       // When the server has no media binaries it queues the work for a
       // container-compute worker and answers 202 with a job id. Poll it, and
@@ -402,18 +399,16 @@ export function RewriterEngine({ initialTranscript = "", phases = [], onBack }: 
                   </button>
                 </div>
               </form>
-              <div
-                className={cn("grid min-h-64 cursor-pointer place-items-center rounded-xl border border-dashed p-8 text-center transition", isDragActive ? "border-[#f9dc0b] bg-[#fff9d6]" : "border-[#DADDE3] bg-white hover:border-[#111827]")}
-                onDragOver={(event) => { event.preventDefault(); setIsDragActive(true); }}
-                onDragLeave={() => setIsDragActive(false)}
-                onDrop={(event) => { event.preventDefault(); setIsDragActive(false); void handleProcessVideo(); }}
-              >
-                <div>
-                  <span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-[#f9dc0b] text-[#111827]"><Upload className="h-6 w-6" /></span>
-                  <p className="mt-4 text-sm font-bold">{isDragActive ? "Drop video here" : "Drag and drop a video file"}</p>
-                  <p className="mt-1 text-xs font-medium text-[#6B7280]">MP4, MOV, WebM, or direct video link</p>
-                </div>
-              </div>
+              <FileDrop
+                size="roomy"
+                className="min-h-64 justify-center bg-white"
+                accept="video/*,audio/*,.mkv"
+                maxBytes={100 * 1024 ** 2}
+                onError={setError}
+                onFiles={([file]) => void handleProcessVideo(undefined, file)}
+                title="Drag and drop a video or audio file"
+                hint="MP4, MOV, WebM, MP3, or WAV up to 100 MB"
+              />
             </div>
           </motion.div>
         ) : null}
@@ -570,7 +565,10 @@ function SettingsPanel(props: {
         <VoicePicker voices={props.voices} value={props.selectedVoiceId} onChange={props.setSelectedVoiceId} />
       </div>
       <Select label="Engine" value={props.engine} onChange={props.setEngine} options={ENGINES} />
-      <Select label="Language" value={props.language} onChange={props.setLanguage} options={[["en", "English"], ["ja", "Japanese"], ["ko", "Korean"], ["es", "Spanish"]]} />
+      <div className="block">
+        <span className="mb-2 block text-sm font-semibold underline decoration-dotted underline-offset-4">Language</span>
+        <LanguagePicker value={props.language} onChange={props.setLanguage} only={VOICEBOX_LANGUAGES} />
+      </div>
       <Range label="Speed" left="Slower" right="Faster" value={props.speed} onChange={props.setSpeed} />
       <Range label="Stability" left="More variable" right="More stable" value={props.stability} onChange={props.setStability} />
       <Range label="Similarity" left="Low" right="High" value={props.similarity} onChange={props.setSimilarity} />
@@ -643,142 +641,37 @@ function DownloadsPanel({ versions, onDownload, compact = false }: { versions: S
   );
 }
 
+// The editor's docked player: the shared AudioPlayer, or a status line while audio is generating.
 function StickyPlayer({ item, autoplay, onAutoplayConsumed }: { item: AudioItem | null; autoplay?: boolean; onAutoplayConsumed: () => void }) {
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const [playing, setPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(item?.duration || 0);
-
-  useEffect(() => {
-    setCurrentTime(0);
-    setDuration(item?.duration || 0);
-    setPlaying(false);
-  }, [item?.id, item?.duration]);
-
-  useEffect(() => {
-    if (!autoplay || !item?.audioUrl || !audioRef.current) return;
-    audioRef.current.currentTime = 0;
-    void audioRef.current.play().then(() => {
-      setPlaying(true);
-      onAutoplayConsumed();
-    }).catch(onAutoplayConsumed);
-  }, [autoplay, item?.audioUrl, onAutoplayConsumed]);
-
-  useEffect(() => {
-    if (!playing) return;
-    let frameId = 0;
-    const syncPlaybackPosition = () => {
-      const audio = audioRef.current;
-      if (!audio) return;
-      syncAudioDuration(audio);
-      setCurrentTime(audio.currentTime || 0);
-      if (!audio.paused && !audio.ended) {
-        frameId = window.requestAnimationFrame(syncPlaybackPosition);
-      }
-    };
-    frameId = window.requestAnimationFrame(syncPlaybackPosition);
-    return () => window.cancelAnimationFrame(frameId);
-  }, [playing, item?.id, item?.audioUrl]);
-
-  function seek(next: number) {
-    const audio = audioRef.current;
-    if (!audio) return;
-    audio.currentTime = Math.max(0, Math.min(duration || audio.duration || 0, next));
-    setCurrentTime(audio.currentTime);
+  if (item?.audioUrl && item.status !== "pending") {
+    return (
+      <AudioPlayer
+        src={item.audioUrl}
+        title={item.text || "Generated audio"}
+        meta={`${item.profileName} · ${relativeTime(item.createdAt)}`}
+        preload="auto"
+        durationHint={item.duration}
+        autoPlay={autoplay}
+        onAutoPlayed={onAutoplayConsumed}
+        skip
+        loop
+        volume
+        download
+      />
+    );
   }
-
-  function syncAudioDuration(audio: HTMLAudioElement) {
-    const nextDuration = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : item?.duration || 0;
-    if (nextDuration > 0 && Math.abs(nextDuration - duration) > 0.05) {
-      setDuration(nextDuration);
-    }
-  }
-
-  function toggle() {
-    const audio = audioRef.current;
-    if (!audio || !item?.audioUrl || item.status === "pending") return;
-    if (audio.paused) void audio.play().then(() => setPlaying(true));
-    else {
-      audio.pause();
-      setPlaying(false);
-    }
-  }
-
   return (
-    <div className="grid min-h-16 grid-cols-1 items-center gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(360px,540px)_minmax(180px,1fr)]">
-      {item?.audioUrl ? (
-        <audio
-          ref={audioRef}
-          src={item.audioUrl}
-          preload="auto"
-          onLoadedMetadata={(event) => syncAudioDuration(event.currentTarget)}
-          onDurationChange={(event) => syncAudioDuration(event.currentTarget)}
-          onTimeUpdate={(event) => {
-            syncAudioDuration(event.currentTarget);
-            setCurrentTime(event.currentTarget.currentTime || 0);
-          }}
-          onPlay={() => setPlaying(true)}
-          onPause={() => setPlaying(false)}
-          onEnded={() => setPlaying(false)}
-        />
-      ) : null}
+    <div className="flex min-h-14 items-center gap-3" role="status">
+      <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-[#F3F4F6] text-[#6B7280]">
+        {item?.status === "pending" ? <Loader2 className="h-5 w-5 animate-spin" /> : <Play className="h-5 w-5" />}
+      </span>
       <div className="min-w-0">
         <p className="truncate text-sm font-semibold">{item?.text || "Ready"}</p>
         <p className="mt-1 truncate text-xs font-medium text-[#6B7280]">
-          {item ? `${item.profileName} - ${item.status === "pending" ? "generating audio" : relativeTime(item.createdAt)}` : "Generate voice to preview it here"}
+          {item ? `${item.profileName} - ${item.status === "pending" ? "generating audio" : item.error || "no audio"}` : "Generate voice to preview it here"}
         </p>
       </div>
-      <div className="grid gap-2">
-        <div className="flex items-center justify-center gap-4">
-          <button type="button" onClick={() => seek(currentTime - 10)} className="grid h-8 w-8 place-items-center rounded-full hover:bg-[#F3F4F6]" aria-label="Back 10 seconds"><SkipBack className="h-4 w-4" /></button>
-          <button type="button" onClick={toggle} disabled={!item?.audioUrl || item.status === "pending"} className="grid h-11 w-11 place-items-center rounded-full bg-[#111827] text-white disabled:opacity-45" aria-label={playing ? "Pause" : "Play"}>
-            {item?.status === "pending" ? <Loader2 className="h-5 w-5 animate-spin" /> : playing ? <Pause className="h-5 w-5 fill-current" /> : <Play className="h-5 w-5 fill-current" />}
-          </button>
-          <button type="button" onClick={() => seek(currentTime + 10)} className="grid h-8 w-8 place-items-center rounded-full hover:bg-[#F3F4F6]" aria-label="Forward 10 seconds"><SkipForward className="h-4 w-4" /></button>
-        </div>
-        <div className="grid grid-cols-[44px_minmax(0,1fr)_44px] items-center gap-2">
-          <span className="font-mono text-xs font-semibold text-[#6B7280]">{formatClock(currentTime)}</span>
-          <ScrubBar currentTime={currentTime} duration={duration} disabled={!item?.audioUrl || !duration} onSeek={seek} />
-          <span className="text-right font-mono text-xs font-semibold text-[#6B7280]">{formatClock(duration)}</span>
-        </div>
-      </div>
-      <div className="flex items-center justify-end gap-2">
-        {item?.audioUrl ? <a href={item.audioUrl} className="grid h-10 w-10 place-items-center rounded-lg hover:bg-[#F3F4F6]" aria-label="Download"><Download className="h-4 w-4" /></a> : null}
-      </div>
     </div>
   );
 }
 
-function ScrubBar({ currentTime, duration, disabled, onSeek }: { currentTime: number; duration: number; disabled?: boolean; onSeek: (seconds: number) => void }) {
-  const thumbSize = 14;
-  const thumbRadius = thumbSize / 2;
-  const safeDuration = Number.isFinite(duration) && duration > 0 ? duration : 0;
-  const safeCurrentTime = Math.max(0, Math.min(safeDuration, Number.isFinite(currentTime) ? currentTime : 0));
-  const pct = safeDuration ? Math.max(0, Math.min(100, (safeCurrentTime / safeDuration) * 100)) : 0;
-
-  function handleSeek(event: ChangeEvent<HTMLInputElement> | FormEvent<HTMLInputElement>) {
-    if (disabled || !safeDuration) return;
-    onSeek(Number(event.currentTarget.value));
-  }
-
-  return (
-    <div className={cn("relative h-5 w-full rounded-full", disabled ? "cursor-default" : "cursor-pointer")} aria-label="Audio progress">
-      <span className="absolute top-1/2 h-1 -translate-y-1/2 rounded-full bg-[#D1D5DB]" style={{ left: thumbRadius, right: thumbRadius }}>
-        <span className="absolute left-0 top-0 h-full rounded-full bg-[#111827]" style={{ width: `${pct}%` }} />
-        <span className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#111827] shadow-sm" style={{ left: `${pct}%` }} />
-      </span>
-      <input
-        type="range"
-        min={0}
-        max={safeDuration || 1}
-        step="any"
-        value={safeDuration ? safeCurrentTime : 0}
-        disabled={disabled || !safeDuration}
-        onChange={handleSeek}
-        onInput={handleSeek}
-        className="absolute inset-0 h-full w-full cursor-pointer opacity-0 disabled:cursor-default"
-        aria-label="Seek audio"
-      />
-    </div>
-  );
-}

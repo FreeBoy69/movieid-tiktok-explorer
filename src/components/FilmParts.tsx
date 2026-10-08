@@ -3,13 +3,17 @@
 // starts from, and the cinema look (camera rig and grade from Cinema Studio)
 // every film can lock once and carry into each storyboard and clip.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, ArrowUpRight, Camera, Clapperboard, Drama, Film, Link2, Loader2, Music2, Pause, Play, Plus, Scissors, Trash2, Upload, Wand2 } from "lucide-react";
+import { AlertCircle, ArrowUpRight, Camera, Clapperboard, Drama, Film, Link2, Loader2, Move, Music2, Palette, Play, Plus, Scissors, Sun, Trash2, Wand2, Zap } from "lucide-react";
 import { creatorApi, PageHead } from "./CreatorWorkspace";
 import { writeDeepLink, type FilmRoute } from "../utils/tiktokRoute";
 import { FILM_FORMATS, normalizeLyrics } from "../utils/filmFormats.js";
-import { CINEMA_GENRES, CINEMA_LIGHTING, CINEMA_MOVESETS, CINEMA_PALETTES, CINEMA_RIG, CINEMA_SPEED_RAMPS } from "../utils/cinemaPresets";
+import { CINEMA_GENRES, CINEMA_LIGHTING, CINEMA_MOVESETS, CINEMA_PALETTES, CINEMA_SPEED_RAMPS } from "../utils/cinemaPresets";
+import { CAMERA_PICKS, CinemaLookPicker, LookPanel, RigPicker } from "./studio/CinemaPickers";
+import { Choice } from "./studio/studioShared";
+import { AudioPlayer, claimPlayback } from "./AudioPlayer";
 import { toast } from "../utils/toast";
-import { cameraLabel, cameraOption, cameraOptions } from "../utils/cameraShots.js";
+import { FileDrop } from "./FileDrop";
+import { cameraLabel, cameraOption } from "../utils/cameraShots.js";
 import { rescaleBeats } from "../utils/beatTrack.js";
 
 export type FilmFormatId = "series" | "short" | "long" | "music";
@@ -132,7 +136,6 @@ export function SongStart({ onReady, onError }: { onReady: (song: Song) => void;
   const [phase, setPhase] = useState<"idle" | "uploading" | "analyzing">("idle");
   const [progress, setProgress] = useState("");
   const [link, setLink] = useState("");
-  const [over, setOver] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const cancelled = useRef(false);
   useEffect(() => {
@@ -196,63 +199,55 @@ export function SongStart({ onReady, onError }: { onReady: (song: Song) => void;
       </div>
     );
   return (
-    <div
-      className={`fl-song-drop${over ? " is-over" : ""}`}
-      onDragOver={(e) => {
-        e.preventDefault();
-        setOver(true);
-      }}
-      onDragLeave={() => setOver(false)}
-      onDrop={(e) => {
-        e.preventDefault();
-        setOver(false);
-        const file = e.dataTransfer.files[0];
-        if (file) void fromFile(file);
-      }}
+    <FileDrop
+      size="roomy"
+      className="fl-song-drop"
+      accept={SONG_TYPES}
+      onFiles={([file]) => void fromFile(file)}
+      title="Start from your song"
+      hint="Drop an MP3, WAV, or M4A (up to 20 MB) or a video of it. We find the tempo and beat, separate the vocals, transcribe the lyrics with timings, and you fix anything we misheard."
+      icon={<Music2 size={24} />}
+      buttonLabel="Choose a song"
+      footnote="Use music you have the rights to."
     >
-      <Music2 size={26} aria-hidden="true" />
-      <strong>Start from your song</strong>
-      <span>Drop an MP3, WAV, or M4A (up to 20 MB) or a video of it. We find the tempo and beat, separate the vocals, transcribe the lyrics with timings, and you fix anything we misheard.</span>
-      <div className="fl-song-actions">
-        <button type="button" className="maker-primary" onClick={() => input.current?.click()}>
-          <Upload size={15} /> Choose a song
-        </button>
-        <form
-          className="fl-song-link"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void fromLink();
-          }}
-        >
-          <Link2 size={15} aria-hidden="true" />
-          <input value={link} onChange={(e) => setLink(e.target.value)} placeholder="or paste a YouTube or TikTok link" aria-label="Song link" />
-          <button type="submit" className="maker-outline" disabled={!link.trim()}>
-            Import
-          </button>
-        </form>
-      </div>
-      <small>Use music you have the rights to.</small>
-      <input
-        ref={input}
-        type="file"
-        hidden
-        accept={SONG_TYPES}
-        onChange={(e) => {
-          const file = e.target.files?.[0];
-          e.target.value = "";
-          if (file) void fromFile(file);
+      <form
+        className="fl-song-link"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void fromLink();
         }}
-      />
-    </div>
+      >
+        <Link2 size={15} aria-hidden="true" />
+        <input value={link} onChange={(e) => setLink(e.target.value)} placeholder="or paste a YouTube or TikTok link" aria-label="Song link" />
+        <button type="submit" className="maker-outline" disabled={!link.trim()}>
+          Import
+        </button>
+      </form>
+    </FileDrop>
   );
 }
 
 // ---------- Lyrics editor ----------
 export function LyricsEditor({ lines, duration, src, onChange, saving, onSave, grid }: { lines: LyricLine[]; duration: number; src: string; onChange: (next: LyricLine[]) => void; saving?: boolean; onSave?: () => void; grid?: BeatGrid | null }) {
-  const audio = useRef<HTMLAudioElement>(null);
+  const audio = useRef<HTMLAudioElement | null>(null);
   const pulse = useRef<HTMLSpanElement>(null);
   const [time, setTime] = useState(0);
   const [playing, setPlaying] = useState(false);
+  // The shared player owns the <audio>; follow its play state for the beat pulse.
+  useEffect(() => {
+    const el = audio.current;
+    if (!el) return;
+    const on = () => setPlaying(true);
+    const off = () => setPlaying(false);
+    el.addEventListener("play", on);
+    el.addEventListener("pause", off);
+    el.addEventListener("ended", off);
+    return () => {
+      el.removeEventListener("play", on);
+      el.removeEventListener("pause", off);
+      el.removeEventListener("ended", off);
+    };
+  }, [src]);
   const [paste, setPaste] = useState<string | null>(null);
   const sorted = useMemo(() => [...lines].sort((a, b) => a.start - b.start), [lines]);
   const current = sorted.findIndex((line) => time >= line.start && time < line.end);
@@ -288,6 +283,7 @@ export function LyricsEditor({ lines, duration, src, onChange, saving, onSave, g
     const el = audio.current;
     if (!el) return;
     el.currentTime = t;
+    claimPlayback(el);
     void el.play();
   };
   const newId = () => `l${Math.random().toString(36).slice(2, 7)}`;
@@ -311,11 +307,7 @@ export function LyricsEditor({ lines, duration, src, onChange, saving, onSave, g
   return (
     <div className="fl-lyrics">
       <div className="fl-lyrics-bar">
-        <button type="button" className="fl-round" onClick={() => (playing ? audio.current?.pause() : void audio.current?.play())} aria-label={playing ? "Pause the song" : "Play the song"}>
-          {playing ? <Pause size={15} /> : <Play size={15} />}
-        </button>
-        <input type="range" min={0} max={Math.max(1, duration)} step={0.1} value={time} onChange={(e) => audio.current && (audio.current.currentTime = Number(e.target.value))} aria-label="Song position" />
-        <span className="fl-clock">{clock(time)} / {clock(duration)}</span>
+        <AudioPlayer src={src} compact label="Song" audioRef={audio} onTimeUpdate={setTime} durationHint={duration} className="fl-lyrics-player" />
         {grid?.bpm ? (
           <span className="fl-bpm" title="Flashes on every beat while the song plays">
             <span ref={pulse} className="fl-pulse" aria-hidden="true" /> <span className="fl-bpm-label">{Math.round(grid.bpm)} BPM</span>
@@ -329,7 +321,6 @@ export function LyricsEditor({ lines, duration, src, onChange, saving, onSave, g
             {saving ? <Loader2 size={14} className="animate-spin" /> : null} Save lyrics
           </button>
         ) : null}
-        <audio ref={audio} src={src} preload="metadata" onTimeUpdate={(e) => setTime(e.currentTarget.currentTime)} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} />
       </div>
       {paste !== null ? (
         <div className="fl-paste">
@@ -409,56 +400,78 @@ function TimeField({ value, onChange, label }: { value: number; onChange: (v: nu
 }
 
 // ---------- Cinema look ----------
-const opt = (value: string, label: string) => ({ value, label });
-const LOOK_FIELDS: Array<{ key: keyof FilmCinema; label: string; options: Array<{ value: string; label: string }> }> = [
-  { key: "camera", label: "Camera", options: Object.keys(CINEMA_RIG.cameras).map((name) => opt(name, name)) },
-  { key: "lens", label: "Lens", options: Object.keys(CINEMA_RIG.lenses).map((name) => opt(name, name)) },
-  { key: "focalLength", label: "Focal length", options: Object.entries(CINEMA_RIG.focal).map(([mm, text]) => opt(mm, `${mm}mm · ${text}`)) },
-  { key: "aperture", label: "Aperture", options: Object.entries(CINEMA_RIG.apertures).map(([f, text]) => opt(f, `${f} · ${String(text).split(",")[0]}`)) },
-  { key: "genre", label: "Genre", options: CINEMA_GENRES.filter((g) => g.text).map((g) => opt(g.id, g.name)) },
-  { key: "palette", label: "Palette", options: CINEMA_PALETTES.filter((g) => g.text).map((g) => opt(g.id, g.name)) },
-  { key: "lighting", label: "Lighting", options: CINEMA_LIGHTING.filter((g) => g.text).map((g) => opt(g.id, g.name)) },
-  { key: "moveset", label: "Camera moves", options: CINEMA_MOVESETS.filter((g) => g.text).map((g) => opt(g.id, g.name)) },
-  { key: "speed", label: "Speed", options: CINEMA_SPEED_RAMPS.filter((g) => g.text).map((g) => opt(g.id, g.name)) },
-];
+// Cinema Studio's own rig and look pickers (studio/CinemaPickers), with every part optional:
+// a part left on Auto lets each scene decide. The textless preset (General / Auto) is "unset".
+const LOOK_PICKS = [
+  { key: "genre", label: "Genre", kind: "genre", icon: <Film size={14} aria-hidden="true" />, options: CINEMA_GENRES },
+  { key: "palette", label: "Palette", kind: "palette", icon: <Palette size={14} aria-hidden="true" />, options: CINEMA_PALETTES },
+  { key: "lighting", label: "Lighting", kind: "lighting", icon: <Sun size={14} aria-hidden="true" />, options: CINEMA_LIGHTING },
+] as const;
+const MOTION_PICKS = [
+  { key: "moveset", label: "Camera moves", icon: <Move size={14} aria-hidden="true" />, options: CINEMA_MOVESETS },
+  { key: "speed", label: "Speed", icon: <Zap size={14} aria-hidden="true" />, options: CINEMA_SPEED_RAMPS },
+] as const;
+const unsetId = (options: ReadonlyArray<{ id: string; text: string }>) => options.find((o) => !o.text)?.id || "auto";
 
 export function CinemaLookPanel({ cinema, onSave }: { cinema: FilmCinema; onSave: (next: FilmCinema) => Promise<boolean> }) {
   const [draft, setDraft] = useState<FilmCinema>(cinema || {});
   const [saving, setSaving] = useState(false);
   useEffect(() => setDraft(cinema || {}), [cinema]);
   const dirty = JSON.stringify(draft) !== JSON.stringify(cinema || {});
+  const setPick = (key: keyof FilmCinema, value: string, options: ReadonlyArray<{ id: string; text: string }>) =>
+    setDraft((current) => {
+      const next = { ...current } as Record<string, unknown>;
+      if (!value || value === unsetId(options)) delete next[key];
+      else next[key] = value;
+      return next as FilmCinema;
+    });
+  const rig = { camera: draft.camera, lens: draft.lens, focalLength: draft.focalLength, aperture: draft.aperture };
   return (
     <section className="fl-look" aria-labelledby="fl-look-title">
       <div className="maker-section-title">
         <h2 id="fl-look-title"><Camera size={16} aria-hidden="true" /> Cinema look</h2>
         <small className="dr-count">From Cinema Studio</small>
       </div>
-      <p className="dr-hint">The camera body, glass, and grade every storyboard and clip in this project is shot with. Leave a field on Auto to let each scene decide. Shot sizes, angles, and moves are picked per shot in the screenplay.</p>
-      <div className="fl-look-grid">
-        {LOOK_FIELDS.map((field) => (
-          <label key={field.key} className="maker-field">
-            {field.label}
-            <select
-              value={draft[field.key] !== undefined ? String(draft[field.key]) : ""}
-              onChange={(e) => {
-                const value = e.target.value;
-                setDraft((current) => {
-                  const next = { ...current } as Record<string, unknown>;
-                  if (!value) delete next[field.key];
-                  else next[field.key] = field.key === "focalLength" ? Number(value) : value;
-                  return next as FilmCinema;
-                });
-              }}
-            >
-              <option value="">Auto</option>
-              {field.options.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-        ))}
+      <p className="dr-hint">The camera body, glass, and grade every storyboard and clip in this project is shot with. Leave a part on Auto to let each scene decide. Shot sizes, angles, and moves are picked per shot in the screenplay.</p>
+      <div className="fl-look-kit cns-kit">
+        <div className="fl-look-group">
+          <span className="fl-look-label">Camera rig</span>
+          <RigPicker
+            auto
+            rig={rig}
+            onChange={(next) =>
+              setDraft((current) => {
+                const out = { ...current, ...next } as Record<string, unknown>;
+                for (const key of ["camera", "lens", "focalLength", "aperture"]) if (!(key in next) || next[key as keyof typeof next] === undefined) delete out[key];
+                return out as FilmCinema;
+              })
+            }
+          />
+        </div>
+        <div className="fl-look-group">
+          <span className="fl-look-label">Grade</span>
+          <div className="cns-looks">
+            {LOOK_PICKS.map((pick) => (
+              <CinemaLookPicker key={pick.key} label={pick.label} kind={pick.kind} icon={pick.icon} options={pick.options} value={String(draft[pick.key] || unsetId(pick.options))} onChange={(id) => setPick(pick.key, id, pick.options)} />
+            ))}
+          </div>
+        </div>
+        <div className="fl-look-group">
+          <span className="fl-look-label">Motion</span>
+          <div className="cns-looks">
+            {MOTION_PICKS.map((pick) => (
+              <Choice
+                key={pick.key}
+                skin="cinema"
+                label={pick.label}
+                icon={pick.icon}
+                value={String(draft[pick.key] || unsetId(pick.options))}
+                options={pick.options.map((o) => ({ value: o.id, label: o.name, hint: o.text || "Let the scene decide" }))}
+                onChange={(id) => setPick(pick.key, id, pick.options)}
+              />
+            ))}
+          </div>
+        </div>
       </div>
       <div className="dr-row dr-row-end">
         {dirty ? <button type="button" className="maker-outline" onClick={() => setDraft(cinema || {})}>Discard</button> : null}
@@ -570,9 +583,10 @@ const CAMERA_FIELDS = [
   { key: "motion", label: "Movement" },
 ] as const;
 
-/** A shot's camera: the catalogue picks plus a free note, in one compact control. */
+/** A shot's camera: Cinema Studio's catalogue pickers (framed previews, moves that play) plus a free note. */
 export function CameraPicker({ value, onChange }: { value: ShotCamera; onChange: (patch: Partial<ShotCamera>) => void }) {
   const [open, setOpen] = useState(false);
+  const [tab, setTab] = useState<(typeof CAMERA_FIELDS)[number]["key"]>("shot");
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
@@ -586,27 +600,32 @@ export function CameraPicker({ value, onChange }: { value: ShotCamera; onChange:
     };
   }, [open]);
   const label = cameraLabel(value);
+  const field = CAMERA_FIELDS.find((f) => f.key === tab) || CAMERA_FIELDS[0];
   return (
     <div className="fl-cam" ref={box}>
-      <button type="button" className={`fl-cam-btn${label ? " is-set" : ""}`} onClick={() => setOpen((o) => !o)} aria-expanded={open} title={[label, value.cam].filter(Boolean).join(" — ") || "Choose the camera"}>
+      <button type="button" className={`fl-cam-btn${label ? " is-set" : ""}`} onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-haspopup="dialog" title={[label, value.cam].filter(Boolean).join(" — ") || "Choose the camera"}>
         <Camera size={13} aria-hidden="true" />
         <span>{label || value.cam || "Camera"}</span>
       </button>
       {open ? (
-        <div className="fl-cam-pop" role="dialog" aria-label="Shot camera">
-          {CAMERA_FIELDS.map((field) => (
-            <label key={field.key} className="maker-field">
-              {field.label}
-              <select value={value[field.key] || ""} onChange={(e) => onChange({ [field.key]: e.target.value || undefined } as Partial<ShotCamera>)}>
-                <option value="">Auto</option>
-                {cameraOptions(field.key).map((option: { id: string; label: string; description: string }) => (
-                  <option key={option.id} value={option.id} title={option.description}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ))}
+        <div className="fl-cam-pop cns-kit" role="dialog" aria-label="Shot camera">
+          <div className="cns-rig-tabs" role="tablist" aria-label="Camera">
+            {CAMERA_FIELDS.map((f) => (
+              <button key={f.key} type="button" role="tab" aria-selected={tab === f.key} onClick={() => setTab(f.key)}>
+                {f.label}
+                {value[f.key] ? <span className="fl-cam-dot" aria-label="set" /> : null}
+              </button>
+            ))}
+          </div>
+          <LookPanel
+            wide
+            key={field.key}
+            label={field.label}
+            kind={field.key}
+            options={CAMERA_PICKS[field.key]}
+            value={value[field.key] || "auto"}
+            onPick={(id) => onChange({ [field.key]: id === "auto" ? undefined : id } as Partial<ShotCamera>)}
+          />
           <label className="maker-field fl-cam-note">
             Camera note
             <input value={value.cam} maxLength={80} placeholder="e.g. slow push, hold on her face" onChange={(e) => onChange({ cam: e.target.value })} />

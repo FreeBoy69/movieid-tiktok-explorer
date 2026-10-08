@@ -1,5 +1,6 @@
-import { Activity, AlertCircle, BarChart3, Clock3, Download, Pause, Play, Radar, TrendingUp, Users, Volume2 } from "lucide-react";
-import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Activity, AlertCircle, BarChart3, Clock3, Radar, TrendingUp, Users } from "lucide-react";
+import { AudioPlayer } from "./AudioPlayer";
+import { Fragment, useMemo, type CSSProperties, type ReactNode } from "react";
 import { cn } from "../lib/utils";
 import { StandardChannelCard, StandardVideoCard, type CardTheme } from "./StandardCards";
 
@@ -264,87 +265,27 @@ function formatDuration(seconds: number): string {
   return `${minutes}:${String(safe % 60).padStart(2, "0")}`;
 }
 
+// Agent chat speech: the shared AudioPlayer, recoloured for the agents' dark theme.
+const DARK_AUDIO = {
+  "--mk-surface": "#191C18",
+  "--mk-sunken": "#20241F",
+  "--mk-text": "#F8F5E8",
+  "--mk-muted": "rgb(248 245 232 / 0.6)",
+  "--mk-faint": "rgb(248 245 232 / 0.42)",
+  "--mk-line": "rgb(255 255 255 / 0.12)",
+} as CSSProperties;
+
 export function InlineAudioPlayer({ audio, theme = "light" }: { audio: AgentChatAudio; theme?: CardTheme }) {
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const [playing, setPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(Number(audio.duration || 0));
-  const [playbackError, setPlaybackError] = useState("");
   const dark = theme === "dark";
-
-  useEffect(() => {
-    setPlaying(false);
-    setCurrentTime(0);
-    setDuration(Number(audio.duration || 0));
-    setPlaybackError("");
-  }, [audio.id, audio.audioUrl, audio.duration]);
-
-  function syncDuration(element: HTMLAudioElement) {
-    if (Number.isFinite(element.duration) && element.duration > 0) setDuration(element.duration);
-  }
-
-  function togglePlay() {
-    const element = audioRef.current;
-    if (!element || !audio.audioUrl) return;
-    if (element.paused) {
-      setPlaybackError("");
-      void element.play().catch(() => setPlaybackError("Audio could not be played."));
-    } else {
-      element.pause();
-    }
-  }
-
-  function seek(next: number) {
-    const element = audioRef.current;
-    if (!element || !duration) return;
-    element.currentTime = Math.max(0, Math.min(duration, next));
-    setCurrentTime(element.currentTime);
-  }
-
-  const error = audio.error || playbackError;
-
+  const title = audio.title || "Generated speech";
   return (
-    <section className={cn("overflow-hidden rounded-xl border", dark ? "border-white/12 bg-[#191C18] text-[#F8F5E8]" : "border-[#1A1A1A]/10 bg-white text-[#1A1A1A]")}>
-      <audio
-        ref={audioRef}
-        src={audio.audioUrl}
-        preload="metadata"
-        onLoadedMetadata={(event) => syncDuration(event.currentTarget)}
-        onDurationChange={(event) => syncDuration(event.currentTarget)}
-        onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime || 0)}
-        onPlay={() => setPlaying(true)}
-        onPause={() => setPlaying(false)}
-        onEnded={() => setPlaying(false)}
-        onError={() => setPlaybackError("Generated audio is unavailable.")}
-      />
-      <div className="flex items-center gap-3 border-b border-current/10 px-4 py-3">
-        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[#f9dc0b] text-[#1A1A1A]"><Volume2 className="h-4 w-4" /></span>
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-black">{audio.title || "Generated speech"}</p>
-          <p className={cn("mt-0.5 truncate text-[11px] font-semibold", dark ? "text-white/48" : "text-[#1A1A1A]/45")}>{audio.voiceName || "AutoYT voice"}</p>
-        </div>
-        <div className="hidden h-8 items-end gap-1 sm:flex" aria-hidden="true">
-          {[9, 18, 13, 25, 16, 29, 12, 21, 15, 24, 10, 18].map((height, index) => <span key={`${height}-${index}`} className="w-1 rounded-full bg-[#f9dc0b]" style={{ height }} />)}
-        </div>
-      </div>
-
-      <div className="px-4 py-4">
-        {audio.text ? <p className={cn("mb-4 line-clamp-2 text-xs font-semibold leading-5", dark ? "text-white/60" : "text-[#1A1A1A]/58")}>{audio.text}</p> : null}
-        {error ? (
-          <p className="flex items-start gap-2 text-xs font-semibold leading-5 text-[#b89f00]"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />{error}</p>
-        ) : (
-          <div className="grid grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-3">
-            <button type="button" onClick={togglePlay} disabled={!audio.audioUrl} className="grid h-11 w-11 place-items-center rounded-full bg-[#1A1A1A] text-white transition hover:bg-[#f9dc0b] hover:text-[#1A1A1A] disabled:opacity-35" aria-label={playing ? "Pause audio" : "Play audio"}>
-              {playing ? <Pause className="h-4 w-4 fill-current" /> : <Play className="h-4 w-4 fill-current" />}
-            </button>
-            <div className="min-w-0">
-              <input type="range" min={0} max={duration || 1} step="any" value={duration ? currentTime : 0} disabled={!duration || !audio.audioUrl} onChange={(event) => seek(Number(event.currentTarget.value))} className="h-1.5 w-full accent-[#f9dc0b]" aria-label="Audio progress" />
-              <div className={cn("mt-1 flex justify-between font-mono text-[10px] font-semibold", dark ? "text-white/42" : "text-[#1A1A1A]/40")}><span>{formatDuration(currentTime)}</span><span>{formatDuration(duration)}</span></div>
-            </div>
-            {audio.audioUrl ? <a href={audio.audioUrl} download className={cn("grid h-9 w-9 place-items-center rounded-lg transition", dark ? "hover:bg-white/8" : "hover:bg-[#F3F4F6]")} aria-label="Download audio"><Download className="h-4 w-4" /></a> : null}
-          </div>
-        )}
-      </div>
+    <section className="grid gap-2" style={dark ? DARK_AUDIO : undefined}>
+      {audio.error || !audio.audioUrl ? (
+        <p className="flex items-start gap-2 rounded-xl border border-current/10 px-4 py-3 text-xs font-semibold leading-5 text-[#b89f00]"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />{audio.error || "Generated audio is unavailable."}</p>
+      ) : (
+        <AudioPlayer src={audio.audioUrl} title={title} meta={audio.voiceName || "AutoYT voice"} durationHint={Number(audio.duration || 0)} download />
+      )}
+      {audio.text ? <p className={cn("line-clamp-2 px-1 text-xs font-semibold leading-5", dark ? "text-white/60" : "text-[#1A1A1A]/58")}>{audio.text}</p> : null}
     </section>
   );
 }

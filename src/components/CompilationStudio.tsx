@@ -20,6 +20,7 @@ import {
   type TikTokDeepLink,
 } from "../utils/tiktokRoute";
 import { VideoPlayer } from "./VideoPlayer";
+import { YouTubePublishFields } from "./YouTubePublishForm";
 
 type SortMode = CompilationSortMode;
 type PlaylistMode = "none" | "existing" | "create";
@@ -1163,35 +1164,25 @@ export function CompilationStudio({
               <Field label="Channel">
                 <SourcePicker label="Channel" value={accountId} onChange={value => { setAccountId(value); void loadPlaylists(value); }} options={auth.accounts.map(item => ({ value: item.id, label: item.channelTitle, imageUrl: item.thumbnailUrl }))} />
               </Field>
-              <Field label="Visibility">
-                <select value={privacyStatus} onChange={(event) => setPrivacyStatus(event.target.value)} className="input bg-white">
-                  <option value="private">Private</option>
-                  <option value="unlisted">Unlisted</option>
-                  <option value="public">Public</option>
-                </select>
-              </Field>
-              <Field label="YouTube playlist">
-                <select value={playlistMode} onChange={(event) => setPlaylistMode(event.target.value as PlaylistMode)} className="input bg-white">
-                  <option value="none">No playlist</option>
-                  <option value="existing">Existing playlist</option>
-                  <option value="create">Create new playlist</option>
-                </select>
-              </Field>
-              {playlistMode === "existing" ? (
-                <Field label="Playlist">
-                  <select value={targetPlaylistId} onChange={(event) => setTargetPlaylistId(event.target.value)} className="input bg-white">
-                    <option value="">Choose playlist</option>
-                    {playlists.map((item) => <option key={item.id} value={item.id}>{item.title}{item.videoCount !== undefined ? ` (${item.videoCount})` : ""}</option>)}
-                  </select>
-                </Field>
-              ) : null}
-              {playlistMode === "create" ? (
-                <Field label="New playlist name">
-                  <input value={createPlaylistTitle} onChange={(event) => setCreatePlaylistTitle(event.target.value)} className="input bg-white" placeholder="Anime Recap Compilations" />
-                </Field>
-              ) : null}
-              <Field label="Title"><input value={title} onChange={(event) => setTitle(event.target.value)} className="input bg-white" /></Field>
-              <Field label="Description"><textarea value={description} onChange={(event) => setDescription(event.target.value)} className="input min-h-28 bg-white py-3 leading-6" /></Field>
+              <YouTubePublishFields
+                title={title}
+                onTitleChange={setTitle}
+                description={description}
+                onDescriptionChange={setDescription}
+                privacyStatus={privacyStatus}
+                onPrivacyStatusChange={setPrivacyStatus}
+                playlist={{
+                  mode: playlistMode,
+                  onModeChange: (mode) => setPlaylistMode(mode as PlaylistMode),
+                  playlists,
+                  playlistId: targetPlaylistId,
+                  onPlaylistIdChange: setTargetPlaylistId,
+                  newTitle: createPlaylistTitle,
+                  onNewTitleChange: setCreatePlaylistTitle,
+                  newTitlePlaceholder: "Anime Recap Compilations",
+                  onRefresh: () => void loadPlaylists(accountId),
+                }}
+              />
             </div>
             <label className="flex items-start gap-3 rounded-lg border border-[#f9dc0b]/70 bg-[#f9dc0b]/15 p-3 text-xs font-bold leading-5 text-[#1A1A1A]/75">
               <input type="checkbox" checked={rightsConfirmed} onChange={(event) => setRightsConfirmed(event.target.checked)} className="mt-1 h-4 w-4 shrink-0 accent-[#f9dc0b]" />

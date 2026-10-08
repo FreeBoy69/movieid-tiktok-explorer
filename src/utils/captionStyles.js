@@ -11,12 +11,14 @@
 //   wealth, dark-documentary, storyteller, dark-psychology, kapwing, neon-cyber, retro-glitch,
 //   cinema-gold, tiktok-hype
 // - the GitHub Signals TikTok format: signal
+// - AutoYT house looks (from Vibe Edit): clean, bubble
 
 export const CAPTION_SOURCES = [
   { id: "ai-video-captions", name: "ai-video-captions", author: "nicolaigaina", license: "MIT", url: "https://github.com/nicolaigaina/ai-video-captions" },
   { id: "remotion-captions-themes", name: "remotion-captions-themes", author: "vshukla7", license: "MIT", url: "https://github.com/vshukla7/remotion-captions-themes" },
   { id: "capite", name: "Capite", author: "muneebkhan08", license: "MIT", url: "https://github.com/muneebkhan08/Capite" },
   { id: "github-signals", name: "GitHub Signals repo spotlights", author: "github.signals", license: "format reference only", url: "https://www.tiktok.com/@github.signals" },
+  { id: "autoyt", name: "AutoYT house looks", author: "AutoYT", license: "original", url: "https://autoyt.cc" },
 ];
 
 // Fonts shipped in public/fonts/captions (SIL Open Font License) and embedded per render.
@@ -243,6 +245,42 @@ export const CAPTION_STYLES = [
   {"id":"tiktok-hype","name":"TikTok Hype","description":"Bold white type with the spoken word in a red pill.","bestFor":"Trending challenges and retention hooks","source":"capite","font":"Poppins","uppercase":true,"size":7.6,"maxWords":4,"maxChars":24,"colors":{"text":"#FFFFFF","active":"#FFFFFF","outline":"#000000","shadow":"#000000","box":"#EF4444"},"outline":0.28,"shadow":0,"y":70,"animation":"box"},
   {"id":"soft","name":"Soft","description":"Rounded mixed-case words with a soft shadow and an indigo highlight.","bestFor":"AI products and calm explainers","source":"remotion-captions-themes","font":"Outfit","uppercase":false,"size":6.4,"maxWords":5,"maxChars":30,"colors":{"text":"#FFFFFF","active":"#A5B4FC","outline":"#000000","shadow":"#000000"},"outline":0,"shadow":0.45,"y":74,"animation":"highlight"},
   {"id":"grape","name":"Grape","description":"Capitals on a solid violet band, the spoken word in yellow.","bestFor":"Lifestyle, education and lists","source":"remotion-captions-themes","font":"Outfit","uppercase":true,"size":5.8,"maxWords":5,"maxChars":28,"colors":{"text":"#FFFFFF","active":"#FDE047","outline":"#5B21B6","shadow":"#000000"},"band":"#5B21B6","bandAlpha":1,"outline":0,"shadow":0,"y":78,"animation":"highlight"},
+  {
+    id: "clean",
+    name: "Clean",
+    description: "Sentence-case white words with a soft shadow and a yellow spoken word.",
+    bestFor: "Talking heads and everyday edits",
+    source: "autoyt",
+    font: "Inter",
+    uppercase: false,
+    size: 5.8,
+    maxWords: 6,
+    maxChars: 34,
+    colors: { text: "#FFFFFF", active: "#F9DC0B", outline: "#000000", shadow: "#000000" },
+    outline: 0,
+    shadow: 0.22,
+    y: 80,
+    animation: "highlight",
+  },
+  {
+    id: "bubble",
+    name: "Bubble",
+    description: "Dark words on a white card, the spoken word in raspberry.",
+    bestFor: "Bright, friendly social clips",
+    source: "autoyt",
+    font: "Inter",
+    uppercase: false,
+    size: 5.6,
+    maxWords: 5,
+    maxChars: 30,
+    colors: { text: "#14110A", active: "#B02A6B", outline: "#FFFFFF", shadow: "#000000" },
+    band: "#FFFFFF",
+    bandAlpha: 0.95,
+    outline: 0,
+    shadow: 0,
+    y: 78,
+    animation: "highlight",
+  },
 ];
 
 export const findCaptionStyle = (id) => CAPTION_STYLES.find((style) => style.id === id) || null;

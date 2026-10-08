@@ -42,47 +42,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-.mr-drop {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  padding: 20px 16px;
-  border: 1px dashed var(--cs-line-strong);
-  border-radius: var(--cs-radius);
-  background: var(--cs-bg);
-  color: var(--cs-muted);
-  text-align: center;
-  transition: border-color 160ms var(--cs-ease), background-color 160ms var(--cs-ease);
-}
-.mr-drop[data-active] {
-  border-color: var(--cs-text);
-  background: var(--cs-accent-soft);
-}
-.mr-drop[data-filled] {
-  border-style: solid;
-}
-.mr-drop-name {
-  max-width: 100%;
-  overflow: hidden;
-  color: var(--cs-text);
-  font-size: 14px;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.mr-drop-meta {
-  color: var(--cs-faint);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-}
-.mr-drop .mt-ghost {
-  margin-top: 6px;
-}
-.mr-drop-bar {
-  width: 100%;
-  margin-top: 6px;
-}
 .mr-text-btn {
   padding: 0;
   border: 0;

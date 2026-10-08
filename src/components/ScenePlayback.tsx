@@ -4,6 +4,7 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState, type CSSProperties } from "react";
 import { Loader2, Pause, Play } from "lucide-react";
 import { sceneTransform } from "./StoryboardPreview";
+import { claimPlayback } from "./AudioPlayer";
 import "./ScenePlayback.css";
 
 type Scene = { id: string; start: number; end: number; motion?: string; clip?: string | null };
@@ -249,6 +250,9 @@ export function TrackPreviewButton({ url, title }: { url: string; title: string 
     trackStop = stopThis.current;
     setState("loading");
     trackAudio.onended = () => setState("");
+    // Any other player starting pauses this preview; reflect it on the button.
+    trackAudio.onpause = () => setState("");
+    claimPlayback(trackAudio);
     void trackAudio
       .play()
       .then(() => setState("playing"))

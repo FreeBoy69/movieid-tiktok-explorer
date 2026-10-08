@@ -1,7 +1,7 @@
 // The left-panel tools: media library, voice, captions, titles, music, and
 // generation, plus the inspector for whatever is selected.
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { AudioLines, Captions, Film, Flag, Image as ImageIcon, Link2, Loader2, Mic, Music2, Pause, Play, Plus, Sparkles, Trash2, Type, Upload, Wand2 } from "lucide-react";
+import { AudioLines, Captions, Film, Flag, Image as ImageIcon, Link2, Loader2, Mic, Music2, Plus, Sparkles, Trash2, Type, Upload, Wand2 } from "lucide-react";
 import { VoicePicker } from "../VoicePicker";
 import { toast } from "../../utils/toast";
 import {
@@ -21,14 +21,17 @@ import {
   type VibeAsset,
 } from "../../utils/vibeEdit";
 import { SOUND_PRESETS } from "../../utils/vibeSound.js";
-import { findBetterShot, rankShots, type RankedShot, importAudioUrl, importLink, searchMusic, uploadMedia, type MusicTrack } from "./api";
+import { findBetterShot, rankShots, type RankedShot, importAudioUrl, importLink, uploadMedia } from "./api";
 import { addAndPlace, addMotionTitle, generate, generateCaptions, getVoices, placeMusic, readVoicePref, resolveVoice, voiceover, writeVoicePref } from "./commands";
-import { CAPTION_STYLES, loadCaptionFont } from "./overlay";
+import { captionStyle, loadCaptionFont, resolveCaptionStyleId } from "./overlay";
 import CaptionStylePicker from "../CaptionStylePicker";
 import { useVibe, vibe, withTask } from "./store";
 import { AutoEditPanel } from "./AutoEditPanel";
 import { normalizeOverlay, OVERLAY_KINDS, overlayExample } from "../../utils/videoOverlays.js";
 import { LookPicker } from "../CreateVideoExtras";
+import { MusicLibrary, type LibraryTrack } from "../MusicLibrary";
+import { FileDrop } from "../FileDrop";
+import { LanguagePicker } from "../LanguagePicker";
 import { COLOR_BOOST } from "../../utils/vibeAutoEdit";
 
 export type PanelId = "auto" | "media" | "voice" | "captions" | "text" | "music" | "generate";
@@ -81,10 +84,8 @@ export async function uploadFiles(files: File[]) {
 
 function MediaPanel() {
   const assets = useVibe((s) => s.project.assets);
-  const input = useRef<HTMLInputElement>(null);
   const [link, setLink] = useState("");
   const [importing, setImporting] = useState(false);
-  const [drag, setDrag] = useState(false);
 
   const onLink = async () => {
     const url = link.trim();
@@ -108,37 +109,14 @@ function MediaPanel() {
 
   return (
     <>
-      <div
-        className={`ve-drop${drag ? " is-over" : ""}`}
-        onDragOver={(e) => {
-          e.preventDefault();
-          setDrag(true);
-        }}
-        onDragLeave={() => setDrag(false)}
-        onDrop={(e) => {
-          e.preventDefault();
-          setDrag(false);
-          void uploadFiles([...e.dataTransfer.files]);
-        }}
-      >
-        <Upload size={20} />
-        <strong>Drop videos, photos, or audio</strong>
-        <span>MP4, MOV, WebM up to 200 MB · images · MP3/WAV</span>
-        <button type="button" className="ve-btn" onClick={() => input.current?.click()}>
-          Choose files
-        </button>
-        <input
-          ref={input}
-          type="file"
-          hidden
-          multiple
-          accept="video/mp4,video/quicktime,video/webm,image/png,image/jpeg,image/webp,audio/mpeg,audio/wav,audio/mp4,audio/ogg"
-          onChange={(e) => {
-            void uploadFiles([...(e.target.files || [])]);
-            e.target.value = "";
-          }}
-        />
-      </div>
+      <FileDrop
+        multiple
+        accept="video/mp4,video/quicktime,video/webm,image/png,image/jpeg,image/webp,audio/mpeg,audio/wav,audio/mp4,audio/ogg"
+        onFiles={(files) => void uploadFiles(files)}
+        title="Drop videos, photos, or audio"
+        hint="MP4, MOV, WebM up to 200 MB · images · MP3/WAV"
+        icon={<Upload size={20} />}
+      />
       <form
         className="ve-inline"
         onSubmit={(e) => {
@@ -176,27 +154,6 @@ function MediaPanel() {
 
 // ---------- Voice ----------
 const DIRECTIONS = ["Warm and unhurried", "Hype announcer", "Calm documentary", "Whispered, close to the mic", "Upbeat, smiling", "In Spanish, friendly"];
-const LANGUAGES: [string, string][] = [
-  ["auto", "Match the script"],
-  ["en-US", "English"],
-  ["es-US", "Spanish"],
-  ["fr-FR", "French"],
-  ["de-DE", "German"],
-  ["it-IT", "Italian"],
-  ["pt-BR", "Portuguese"],
-  ["ja-JP", "Japanese"],
-  ["ko-KR", "Korean"],
-  ["zh-CN", "Chinese"],
-  ["hi-IN", "Hindi"],
-  ["ar-EG", "Arabic"],
-  ["id-ID", "Indonesian"],
-  ["ru-RU", "Russian"],
-  ["tr-TR", "Turkish"],
-  ["vi-VN", "Vietnamese"],
-  ["th-TH", "Thai"],
-  ["nl-NL", "Dutch"],
-  ["pl-PL", "Polish"],
-];
 
 function VoicePanel({ voicesLoading }: { voicesLoading: boolean }) {
   const cueCount = useVibe((s) => s.project.captions.cues.length);
@@ -258,16 +215,10 @@ function VoicePanel({ voicesLoading }: { voicesLoading: boolean }) {
             </button>
           ))}
         </div>
-        <label className="ve-field">
+        <div className="ve-field">
           <span>Language</span>
-          <select value={language} onChange={(e) => setLanguage(e.target.value)}>
-            {LANGUAGES.map(([id, label]) => (
-              <option key={id} value={id}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </label>
+          <LanguagePicker value={language} onChange={setLanguage} format="locale" auto="Match the script" />
+        </div>
         <p className="ve-hint">Pick a language, or say it in the delivery ("in Korean"), and the lines are translated before they're spoken.</p>
       </Section>
       <Section title="Voice treatment">
@@ -337,16 +288,7 @@ function CaptionsPanel() {
         </button>
       </div>
       <Section title="Style">
-        <CaptionStylePicker value={CAPTION_STYLES.some((s) => s.id === captions.style) ? "none" : captions.style} onChange={pickStyle} hideNone />
-        <p className="ve-hint">Editor looks</p>
-        <div className="ve-styles">
-          {CAPTION_STYLES.map((s) => (
-            <button key={s.id} type="button" className={`ve-style${captions.style === s.id ? " is-on" : ""}`} onClick={() => look({ style: s.id })} data-style={s.id}>
-              <span className="ve-style-sample">{s.upper ? "WORD BY WORD" : "Word by word"}</span>
-              <span>{s.name}</span>
-            </button>
-          ))}
-        </div>
+        <CaptionStylePicker value={resolveCaptionStyleId(captions.style)} onChange={pickStyle} hideNone />
       </Section>
       <Section title="Display">
         <label className="ve-check">
@@ -359,11 +301,11 @@ function CaptionsPanel() {
         </label>
         <label className="ve-field">
           <span>Size</span>
-          <input type="range" min={32} max={130} value={captions.size ?? CAPTION_STYLES.find((s) => s.id === captions.style)?.size ?? 62} onChange={(e) => look({ size: Number(e.target.value) })} />
+          <input type="range" min={32} max={130} value={Math.round(captions.size ?? captionStyle(captions.style).size)} onChange={(e) => look({ size: Number(e.target.value) })} />
         </label>
         <label className="ve-field">
           <span>Height</span>
-          <input type="range" min={0.1} max={0.92} step={0.01} value={captions.y ?? CAPTION_STYLES.find((s) => s.id === captions.style)?.y ?? 0.8} onChange={(e) => look({ y: Number(e.target.value) })} />
+          <input type="range" min={0.1} max={0.92} step={0.01} value={captions.y ?? captionStyle(captions.style).y} onChange={(e) => look({ y: Number(e.target.value) })} />
         </label>
       </Section>
       <Section title="Lines" aside={<span className="ve-count">{captions.cues.length}</span>}>
@@ -486,100 +428,31 @@ function MotionTitles() {
 }
 
 // ---------- Music ----------
-const MOODS = ["Lo-fi chill", "Cinematic", "Upbeat pop", "Piano", "Ambient", "Hip hop beat", "Acoustic", "Epic"];
-
 function MusicPanel() {
-  const [q, setQ] = useState("");
-  const [tracks, setTracks] = useState<MusicTrack[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [adding, setAdding] = useState("");
-  const [playing, setPlaying] = useState("");
-  const audio = useRef<HTMLAudioElement | null>(null);
-  useEffect(() => () => audio.current?.pause(), []);
-
-  const search = async (query: string) => {
-    setQ(query);
-    setLoading(true);
-    try {
-      setTracks(await searchMusic(query));
-    } catch (error) {
-      fail(error);
-    } finally {
-      setLoading(false);
-    }
-  };
-  const preview = (t: MusicTrack) => {
-    audio.current ??= new Audio();
-    if (playing === t.id) {
-      audio.current.pause();
-      setPlaying("");
-      return;
-    }
-    audio.current.src = t.url;
-    audio.current.onended = () => setPlaying("");
-    void audio.current.play().catch(() => setPlaying(""));
-    setPlaying(t.id);
-  };
-  const add = async (t: MusicTrack) => {
-    setAdding(t.id);
+  // The words in the edit set the opening mood.
+  const seed = useVibe((s) => s.project.captions.cues.map((c) => c.text).join(" "));
+  const add = async (t: LibraryTrack) => {
     try {
       const asset = await withTask(`Adding "${t.title}"`, () => importAudioUrl(t.url, t.title));
       placeMusic(asset, 0.25);
       toast.success(`Added "${t.title}" under your edit`);
     } catch (error) {
       fail(error);
-    } finally {
-      setAdding("");
+    }
+  };
+  const importFile = async (file: File) => {
+    try {
+      const asset = await withTask(`Adding "${file.name}"`, () => uploadMedia(file));
+      placeMusic(asset, 0.25);
+      toast.success(`Added "${file.name}" under your edit`);
+    } catch (error) {
+      fail(error);
     }
   };
   return (
-    <>
-      <form
-        className="ve-inline"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (q.trim()) void search(q.trim());
-        }}
-      >
-        <Music2 size={15} className="ve-inline-icon" />
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search royalty-free music" aria-label="Search music" />
-        <button type="submit" className="ve-btn ve-btn-quiet" disabled={!q.trim() || loading}>
-          {loading ? <Loader2 size={14} className="ve-spin" /> : "Search"}
-        </button>
-      </form>
-      <div className="ve-chips">
-        {MOODS.map((m) => (
-          <button key={m} type="button" className="ve-chip" onClick={() => void search(m)}>
-            {m}
-          </button>
-        ))}
-      </div>
-      <Section title="Tracks" aside={<span className="ve-count">CC0 · CC BY</span>}>
-        {tracks.length ? (
-          <ul className="ve-tracks">
-            {tracks.map((t) => (
-              <li key={t.id}>
-                <button type="button" className="ve-round" onClick={() => preview(t)} aria-label={playing === t.id ? `Stop ${t.title}` : `Play ${t.title}`}>
-                  {playing === t.id ? <Pause size={14} /> : <Play size={14} />}
-                </button>
-                <span className="ve-track-meta">
-                  <strong>{t.title}</strong>
-                  <small>
-                    {t.creator}
-                    {t.duration ? ` · ${formatTime(t.duration)}` : ""} · {t.license}
-                  </small>
-                </span>
-                <button type="button" className="ve-btn ve-btn-quiet" onClick={() => void add(t)} disabled={Boolean(adding)}>
-                  {adding === t.id ? <Loader2 size={14} className="ve-spin" /> : "Use"}
-                </button>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="ve-empty">{loading ? "Searching…" : "Pick a mood or search. Music lands under the whole edit at a quarter volume and ducks under any voiceover."}</p>
-        )}
-      </Section>
-    </>
+    <MusicLibrary title="Music" seed={seed} useLabel="Add" onUse={add} onImport={(file) => void importFile(file)} importHint="MP3, WAV or M4A you have the rights to">
+      <p className="ve-hint">Music lands under the whole edit at a quarter volume and ducks under any voiceover.</p>
+    </MusicLibrary>
   );
 }
 

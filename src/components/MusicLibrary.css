@@ -1,0 +1,377 @@
+/* Shared music picker. Colours come from whichever studio hosts it
+   (Voiceover --vs-*, Create Video --mk-*, Vibe Edit maps --mk-* to --ve-*). */
+.ml {
+  --ml-ink: var(--vs-ink, var(--mk-text, #1a1a1a));
+  --ml-muted: var(--vs-muted, var(--mk-muted, #5d5b56));
+  --ml-line: var(--vs-line, var(--mk-line, rgb(0 0 0 / 0.12)));
+  --ml-line-strong: var(--vs-line-strong, var(--mk-line-strong, rgb(0 0 0 / 0.22)));
+  --ml-surface: var(--vs-panel, var(--mk-surface, #fff));
+  --ml-sunken: var(--vs-soft, var(--mk-sunken, rgb(0 0 0 / 0.04)));
+  --ml-accent: var(--vs-accent, var(--mk-accent, #f9dc0b));
+  --ml-accent-ink: var(--mk-accent-ink, #171717);
+  --ml-accent-wash: var(--vs-accent-wash, var(--mk-accent-soft, rgb(249 220 11 / 0.14)));
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  color: var(--ml-ink);
+  font-size: 13px;
+}
+.ml-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 28px;
+}
+.ml-head h3 {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.ml-meta {
+  max-width: 55%;
+  overflow: hidden;
+  color: var(--ml-muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ml-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--ml-sunken);
+}
+.ml .ml-tabs button {
+  flex: 1;
+  min-height: 30px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ml-muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.ml .ml-tabs button[aria-selected="true"] {
+  background: var(--ml-surface);
+  color: var(--ml-ink);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.1);
+}
+.ml-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 4px 0 12px;
+  border: 1px solid var(--ml-line);
+  border-radius: 10px;
+  background: var(--ml-surface);
+  color: var(--ml-muted);
+}
+.ml-search:focus-within {
+  border-color: var(--ml-accent);
+  box-shadow: 0 0 0 3px var(--ml-accent-wash);
+}
+/* Host studios style every bare input (Create Video's rule carries five
+   :not()s); the search field sits inside its own frame, so it opts out. */
+.ml .ml-search input {
+  flex: 1;
+  min-width: 0;
+  height: 100% !important;
+  padding: 0 !important;
+  border: 0 !important;
+  outline: 0;
+  background: transparent !important;
+  color: var(--ml-ink);
+  font: inherit;
+  font-size: 13px;
+  box-shadow: none !important;
+}
+.ml .ml-search button {
+  display: inline-grid;
+  place-items: center;
+  min-width: 64px;
+  height: 30px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 7px;
+  background: var(--ml-sunken);
+  color: var(--ml-ink);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.ml .ml-search button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.ml-moods {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.ml .ml-moods button {
+  min-height: 28px;
+  padding: 4px 11px;
+  border: 1px solid var(--ml-line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ml-muted);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.ml .ml-moods button:hover:not(:disabled),
+.ml .ml-moods button[aria-pressed="true"] {
+  border-color: var(--ml-accent);
+  background: var(--ml-accent-wash);
+  color: var(--ml-ink);
+}
+.ml-tracks {
+  display: grid;
+  gap: 6px;
+  max-height: min(44vh, 340px);
+  margin: 0;
+  padding: 0 2px 0 0;
+  overflow: auto;
+  list-style: none;
+}
+.ml-tracks[aria-busy="true"] {
+  opacity: 0.6;
+}
+.ml-tracks li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 8px 8px 8px 10px;
+  border: 1px solid var(--ml-line);
+  border-radius: 10px;
+  background: var(--ml-surface);
+}
+.ml-tracks li.is-selected {
+  border-color: var(--ml-accent);
+  background: var(--ml-accent-wash);
+}
+.ml .spb-track {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--ml-line-strong);
+  border-radius: 999px;
+  background: var(--ml-surface);
+  color: var(--ml-ink);
+  cursor: pointer;
+}
+.ml .spb-track:hover {
+  border-color: var(--ml-accent);
+  background: var(--ml-accent);
+  color: var(--ml-accent-ink);
+}
+.ml-track-meta {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+.ml-track-meta strong,
+.ml-track-meta small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ml-track-meta strong {
+  font-size: 12.5px;
+  font-weight: 650;
+}
+.ml-track-meta small {
+  color: var(--ml-muted);
+  font-size: 11px;
+}
+.ml-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  color: var(--ml-muted);
+}
+.ml-icon:hover {
+  background: var(--ml-sunken);
+  color: var(--ml-ink);
+}
+.ml .ml-use {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 58px;
+  min-height: 30px;
+  padding: 5px 11px;
+  border: 1px solid var(--ml-line-strong);
+  border-radius: 8px;
+  background: var(--ml-surface);
+  color: var(--ml-ink);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.ml .ml-use:hover:not(:disabled),
+.ml .ml-use[aria-pressed="true"] {
+  border-color: var(--ml-accent);
+  background: var(--ml-accent);
+  color: var(--ml-accent-ink);
+}
+.ml .ml-use:disabled:not([aria-pressed="true"]) {
+  opacity: 0.5;
+  cursor: default;
+}
+.ml-empty,
+.ml-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--ml-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.ml-empty {
+  padding: 12px;
+  border: 1px dashed var(--ml-line);
+  border-radius: 10px;
+}
+.ml-stack {
+  display: grid;
+  gap: 10px;
+}
+.ml-link {
+  display: inline-flex;
+  align-items: center;
+  justify-self: start;
+  gap: 6px;
+  min-height: 34px;
+  padding: 6px 12px;
+  border: 1px solid var(--ml-line-strong);
+  border-radius: 8px;
+  color: var(--ml-ink);
+  font-size: 12.5px;
+  font-weight: 700;
+  text-decoration: none;
+}
+.ml-link:hover {
+  border-color: var(--ml-accent);
+  background: var(--ml-accent-wash);
+}
+.ml-file {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border: 1px dashed var(--ml-line-strong);
+  border-radius: 10px;
+  color: var(--ml-ink);
+  cursor: pointer;
+}
+.ml-file:hover,
+.ml-file:focus-within {
+  border-color: var(--ml-accent);
+  background: var(--ml-accent-wash);
+}
+.ml-file span {
+  display: grid;
+  gap: 2px;
+}
+.ml-file strong {
+  font-size: 12.5px;
+}
+.ml-file small {
+  color: var(--ml-muted);
+  font-size: 11px;
+}
+.ml-file input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.ml-foot {
+  display: grid;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--ml-line);
+}
+.ml-spin {
+  animation: ml-spin 0.9s linear infinite;
+}
+@keyframes ml-spin {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ml-spin { animation: none; }
+}
+/* Host controls in the footer share these two row shapes. */
+.ml .ml-range {
+  display: grid;
+  grid-template-columns: auto minmax(100px, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.ml .ml-range input {
+  width: 100%;
+  accent-color: var(--ml-accent);
+}
+.ml .ml-range output {
+  min-width: 34px;
+  color: var(--ml-muted);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.ml .ml-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.ml .ml-check input {
+  accent-color: var(--ml-accent);
+}
+.ml .ml-field {
+  display: grid;
+  gap: 6px;
+  color: var(--ml-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.ml .ml-field input {
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--ml-line);
+  border-radius: 8px;
+  background: var(--ml-surface);
+  color: var(--ml-ink);
+  font: inherit;
+  font-size: 13px;
+}

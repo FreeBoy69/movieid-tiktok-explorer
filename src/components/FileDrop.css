@@ -1,0 +1,131 @@
+/* FileDrop: picks up the host's palette (studio --cs-*, Vibe --ve-*, maker --mk-*)
+   and falls back to neutral ink so it reads on any surface. */
+.file-drop {
+  --fd-line: var(--cs-line-strong, var(--ve-line-strong, var(--mk-line-strong, rgb(120 120 120 / 0.45))));
+  --fd-text: var(--cs-text, var(--ve-text, var(--mk-text, currentColor)));
+  --fd-muted: var(--cs-muted, var(--ve-muted, var(--mk-muted, rgb(120 120 120))));
+  --fd-accent: var(--cs-accent, var(--ve-accent, var(--mk-accent, #f9dc0b)));
+  --fd-accent-ink: var(--cs-accent-ink, var(--ve-accent-ink, var(--mk-accent-ink, #1a1a1a)));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 20px 16px;
+  border: 1.5px dashed var(--fd-line);
+  border-radius: 12px;
+  color: var(--fd-muted);
+  text-align: center;
+  transition: border-color 160ms ease, background-color 160ms ease;
+}
+.file-drop-roomy {
+  gap: 8px;
+  padding: 36px 24px;
+}
+.file-drop[data-over] {
+  border-color: var(--fd-accent);
+  background: color-mix(in srgb, var(--fd-accent) 9%, transparent);
+}
+.file-drop[data-filled] {
+  border-style: solid;
+}
+.file-drop[data-disabled] {
+  opacity: 0.6;
+}
+.file-drop-icon {
+  display: grid;
+  place-items: center;
+  color: var(--fd-text);
+}
+.file-drop-roomy .file-drop-icon {
+  width: 48px;
+  height: 48px;
+  margin-bottom: 4px;
+  border-radius: 999px;
+  background: var(--fd-accent);
+  color: var(--fd-accent-ink);
+}
+.file-drop-title {
+  max-width: 100%;
+  color: var(--fd-text);
+  font-size: 14px;
+  font-weight: 600;
+}
+.file-drop-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.file-drop-hint {
+  max-width: 52ch;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.file-drop-num {
+  font-variant-numeric: tabular-nums;
+}
+.file-drop .file-drop-button {
+  margin-top: 6px;
+  min-height: 34px;
+  padding: 6px 14px;
+  border: 1px solid var(--fd-line);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--fd-text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 140ms ease, background-color 140ms ease;
+}
+.file-drop .file-drop-button:hover:not(:disabled) {
+  border-color: var(--fd-text);
+}
+.file-drop-roomy .file-drop-button {
+  border-color: transparent;
+  background: var(--fd-accent);
+  color: var(--fd-accent-ink);
+}
+.file-drop-roomy .file-drop-button:hover:not(:disabled) {
+  border-color: transparent;
+  filter: brightness(0.96);
+}
+.file-drop .file-drop-button:focus-visible,
+.file-drop .file-drop-link:focus-visible {
+  outline: 2px solid var(--fd-text);
+  outline-offset: 2px;
+}
+.file-drop .file-drop-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fd-muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.file-drop-bar {
+  width: 100%;
+  height: 4px;
+  margin-top: 6px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: color-mix(in srgb, var(--fd-muted) 22%, transparent);
+}
+.file-drop-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--fd-accent);
+  transition: width 200ms ease;
+}
+.file-drop-foot {
+  margin-top: 2px;
+  font-size: 11px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .file-drop,
+  .file-drop-bar > span { transition: none; }
+}

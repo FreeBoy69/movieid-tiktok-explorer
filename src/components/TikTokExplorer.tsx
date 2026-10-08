@@ -83,6 +83,7 @@ import {
 import { VideoPlayer } from "./VideoPlayer";
 import { getMovieIdentificationSourceDisplay } from "../utils/movieIdentificationSource.js";
 import { StandardPlaylistCard, StandardVideoCard } from "./StandardCards";
+import { type PlaylistMode, YouTubePublishFields } from "./YouTubePublishForm";
 
 interface TikTokExplorerProps {
   onAnalyzeVideo?: (videoUrl: string) => void;
@@ -692,6 +693,20 @@ export default function TikTokExplorer({
   const [youtubeUploadResult, setYoutubeUploadResult] = useState<any>(null);
   const [youtubePlaylists, setYoutubePlaylists] = useState<any[]>([]);
   const [loadingYoutubePlaylists, setLoadingYoutubePlaylists] = useState(false);
+  const [youtubePlaylistMode, setYoutubePlaylistMode] = useState<PlaylistMode>("none");
+  const refreshYoutubePlaylists = async () => {
+    if (!auth?.activeAccount?.id) return;
+    setLoadingYoutubePlaylists(true);
+    try {
+      const response = await fetch(`/api/youtube/playlists?accountId=${encodeURIComponent(auth.activeAccount.id)}`);
+      const data = await response.json();
+      setYoutubePlaylists(data.playlists || []);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoadingYoutubePlaylists(false);
+    }
+  };
 
   const playlist = listTab === "collection" ? collectionCache?.playlist ?? null : channelCache?.playlist ?? null;
   const analyzedUrl = listTab === "collection" ? collectionCache?.analyzedUrl ?? "" : channelCache?.analyzedUrl ?? "";
@@ -1837,6 +1852,7 @@ export default function TikTokExplorer({
                     playlistId: "",
                     newPlaylistTitle: "",
                   });
+                  setYoutubePlaylistMode("none");
                   setYoutubeUploadError("");
                   setYoutubeUploadResult(null);
                 }
@@ -2547,126 +2563,36 @@ export default function TikTokExplorer({
                           )}
                         </div>
 
-                        <div className="space-y-3.5">
-                          <label className="block space-y-1.5">
-                            <span className="text-[10px] font-black uppercase tracking-widest text-[#1A1A1A]/40">Video Title</span>
-                            <input
-                              value={youtubeUploadForm.title}
-                              onChange={(e) => setYoutubeUploadForm((prev) => ({ ...prev, title: e.target.value.slice(0, 100) }))}
-                              maxLength={100}
-                              className="h-10 w-full rounded-lg border border-[#1A1A1A]/10 bg-white px-3 text-xs font-bold outline-none focus:border-[#FF0000]/50"
-                              placeholder="Title (required)"
-                            />
-                          </label>
-
-                          <label className="block space-y-1.5">
-                            <span className="text-[10px] font-black uppercase tracking-widest text-[#1A1A1A]/40">Description</span>
-                            <textarea
-                              value={youtubeUploadForm.description}
-                              onChange={(e) => setYoutubeUploadForm((prev) => ({ ...prev, description: e.target.value }))}
-                              rows={4}
-                              className="w-full resize-none rounded-lg border border-[#1A1A1A]/10 bg-white px-3 py-2 text-xs font-semibold outline-none focus:border-[#FF0000]/50 leading-relaxed"
-                              placeholder="Description details"
-                            />
-                          </label>
-
-                          <label className="block space-y-1.5">
-                            <span className="text-[10px] font-black uppercase tracking-widest text-[#1A1A1A]/40">Tags</span>
-                            <input
-                              value={youtubeUploadForm.tags}
-                              onChange={(e) => setYoutubeUploadForm((prev) => ({ ...prev, tags: e.target.value }))}
-                              className="h-10 w-full rounded-lg border border-[#1A1A1A]/10 bg-white px-3 text-xs font-semibold outline-none focus:border-[#FF0000]/50"
-                              placeholder="comma-separated tags"
-                            />
-                          </label>
-
-                          <label className="flex items-center justify-between rounded-lg border border-[#1A1A1A]/8 bg-white p-2.5 cursor-pointer hover:bg-white/70">
-                            <span className="min-w-0">
-                              <span className="block text-xs font-black text-[#1A1A1A]">Upload as Short</span>
-                              <span className="text-[9px] font-semibold text-[#1A1A1A]/40 leading-none font-sans">Format as vertical YouTube Short</span>
-                            </span>
-                            <span className={cn("relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition-all", youtubeUploadForm.postAsShort ? "border-[#FF0000] bg-[#FF0000]" : "border-[#1A1A1A]/12 bg-[#1A1A1A]/10")}>
-                              <input
-                                type="checkbox"
-                                checked={youtubeUploadForm.postAsShort}
-                                onChange={(e) => setYoutubeUploadForm((prev) => ({ ...prev, postAsShort: e.target.checked }))}
-                                className="sr-only"
-                              />
-                              <span className={cn("block h-4 w-4 rounded-full bg-white shadow transition-transform", youtubeUploadForm.postAsShort ? "translate-x-5.5" : "translate-x-1")} />
-                            </span>
-                          </label>
-
-                          <div className="grid gap-2.5 sm:grid-cols-2">
-                            <label className="block space-y-1.5">
-                              <span className="text-[10px] font-black uppercase tracking-widest text-[#1A1A1A]/40">Visibility</span>
-                              <select
-                                value={youtubeUploadForm.privacyStatus}
-                                onChange={(e) => setYoutubeUploadForm((prev) => ({ ...prev, privacyStatus: e.target.value }))}
-                                className="h-10 w-full rounded-lg border border-[#1A1A1A]/10 bg-white px-3 text-xs font-bold outline-none"
-                              >
-                                <option value="private">Private</option>
-                                <option value="unlisted">Unlisted</option>
-                                <option value="public">Public</option>
-                              </select>
-                            </label>
-
-                            <label className="flex h-10 items-center gap-2 self-end rounded-lg border border-[#1A1A1A]/10 bg-white px-3 text-xs font-bold text-[#1A1A1A]/60 hover:bg-white/60 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={youtubeUploadForm.madeForKids}
-                                onChange={(e) => setYoutubeUploadForm((prev) => ({ ...prev, madeForKids: e.target.checked }))}
-                                className="h-3.5 w-3.5 accent-[#FF0000]"
-                              />
-                              Made for kids
-                            </label>
-                          </div>
-
-                          <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
-                            <label className="block space-y-1.5 min-w-0">
-                              <span className="text-[10px] font-black uppercase tracking-widest text-[#1A1A1A]/40">Add to Playlist</span>
-                              <select
-                                value={youtubeUploadForm.playlistId}
-                                onChange={(e) => setYoutubeUploadForm((prev) => ({ ...prev, playlistId: e.target.value }))}
-                                className="h-10 w-full truncate rounded-lg border border-[#1A1A1A]/10 bg-white px-3 text-xs font-bold outline-none"
-                              >
-                                <option value="">No playlist</option>
-                                {youtubePlaylists.map((pl) => (
-                                  <option key={pl.id} value={pl.id}>{pl.title} ({pl.videoCount || 0})</option>
-                                ))}
-                              </select>
-                            </label>
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                if (!auth?.activeAccount?.id) return;
-                                setLoadingYoutubePlaylists(true);
-                                try {
-                                  const response = await fetch(`/api/youtube/playlists?accountId=${encodeURIComponent(auth.activeAccount.id)}`);
-                                  const data = await response.json();
-                                  setYoutubePlaylists(data.playlists || []);
-                                } catch (err) {
-                                  console.error(err);
-                                } finally {
-                                  setLoadingYoutubePlaylists(false);
-                                }
-                              }}
-                              className="mt-[19px] inline-flex h-10 items-center justify-center gap-1.5 rounded-lg border border-[#1A1A1A]/10 bg-white px-3 text-xs font-bold text-[#1A1A1A]/60 hover:text-[#1A1A1A]"
-                            >
-                              {loadingYoutubePlaylists ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-                              Refresh
-                            </button>
-                          </div>
-
-                          <label className="block space-y-1.5">
-                            <span className="text-[10px] font-black uppercase tracking-widest text-[#1A1A1A]/40">Or Create Playlist</span>
-                            <input
-                              value={youtubeUploadForm.newPlaylistTitle}
-                              onChange={(e) => setYoutubeUploadForm((prev) => ({ ...prev, newPlaylistTitle: e.target.value }))}
-                              className="h-10 w-full rounded-lg border border-[#1A1A1A]/10 bg-white px-3 text-xs font-semibold outline-none"
-                              placeholder="New playlist title"
-                            />
-                          </label>
-                        </div>
+                        <YouTubePublishFields
+                          title={youtubeUploadForm.title}
+                          onTitleChange={(title) => setYoutubeUploadForm((prev) => ({ ...prev, title }))}
+                          titlePlaceholder="Title (required)"
+                          description={youtubeUploadForm.description}
+                          onDescriptionChange={(description) => setYoutubeUploadForm((prev) => ({ ...prev, description }))}
+                          tags={youtubeUploadForm.tags}
+                          onTagsChange={(tags) => setYoutubeUploadForm((prev) => ({ ...prev, tags }))}
+                          postAsShort={youtubeUploadForm.postAsShort}
+                          onPostAsShortChange={(postAsShort) => setYoutubeUploadForm((prev) => ({ ...prev, postAsShort }))}
+                          privacyStatus={youtubeUploadForm.privacyStatus}
+                          onPrivacyStatusChange={(privacyStatus) => setYoutubeUploadForm((prev) => ({ ...prev, privacyStatus }))}
+                          madeForKids={youtubeUploadForm.madeForKids}
+                          onMadeForKidsChange={(madeForKids) => setYoutubeUploadForm((prev) => ({ ...prev, madeForKids }))}
+                          playlist={{
+                            mode: youtubePlaylistMode,
+                            onModeChange: (mode) => {
+                              setYoutubePlaylistMode(mode);
+                              setYoutubeUploadForm((prev) => ({ ...prev, playlistId: mode === "existing" ? prev.playlistId : "", newPlaylistTitle: mode === "create" ? prev.newPlaylistTitle : "" }));
+                              if (mode === "existing" && !youtubePlaylists.length) void refreshYoutubePlaylists();
+                            },
+                            playlists: youtubePlaylists,
+                            playlistId: youtubeUploadForm.playlistId,
+                            onPlaylistIdChange: (playlistId) => setYoutubeUploadForm((prev) => ({ ...prev, playlistId })),
+                            newTitle: youtubeUploadForm.newPlaylistTitle,
+                            onNewTitleChange: (newPlaylistTitle) => setYoutubeUploadForm((prev) => ({ ...prev, newPlaylistTitle })),
+                            loading: loadingYoutubePlaylists,
+                            onRefresh: () => void refreshYoutubePlaylists(),
+                          }}
+                        />
 
                         <button
                           type="button"

@@ -1,10 +1,11 @@
 // Agents and Design Agent: chat that plans work and launches generations.
 import { FormEvent, useEffect, useRef, useState } from "react";
-import { AlertCircle, ArrowUp, Check, ChevronDown, History, Loader2, Music, Plus, Trash2 } from "lucide-react";
+import { AlertCircle, ArrowUp, Check, ChevronDown, History, Loader2, Plus, Trash2 } from "lucide-react";
 import { STUDIO_APPS } from "./studioApps";
 import { type Catalog, Empty, type Generation, Lightbox, readJson, Tabs, timeAgo, usePopover } from "./studioShared";
 import { useErrorToast } from "../../utils/toast";
 import { VideoPlayer } from "../VideoPlayer";
+import { AudioPlayer } from "../AudioPlayer";
 
 type Action = { app: string; prompt: string; generationId?: string; error?: string; status?: "proposed" | "launched" | "skipped" | "failed"; settings?: { aspectRatio?: string; count?: number; duration?: number } };
 type Message = { role: "user" | "assistant"; content: string; actions?: Action[]; at: string };
@@ -221,7 +222,7 @@ function LaunchedWork({ action, generation, onOpen }: { action: Action; generati
         ) : output.type.startsWith("video") ? (
           <VideoPlayer className="cs-video" src={output.url} label="Agent video" />
         ) : (
-          <div className="cs-audio"><Music className="h-5 w-5" /><audio controls src={output.url} preload="metadata" /></div>
+          <AudioPlayer src={output.url} title="Agent audio" download />
         )
       ) : (
         <div className="cs-launch-status">

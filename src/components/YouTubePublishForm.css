@@ -1,0 +1,352 @@
+/* YouTube publish form (YouTubePublishForm.tsx). One look in every host: light and dark
+   app surfaces, or "studio" to follow the CreatorStudio --cs-* tokens. */
+.ytp {
+  --ytp-text: #1a1a1a;
+  --ytp-muted: rgb(26 26 26 / 0.62);
+  --ytp-faint: rgb(26 26 26 / 0.46);
+  --ytp-line: rgb(26 26 26 / 0.1);
+  --ytp-line-strong: rgb(26 26 26 / 0.2);
+  --ytp-field: #fdfcfa;
+  --ytp-sunken: rgb(26 26 26 / 0.045);
+  --ytp-accent: #f9dc0b;
+  --ytp-accent-ink: #1a1a1a;
+  --ytp-accent-soft: rgb(249 220 11 / 0.28);
+  --ytp-radius: 10px;
+  color: var(--ytp-text);
+}
+.ytp[data-theme="dark"] {
+  --ytp-text: #f4f2ee;
+  --ytp-muted: rgb(244 242 238 / 0.66);
+  --ytp-faint: rgb(244 242 238 / 0.46);
+  --ytp-line: rgb(255 255 255 / 0.1);
+  --ytp-line-strong: rgb(255 255 255 / 0.2);
+  --ytp-field: #121417;
+  --ytp-sunken: rgb(255 255 255 / 0.05);
+  --ytp-accent-soft: rgb(249 220 11 / 0.22);
+}
+.ytp[data-theme="studio"] {
+  --ytp-text: var(--cs-text);
+  --ytp-muted: var(--cs-muted);
+  --ytp-faint: var(--cs-faint);
+  --ytp-line: var(--cs-line);
+  --ytp-line-strong: var(--cs-line-strong);
+  --ytp-field: var(--cs-bg);
+  --ytp-sunken: var(--cs-sunken);
+  --ytp-accent: var(--cs-accent);
+  --ytp-accent-ink: var(--cs-accent-ink);
+  --ytp-accent-soft: var(--cs-accent-soft);
+  --ytp-radius: var(--cs-radius-sm);
+}
+.ytp-form {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.ytp-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.ytp-label-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.ytp-label {
+  color: var(--ytp-muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+.ytp-count {
+  color: var(--ytp-faint);
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.ytp-count[data-full] {
+  color: var(--ytp-text);
+}
+.ytp-hint {
+  color: var(--ytp-faint);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.ytp .ytp-input {
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  padding: 10px 12px;
+  border: 1px solid var(--ytp-line);
+  border-radius: var(--ytp-radius);
+  background: var(--ytp-field);
+  color: var(--ytp-text);
+  font: inherit;
+  font-size: 14px;
+  transition: border-color 160ms ease-out, box-shadow 160ms ease-out;
+}
+.ytp .ytp-textarea {
+  resize: vertical;
+  min-height: 112px;
+  line-height: 1.5;
+}
+.ytp .ytp-input::placeholder {
+  color: var(--ytp-faint);
+}
+.ytp .ytp-input:hover {
+  border-color: var(--ytp-line-strong);
+}
+.ytp .ytp-input:focus {
+  outline: none;
+  border-color: var(--ytp-line-strong);
+  box-shadow: 0 0 0 3px var(--ytp-accent-soft);
+}
+
+/* Segmented radio choice (visibility, playlist mode). */
+.ytp-segments {
+  display: grid;
+  grid-template-columns: repeat(var(--ytp-count, 3), minmax(max-content, 1fr));
+  gap: 4px;
+  padding: 4px;
+  border-radius: calc(var(--ytp-radius) + 2px);
+  background: var(--ytp-sunken);
+}
+.ytp .ytp-segment {
+  display: inline-flex;
+  min-width: 0;
+  min-height: 36px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--ytp-radius);
+  background: transparent;
+  color: var(--ytp-muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 160ms ease-out, color 160ms ease-out, box-shadow 160ms ease-out;
+}
+.ytp .ytp-segment span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ytp .ytp-segment svg {
+  width: 15px;
+  height: 15px;
+  flex: none;
+}
+.ytp .ytp-segment:hover {
+  color: var(--ytp-text);
+}
+.ytp .ytp-segment[aria-checked="true"] {
+  background: var(--ytp-accent);
+  color: var(--ytp-accent-ink);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
+}
+
+.ytp-choice {
+  container-type: inline-size;
+}
+.ytp-segments[data-count="2"] { --ytp-count: 2; }
+.ytp-segments[data-count="4"] { --ytp-count: 4; }
+@container (max-width: 380px) {
+  .ytp-segments[data-count="4"] { --ytp-count: 2; }
+}
+@container (max-width: 290px) {
+  .ytp-segments { --ytp-count: 1; }
+}
+
+/* Switch row (Short, made for kids). */
+.ytp-switch {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--ytp-line);
+  border-radius: var(--ytp-radius);
+  background: var(--ytp-field);
+  cursor: pointer;
+  transition: border-color 160ms ease-out;
+}
+.ytp-switch:hover {
+  border-color: var(--ytp-line-strong);
+}
+.ytp-switch-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.ytp-switch-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+.ytp-switch input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+.ytp-switch-track {
+  position: relative;
+  flex: none;
+  width: 40px;
+  height: 24px;
+  border-radius: 999px;
+  background: var(--ytp-line-strong);
+  transition: background-color 180ms ease-out;
+}
+.ytp-switch-track span {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: #fdfcfa;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.25);
+  transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.ytp-switch input:checked + .ytp-switch-track {
+  background: var(--ytp-accent);
+}
+.ytp-switch input:checked + .ytp-switch-track span {
+  transform: translateX(16px);
+}
+.ytp-switch:has(input:focus-visible) {
+  outline: 2px solid var(--ytp-accent);
+  outline-offset: 2px;
+}
+
+/* Playlist. */
+.ytp-playlist {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.ytp .ytp-text-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 4px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--ytp-muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.ytp .ytp-text-button:hover {
+  color: var(--ytp-text);
+}
+.ytp .ytp-text-button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+.ytp .ytp-text-button svg {
+  width: 13px;
+  height: 13px;
+}
+.ytp-spin {
+  animation: ytp-spin 900ms linear infinite;
+}
+@keyframes ytp-spin {
+  to { transform: rotate(360deg); }
+}
+.ytp-list {
+  display: grid;
+  max-height: 216px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--ytp-line);
+  border-radius: var(--ytp-radius);
+  background: var(--ytp-field);
+  scrollbar-width: thin;
+  scrollbar-color: var(--ytp-line-strong) transparent;
+}
+.ytp .ytp-list-row {
+  border-radius: 0;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  padding: 8px 12px;
+  border: 0;
+  border-bottom: 1px solid var(--ytp-line);
+  background: transparent;
+  color: var(--ytp-text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 140ms ease-out;
+}
+.ytp .ytp-list-row:last-child {
+  border-bottom: 0;
+}
+.ytp .ytp-list-row:hover {
+  background: var(--ytp-sunken);
+}
+.ytp .ytp-list-row[aria-checked="true"] {
+  background: var(--ytp-accent-soft);
+  font-weight: 600;
+}
+.ytp-list-mark {
+  display: grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  border: 1px solid var(--ytp-line-strong);
+  border-radius: 999px;
+}
+.ytp-list-row[aria-checked="true"] .ytp-list-mark {
+  border-color: var(--ytp-accent);
+  background: var(--ytp-accent);
+  color: var(--ytp-accent-ink);
+}
+.ytp-list-mark svg {
+  width: 12px;
+  height: 12px;
+  stroke-width: 3;
+}
+.ytp-list-title {
+  font-weight: inherit;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ytp-list-count {
+  color: var(--ytp-faint);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.ytp-empty {
+  margin: 0;
+  padding: 14px;
+  border: 1px dashed var(--ytp-line-strong);
+  border-radius: var(--ytp-radius);
+  color: var(--ytp-muted);
+  font-size: 13px;
+}
+.ytp .ytp-segment:focus-visible,
+.ytp .ytp-list-row:focus-visible,
+.ytp .ytp-text-button:focus-visible {
+  outline: 2px solid var(--ytp-accent);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ytp *,
+  .ytp-spin {
+    transition: none !important;
+    animation: none !important;
+  }
+}

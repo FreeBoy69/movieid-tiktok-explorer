@@ -105,6 +105,7 @@ import { SourcePicker, type SourceOption } from "./SourcePicker";
 import { SourcePoolUsage } from "./SourcePoolUsage";
 import { scheduleHourFromUtcLabel } from "../utils/automationDecisionPolicy.js";
 import "./AutomationAgents.css";
+import { type PlaylistMode, PlaylistControl, SCHEDULED_VISIBILITY_OPTIONS, VisibilityControl } from "./YouTubePublishForm";
 
 const DEFAULT_SETTINGS = {
   maxPostsPerDay: 1,
@@ -3091,13 +3092,7 @@ function CreateAgentWizard({
               <Field label="Publish channel">
                 <SourcePicker theme={theme} label="Publish channel" value={form.youtubeAccountId} onChange={value => setForm((prev: any) => ({ ...prev, youtubeAccountId: value }))} options={accounts.map(account => ({ value: account.id, label: account.channelTitle, imageUrl: account.thumbnailUrl }))} />
               </Field>
-              <Field label="How posts go live">
-                <select value={form.settings.publishMode} onChange={(event) => updateSetting("publishMode", event.target.value)} className="input bg-white">
-                  <option value="schedule">Public, at the release times below</option>
-                  <option value="private">Private upload, I publish manually</option>
-                  <option value="unlisted">Unlisted upload</option>
-                </select>
-              </Field>
+              <VisibilityControl theme={theme} label="How posts go live" value={form.settings.publishMode} onChange={(value) => updateSetting("publishMode", value)} options={SCHEDULED_VISIBILITY_OPTIONS} />
               <Field label="Posts per day">
                 <input type="number" min={1} max={12} value={postsPerDay} onChange={(event) => updateSetting("maxPostsPerDay", Math.max(1, Math.min(12, Number(event.target.value) || 1)))} className="input bg-white" />
               </Field>
@@ -3788,13 +3783,7 @@ function SetupPanel({
                     <Field label="Posts per day">
                       <input type="number" min={1} max={12} value={form.settings.maxPostsPerDay} onChange={(e) => updateSetting("maxPostsPerDay", Math.max(1, Math.min(12, Number(e.target.value) || 1)))} className="input bg-white" />
                     </Field>
-                    <Field label="How posts go live">
-                      <select value={form.settings.publishMode} onChange={(e) => updateSetting("publishMode", e.target.value)} className="input bg-white">
-                        <option value="schedule">Public, at the release times</option>
-                        <option value="private">Private upload, I publish manually</option>
-                        <option value="unlisted">Unlisted upload</option>
-                      </select>
-                    </Field>
+                    <VisibilityControl theme={theme} label="How posts go live" value={form.settings.publishMode} onChange={(value) => updateSetting("publishMode", value)} options={SCHEDULED_VISIBILITY_OPTIONS} />
                   </div>
                   <ReleaseTimesEditor times={scheduleTimes} onSet={setScheduleTime} onAdd={addScheduleTime} onRemove={removeScheduleTime} theme={theme} />
                 </div>
@@ -3828,79 +3817,38 @@ function SetupPanel({
                 <p className={cn("rounded-xl border border-dashed px-4 py-3 text-sm", tokens.divider, tokens.muted)}>Shorts trimming is off, so clips upload at their full length.</p>
               )}
               <div className={cn("mt-4 rounded-xl border p-3", tokens.surfaceSoft)}>
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <p className={eyebrow}>YouTube playlist</p>
-                    <p className={cn("mt-1 text-xs font-semibold", tokens.muted)}>Store uploads in an existing playlist, create one, or let AutoYT choose by niche.</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={onRefreshPlaylists}
-                    disabled={loadingPlaylists}
-                    className={cn("inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-xs font-bold transition disabled:opacity-50", tokens.surface, tokens.text)}
-                  >
-                    {loadingPlaylists ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-                    Refresh
-                  </button>
-                </div>
-                <div className="mt-3 grid gap-3 md:grid-cols-2">
-                  <Field label="Playlist mode">
-                    <select
-                      value={targetPlaylistMode}
-                      onChange={(event) => {
-                        const mode = event.target.value;
-                        updateSetting("targetPlaylistMode", mode);
-                        if (mode === "none" || mode === "auto") updateSetting("targetPlaylistId", "");
-                        if (mode === "none" || mode === "existing") updateSetting("targetPlaylistTitle", "");
-                        if (mode === "create") updateSetting("createTargetPlaylist", true);
-                      }}
-                      className="input bg-white"
-                    >
-                      <option value="auto">Auto-pick by niche</option>
-                      <option value="existing">Existing playlist</option>
-                      <option value="create">Create new playlist</option>
-                      <option value="none">No playlist</option>
-                    </select>
-                  </Field>
-                  {targetPlaylistMode === "existing" ? (
-                    <Field label="Existing playlist">
-                      <select
-                        value={form.settings.targetPlaylistId || ""}
-                        onChange={(event) => {
-                          const playlist = playlists.find((item) => item.id === event.target.value);
-                          updateSetting("targetPlaylistId", event.target.value);
-                          updateSetting("targetPlaylistTitle", playlist?.title || "");
-                        }}
-                        className="input bg-white"
-                      >
-                        <option value="">{loadingPlaylists ? "Loading playlists" : "Choose playlist"}</option>
-                        {playlists.map((playlist) => (
-                          <option key={playlist.id} value={playlist.id}>{playlist.title}{playlist.videoCount !== undefined ? ` (${playlist.videoCount})` : ""}</option>
-                        ))}
-                      </select>
-                    </Field>
-                  ) : null}
-                  {targetPlaylistMode === "create" ? (
-                    <Field label="New playlist name">
-                      <input value={form.settings.targetPlaylistTitle || ""} onChange={(e) => updateSetting("targetPlaylistTitle", e.target.value)} placeholder="Anime Recaps" className="input bg-white" />
-                    </Field>
-                  ) : null}
+                <PlaylistControl
+                  theme={theme}
+                  modes={["auto", "existing", "create", "none"]}
+                  mode={targetPlaylistMode as PlaylistMode}
+                  onModeChange={(mode) => {
+                    updateSetting("targetPlaylistMode", mode);
+                    if (mode === "none" || mode === "auto") updateSetting("targetPlaylistId", "");
+                    if (mode === "none" || mode === "existing") updateSetting("targetPlaylistTitle", "");
+                    if (mode === "create") updateSetting("createTargetPlaylist", true);
+                    if (mode === "existing" && !playlists.length) onRefreshPlaylists();
+                  }}
+                  playlists={playlists}
+                  playlistId={form.settings.targetPlaylistId || ""}
+                  onPlaylistIdChange={(id, playlist) => {
+                    updateSetting("targetPlaylistId", id);
+                    updateSetting("targetPlaylistTitle", playlist?.title || "");
+                  }}
+                  newTitle={form.settings.targetPlaylistTitle || ""}
+                  onNewTitleChange={(value) => updateSetting("targetPlaylistTitle", value)}
+                  newTitlePlaceholder={targetPlaylistMode === "auto" ? "AutoYT Picks" : "Anime Recaps"}
+                  loading={loadingPlaylists}
+                  onRefresh={onRefreshPlaylists}
+                >
                   {targetPlaylistMode === "auto" ? (
-                    <Field label="Fallback playlist name">
-                      <input value={form.settings.targetPlaylistTitle || ""} onChange={(e) => updateSetting("targetPlaylistTitle", e.target.value)} placeholder="AutoYT Picks" className="input bg-white" />
-                    </Field>
-                  ) : null}
-                </div>
-                {targetPlaylistMode === "auto" ? (
-                  <div className="mt-3">
                     <ToggleRow
                       title="Create missing playlists automatically"
                       body="Niche playlists such as Anime Recaps, Finance Automation, or AI Cartoons are created the first time they are needed."
                       checked={form.settings.autoCreatePlaylists !== false}
                       onChange={(next) => updateSetting("autoCreatePlaylists", next)}
                     />
-                  </div>
-                ) : null}
+                  ) : null}
+                </PlaylistControl>
               </div>
             </SetupSection>
           ) : null}

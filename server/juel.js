@@ -383,6 +383,7 @@ export const JUEL_EXCLUDED = {
   "POST /api/admin/telegram/link": "Telegram bridge setup: links the admin's own chat",
   "DELETE /api/admin/telegram/links/:chatId": "Telegram bridge setup: an admin does it by hand",
   "POST /api/downloader/download": "returns raw file download",
+  "POST /api/transcribe/upload": "raw file upload from the Rewriter drop area; Juel passes links to POST /api/transcribe",
   "POST /api/movie/identify-file": "needs a raw video file in the request body",
   "POST /api/recaps/uploads": "raw binary file upload stream",
   "POST /api/studio/agents/chats": "the old agent chat: Juel is the agent now",

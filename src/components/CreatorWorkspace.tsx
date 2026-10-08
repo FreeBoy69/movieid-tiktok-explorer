@@ -77,7 +77,8 @@ import { loadVoiceProfiles } from "../utils/voiceProfiles";
 import { AudioPlayer } from "./AudioPlayer";
 import { StoryboardPreview } from "./StoryboardPreview";
 import { SceneTimeline } from "./SceneTimeline";
-import { MixPreview, ScenePlayButton, SyncedClip, TrackPreviewButton, playbackStyle, useScenePlayback, type MixPreviewHandle } from "./ScenePlayback";
+import { MusicLibrary } from "./MusicLibrary";
+import { MixPreview, ScenePlayButton, SyncedClip, playbackStyle, useScenePlayback, type MixPreviewHandle } from "./ScenePlayback";
 import { VideoPlayer } from "./VideoPlayer";
 import { CharactersStep, type CastSheetState, type Framing } from "./CharactersStep";
 import { VoicePicker } from "./VoicePicker";
@@ -94,6 +95,8 @@ import { isDramaSeries } from "../utils/dramaTemplates";
 import { PRODUCTION_PLAYBOOKS, PRODUCTION_PROFILES } from "../utils/productionProfiles.js";
 import { tokensToCredits } from "../utils/credits.js";
 import { ProductionPreflight, type ProductionReview } from "./ProductionPreflight";
+import { FileDrop } from "./FileDrop";
+import { LanguagePicker } from "./LanguagePicker";
 import "./CreatorWorkspace.css";
 
 type BoardSize = "s" | "m" | "l";
@@ -2519,24 +2522,14 @@ function EditStyleModal({
               onChange={(e) => setSettings({ ...settings, wordCount: Number(e.target.value) || 600 })}
             />
           </label>
-          <label className="maker-field">
-            Language
-            <select value={settings.language} onChange={(e) => setSettings({ ...settings, language: e.target.value })}>
-              {[
-                ["en", "English"],
-                ["es", "Spanish"],
-                ["fr", "French"],
-                ["de", "German"],
-                ["pt", "Portuguese"],
-                ["hi", "Hindi"],
-                ["ja", "Japanese"],
-              ].map(([code, label]) => (
-                <option key={code} value={code}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </label>
+          <div className="maker-field">
+            <span>Language</span>
+            <LanguagePicker
+              value={settings.language || "en"}
+              only={["en", "es", "fr", "de", "it", "pt", "ja", "ko", "zh", "hi", "sw"]}
+              onChange={(language) => setSettings({ ...settings, language })}
+            />
+          </div>
           <div className="maker-field">
             <span id="style-voice-label">Voice</span>
             <VoicePicker
@@ -2794,7 +2787,6 @@ function CreateArtStyleModal({
     [sourceUrl, setSourceUrl] = useState(""),
     [rightsConfirmed, setRightsConfirmed] = useState(false),
     [images, setImages] = useState<Array<{ file: File; url: string }>>([]),
-    [dragging, setDragging] = useState(false),
     [busy, setBusy] = useState(false),
     [problem, setProblem] = useState("");
   useErrorToast(problem, () => setProblem(""));
@@ -2917,25 +2909,15 @@ function CreateArtStyleModal({
               </figure>
             ))}
             {images.length < 4 && (
-              <label
-                className="maker-dropzone"
-                data-active={dragging || undefined}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  setDragging(true);
-                }}
-                onDragLeave={() => setDragging(false)}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  setDragging(false);
-                  add(e.dataTransfer.files);
-                }}
-              >
-                <input type="file" hidden multiple accept="image/png,image/jpeg,image/webp" onChange={(e) => add(e.target.files)} />
-                <ImagePlus size={20} />
-                <strong>{dragging ? "Drop images" : "Add images"}</strong>
-                <small>PNG, JPEG, or WebP</small>
-              </label>
+              <FileDrop
+                className="maker-art-drop"
+                multiple
+                accept="image/png,image/jpeg,image/webp"
+                onFiles={(files) => add(files)}
+                title="Add images"
+                hint="PNG, JPEG, or WebP"
+                icon={<ImagePlus size={20} />}
+              />
             )}
           </div>
           </>}
@@ -3534,8 +3516,6 @@ function ProjectEditor({
     [voiceError, setVoiceError] = useState(""),
     [voicesLoading, setVoicesLoading] = useState(true),
     [styleName, setStyleName] = useState(""),
-    [musicTracks, setMusicTracks] = useState<any[]>([]),
-    [musicBusy, setMusicBusy] = useState(false),
     [confirm, setConfirm] = useState<any>(null),
     [cardScene, setCardScene] = useState(""),
     [overlayScene, setOverlayScene] = useState(""),
@@ -4854,89 +4834,40 @@ function ProjectEditor({
                 Boolean(output?.asset && output?.composedSegments) &&
                 JSON.stringify(normalizeMusicSegments(output.composedSegments, timingDuration)) !== JSON.stringify(musicSegments);
               const royaltyFree = (
-                <div className="maker-stack">
-                  <div className="maker-actions">
-                    <button
-                      className="maker-ink"
-                      disabled={musicBusy}
-                      onClick={async () => {
-                        setMusicBusy(true);
-                        try {
-                          const query = draft.query || draft.mood || settings.soundtrackMood || "";
-                          const data = await creatorApi(`/api/automation/voice/music/search?q=${encodeURIComponent(query)}`);
-                          setMusicTracks(data.tracks || []);
-                          if (!(data.tracks || []).length) onError("No royalty-free tracks matched that mood. Try broader words.");
-                        } catch (error) {
-                          onError((error as Error).message);
-                        } finally {
-                          setMusicBusy(false);
-                        }
-                      }}
-                    >
-                      {musicBusy ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
-                      Search royalty-free
-                    </button>
-                    <a className="mk-btn maker-outline" href={`https://pixabay.com/music/search/${encodeURIComponent(draft.query || draft.mood || "")}/`} target="_blank" rel="noreferrer">
-                      Pixabay
-                      <ArrowUpRight size={14} />
-                    </a>
-                    <a className="mk-btn maker-outline" href={`https://openverse.org/search/audio?q=${encodeURIComponent(draft.query || draft.mood || "")}`} target="_blank" rel="noreferrer">
-                      Openverse
-                      <ArrowUpRight size={14} />
-                    </a>
-                  </div>
-                  {musicTracks.length ? (
-                    <div className="maker-card maker-track-list">
-                      {musicTracks.map((track) => (
-                        <div className="maker-track" key={track.id}>
-                          {track.url ? <TrackPreviewButton url={track.url} title={track.title} /> : <Music size={16} />}
-                          <div>
-                            <strong>{track.title}</strong>
-                            <span>
-                              {track.creator} · {track.provider} · {track.license}
-                            </span>
-                          </div>
-                          <button
-                            className="maker-outline"
-                            disabled={busy}
-                            onClick={async () => {
-                              if (!window.confirm(`Import “${track.title}” under its stated ${track.license} license?`)) return;
-                              setBusy(true);
-                              try {
-                                const data = await creatorApi(`/api/maker/projects/${id}/soundtrack-url`, {
-                                  url: track.url,
-                                  landingUrl: track.landingUrl,
-                                  credit: track.attribution || track.creator,
-                                  license: track.license,
-                                  rightsConfirmed: true,
-                                  accountId,
-                                  expectedVersion: project.version || 1,
-                                });
-                                setProject(data.project);
-                              } catch (error) {
-                                onError((error as Error).message);
-                              } finally {
-                                setBusy(false);
-                              }
-                            }}
-                          >
-                            Use track
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  ) : null}
-                  <div className="maker-grid-2">
-                    <label className="maker-field">
-                      Music credit
-                      <input value={draft.credit || ""} placeholder="Artist · license" onChange={(e) => edit({ credit: e.target.value })} />
-                    </label>
-                    <label className="maker-field">
-                      Import licensed audio <small>Up to 30 MB</small>
-                      <input type="file" accept="audio/*" onChange={(e) => void upload(e.target.files?.[0], 30, "audio")} />
-                    </label>
-                  </div>
-                </div>
+                <MusicLibrary
+                  title={null}
+                  seed={project.outputs.script?.draft || ""}
+                  query={draft.query || draft.mood || settings.soundtrackMood || ""}
+                  disabled={busy}
+                  useLabel="Use track"
+                  onImport={(file) => void upload(file, 30, "audio")}
+                  importHint="Licensed audio, up to 30 MB"
+                  onUse={async (track) => {
+                    if (!window.confirm(`Import “${track.title}” under its stated ${track.license || "free"} license?`)) return;
+                    setBusy(true);
+                    try {
+                      const data = await creatorApi(`/api/maker/projects/${id}/soundtrack-url`, {
+                        url: track.url,
+                        landingUrl: track.landingUrl,
+                        credit: track.attribution || track.creator,
+                        license: track.license,
+                        rightsConfirmed: true,
+                        accountId,
+                        expectedVersion: project.version || 1,
+                      });
+                      setProject(data.project);
+                    } catch (error) {
+                      onError((error as Error).message);
+                    } finally {
+                      setBusy(false);
+                    }
+                  }}
+                >
+                  <label className="ml-field">
+                    Music credit
+                    <input value={draft.credit || ""} placeholder="Artist · license" onChange={(e) => edit({ credit: e.target.value })} />
+                  </label>
+                </MusicLibrary>
               );
               return (
                 <section className="maker-card maker-gen">
@@ -6026,12 +5957,16 @@ function ProjectEditor({
                           </div>
                         ) : (
                           <div className="maker-thumb-source">
-                            <label className="maker-dropzone" data-busy={busy || undefined}>
-                              <input type="file" hidden accept="image/png,image/jpeg,image/webp" disabled={busy} onChange={(e) => e.target.files?.[0] && void setThumbnailReference({ file: e.target.files[0] })} />
-                              {busy ? <Loader2 size={20} className="animate-spin" /> : <Upload size={20} />}
-                              <strong>Upload image</strong>
-                              <small>PNG, JPEG, or WebP · up to 15 MB</small>
-                            </label>
+                            <FileDrop
+                              accept="image/png,image/jpeg,image/webp"
+                              maxBytes={15 * 1024 ** 2}
+                              onError={onError}
+                              onFiles={([file]) => void setThumbnailReference({ file })}
+                              disabled={busy}
+                              title="Upload image"
+                              hint="PNG, JPEG, or WebP · up to 15 MB"
+                              icon={busy ? <Loader2 size={20} className="animate-spin" /> : undefined}
+                            />
                             <span className="maker-or">or</span>
                             <form
                               className="maker-url-load"

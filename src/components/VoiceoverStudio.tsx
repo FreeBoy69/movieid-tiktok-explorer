@@ -1,9 +1,8 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
-import { ArrowLeft, AudioLines, Check, Download, ExternalLink, FileText, Film, Loader2, Mic, Pause, Play, Plus, RefreshCw, Search, Square, WandSparkles, Sparkles, SlidersHorizontal, LibraryBig, Subtitles, UserRound } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ArrowLeft, AudioLines, Download, ExternalLink, FileText, Film, Loader2, Mic, Plus, RefreshCw, Square, WandSparkles, Sparkles, SlidersHorizontal, LibraryBig, Subtitles, UserRound } from "lucide-react";
 import { writeDeepLink } from "../utils/tiktokRoute";
 import { NARRATION_STYLES } from "../utils/narrationStyle.js";
 import { DEFAULT_SUBTITLES, normalizeSubtitleSettings, subtitleRegion } from "../utils/voiceoverSubtitles.js";
-import { inferMusicMood, pixabayMusicSearchUrl } from "../utils/royaltyFreeMusic.js";
 import { buildInitialScenes } from "../utils/voiceoverTimeline.js";
 import { DEFAULT_AVATAR_REMAKE, normalizeAvatarRemake } from "../utils/avatarRemake.js";
 import { SubtitleSettingsPanel, type SubtitleSettings } from "./SubtitleSettingsPanel";
@@ -12,6 +11,7 @@ import { VoiceoverTimeline } from "./VoiceoverTimeline";
 import { SourcePicker } from "./SourcePicker";
 import "./VoiceoverStudio.css";
 import { AudioPlayer } from "./AudioPlayer";
+import { MusicLibrary, type LibraryTrack } from "./MusicLibrary";
 import { useErrorToast } from "../utils/toast";
 import { isVoiceReady, loadVoiceProfiles } from "../utils/voiceProfiles";
 import { VoicePicker } from "./VoicePicker";
@@ -64,7 +64,6 @@ function duration(value: number) {
 }
 
 type Track = { id: string; label: string; url: string; meta?: string };
-type MusicTrack = { id: string; title: string; creator: string; provider: string; url: string; landingUrl: string; license: string; licenseUrl: string; attribution: string; durationSeconds: number | null; tags: string[] };
 type PreviewFormat = "portrait" | "landscape" | "square";
 
 function previewFormat(width: number, height: number): PreviewFormat {
@@ -72,249 +71,16 @@ function previewFormat(width: number, height: number): PreviewFormat {
   return ratio < 0.85 ? "portrait" : ratio > 1.2 ? "landscape" : "square";
 }
 
-/** Compact dock player for rendered narration and stems: one transport, a track switcher, and a seekable timeline. */
+/** Dock player for rendered narration and stems: the shared audio player with a track switcher. */
 function OutputPlayer({ tracks, title }: { tracks: Track[]; title: string }) {
-  const audio = useRef<HTMLAudioElement>(null);
   const [trackId, setTrackId] = useState(tracks[0]?.id || "");
-  const [playing, setPlaying] = useState(false);
-  const [time, setTime] = useState(0);
-  const [length, setLength] = useState(0);
   const track = tracks.find((item) => item.id === trackId) || tracks[0];
-
   useEffect(() => { if (!tracks.some((item) => item.id === trackId)) setTrackId(tracks[0]?.id || ""); }, [tracks, trackId]);
-  useEffect(() => { setPlaying(false); setTime(0); setLength(0); }, [track?.url]);
-  useEffect(() => {
-    if (!playing) return;
-    let frame = 0;
-    const tick = () => {
-      const el = audio.current;
-      if (!el) return;
-      setTime(el.currentTime || 0);
-      if (!el.paused && !el.ended) frame = window.requestAnimationFrame(tick);
-    };
-    frame = window.requestAnimationFrame(tick);
-    return () => window.cancelAnimationFrame(frame);
-  }, [playing, track?.url]);
-
-  function syncLength(el: HTMLAudioElement) {
-    if (Number.isFinite(el.duration) && el.duration > 0) setLength(el.duration);
-  }
-  function toggle() {
-    const el = audio.current;
-    if (!el || !track) return;
-    if (el.paused) void el.play().catch(() => setPlaying(false));
-    else el.pause();
-  }
-  function seek(next: number) {
-    const el = audio.current;
-    if (!el) return;
-    el.currentTime = Math.max(0, Math.min(length || el.duration || 0, next));
-    setTime(el.currentTime);
-  }
-  function chooseTrack(id: string) {
-    if (id === trackId) return;
-    audio.current?.pause();
-    setTrackId(id);
-  }
-
-  const pct = length ? Math.max(0, Math.min(100, (time / length) * 100)) : 0;
-  return <div className="voice-player" aria-label="Audio output player">
-    <audio ref={audio} src={track?.url} preload="metadata" onLoadedMetadata={(e) => syncLength(e.currentTarget)} onDurationChange={(e) => syncLength(e.currentTarget)} onTimeUpdate={(e) => setTime(e.currentTarget.currentTime || 0)} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)} />
-    <button type="button" className="voice-player-play" onClick={toggle} disabled={!track} aria-label={playing ? "Pause" : "Play"}>{playing ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" />}</button>
-    <div className="voice-player-info">
-      <strong>{title}</strong>
-      {tracks.length > 1
-        ? <div className="voice-player-tracks" role="tablist" aria-label="Audio track">{tracks.map((item) => <button type="button" role="tab" aria-selected={item.id === track?.id} key={item.id} onClick={() => chooseTrack(item.id)}>{item.label}</button>)}</div>
-        : <span>{track?.meta || track?.label}</span>}
-    </div>
-    <div className="voice-player-scrub">
-      <span>{duration(time)}</span>
-      <input type="range" min={0} max={length || 0} step={0.01} value={Math.min(time, length || 0)} disabled={!length} aria-label="Seek" aria-valuetext={`${duration(time)} of ${duration(length)}`} style={{ "--p": `${pct}%` } as CSSProperties} onChange={(e) => seek(Number(e.target.value))} />
-      <span>{duration(length)}</span>
-    </div>
-    {track ? <a className="voice-icon voice-player-download" href={track.url} download aria-label="Download this track" title="Download this track"><Download size={16} /></a> : null}
-  </div>;
-}
-
-function RoyaltyFreeMusicPanel({
-  transcript,
-  selectedId,
-  onSelect,
-  onImport,
-  disabled,
-  volume,
-  onVolume,
-  preserveDialogue,
-  onPreserveDialogue,
-  selectedLabel,
-}: {
-  transcript: string;
-  selectedId?: string;
-  onSelect: (track: MusicTrack) => void;
-  onImport: (file: File) => void;
-  disabled: boolean;
-  volume: number;
-  onVolume: (value: number) => void;
-  preserveDialogue: boolean;
-  onPreserveDialogue: (value: boolean) => void;
-  selectedLabel: string;
-}) {
-  const [library, setLibrary] = useState("openverse");
-  const searchRequest = useRef<AbortController | null>(null);
-  const [query, setQuery] = useState("");
-  const [tracks, setTracks] = useState<MusicTrack[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  useErrorToast(error, () => setError(""), { title: "Music search failed", action: { label: "Retry", onClick: () => void searchMusic() } });
-  const [mood, setMood] = useState(() => inferMusicMood(transcript));
-  const [searched, setSearched] = useState(false);
-
-  async function searchMusic(nextQuery = query || mood.query) {
-    searchRequest.current?.abort();
-    const controller = new AbortController();
-    searchRequest.current = controller;
-    setLoading(true); setError("");
-    try {
-      const params = new URLSearchParams({ q: nextQuery });
-      const data = await api<{ tracks: MusicTrack[] }>(`/api/automation/voice/music/search?${params.toString()}`, undefined, controller.signal);
-      if (!controller.signal.aborted) { setTracks(data.tracks || []); setSearched(true); setQuery(nextQuery); }
-    } catch (e) { if (!controller.signal.aborted) setError((e as Error).message); }
-    finally { if (!controller.signal.aborted) setLoading(false); }
-  }
-
-  useEffect(() => {
-    const nextMood = inferMusicMood(transcript);
-    setMood(nextMood); setQuery(nextMood.query);
-    const timer = window.setTimeout(() => { if (library === "openverse") void searchMusic(nextMood.query); }, 450);
-    return () => { window.clearTimeout(timer); searchRequest.current?.abort(); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [transcript]);
-
-  return (
-    <div className="vs-tool voice-music-panel">
-      <header className="vs-tool-head">
-        <h2><AudioLines size={16} />Audio</h2>
-        {selectedLabel ? <span className="vs-tool-meta" title={selectedLabel}>{selectedLabel}</span> : null}
-      </header>
-
-      <div className="voice-segmented vs-tool-tabs" aria-label="Source">
-        {([["openverse", "Openverse"], ["pixabay", "Pixabay"], ["upload", "Upload"]] as const).map(([id, label]) => (
-          <button
-            key={id}
-            type="button"
-            aria-pressed={library === id}
-            disabled={disabled}
-            onClick={() => {
-              searchRequest.current?.abort();
-              setLibrary(id);
-              setError("");
-              setLoading(false);
-              if (id === "openverse") void searchMusic(query || mood.query);
-            }}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-
-      {library === "openverse" ? (
-        <>
-          <div className="voice-music-input">
-            <Search size={15} aria-hidden="true" />
-            <input
-              value={query}
-              disabled={disabled}
-              aria-label="Search music"
-              placeholder="Mood or style"
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") void searchMusic(); }}
-            />
-            <button type="button" onClick={() => void searchMusic()} disabled={disabled || loading || !query.trim()} aria-label="Search">
-              <Search size={15} />
-            </button>
-          </div>
-          <div className="voice-mood-row" aria-label="Moods">
-            {["upbeat", "calm", "dramatic", "sad", "inspiring"].map((item) => (
-              <button
-                type="button"
-                key={item}
-                disabled={disabled}
-                aria-pressed={mood.id === item}
-                className={mood.id === item ? "is-selected" : ""}
-                onClick={() => {
-                  const next = `${item} instrumental`;
-                  setMood({ ...inferMusicMood(item), id: item, query: next });
-                  setQuery(next);
-                  void searchMusic(next);
-                }}
-              >
-                {item}
-              </button>
-            ))}
-          </div>
-          {loading ? (
-            <div className="voice-music-loading"><Loader2 className="voice-spin" size={16} /></div>
-          ) : tracks.length ? (
-            <div className="voice-music-results" aria-label="Tracks">
-              {tracks.map((track) => (
-                <article className={`voice-music-result ${selectedId === track.id ? "is-selected" : ""}`} key={track.id}>
-                  <div className="voice-music-result-main">
-                    <strong title={track.title}>{track.title}</strong>
-                    <span>{track.creator} · {track.license}</span>
-                  </div>
-                  <div className="voice-music-result-actions">
-                    <button
-                      type="button"
-                      className={`voice-icon ${selectedId === track.id ? "is-accent" : ""}`}
-                      disabled={disabled}
-                      aria-label={selectedId === track.id ? "Selected" : `Use ${track.title}`}
-                      title={selectedId === track.id ? "Selected" : "Use track"}
-                      onClick={() => onSelect(track)}
-                    >
-                      <Check size={15} />
-                    </button>
-                    <a className="voice-icon" href={track.landingUrl} target="_blank" rel="noreferrer" aria-label={`Open ${track.title}`} title="Source">
-                      <ExternalLink size={15} />
-                    </a>
-                  </div>
-                  <AudioPlayer compact preload="none" src={track.url} label={track.title} className="voice-music-player" />
-                </article>
-              ))}
-            </div>
-          ) : searched ? (
-            <div className="voice-music-empty">No tracks found</div>
-          ) : null}
-        </>
-      ) : library === "pixabay" ? (
-        <div className="vs-tool-stack">
-          <a className="voice-button" href={pixabayMusicSearchUrl(query || mood.query)} target="_blank" rel="noreferrer">
-            <ExternalLink size={15} />Open Pixabay
-          </a>
-          <label className="vs-file-row">
-            <span>Import download</span>
-            <input type="file" accept="audio/*" aria-label="Import soundtrack" disabled={disabled} onChange={(e) => { const file = e.target.files?.[0]; if (file) onImport(file); }} />
-          </label>
-        </div>
-      ) : (
-        <label className="vs-file-row">
-          <span>Audio file</span>
-          <input type="file" accept="audio/*" aria-label="Import soundtrack" disabled={disabled} onChange={(e) => { const file = e.target.files?.[0]; if (file) onImport(file); }} />
-        </label>
-      )}
-
-      <div className="voice-soundtrack-controls">
-        <label className="voice-slider-row">
-          <span>Level</span>
-          <input type="range" min="0" max="1" step="0.05" aria-label="Music level" value={volume} disabled={disabled} onChange={(e) => onVolume(Number(e.target.value))} />
-          <output>{Math.round(volume * 100)}%</output>
-        </label>
-        <label>
-          <input type="checkbox" checked={preserveDialogue} onChange={(e) => onPreserveDialogue(e.target.checked)} disabled={disabled} />
-          Keep dialogue
-        </label>
-      </div>
-    </div>
-  );
+  if (!track) return null;
+  const switcher = tracks.length > 1
+    ? <span className="voice-player-tracks" role="tablist" aria-label="Audio track">{tracks.map((item) => <button type="button" role="tab" aria-selected={item.id === track.id} key={item.id} onClick={() => setTrackId(item.id)}>{item.label}</button>)}</span>
+    : track.meta || track.label;
+  return <AudioPlayer key={track.url} className="voice-output" src={track.url} title={title} meta={switcher} download skip volume />;
 }
 
 export function VoiceoverStudio({ theme, agentId, uploadId, accountId, embedded = false, lockAgent = false, title = "Voiceover Studio", onSourceChange, onProjectOutput }: { theme: "light" | "dark"; agentId?: string; uploadId?: string; accountId?: string; embedded?: boolean; lockAgent?: boolean; title?: string; onSourceChange?: (source: { agentId?: string; uploadId?: string }) => void; onProjectOutput?: (output: { jobId: string; agentId?: string; uploadId?: string }) => void }) {
@@ -359,7 +125,7 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId, embedded 
   const [sourceUrl, setSourceUrl] = useState("");
   const [showImport, setShowImport] = useState(false);
   const [soundtrack, setSoundtrack] = useState<File | null>(null);
-  const [musicTrack, setMusicTrack] = useState<MusicTrack | null>(null);
+  const [musicTrack, setMusicTrack] = useState<LibraryTrack | null>(null);
   const [playback, setPlayback] = useState<"source" | "result">("source");
   const [scenes, setScenes] = useState<TimelineScene[]>([]);
   const [detectedScenes, setDetectedScenes] = useState<{ id: string; scenes: TimelineScene[] } | null>(null);
@@ -818,18 +584,25 @@ export function VoiceoverStudio({ theme, agentId, uploadId, accountId, embedded 
               )}
             </div>
           </div> : mode === "soundtrack" ? (
-            <RoyaltyFreeMusicPanel
-              transcript={script}
+            <MusicLibrary
+              title="Audio"
+              seed={script}
               selectedId={musicTrack?.id}
               disabled={running}
-              onSelect={(track) => { setMusicTrack(track); setSoundtrack(null); }}
+              meta={musicTrack ? musicTrack.title : soundtrack?.name || ""}
+              onUse={(track) => { setMusicTrack(track); setSoundtrack(null); }}
               onImport={(file) => { setSoundtrack(file); setMusicTrack(null); }}
-              volume={backgroundVolume}
-              onVolume={setBackgroundVolume}
-              preserveDialogue={preserveDialogue}
-              onPreserveDialogue={setPreserveDialogue}
-              selectedLabel={musicTrack ? musicTrack.title : soundtrack?.name || ""}
-            />
+            >
+              <label className="ml-range">
+                <span>Level</span>
+                <input type="range" min="0" max="1" step="0.05" aria-label="Music level" value={backgroundVolume} disabled={running} onChange={(e) => setBackgroundVolume(Number(e.target.value))} />
+                <output>{Math.round(backgroundVolume * 100)}%</output>
+              </label>
+              <label className="ml-check">
+                <input type="checkbox" checked={preserveDialogue} onChange={(e) => setPreserveDialogue(e.target.checked)} disabled={running} />
+                Keep dialogue
+              </label>
+            </MusicLibrary>
           ) : (
             <div className="vs-tool">
               <header className="vs-tool-head"><h2><SlidersHorizontal size={16} />Stems</h2></header>

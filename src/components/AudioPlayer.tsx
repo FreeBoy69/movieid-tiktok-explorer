@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type MutableRefObject, type ReactNode } from "react";
-import { Download, Loader2, Pause, Play, Volume2, VolumeX } from "lucide-react";
+import { useEffect, useRef, useState, type KeyboardEvent, type MutableRefObject, type ReactNode } from "react";
+import { Download, Loader2, Pause, Play, Repeat, RotateCcw, RotateCw, Volume2, VolumeX } from "lucide-react";
 import "./AudioPlayer.css";
 
 const BARS = 72;
@@ -62,6 +62,13 @@ export function AudioPlayer({
   compact = false,
   label,
   className = "",
+  leading,
+  skip = false,
+  loop: loopable = false,
+  volume: volumeSlider = false,
+  autoPlay = false,
+  onAutoPlayed,
+  durationHint = 0,
 }: {
   src: string;
   title?: ReactNode;
@@ -76,6 +83,19 @@ export function AudioPlayer({
   /** Names the audio for screen readers when there is no visible title. */
   label?: string;
   className?: string;
+  /** Shown before the title, e.g. a voice avatar. */
+  leading?: ReactNode;
+  /** Back/forward 10 second buttons. */
+  skip?: boolean;
+  /** A loop toggle. */
+  loop?: boolean;
+  /** A volume slider beside mute. */
+  volume?: boolean;
+  /** Starts playing when mounted or when src changes; onAutoPlayed fires either way. */
+  autoPlay?: boolean;
+  onAutoPlayed?: () => void;
+  /** Known length, shown before the file's metadata loads. */
+  durationHint?: number;
 }) {
   const audio = useRef<HTMLAudioElement | null>(null);
   const [playing, setPlaying] = useState(false);
@@ -84,16 +104,26 @@ export function AudioPlayer({
   const [duration, setDuration] = useState(0);
   const [speed, setSpeed] = useState(1);
   const [muted, setMuted] = useState(false);
+  const [looping, setLooping] = useState(false);
+  const [level, setLevel] = useState(1);
   const [error, setError] = useState("");
   const [peaks, setPeaks] = useState<number[] | null>(() => peaksCache.get(src) || null);
 
   useEffect(() => {
     setPlaying(false);
     setTime(0);
-    setDuration(0);
+    setDuration(durationHint > 0 ? durationHint : 0);
     setError("");
     setPeaks(peaksCache.get(src) || null);
-  }, [src]);
+  }, [src, durationHint]);
+
+  useEffect(() => {
+    if (!autoPlay || !audio.current) return;
+    const element = audio.current;
+    element.currentTime = 0;
+    claimPlayback(element);
+    element.play().catch(() => undefined).finally(() => onAutoPlayed?.());
+  }, [autoPlay, src]);
 
   useEffect(() => {
     if (compact || !duration || duration > MAX_WAVEFORM_SECONDS || peaksCache.has(src)) return;
@@ -140,14 +170,51 @@ export function AudioPlayer({
     setMuted(next);
     if (audio.current) audio.current.muted = next;
   }
+  function toggleLoop() {
+    const next = !looping;
+    setLooping(next);
+    if (audio.current) audio.current.loop = next;
+  }
+  function changeLevel(next: number) {
+    setLevel(next);
+    setMuted(next === 0);
+    if (audio.current) {
+      audio.current.volume = next;
+      audio.current.muted = next === 0;
+    }
+  }
+  // Space/k plays, j/l or arrows jump 5s, m mutes, while focus is inside the player.
+  function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    const target = event.target as HTMLElement;
+    if (target.tagName === "INPUT" && (target as HTMLInputElement).type === "range" && event.key !== " " && event.key !== "k") return;
+    if (event.key === " " || event.key === "k") {
+      if (target.tagName === "BUTTON" && event.key === " ") return;
+      event.preventDefault();
+      void toggle();
+    } else if (event.key === "ArrowLeft" || event.key === "j") {
+      event.preventDefault();
+      seek(time - 5);
+    } else if (event.key === "ArrowRight" || event.key === "l") {
+      event.preventDefault();
+      seek(time + 5);
+    } else if (event.key === "m") {
+      toggleMute();
+    }
+  }
 
   const progress = duration ? Math.min(1, time / duration) : 0;
   // Without a decoded waveform, a flat line reads as a plain progress track.
   const bars = peaks || Array.from({ length: compact ? 48 : BARS }, () => 0.14);
   const downloadName = typeof download === "string" ? download : "";
+  const named = label || (typeof title === "string" ? title : "");
 
   return (
-    <div className={`mk-audio ${compact ? "is-compact" : ""} ${peaks ? "has-peaks" : ""} ${playing ? "is-playing" : ""} ${error ? "has-error" : ""} ${className}`.trim()}>
+    <div
+      className={`mk-audio ${compact ? "is-compact" : ""} ${peaks ? "has-peaks" : ""} ${playing ? "is-playing" : ""} ${error ? "has-error" : ""} ${className}`.trim()}
+      role="group"
+      aria-label={named ? `Audio player: ${named}` : "Audio player"}
+      onKeyDown={onKeyDown}
+    >
       <audio
         ref={bind}
         src={src}
@@ -177,60 +244,91 @@ export function AudioPlayer({
         type="button"
         className="mk-audio-play"
         onClick={() => void toggle()}
-        aria-label={`${playing ? "Pause" : "Play"}${label ? ` ${label}` : typeof title === "string" ? ` ${title}` : ""}`}
+        aria-label={`${playing ? "Pause" : "Play"}${named ? ` ${named}` : ""}`}
         disabled={Boolean(error) && !duration}
       >
         {waiting && playing ? <Loader2 size={compact ? 15 : 18} className="mk-audio-spin" /> : playing ? <Pause size={compact ? 14 : 18} fill="currentColor" /> : <Play size={compact ? 14 : 18} fill="currentColor" className="mk-audio-play-glyph" />}
       </button>
-      <div className="mk-audio-main">
-        {!compact && (title || meta) && (
-          <div className="mk-audio-head">
-            {title && <span className="mk-audio-title">{title}</span>}
-            {meta && <span className="mk-audio-meta">{meta}</span>}
+      <div className="mk-audio-body">
+        <div className="mk-audio-main">
+          {!compact && (title || meta || leading) && (
+            <div className="mk-audio-head">
+              {leading}
+              {title && <span className="mk-audio-title">{title}</span>}
+              {meta && <span className="mk-audio-meta">{meta}</span>}
+            </div>
+          )}
+          <div className="mk-audio-wave" style={{ ["--mk-audio-progress" as string]: `${progress * 100}%` }}>
+            <div className="mk-audio-bars" aria-hidden="true">
+              {bars.map((height, index) => (
+                <span key={index} style={{ height: `${Math.round(height * 100)}%` }} />
+              ))}
+            </div>
+            <div className="mk-audio-bars is-played" aria-hidden="true">
+              {bars.map((height, index) => (
+                <span key={index} style={{ height: `${Math.round(height * 100)}%` }} />
+              ))}
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={duration || 0}
+              step={0.1}
+              value={Math.min(time, duration || 0)}
+              disabled={!duration}
+              aria-label="Seek"
+              aria-valuetext={`${formatClock(time)} of ${formatClock(duration)}`}
+              onChange={(e) => seek(Number(e.target.value))}
+            />
           </div>
-        )}
-        <div className="mk-audio-wave" style={{ ["--mk-audio-progress" as string]: `${progress * 100}%` }}>
-          <div className="mk-audio-bars" aria-hidden="true">
-            {bars.map((height, index) => (
-              <span key={index} style={{ height: `${Math.round(height * 100)}%` }} />
-            ))}
-          </div>
-          <div className="mk-audio-bars is-played" aria-hidden="true">
-            {bars.map((height, index) => (
-              <span key={index} style={{ height: `${Math.round(height * 100)}%` }} />
-            ))}
-          </div>
-          <input
-            type="range"
-            min={0}
-            max={duration || 0}
-            step={0.1}
-            value={Math.min(time, duration || 0)}
-            disabled={!duration}
-            aria-label="Seek"
-            aria-valuetext={`${formatClock(time)} of ${formatClock(duration)}`}
-            onChange={(e) => seek(Number(e.target.value))}
-          />
+          {error && <span className="mk-audio-error" role="status">{error}</span>}
         </div>
-        {error && <span className="mk-audio-error" role="status">{error}</span>}
+        <span className="mk-audio-time">
+          {formatClock(time)}
+          <span> / {duration ? formatClock(duration) : "–:––"}</span>
+        </span>
+        {!compact && <div className="mk-audio-tools">
+          {skip && (
+            <>
+              <button type="button" className="mk-audio-tool mk-audio-skip" onClick={() => seek(time - 10)} disabled={!duration} aria-label="Back 10 seconds" title="Back 10s (←)">
+                <RotateCcw size={16} /><span aria-hidden="true">10</span>
+              </button>
+              <button type="button" className="mk-audio-tool mk-audio-skip" onClick={() => seek(time + 10)} disabled={!duration} aria-label="Forward 10 seconds" title="Forward 10s (→)">
+                <RotateCw size={16} /><span aria-hidden="true">10</span>
+              </button>
+            </>
+          )}
+          <button type="button" className="mk-audio-tool mk-audio-speed" onClick={cycleSpeed} aria-label={`Playback speed ${speed}×`}>
+            {speed}×
+          </button>
+          {loopable && (
+            <button type="button" className="mk-audio-tool" onClick={toggleLoop} aria-label="Loop" aria-pressed={looping} title="Loop">
+              <Repeat size={16} />
+            </button>
+          )}
+          <button type="button" className="mk-audio-tool" onClick={toggleMute} aria-label={muted ? "Unmute" : "Mute"} aria-pressed={muted} title={muted ? "Unmute (m)" : "Mute (m)"}>
+            {muted || level === 0 ? <VolumeX size={16} /> : <Volume2 size={16} />}
+          </button>
+          {volumeSlider && (
+            <input
+              type="range"
+              className="mk-audio-volume"
+              min={0}
+              max={1}
+              step={0.05}
+              value={muted ? 0 : level}
+              onChange={(e) => changeLevel(Number(e.target.value))}
+              aria-label="Volume"
+              style={{ ["--mk-audio-level" as string]: `${(muted ? 0 : level) * 100}%` }}
+            />
+          )}
+          {download && (
+            <a className="mk-audio-tool" href={src} download={downloadName || true} aria-label="Download audio">
+              <Download size={16} />
+            </a>
+          )}
+        </div>}
       </div>
-      <span className="mk-audio-time">
-        {formatClock(time)}
-        <span> / {duration ? formatClock(duration) : "–:––"}</span>
-      </span>
-      {!compact && <div className="mk-audio-tools">
-        <button type="button" className="mk-audio-tool mk-audio-speed" onClick={cycleSpeed} aria-label={`Playback speed ${speed}×`}>
-          {speed}×
-        </button>
-        <button type="button" className="mk-audio-tool" onClick={toggleMute} aria-label={muted ? "Unmute" : "Mute"} aria-pressed={muted}>
-          {muted ? <VolumeX size={16} /> : <Volume2 size={16} />}
-        </button>
-        {download && (
-          <a className="mk-audio-tool" href={src} download={downloadName || true} aria-label="Download audio">
-            <Download size={16} />
-          </a>
-        )}
-      </div>}
     </div>
   );
 }

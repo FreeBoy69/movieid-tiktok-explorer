@@ -25422,6 +25422,41 @@ WHERE id = ${sqlString(req.params.id)}
         // through the remote media worker.
         // YouTube captions first (after Agent Reach): yt-dlp's info JSON lists the
         // caption tracks, and the track itself is a plain fetch, so a captioned
+    // Dropped video/audio files (Rewriter): same Whisper path as voice notes, capped
+    // at 100 MB and 15 minutes so an upload never fills the hosted app's RAM-backed /tmp.
+    app.post("/api/transcribe/upload", express.raw({
+        type: ["audio/*", "video/*", "application/octet-stream"],
+        limit: "100mb",
+    }), async (req, res) => {
+        let inputPath = "";
+        try {
+            const session = await getSessionRecord(req);
+            if (!session?.user)
+                return res.status(401).json({ error: "Sign in to transcribe a file." });
+            if (!Buffer.isBuffer(req.body) || !req.body.length)
+                return res.status(400).json({ error: "The file was empty." });
+            const name = String(req.headers["x-file-name"] || "");
+            const extension = (/\.([a-z0-9]{2,4})$/i.exec(name)?.[1] || "mp4").toLowerCase();
+            const tmpDir = runtimeTmpRoot;
+            if (!fs.existsSync(tmpDir))
+                fs.mkdirSync(tmpDir, { recursive: true });
+            inputPath = path.join(tmpDir, `upload-transcribe-${crypto.randomBytes(12).toString("hex")}.${extension}`);
+            await fs.promises.writeFile(inputPath, req.body);
+            const transcript = await transcribeMediaFileWithSegments(inputPath, { maxDurationSeconds: 900 });
+            const text = String(transcript?.text || "").replace(/\s+/g, " ").trim();
+            if (!text)
+                return res.status(422).json({ error: "No speech was found in that file." });
+            res.json({ success: true, text, segments: transcript?.segments || null, source: "whisper" });
+        }
+        catch (error) {
+            console.error("Upload transcription failed:", error);
+            res.status(503).json({ error: error instanceof Error ? error.message : "Transcription failed." });
+        }
+        finally {
+            if (inputPath)
+                await fs.promises.unlink(inputPath).catch(() => {});
+        }
+    });
         // video comes back in seconds and never queues. Whisper remains the fallback.
         if (isYouTubeSourceUrl(url)) {
             try {

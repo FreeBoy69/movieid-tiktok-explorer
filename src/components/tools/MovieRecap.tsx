@@ -3,7 +3,7 @@
 // -> review and edit the script against the film's frames -> render -> the finished recap opens in
 // Vibe Edit with every cut, narration line, and caption on the timeline, ready to tweak and export.
 import { PickerDialog } from "../SourcePicker";
-import { type DragEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   AlertCircle, ArrowLeft, ArrowRight, Check, Clapperboard, Download, ExternalLink, Film, Link2, Loader2, Plus,
@@ -28,6 +28,8 @@ import {
   uploadFilm, type Recap, type RecapBeat, type RecapFormat, type RecapPace, type RecapScript, type RecapTone, type RecapTransforms,
 } from "./recapApi";
 import "./MovieRecap.css";
+import { YouTubePublishFields } from "../YouTubePublishForm";
+import { FileDrop } from "../FileDrop";
 
 const TONES: Array<{ id: RecapTone; label: string }> = [
   { id: "dramatic", label: "Dramatic" },
@@ -236,8 +238,6 @@ function NewRecapPanel({ onCreated, onError }: { onCreated: (recap: Recap) => vo
   const [voicesLoading, setVoicesLoading] = useState(true);
   const [voiceId, setVoiceId] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [dragging, setDragging] = useState(false);
-  const input = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     let live = true;
@@ -264,12 +264,6 @@ function NewRecapPanel({ onCreated, onError }: { onCreated: (recap: Recap) => vo
     if (next.size > 1.5 * 1024 ** 3) return onError("Files up to 1.5 GB can be uploaded. Paste a link for larger films.");
     setFile(next);
   };
-  const onDrop = (event: DragEvent) => {
-    event.preventDefault();
-    setDragging(false);
-    pick(event.dataTransfer.files?.[0]);
-  };
-
   async function submit() {
     if (!ready) return;
     setSubmitting(true);
@@ -319,35 +313,17 @@ function NewRecapPanel({ onCreated, onError }: { onCreated: (recap: Recap) => vo
             <FilmSources onPick={(link) => setUrl(link)} onError={onError} defaultQuery={filmTitle} />
           </>
         ) : (
-          <div
-            className="mr-drop"
-            data-active={dragging || undefined}
-            data-filled={file ? true : undefined}
-            onDragOver={(event) => { event.preventDefault(); setDragging(true); }}
-            onDragLeave={() => setDragging(false)}
-            onDrop={onDrop}
-          >
-            <input ref={input} type="file" accept="video/*,.mkv,.avi" hidden onChange={(event) => pick(event.target.files?.[0])} />
-            {file ? (
-              <>
-                <Film size={18} aria-hidden="true" />
-                <span className="mr-drop-name">{file.name}</span>
-                <span className="mr-drop-meta">{(file.size / 1024 ** 3).toFixed(2)} GB</span>
-                {uploadShare !== null ? (
-                  <span className="mt-progress-bar mr-drop-bar" aria-label="Upload progress"><span style={{ ["--p" as string]: Math.max(0.03, uploadShare) }} /></span>
-                ) : (
-                  <button type="button" className="mr-text-btn" onClick={() => setFile(null)}>Change</button>
-                )}
-              </>
-            ) : (
-              <>
-                <Upload size={18} aria-hidden="true" />
-                <span className="mr-drop-name">Drop the film here</span>
-                <span className="mr-drop-meta">MP4, MOV, MKV, or WebM up to 1.5 GB</span>
-                <button type="button" className="mt-ghost" onClick={() => input.current?.click()}>Choose file</button>
-              </>
-            )}
-          </div>
+          <FileDrop
+            accept="video/*,.mp4,.mov,.mkv,.webm,.m4v,.avi"
+            onFiles={([next]) => pick(next)}
+            onError={onError}
+            title="Drop the film here"
+            hint="MP4, MOV, MKV, or WebM up to 1.5 GB"
+            file={file}
+            progress={uploadShare}
+            onClear={() => setFile(null)}
+            icon={file ? <Film size={18} /> : undefined}
+          />
         )}
       </div>
 
@@ -1364,17 +1340,17 @@ function PostPanel({ recap, format, onChange, onError }: { recap: Recap; format:
               <p className="mt-note mr-modal-wait"><Loader2 size={14} className="animate-spin" aria-hidden="true" /> Writing a title and description in {channel?.title || "this channel"}'s style</p>
             ) : (
               <div className="mr-post-form">
-                <label className="mt-field"><span className="mt-label">Title <small>{title.length}/100</small></span><input className="mt-input" value={title} maxLength={100} onChange={(e) => setTitle(e.target.value)} /></label>
-                <label className="mt-field"><span className="mt-label">Description</span><textarea className="mt-input mr-post-desc" rows={6} value={description} onChange={(e) => setDescription(e.target.value)} /></label>
-                <label className="mt-field"><span className="mt-label">Tags <small>Comma separated</small></span><input className="mt-input" value={tags} onChange={(e) => setTags(e.target.value)} /></label>
-                <label className="mt-field">
-                  <span className="mt-label">Visibility</span>
-                  <select className="mt-input" value={privacy} onChange={(e) => setPrivacy(e.target.value)}>
-                    <option value="private">Private</option>
-                    <option value="unlisted">Unlisted</option>
-                    <option value="public">Public</option>
-                  </select>
-                </label>
+                <YouTubePublishFields
+                  theme="dark"
+                  title={title}
+                  onTitleChange={setTitle}
+                  description={description}
+                  onDescriptionChange={setDescription}
+                  tags={tags}
+                  onTagsChange={setTags}
+                  privacyStatus={privacy}
+                  onPrivacyStatusChange={setPrivacy}
+                />
                 <div className="mr-post-actions">
                   <button type="button" className="mr-post-go" disabled={posting || !title.trim()} onClick={() => void post()}>
                     {posting ? <Loader2 size={15} className="animate-spin" aria-hidden="true" /> : <Upload size={15} aria-hidden="true" />}Post in the background

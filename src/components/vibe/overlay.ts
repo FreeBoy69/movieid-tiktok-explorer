@@ -31,15 +31,12 @@ export interface CaptionStyle {
   catalog?: boolean;
 }
 
-export const CAPTION_STYLES: CaptionStyle[] = [
-  { id: "clean", name: "Clean", y: 0.8, size: 62, weight: 700, upper: false, fill: "#ffffff", active: "#f9dc0b", shadow: "rgba(0,0,0,.75)" },
-  { id: "hook", name: "Hook", y: 0.64, size: 86, weight: 900, upper: true, fill: "#ffffff", active: "#f9dc0b", stroke: "#000000", strokeWidth: 0.16, pop: 1.12 },
-  { id: "punchy", name: "Punchy", y: 0.6, size: 96, weight: 900, upper: true, fill: "#ffffff", active: "#ffffff", stroke: "#000000", strokeWidth: 0.2, pop: 1.22, maxWords: 3 },
-  { id: "minimal", name: "Minimal", y: 0.86, size: 48, weight: 500, upper: false, fill: "#ffffff", active: "#ffffff", shadow: "rgba(0,0,0,.6)" },
-  { id: "highlight", name: "Highlight", y: 0.74, size: 70, weight: 800, upper: false, fill: "#ffffff", active: "#14110a", activeBox: "#f9dc0b", shadow: "rgba(0,0,0,.6)" },
-  { id: "bubble", name: "Bubble", y: 0.78, size: 60, weight: 700, upper: false, fill: "#14110a", active: "#b02a6b", box: "#ffffff" },
-  { id: "neon", name: "Neon", y: 0.7, size: 78, weight: 800, upper: true, fill: "#e9fbff", active: "#ff5ad1", glow: "#38e1ff" },
-];
+// Vibe Edit draws from the shared caption catalog, the same looks Create Video
+// burns in. Projects saved with the editor's retired looks map to their nearest
+// catalog style ("clean" and "bubble" moved into the catalog as they were).
+const RETIRED_LOOKS: Record<string, string> = { hook: "hormozi", punchy: "mrbeast", highlight: "tiktok-hype", neon: "neon-cyber" };
+export const resolveCaptionStyleId = (id?: string) => (id && RETIRED_LOOKS[id]) || id || "clean";
+
 // A shared-catalog style (see captionStyles.js) expressed in the canvas renderer's
 // terms. Catalog sizes are percentages of the frame width; the canvas works in
 // pixels at a 1080 frame, so 1% is 10.8px.
@@ -72,10 +69,7 @@ function fromCatalog(entry: (typeof CATALOG)[number]): CaptionStyle {
 }
 const catalogCache = new Map<string, CaptionStyle>();
 export function captionStyle(id?: string): CaptionStyle {
-  const own = CAPTION_STYLES.find((s) => s.id === id);
-  if (own) return own;
-  const entry = findCaptionStyle(id);
-  if (!entry) return CAPTION_STYLES[0];
+  const entry = findCaptionStyle(resolveCaptionStyleId(id)) || findCaptionStyle("clean")!;
   let style = catalogCache.get(entry.id);
   if (!style) {
     style = fromCatalog(entry);
@@ -83,6 +77,8 @@ export function captionStyle(id?: string): CaptionStyle {
   }
   return style;
 }
+/** A short tour of the catalog for one-tap cycling (Auto edit). */
+export const CAPTION_STYLES: CaptionStyle[] = ["clean", "hormozi", "mrbeast", "minimal", "pill", "bubble", "neon-cyber", "karaoke"].map((id) => captionStyle(id));
 /** Start loading a catalog font so the next preview frame and the export draw with it. */
 export function loadCaptionFont(id?: string): Promise<unknown> {
   const style = captionStyle(id);
