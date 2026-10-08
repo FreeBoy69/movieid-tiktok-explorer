@@ -422,11 +422,11 @@ function Sidebar({ open, onToggle, onAll, onOpenEdit, onNew, children }: { open:
 }
 
 // The edits Juel's Editor specialist can make on the open project, run here through the same commands
-// the old assistant used. Ones that spend credits (speech, transcription, generation) wait for approval.
-const PAID_EDITS = new Set(["voiceover", "generate_captions", "remove_pauses", "generate_image", "generate_video"]);
+// the old assistant used. Ones that spend credits carry what they spend, so Juel quotes and checks them.
+const PAID_EDITS: Record<string, string> = { voiceover: "speech", generate_captions: "transcription", remove_pauses: "transcription", generate_image: "image", generate_video: "video" };
 const JUEL_EDITS: JuelPageTools = {
   specialist: "editor",
-  actions: Object.fromEntries(Object.entries(VIBE_ACTIONS).map(([type, a]) => [type, { args: a.args, about: a.about, risk: PAID_EDITS.has(type) ? "paid" : "change" }])),
+  actions: Object.fromEntries(Object.entries(VIBE_ACTIONS).map(([type, a]) => [type, { args: a.args, about: a.about, ...(PAID_EDITS[type] ? { risk: "paid" as const, cost: PAID_EDITS[type] } : { risk: "change" as const }) }])),
 };
 // What the edit actions mean, for the editor specialist (it reads these with the project summary).
 const JUEL_PRESETS = SOUND_PRESETS.map((p) => `${p.id} (${p.character})`);

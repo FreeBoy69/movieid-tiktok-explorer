@@ -107,6 +107,8 @@ export function CreatorStudio({ theme = "light", tab: routeTab, generationId, on
   const draftsNow = useRef(drafts);
   draftsNow.current = drafts;
   useEffect(() => {
+    // The agents tabs are Juel itself, as a persona: they tell Juel where it is.
+    if (tab === "agents" || tab === "design-agent") return onJuelChange(() => void refresh());
     const app = STUDIO_APPS[tab as AppId];
     const stopContext = provideJuelContext(() => ({
       surface: "studio",

@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { callRoute, JUEL_EXCLUDED, JUEL_RISKS, JUEL_ROUTES, JUEL_SPECIALISTS, juelTools, juelTurn, matchRoute, needsApproval, pageTools } from "./juel.js";
+import { callRoute, creditShortfall, estimateCredits, JUEL_COSTS, JUEL_EXCLUDED, JUEL_RISKS, JUEL_ROUTES, JUEL_SPECIALISTS, juelTools, juelTurn, matchRoute, pageActionCredits, pageTools, spendsCredits } from "./juel.js";
 
 /** Every route the server registers, as "METHOD /path". */
 function registeredRoutes() {
@@ -37,6 +37,36 @@ describe("Juel's catalogue", () => {
     }
     for (const [key, why] of Object.entries(JUEL_EXCLUDED)) expect(String(why).length, `${key}: exclusion reason`).toBeGreaterThan(3);
   });
+
+  it("prices only catalogued routes, and every paid route has a price (listed or the text-model default)", () => {
+    for (const key of Object.keys(JUEL_COSTS)) expect(JUEL_ROUTES[key], `${key} has a cost but no route`).toBeTruthy();
+  });
+});
+
+describe("Juel's credits", () => {
+  const pricing = { tokensPerUsd: 1_000_000, flatTokens: { image: 60000, video: 750000, speech: 3000, music: 150000, transcription: 5000, default: 10000 } };
+
+  it("quotes media at its flat rate and text routes at what they recently cost", async () => {
+    // Two images at 60,000 tokens each, 100 tokens a credit.
+    expect(await estimateCredits({ method: "POST", path: "/api/studio/generations", body: { tab: "image", prompt: "x", settings: { count: 2 } } }, { pricing })).toMatchObject({ credits: 1200 });
+    // A video model with its own per-second price: $0.05 x 8 s.
+    const catalog = async () => ({ video: [{ id: "veo", pricePerSecond: 0.05 }] });
+    expect((await estimateCredits({ method: "POST", path: "/api/studio/generations", body: { tab: "video", model: "veo", settings: { duration: 8 } } }, { pricing, catalog }))?.credits).toBe(4000);
+    // A text route: one model call by default, its recent median once it has history.
+    expect((await estimateCredits({ method: "POST", path: "/api/rewrite", body: {} }, { pricing }))?.credits).toBe(40);
+    expect((await estimateCredits({ method: "POST", path: "/api/rewrite", body: {} }, { pricing, history: { "POST /api/rewrite": { tokens: 1234 } } }))?.credits).toBe(13);
+    // Free routes cost nothing.
+    expect(await estimateCredits({ method: "GET", path: "/api/recaps" }, { pricing })).toBeNull();
+    expect(pageActionCredits({ risk: "paid", cost: "speech" }, pricing)).toBe(30);
+    expect(pageActionCredits({ risk: "change" }, pricing)).toBe(0);
+  });
+
+  it("refuses what the balance can't cover, and never blocks unlimited accounts", () => {
+    expect(creditShortfall({ balance: 50000, status: "active" }, 400)).toBeNull();
+    expect(creditShortfall({ balance: 5000, status: "active" }, 400)).toMatchObject({ balance: 50, needed: 400 });
+    expect(creditShortfall({ balance: 0, unlimited: true }, 400)).toBeNull();
+    expect(creditShortfall({ balance: 99999, status: "active", planId: "pending" }, 1)?.message).toMatch(/plan/);
+  });
 });
 
 describe("Juel's routing and approvals", () => {
@@ -44,14 +74,14 @@ describe("Juel's routing and approvals", () => {
   const excluded = { "GET /api/recaps/:id/sheets/:name": "file stream for the editor" };
 
   it("matches a concrete call to its route and params", () => {
-    expect(matchRoute("POST", "/api/recaps/rcp_1/render", { routes, excluded })).toMatchObject({ key: "POST /api/recaps/:id/render", params: { id: "rcp_1" }, risk: "paid", approval: true });
+    expect(matchRoute("POST", "/api/recaps/rcp_1/render", { routes, excluded })).toMatchObject({ key: "POST /api/recaps/:id/render", params: { id: "rcp_1" }, risk: "paid", spends: true });
     expect(matchRoute("GET", "/api/recaps?x=1", { routes, excluded })?.key).toBe("GET /api/recaps");
     expect(matchRoute("GET", "/api/recaps/rcp_1/sheets/s001.jpg", { routes, excluded })?.excluded).toBe("file stream for the editor");
     expect(matchRoute("DELETE", "/api/recaps/rcp_1", { routes, excluded })).toBeNull();
   });
 
-  it("asks before paid, publish, and delete, never before read or change", () => {
-    expect(["read", "change", "paid", "publish", "delete"].map(needsApproval)).toEqual([false, false, true, true, true]);
+  it("counts only paid routes as spending credits", () => {
+    expect(["read", "change", "paid", "publish", "delete"].map(spendsCredits)).toEqual([false, false, true, false, false]);
   });
 
   it("calls a route as the user, and refuses what it shouldn't call", async () => {
@@ -62,8 +92,7 @@ describe("Juel's routing and approvals", () => {
     expect(done).toMatchObject({ status: 200, data: { ok: true }, route: "GET /api/recaps" });
     expect(calls[0].url).toBe("http://127.0.0.1:3000/api/recaps?limit=5");
     expect(calls[0].init.headers.cookie).toBe("sid=abc");
-    await expect(callRoute({ method: "POST", path: "/api/recaps/rcp_1/render" }, options)).rejects.toMatchObject({ code: "approval" });
-    await expect(callRoute({ method: "POST", path: "/api/recaps/rcp_1/render", body: {} }, { ...options, approved: true })).resolves.toMatchObject({ status: 200 });
+    await expect(callRoute({ method: "POST", path: "/api/recaps/rcp_1/render", body: {} }, options)).resolves.toMatchObject({ status: 200 });
     await expect(callRoute({ method: "GET", path: "/api/recaps/rcp_1/sheets/s001.jpg" }, options)).rejects.toMatchObject({ code: "excluded" });
     await expect(callRoute({ method: "GET", path: "/api/admin/users" }, options)).rejects.toMatchObject({ code: "forbidden" });
     await expect(callRoute({ method: "GET", path: "/api/nowhere" }, options)).rejects.toMatchObject({ code: "unknown" });
@@ -76,9 +105,9 @@ describe("Juel's routing and approvals", () => {
 });
 
 describe("Juel's turn", () => {
-  it("plans, lets specialists work and ask each other, turns paid calls into cards, and reports from the board", async () => {
+  it("plans, lets specialists work and ask each other, runs paid calls, and reports from the board", async () => {
     // A scripted model: the manager plans recap then publisher; recap reads the recap and asks research a
-    // question; publisher proposes a paid render; the manager sums up.
+    // question; publisher starts a paid render; the manager sums up.
     const prompts: string[] = [];
     const think = async (prompt: string) => {
       prompts.push(prompt);
@@ -88,14 +117,14 @@ describe("Juel's turn", () => {
         return { calls: [], done: true, note: "Recap rcp_1 is rendered, 14 min." };
       }
       if (prompt.includes("the Research specialist")) return { calls: [], done: true, note: "Mutiny is trending this week." };
-      if (prompt.includes("the Publisher specialist")) return { calls: [{ method: "POST", path: "/api/recaps/rcp_1/render", body: {}, why: "Render again" }], done: true, note: "Proposed a render (card)." };
-      if (prompt.includes("Write the reply")) return { reply: "Your recap is ready and Mutiny is trending; approve the card to render it again." };
+      if (prompt.includes("the Publisher specialist")) return { calls: [{ method: "POST", path: "/api/recaps/rcp_1/render", body: {}, why: "Render again" }], done: true, note: "Started a render (about 30 credits)." };
+      if (prompt.includes("Write the reply")) return { reply: "Your recap is ready and Mutiny is trending; I started a new render, about 30 credits." };
       return {};
     };
     const calls: any[] = [];
     const call = async (c: any) => {
       calls.push(c);
-      return matchRoute(c.method, c.path)?.approval ? { pending: "act_1" } : { status: 200, data: { id: "rcp_1", status: "done" } };
+      return { status: 200, data: { id: "rcp_1", status: "done" }, credits: matchRoute(c.method, c.path)?.spends ? 30 : 0 };
     };
     const steps: any[] = [];
     const turn: any = await juelTurn({ message: "Is my recap done? Render it again.", think, call, onStep: (s: any) => steps.push(s) });
@@ -104,12 +133,13 @@ describe("Juel's turn", () => {
     expect(turn.board.map((b: any) => b.specialist)).toEqual(["research", "recap", "publisher"]);
     expect(prompts.find((p) => p.includes("the Publisher specialist"))).toContain("Mutiny is trending");
     expect(steps.some((s) => s.text.startsWith("asks Research"))).toBe(true);
-    expect(turn.reply).toContain("approve the card");
+    expect(prompts.find((p) => p.includes("Write the reply"))).toContain("Started a render");
+    expect(turn.reply).toContain("30 credits");
   });
 
   it("lets the specialist the page names edit the open page, and only that one", async () => {
     const clientTools = pageTools({ specialist: "editor", actions: { add_text: { args: "{text, start, end}", about: "Put a title on screen", risk: "change" }, voiceover: { args: "{script}", about: "Speak a script", risk: "nope" }, "bad name!": { about: "x" } } });
-    // Unknown risks count as paid (they ask first); malformed action names are dropped.
+    // Unknown risks count as paid (so they're priced and checked); malformed action names are dropped.
     expect(clientTools).toEqual({ specialist: "editor", actions: { add_text: { args: "{text, start, end}", about: "Put a title on screen", risk: "change" }, voiceover: { args: "{script}", about: "Speak a script", risk: "paid" } } });
     const prompts: string[] = [];
     const think = async (prompt: string) => {

@@ -3,12 +3,14 @@
 // <Toaster /> (mounted once in main.tsx) renders the stack.
 import { useEffect, useSyncExternalStore } from "react";
 
-export type ToastTone = "error" | "success" | "info";
+export type ToastTone = "error" | "success" | "info" | "credits";
 export type ToastAction = { label: string; onClick: () => void };
-export type Toast = { id: number; tone: ToastTone; title?: string; message: string; action?: ToastAction; duration: number; count: number };
-type ToastOptions = { title?: string; action?: ToastAction; duration?: number };
+/** A credits toast shows the balance against what the task needs. */
+export type ToastMeter = { balance: number | null; needed: number };
+export type Toast = { id: number; tone: ToastTone; title?: string; message: string; action?: ToastAction; meter?: ToastMeter; duration: number; count: number };
+type ToastOptions = { title?: string; action?: ToastAction; meter?: ToastMeter; duration?: number };
 
-const DEFAULT_MS: Record<ToastTone, number> = { error: 8000, success: 4000, info: 5000 };
+const DEFAULT_MS: Record<ToastTone, number> = { error: 8000, success: 4000, info: 5000, credits: 12000 };
 const MAX_VISIBLE = 4;
 let toasts: Toast[] = [];
 let nextId = 1;
@@ -23,7 +25,7 @@ function push(tone: ToastTone, message: unknown, options: ToastOptions = {}) {
   if (same) {
     toasts = toasts.map((item) => (item === same ? { ...item, count: item.count + 1, id: nextId++ } : item));
   } else {
-    const item: Toast = { id: nextId++, tone, message: text, title: options.title, action: options.action, duration: options.duration ?? DEFAULT_MS[tone], count: 1 };
+    const item: Toast = { id: nextId++, tone, message: text, title: options.title, action: options.action, meter: options.meter, duration: options.duration ?? DEFAULT_MS[tone], count: 1 };
     toasts = [...toasts, item].slice(-MAX_VISIBLE);
   }
   emit();
@@ -41,6 +43,8 @@ export const toast = {
   error: (message: unknown, options?: ToastOptions) => push("error", message, options),
   success: (message: unknown, options?: ToastOptions) => push("success", message, options),
   info: (message: unknown, options?: ToastOptions) => push("info", message, options),
+  /** Not enough credits for a task: the message, a balance-vs-needed meter, and a way to get more. */
+  credits: (message: unknown, options?: ToastOptions) => push("credits", message, { title: "Not enough credits", ...options }),
   dismiss(id: number) {
     toasts = toasts.filter((item) => item.id !== id);
     emit();

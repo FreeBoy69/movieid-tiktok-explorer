@@ -21686,6 +21686,12 @@ async function startServer() {
         docs: studioDocs,
         port: PORT,
         withUsage: withUsageUser,
+        // Quotes and the balance check before a paid call, from the same billing the rest of the app uses.
+        credits: {
+            snapshot: async (userId) => (adminConsole ? adminConsole.billingSnapshot(userId) : null),
+            pricing: async () => (adminConsole ? adminConsole.getSettings("billing") : null),
+            history: async () => (adminConsole ? adminConsole.featureCosts() : {}),
+        },
     });
     registerMiniTools(app, {
         session: getSessionRecord,

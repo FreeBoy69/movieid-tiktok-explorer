@@ -18,9 +18,10 @@ export const JUEL_SPECIALISTS = {
   admin: { name: "Admin", brief: "the admin console: users, plans, usage, system health (admins only)" },
 };
 
-/** Risk, lowest first. Paid, publish, and delete always wait for the user's approval. */
+/** Risk, lowest first. Nothing waits on a card: a paid call shows the user its credit cost and runs when
+ *  their balance covers it (else it's refused); publish and delete run only when the user asked for them. */
 export const JUEL_RISKS = ["read", "change", "paid", "publish", "delete"];
-export const needsApproval = (risk) => risk === "paid" || risk === "publish" || risk === "delete";
+export const spendsCredits = (risk) => risk === "paid";
 
 /** @typedef {Record<string, string[]>} JuelRouteTable "METHOD /path" -> [specialist, risk, what it does] */
 /** @typedef {Record<string, string>} JuelExclusions "METHOD /path" -> why Juel never calls it */
@@ -40,7 +41,6 @@ export const JUEL_ROUTES = {
   "DELETE /api/prompts/custom/:id": ["studio", "delete", "Deletes one of your saved custom prompts."],
   "DELETE /api/recaps/:id": ["recap", "delete", "Permanently deletes a recap with its source film, renders, and narration files."],
   "DELETE /api/saved/tiktok-playlists": ["research", "delete", "Removes a saved TikTok source from your library (key)."],
-  "DELETE /api/studio/agents/chats/:id": ["studio", "delete", "Deletes one of your Creator Studio agent chats."],
   "DELETE /api/studio/generations/:id": ["studio", "delete", "Deletes a Creator Studio generation and its output files."],
   "DELETE /api/studio/marketing/avatars/:id": ["studio", "delete", "Deletes one of your custom ad presenters."],
   "DELETE /api/studio/marketing/products/:id": ["studio", "delete", "Deletes one of your saved ad products."],
@@ -138,7 +138,6 @@ export const JUEL_ROUTES = {
   "GET /api/saved/tiktok-post-analyses": ["research", "read", "Lists saved movie-ID analyses of TikTok posts, optionally for one source."],
   "GET /api/saved/tiktok-post-analyses/:slug": ["research", "read", "Gets the saved movie-ID analysis for one TikTok post (slug)."],
   "GET /api/saved/tiktok-posts/:slug": ["research", "read", "Finds a saved TikTok post by slug across your saved sources."],
-  "GET /api/studio/agents/chats": ["studio", "read", "Lists your Creator Studio agent chats."],
   "GET /api/studio/catalog": ["studio", "read", "Lists the Creator Studio models and tools available for images, video, audio, and more."],
   "GET /api/studio/generations": ["studio", "read", "Lists your recent Creator Studio generations, optionally filtered by tab."],
   "GET /api/studio/marketing": ["studio", "read", "Lists your ad products, presenter avatars, and available ad video models."],
@@ -190,6 +189,7 @@ export const JUEL_ROUTES = {
   "POST /api/admin/users/:id/tokens": ["admin", "change", "Grants or revokes credits for a user with a ledger note."],
   "POST /api/automation/agents": ["automation", "change", "Creates or updates an automation agent with its channel, sources and schedule settings."],
   "POST /api/automation/agents/:id/delete": ["automation", "delete", "Deletes this automation agent permanently (agent id); POST alias of the delete route."],
+  "POST /api/automation/agents/:id/chat": ["automation", "change", "Consults this agent's own operator (its memory, learning, live performance, tools, and settings rules) with a message; it can change the agent's settings and its answer is shown to the user (body: {message})."],
   "POST /api/automation/agents/:id/remake/faces": ["automation", "change", "Uploads an avatar photo this agent can swap into its remakes (agent id, image)."],
   "POST /api/automation/agents/:id/run": ["automation", "publish", "Runs this automation agent once now, producing and publishing its next video (agent id)."],
   "POST /api/automation/agents/:id/run-compilation": ["automation", "publish", "Starts a long-form compilation run for this agent that builds and uploads a video."],
@@ -276,7 +276,6 @@ export const JUEL_ROUTES = {
   "POST /api/saved/tiktok-playlists/genre-scan": ["research", "paid", "Scans the next batch of a saved TikTok source's videos for story genres with AI."],
   "POST /api/saved/tiktok-playlists/movie-scan": ["research", "paid", "Identifies the movies in the next batch of a saved TikTok source's videos."],
   "POST /api/saved/tiktok-post-analyses": ["research", "change", "Saves a movie-ID analysis result for a TikTok post."],
-  "POST /api/studio/agents/chats/:id/approve": ["studio", "paid", "Approves or skips a studio agent's proposed generations, starting the approved ones."],
   "POST /api/studio/generations": ["studio", "paid", "Starts a new Creator Studio generation such as an image, video, audio, design, or explainer."],
   "POST /api/studio/generations/:id/design": ["studio", "change", "Saves your edited HTML back into an Editable Design generation."],
   "POST /api/studio/generations/:id/export": ["studio", "paid", "Renders a motion graphic, promo, or explainer generation to MP4 or GIF."],
@@ -332,7 +331,7 @@ export const JUEL_EXCLUDED = {
   "GET /api/juel/threads": "Juel's own conversations",
   "GET /api/juel/threads/:id": "Juel's own conversations",
   "POST /api/juel/chat": "Juel's own chat",
-  "POST /api/juel/threads/:id/actions/:actionId": "Juel's own approval cards: only the user approves them",
+  "POST /api/juel/quote": "Juel's own credit quotes",
   "GET /api/auth/google": "sign-in/OAuth flow",
   "GET /api/auth/google/callback": "OAuth callback",
   "GET /api/auth/native/start": "sign-in/OAuth flow",
@@ -372,7 +371,6 @@ export const JUEL_EXCLUDED = {
   "POST /api/auth/logout": "sign-out",
   "POST /api/auth/native/exchange": "sign-in/OAuth flow",
   "POST /api/auth/native/ticket": "sign-in/OAuth flow",
-  "POST /api/automation/agents/:id/chat": "the old agent chat: Juel is the agent now",
   "POST /api/automation/agents/chat/transcribe": "voice-input plumbing for chat UI",
   "POST /api/transcribe/upload": "raw file upload from the Rewriter drop area; Juel passes links to POST /api/transcribe",
   "POST /api/billing/checkout": "payment checkout: the user pays themselves",
@@ -391,7 +389,6 @@ export const JUEL_EXCLUDED = {
   "POST /api/downloader/download": "returns raw file download",
   "POST /api/movie/identify-file": "needs a raw video file in the request body",
   "POST /api/recaps/uploads": "raw binary file upload stream",
-  "POST /api/studio/agents/chats": "the old agent chat: Juel is the agent now",
   "POST /api/tiktok/comments/cache": "worker push endpoint",
   "POST /api/tools/thumbnail": "binary file download",
   "POST /api/youtube/videos/upload": "needs a raw video file in the request body",
@@ -432,7 +429,7 @@ export function matchRoute(method, path, { routes = JUEL_ROUTES, excluded = JUEL
     const params = Object.fromEntries(p.names.map((name, i) => [name, decodeURIComponent(hit[i + 1])]));
     if (excluded[key]) return { key, params, excluded: excluded[key] };
     const [specialist, risk, does] = routes[key];
-    return { key, params, specialist, risk, does, approval: needsApproval(risk) };
+    return { key, params, specialist, risk, does, spends: spendsCredits(risk) };
   }
   return null;
 }
@@ -442,7 +439,7 @@ export function matchRoute(method, path, { routes = JUEL_ROUTES, excluded = JUEL
 export function juelTools({ specialist = "", admin = false, routes = JUEL_ROUTES } = {}) {
   return Object.entries(routes)
     .filter(([, [owner]]) => (specialist ? owner === specialist : true) && (admin || owner !== "admin"))
-    .map(([key, [owner, risk, does]]) => ({ route: key, specialist: owner, risk, does, approval: needsApproval(risk) }));
+    .map(([key, [owner, risk, does]]) => ({ route: key, specialist: owner, risk, does, spends: spendsCredits(risk) }));
 }
 
 export class JuelRefusal extends Error {
@@ -453,16 +450,15 @@ export class JuelRefusal extends Error {
 }
 
 /** Calls a catalogued route as the user (their session cookie on a loopback request), so the route's own
- *  checks run. Refuses unknown and excluded routes, admin routes for non-admins, and risky ones without
- *  the user's approval. Returns { status, data, route }.
+ *  checks run. Refuses unknown and excluded routes, and admin routes for non-admins (the caller checks
+ *  credits first). Returns { status, data, route }.
  *  @param {{ method?: string, path: string, body?: unknown, query?: Record<string, unknown> }} call
- *  @param {{ baseUrl: string, cookie?: string, admin?: boolean, approved?: boolean, signal?: AbortSignal, fetchImpl?: typeof fetch } & JuelTables} options */
-export async function callRoute({ method = "GET", path, body, query } = {}, { baseUrl, cookie = "", admin = false, approved = false, signal, fetchImpl = globalThis.fetch, routes = JUEL_ROUTES, excluded = JUEL_EXCLUDED } = {}) {
+ *  @param {{ baseUrl: string, cookie?: string, admin?: boolean, signal?: AbortSignal, fetchImpl?: typeof fetch } & JuelTables} options */
+export async function callRoute({ method = "GET", path, body, query } = {}, { baseUrl, cookie = "", admin = false, signal, fetchImpl = globalThis.fetch, routes = JUEL_ROUTES, excluded = JUEL_EXCLUDED } = {}) {
   const hit = matchRoute(method, path, { routes, excluded });
   if (!hit) throw new JuelRefusal(`Juel has no tool for ${String(method).toUpperCase()} ${path}.`, "unknown");
   if (hit.excluded) throw new JuelRefusal(`Juel doesn't call ${hit.key}: ${hit.excluded}.`, "excluded");
   if (hit.specialist === "admin" && !admin) throw new JuelRefusal("That's an admin tool.", "forbidden");
-  if (hit.approval && !approved) throw new JuelRefusal(`${hit.does} needs your approval first.`, "approval");
   const url = new URL(path, baseUrl);
   for (const [key, value] of Object.entries(query || {})) if (value !== undefined && value !== null) url.searchParams.set(key, String(value));
   const verb = String(method).toUpperCase();
@@ -482,7 +478,157 @@ export async function callRoute({ method = "GET", path, body, query } = {}, { ba
   return { status: response.status, data, route: hit.key };
 }
 
-// ---------- The brain: a manager, specialists that work together, and approval cards ----------
+// ---------- Credits: what a call costs, quoted to the user and checked against their balance ----------
+
+/** What each route that spends credits costs, as provider operations with a flat price (image, video,
+ *  speech, music, transcription) and text-model calls (llm), each with a count: "image:2 llm". A function
+ *  gets the call and its path params when the count or kind depends on them; { usd } is a provider price. A
+ *  paid route that isn't listed counts as one text-model call. Text-only routes are quoted at what they've
+ *  recently cost (featureCosts), since model prices move; media at its flat rate, as the pages quote it. */
+const count = (v, max = 20) => Math.max(1, Math.min(max, Math.round(Number(v) || 1)));
+const VIDEO_TABS = new Set(["video", "cinema", "ai-influencer", "motion-control", "lipsync", "body-swap", "marketing", "clipping"]);
+export const JUEL_COSTS = {
+  "GET /api/youtube/videos/:id/optimization": "llm",
+  "POST /api/admin/jobs/:id/retry": "",
+  "POST /api/automation/agents/:id/chat": "llm:2",
+  "POST /api/automation/agents/:id/run": "llm:4 speech image",
+  "POST /api/automation/agents/:id/run-compilation": "llm:2",
+  "POST /api/automation/agents/:id/voice/sources": "transcription",
+  "POST /api/automation/uploads/:id/voice/jobs": (c) => (String(c.body?.action) === "clone" ? "speech" : { voiceover: "transcription speech", captions: "transcription", stems: "music", avatar: "video" }[String(c.body?.mode || "voiceover")] || "speech"),
+  "POST /api/creator-projects/:id/generate/:stage": (_c, p) => (p.stage === "thumbnail" ? "image" : "llm"),
+  "POST /api/digital-products/:id/cover": "image",
+  "POST /api/digital-products/:id/generate": "llm:4",
+  "POST /api/drama/episodes/:id/final": "",
+  "POST /api/drama/episodes/:id/prepare": "image:6 speech:6",
+  "POST /api/drama/episodes/:id/render-all": "video:6",
+  "POST /api/drama/episodes/:id/scenes/:sid/:step": (_c, p) => ({ board: "image", voice: "speech" })[p.step] || "video",
+  "POST /api/drama/episodes/:id/script": "llm:2",
+  "POST /api/drama/idea": "llm",
+  "POST /api/drama/series": "llm:2 image",
+  "POST /api/drama/series/:id/characters/:cid/sheet": "image:2",
+  "POST /api/drama/series/:id/characters/:cid/voice-design": "speech:3",
+  "POST /api/drama/series/:id/characters/:cid/voice-preview": "speech",
+  "POST /api/drama/series/:id/characters/:cid/voice-select": "speech",
+  "POST /api/drama/series/:id/locations/:lid/sheet": "image",
+  "POST /api/drama/series/:id/outline": "llm:2",
+  "POST /api/drama/series/:id/poster": "image",
+  "POST /api/film/song/analyze": "transcription music",
+  "POST /api/maker/art-styles/from-video": "image llm:2",
+  "POST /api/maker/discover": "llm:2",
+  "POST /api/maker/projects/:id/cast/:castId/sheets": "image:2",
+  "POST /api/maker/projects/:id/cast/suggest": "llm",
+  "POST /api/maker/projects/:id/jobs/:stage": (c, p) => {
+    if (p.stage === "voiceover") return "speech";
+    if (p.stage === "thumbnail") return `image:${count(c.body?.count || 3, 6)}`;
+    if (p.stage === "review" || c.body?.action === "stock") return "";
+    if (c.body?.action === "animate") return "video:4";
+    if (c.body?.action === "music") return "music";
+    if (c.body?.action === "images" || p.stage === "visuals") return c.body?.sceneId ? "image" : "image:8";
+    return "llm:2";
+  },
+  "POST /api/maker/styles/:id/learn": "transcription llm:4",
+  "POST /api/movie/identify-link": "llm:2",
+  "POST /api/recaps": "transcription speech llm:8",
+  "POST /api/recaps/:id/intro": "llm",
+  "POST /api/recaps/:id/names": "llm",
+  "POST /api/recaps/:id/post/draft": "llm",
+  "POST /api/recaps/:id/recut": "llm",
+  "POST /api/recaps/:id/render": "speech",
+  "POST /api/recaps/:id/retry": "llm:4",
+  "POST /api/recaps/:id/rewrite": "llm:2",
+  "POST /api/recaps/:id/shots": "llm",
+  "POST /api/rewrite": "llm",
+  "POST /api/saved/tiktok-playlists/genre-scan": "llm:3",
+  "POST /api/saved/tiktok-playlists/movie-scan": "llm:3",
+  "POST /api/studio/generations/:id/export": "",
+  "POST /api/studio/imports": "",
+  "POST /api/studio/marketing/avatars": "image",
+  "POST /api/studio/marketing/products/import": "llm",
+  "POST /api/tiktok/process": "",
+  "POST /api/tools/text": "llm",
+  "POST /api/transcribe": "transcription",
+  "POST /api/vibe-edit/broll": "llm",
+  "POST /api/vibe-edit/motion": "llm:2",
+  "POST /api/vibe-edit/renders": "",
+  "POST /api/vibe-edit/transcribe": "transcription",
+  "POST /api/vibe-edit/voiceover": "speech",
+  "POST /api/voicebox/generate": "speech",
+  "POST /api/voicebox/profiles/:id/samples": "transcription",
+  // A studio generation: the model's own per-second price when it has one, else the app's flat price.
+  "POST /api/studio/generations": async (c, _p, { catalog }) => {
+    const tab = String(c.body?.tab || "");
+    const s = c.body?.settings || {};
+    const listed = await catalog?.().catch(() => null);
+    const models = (Array.isArray(listed?.[tab]) ? listed[tab] : VIDEO_TABS.has(tab) ? listed?.video : null) || [];
+    const model = models.find((m) => m.id === c.body?.model) || models[0];
+    if (model?.pricePerSecond) return { usd: model.pricePerSecond * (Number(s.duration) || 5) };
+    if (tab === "music" || tab === "audio") return s.audioMode === "voice" ? "speech" : "music";
+    return VIDEO_TABS.has(tab) ? "video" : `image:${count(s.count, 6)}`;
+  },
+};
+/** One text-model call, for routes with no recent history. */
+const LLM_USD = 0.004;
+const TOKENS_PER_CREDIT = 100;
+
+/** "POST /api/recaps/rcp_8f2c1a9d/render" -> "POST /api/recaps/:id/render": how usage events name a route
+ *  (featureFromRequest in adminConsole.js). */
+function featureOf(method, path) {
+  const clean = String(path || "").split("?")[0].split("/")
+    .map((part) => (/^[0-9a-f-]{16,}$/i.test(part) || (/\d/.test(part) && part.length > 10) || /^[a-z]{2,5}_[A-Za-z0-9-]{6,}$/.test(part) ? ":id" : part))
+    .join("/");
+  return `${String(method || "GET").toUpperCase()} ${clean}`.slice(0, 160);
+}
+
+/** Internal tokens a cost spec ("image:2 llm", { usd }, or "") comes to, and whether it has media in it. */
+function priceSpec(spec, pricing) {
+  const flat = pricing?.flatTokens || {};
+  const perUsd = Number(pricing?.tokensPerUsd) || 1_000_000;
+  if (spec && typeof spec === "object") return { tokens: (Number(spec.usd) || 0) * perUsd, media: true };
+  let tokens = 0;
+  let media = false;
+  for (const part of String(spec || "").split(/\s+/).filter(Boolean)) {
+    const [op, n] = part.split(":");
+    const units = count(n || 1, 50);
+    if (op === "llm") tokens += LLM_USD * perUsd * units;
+    else {
+      tokens += (Number(flat[op] ?? flat.default) || 0) * units;
+      media = true;
+    }
+  }
+  return { tokens, media };
+}
+const toCredits = (tokens) => (tokens > 0 ? Math.max(1, Math.ceil(tokens / TOKENS_PER_CREDIT)) : 0);
+
+/** What a route call will cost the user: { credits, route, does }, or null when it spends nothing.
+ *  @param {{ method?: string, path: string, body?: any }} call
+ *  @param {{ pricing?: any, history?: Record<string, { tokens: number }>, catalog?: () => Promise<any> }} [sources] */
+export async function estimateCredits(call, { pricing, history = {}, catalog } = {}) {
+  const hit = matchRoute(call.method, call.path);
+  if (!hit || hit.excluded || (!hit.spends && JUEL_COSTS[hit.key] === undefined)) return null;
+  const raw = JUEL_COSTS[hit.key];
+  const spec = typeof raw === "function" ? await raw(call, hit.params, { catalog }) : raw ?? "llm";
+  let { tokens, media } = priceSpec(spec, pricing);
+  const past = history[featureOf(call.method, call.path)];
+  if (!media && past?.tokens > 0) tokens = past.tokens;
+  return { credits: toCredits(tokens), route: hit.key, does: hit.does };
+}
+
+/** Credits an action on the open page will spend, from the cost spec the page gave it. */
+export function pageActionCredits(action, pricing) {
+  return toCredits(priceSpec(action?.cost ?? (action?.risk === "paid" ? "llm" : ""), pricing).tokens);
+}
+
+/** Why the user can't spend `credits` ({ balance, needed, message }), or null when they can. */
+export function creditShortfall(snapshot, credits) {
+  if (!snapshot || snapshot.unlimited || !credits) return null;
+  const balance = Math.floor((Number(snapshot.balance) || 0) / TOKENS_PER_CREDIT);
+  if (snapshot.userStatus === "suspended") return { balance, needed: credits, message: "This account is suspended. Contact support to restore access." };
+  if ((snapshot.status && snapshot.status !== "active") || snapshot.planId === "pending") return { balance, needed: credits, message: "Choose a plan to start creating." };
+  if (balance >= credits) return null;
+  return { balance, needed: credits, message: `This needs about ${credits.toLocaleString("en-US")} credits and you have ${balance.toLocaleString("en-US")}.` };
+}
+
+// ---------- The brain: a manager, and specialists that work together ----------
 
 /** The code behind a route (its registration and handler), so a specialist can read which fields a route it
  *  hasn't used takes before calling it. Read once from the server's own files. */
@@ -521,16 +667,40 @@ const SURFACE_READS = {
 };
 
 /** The actions a page offers (cleaned): which specialist uses them, and per action its args, what it does,
- *  and its risk. Unknown risks count as paid, so nothing new runs without approval by mistake. */
+ *  its risk, and its cost spec ("speech:1"). Unknown risks count as paid, so they're priced and checked. */
 export function pageTools(raw) {
   if (!raw || typeof raw !== "object" || !JUEL_SPECIALISTS[raw.specialist]) return null;
   const actions = {};
   for (const [type, a] of Object.entries(raw.actions || {}).slice(0, 40)) {
     if (!/^[a-z][a-z0-9_]{1,40}$/.test(type) || !a || typeof a !== "object") continue;
-    actions[type] = { args: String(a.args || "{}").slice(0, 400), about: String(a.about || "").slice(0, 200), risk: JUEL_RISKS.includes(a.risk) ? a.risk : "paid" };
+    const cost = typeof a.cost === "string" && /^[a-z]+(:\d+)?( [a-z]+(:\d+)?)*$/.test(a.cost) ? a.cost.slice(0, 80) : undefined;
+    actions[type] = { args: String(a.args || "{}").slice(0, 400), about: String(a.about || "").slice(0, 200), risk: JUEL_RISKS.includes(a.risk) ? a.risk : "paid", ...(cost ? { cost } : {}) };
   }
   return Object.keys(actions).length ? { specialist: raw.specialist, actions } : null;
 }
+
+/** The Creative Studio's personas (the old Creative and Design Agents): the page names one and the Studio
+ *  specialist works as it. */
+export const STUDIO_PERSONAS = {
+  creative: { name: "Creative Director", intro: "I plan and produce images, videos, and music from one idea.", brief: "a versatile creative director for video creators" },
+  thumbnail: { name: "Thumbnail Designer", intro: "I design high-click YouTube thumbnails.", brief: "a YouTube thumbnail designer. Default to 16:9 images with a bold focal subject, strong contrast, and at most 4 words of large on-image text" },
+  storyboard: { name: "Storyboard Artist", intro: "I break a story into consistent shots and animate them.", brief: "a storyboard artist who keeps characters and style consistent from shot to shot" },
+  ads: { name: "Ad Creative", intro: "I turn a product into ad images and short ad videos.", brief: "a performance ad creative who writes scroll-stopping social ad concepts" },
+  design: { name: "Design Agent", intro: "I make posters, social graphics, logos, and brand visuals.", brief: "a senior graphic designer who makes posters, social graphics, logos, and brand visuals with precise typography and layout. Prefer image models that render text well" },
+};
+
+/** Extra know-how a specialist gets for where the user is. */
+const SPECIALIST_GUIDES = {
+  // An open automation agent has its own operator: the agent's memory, learning profile, live performance,
+  // monetization, internal tools, and settings rules. Juel consults it rather than re-deriving all that.
+  automation: (context) => (context?.surface === "automation" && context.entityId
+    ? `THE OPEN AGENT'S OPERATOR: for anything about this agent (how it's doing, reports, analytics, what to post, changing its settings, schedule, sources, runs), consult it first: POST /api/automation/agents/${context.entityId}/chat with body {"message": "the user's request in full, plus what you need"}. It knows the agent's memory, learning, and live numbers, runs its own tools, applies settings changes itself, and its full answer (report, cards, actions) is shown to the user under Juel's reply. Its reply is your finding; don't redo its work.`
+    : ""),
+  studio: (context) => {
+    const persona = STUDIO_PERSONAS[context?.details?.persona];
+    return `${persona ? `WORK AS: ${persona.brief}.\n` : ""}MAKING THINGS: POST /api/studio/generations with {"tab": "image" | "video" | "music" (or another studio app), "prompt": "a rich, specific generation prompt", "settings": {"aspectRatio": "16:9" | "9:16" | "1:1" | "4:5", "count": 1-4 (images), "duration": 5 | 8 (video), "instrumental": true (a music cue)}}. Start at most 4 per turn, only when the user wants something made; ask one clarifying question instead when the request is too vague. Each result appears under Juel's reply.`;
+  },
+};
 
 const MAX_ROUNDS = 4;
 const MAX_ASKS = 3;
@@ -538,10 +708,11 @@ const MAX_ASKS = 3;
 /** One specialist's work on a task: up to MAX_ROUNDS of reading a route's code, calling routes, and asking
  *  another specialist, then a note of what it found or did for the shared board. */
 async function specialistWork({ specialist, task, board, context, call, page, think, admin, onStep, depth = 0, asks = { n: 0 } }) {
-  const tools = juelTools({ specialist, admin }).map((t) => `${t.route} [${t.risk}${t.approval ? ", needs approval" : ""}] ${t.does}`).join("\n");
+  const tools = juelTools({ specialist, admin }).map((t) => `${t.route} [${t.risk}] ${t.does}`).join("\n");
   // The open page's own actions (Vibe Edit's timeline edits), when the page offers them to this specialist.
   const pageActions = page && context?.clientTools?.specialist === specialist ? Object.entries(context.clientTools.actions || {}) : [];
-  const pageList = pageActions.map(([type, a]) => `${type} ${a.args || "{}"} [${a.risk || "change"}${needsApproval(a.risk) ? ", needs approval" : ""}] ${a.about || ""}`).join("\n");
+  const pageList = pageActions.map(([type, a]) => `${type} ${a.args || "{}"} [${a.risk || "change"}] ${a.about || ""}`).join("\n");
+  const guide = SPECIALIST_GUIDES[specialist]?.(context) || "";
   const others = Object.entries(JUEL_SPECIALISTS).filter(([id]) => id !== specialist && (admin || id !== "admin")).map(([id, s]) => `${id}: ${s.brief}`).join("\n");
   const log = [];
   let note = "";
@@ -555,7 +726,9 @@ WHERE THE USER IS: ${clipText({ ...(context || {}), clientTools: undefined }, 30
 THE TEAM'S BOARD (what other specialists found or did this turn):
 ${board.length ? board.map((b) => `- ${b.specialist}: ${b.note}`).join("\n") : "(empty)"}
 
-YOUR ROUTES (method path [risk] what it does). Path params like :id are filled in by you:
+${guide ? `${guide}
+
+` : ""}YOUR ROUTES (method path [risk] what it does). Path params like :id are filled in by you:
 ${tools || "(none)"}
 
 ${pageList ? `ACTIONS ON THE OPEN PAGE (type {args} [risk] what it does). They run in the user's browser on what's open (the open item is in WHERE THE USER IS); prefer them to routes for editing what's open:
@@ -567,7 +740,7 @@ ${others}
 WHAT YOU DID SO FAR THIS TASK:
 ${log.length ? log.join("\n") : "(nothing yet)"}
 
-Rules: call a route only to do the task. Reads and changes run now; routes that need approval become a card the user approves, so propose them freely when the task calls for them, with exact bodies. Never invent ids: read them first. When you don't know a route's body fields, ask to read its code first ("read": ["POST /api/x/:id"]). Stop as soon as the task is done.
+Rules: call a route only to do the task. Every call runs at once, as the user. Paid ones spend the user's credits (the user sees each one's cost); one their balance can't cover is refused, so then stop and say what it needed. Publish or delete only what the user asked to publish or delete in this conversation, never on your own initiative. When a route wants "confirmed": true, the user's request is the confirmation. Never invent ids: read them first. When you don't know a route's body fields, ask to read its code first ("read": ["POST /api/x/:id"]). Stop as soon as the task is done.
 
 Return JSON only: {"read":["METHOD /path", ...], "calls":[{"method":"GET","path":"/api/...","query":{},"body":{},"why":"short"}],${pageList ? ` "page":[{"type":"action type","args":{},"why":"short"}],` : ""} "ask":{"specialist":"id","question":"..."} or null, "done":true|false, "note":"one or two sentences for the board: what you found or did, with key facts and ids"}`;
     const plan = await think(prompt);
@@ -581,7 +754,7 @@ Return JSON only: {"read":["METHOD /path", ...], "calls":[{"method":"GET","path"
       onStep?.({ specialist, text: c.why || `${c.method} ${c.path}` });
       try {
         const result = await call({ method: c.method, path: c.path, query: c.query, body: c.body, why: c.why, specialist });
-        log.push(`CALLED ${c.method} ${c.path} -> ${result.pending ? `waiting for the user's approval (card ${result.pending})` : `${result.status}: ${clipText(result.data, 2500)}`}`);
+        log.push(`CALLED ${c.method} ${c.path} -> ${result.status}${result.credits ? ` (≈${result.credits} credits)` : ""}: ${clipText(result.data, 2500)}`);
       } catch (error) {
         log.push(`CALL ${c.method} ${c.path} refused: ${error instanceof Error ? error.message : error}`);
       }
@@ -591,7 +764,7 @@ Return JSON only: {"read":["METHOD /path", ...], "calls":[{"method":"GET","path"
       onStep?.({ specialist, text: p.why || String(p.type) });
       try {
         const result = await page({ type: String(p.type), args: p.args && typeof p.args === "object" ? p.args : {}, why: p.why, specialist });
-        log.push(`PAGE ${p.type} -> ${result.pending ? `waiting for the user's approval (card ${result.pending})` : "sent to the open page, which applies it now"}`);
+        log.push(`PAGE ${p.type} -> sent to the open page, which applies it now${result.credits ? ` (≈${result.credits} credits)` : ""}`);
       } catch (error) {
         log.push(`PAGE ${p.type} refused: ${error instanceof Error ? error.message : error}`);
       }
@@ -609,14 +782,16 @@ Return JSON only: {"read":["METHOD /path", ...], "calls":[{"method":"GET","path"
   return note || "Nothing to report.";
 }
 
-/** One turn of a Juel conversation. Returns { reply, steps, board }: approval-waiting calls are cards the
- *  caller's `call` made.
- *  @param {{ message: string, history?: Array<{ role: string, content: string }>, context?: any, admin?: boolean, think: (prompt: string) => Promise<any>, call: (call: any) => Promise<any>, page?: (action: any) => Promise<any>, onStep?: (step: { specialist: string, text: string }) => void }} turn */
-export async function juelTurn({ message, history = [], context = {}, admin = false, think, call, page, onStep }) {
+/** One turn of a Juel conversation. Returns { reply, steps, board }; `shown` says what the caller shows
+ *  under the reply (an operator's report, generations).
+ *  @param {{ message: string, history?: Array<{ role: string, content: string }>, context?: any, admin?: boolean, think: (prompt: string) => Promise<any>, call: (call: any) => Promise<any>, page?: (action: any) => Promise<any>, onStep?: (step: { specialist: string, text: string }) => void, shown?: () => string }} turn */
+export async function juelTurn({ message, history = [], context = {}, admin = false, think, call, page, onStep, shown }) {
   const team = Object.entries(JUEL_SPECIALISTS).filter(([id]) => admin || id !== "admin").map(([id, s]) => `${id}: ${s.brief}`).join("\n");
   // The page's action list goes to its specialist's prompt, not into everyone's context.
   const { clientTools, ...where } = context || {};
-  const onPage = clientTools?.specialist && JUEL_SPECIALISTS[clientTools.specialist] ? `\nThe open page lets the ${clientTools.specialist} specialist edit it directly (${Object.keys(clientTools.actions || {}).length} actions), so send edits of what's open there.` : "";
+  const onPage = (clientTools?.specialist && JUEL_SPECIALISTS[clientTools.specialist] ? `\nThe open page lets the ${clientTools.specialist} specialist edit it directly (${Object.keys(clientTools.actions || {}).length} actions), so send edits of what's open there.` : "")
+    + (where.surface === "automation" && where.entityId ? "\nAn automation agent is open: anything about it goes to the automation specialist, who consults the agent's own operator." : "")
+    + (STUDIO_PERSONAS[where.details?.persona] ? `\nThe user is talking to the ${STUDIO_PERSONAS[where.details.persona].name}: making things goes to the studio specialist.` : "");
   const plan = await think(`You are Juel, the AutoYT app's agent: a manager who answers the user and hands work to specialists.
 
 WHERE THE USER IS: ${clipText(where, 3000)}${onPage}
@@ -651,7 +826,7 @@ USER ASKED: ${message}
 THE BOARD:
 ${board.map((b) => `- ${b.specialist}: ${b.note}`).join("\n")}
 
-Write the reply to the user: plain, short (under 120 words), what was done or found, with the facts that matter. When something waits for their approval, say so and that the card below runs it. Never claim something happened that the board doesn't show.
+${shown?.() ? `SHOWN BELOW YOUR REPLY: ${shown()}. Don't repeat it; point to it in a few words.\n\n` : ""}Write the reply to the user: plain, short (under 120 words), what was done or found, with the facts that matter. Say what paid work started and that it spends credits; when something was refused for low credits, say what it needed. Never claim something happened that the board doesn't show.
 Return JSON only: {"reply":"..."}`);
   return { reply: String(final?.reply || "").trim() || board.map((b) => b.note).join(" "), steps, board };
 }
@@ -659,12 +834,69 @@ Return JSON only: {"reply":"..."}`);
 // ---------- Routes ----------
 
 const THREADS = "juel-threads.json";
+const MAX_THREADS = 120;
 const newId = (prefix) => `${prefix}_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36).slice(-4)}`;
 
-/** Juel's chat: POST /api/juel/chat streams the turn's steps as NDJSON and ends with the thread; approval
- *  cards run through POST /api/juel/threads/:id/actions/:actionId. */
+const OPERATOR = "POST /api/automation/agents/:id/chat";
+const STUDIO_GENERATE = "POST /api/studio/generations";
+
+/** A finished turn's attachment, cut to what the panel draws: an agent operator's answer (its report,
+ *  cards, live blocks, actions, sub-agents, applied settings) or a generation Juel started. */
+function slimOperator(agentId, data) {
+  return {
+    kind: "operator",
+    agentId,
+    reply: clipText(String(data?.reply || ""), 4000),
+    presentation: data?.presentation ? { title: String(data.presentation.title || ""), summary: String(data.presentation.summary || ""), html: String(data.presentation.html || "").slice(0, 16000), cards: Array.isArray(data.presentation.cards) ? data.presentation.cards.slice(0, 8) : [] } : null,
+    cards: Array.isArray(data?.cards) ? data.cards.slice(0, 8) : [],
+    blocks: Array.isArray(data?.blocks) ? data.blocks.slice(0, 12) : [],
+    actions: Array.isArray(data?.actions) ? data.actions.slice(0, 8) : [],
+    subagents: Array.isArray(data?.subagents) ? data.subagents.slice(0, 6).map((s) => ({ id: s.id, name: s.name, status: s.status, summary: clipText(String(s.summary || ""), 600) })) : [],
+    applied: Array.isArray(data?.applied) ? data.applied.slice(0, 20) : [],
+    unapplied: Array.isArray(data?.unapplied) ? data.unapplied.slice(0, 20) : [],
+  };
+}
+
+/** What the agent's operator remembers from the user's other Juel conversations about the same agent. */
+function operatorMemory(threads, thread, agentId) {
+  return threads
+    .filter((t) => t.id !== thread.id && t.entityId === agentId && t.messages?.length)
+    .slice(0, 5)
+    .map((t) => {
+      const user = [...t.messages].reverse().find((m) => m.role === "user");
+      const reply = [...t.messages].reverse().find((m) => m.role === "assistant" && !m.error);
+      return [`Conversation "${t.title}" (${String(t.updatedAt || t.createdAt).slice(0, 10)})`, user ? `user asked: ${clipText(String(user.content).replace(/\s+/g, " "), 140)}` : "", reply ? `assistant replied: ${clipText(String(reply.content).replace(/\s+/g, " "), 160)}` : ""].filter(Boolean).join(" — ");
+    });
+}
+
+/** Old, big attachments (operator HTML, blocks) only stay on the latest replies, so threads stay small. */
+function trimThread(thread) {
+  if (thread.messages.length > 80) thread.messages.splice(0, thread.messages.length - 80);
+  const replies = thread.messages.filter((m) => m.role === "assistant" && m.attachments?.length);
+  for (const m of replies.slice(0, -8)) m.attachments = m.attachments.map((a) => (a.kind === "operator" ? { ...a, presentation: a.presentation ? { ...a.presentation, html: "" } : null, blocks: [] } : a));
+}
+
+/** Juel's chat: POST /api/juel/chat streams the turn as NDJSON (step, spend, credits, page, attach) and
+ *  ends with the thread. Paid calls run straight away after a credit check; POST /api/juel/quote prices one
+ *  call for the panel's own buttons.
+ *  @param {any} app
+ *  @param {{ session: (req: any) => Promise<any>, isAdmin: (email: string) => any, generateJson: (prompt: string, options?: any) => Promise<any>, docs: { read: (userId: string, name: string) => Promise<any[]>, save: (userId: string, name: string, limit: number) => Promise<any> }, port: number | string, withUsage: (userId: string, feature: string, run: () => any) => any, credits?: { snapshot: (userId: string) => Promise<any>, pricing: () => Promise<any>, history: () => Promise<any> } }} deps */
 export function registerJuel(app, deps) {
   const baseUrl = `http://127.0.0.1:${deps.port}`;
+  // Pricing for quotes: the admin's billing settings, what routes recently cost, and the studio's models.
+  let catalog = null;
+  const studioCatalog = (cookie) => {
+    if (!catalog || Date.now() - catalog.at > 10 * 60 * 1000) {
+      catalog = { at: Date.now(), value: callRoute({ method: "GET", path: "/api/studio/catalog" }, { baseUrl, cookie }).then((r) => (r.status === 200 ? r.data : null)).catch(() => null) };
+    }
+    return catalog.value;
+  };
+  const quoteSources = async (cookie) => ({
+    pricing: await deps.credits?.pricing().catch(() => null),
+    history: (await deps.credits?.history().catch(() => null)) || {},
+    catalog: () => studioCatalog(cookie),
+  });
+  const snapshot = (userId) => deps.credits?.snapshot(userId).catch(() => null) ?? Promise.resolve(null);
   const signedIn = async (req, res) => {
     const session = await deps.session(req).catch(() => null);
     if (!session?.user) {
@@ -675,11 +907,77 @@ export function registerJuel(app, deps) {
     return { userId: String(session.user.id), admin };
   };
 
+  // The old Creative Studio agent chats become Juel conversations (per persona, generations attached) the
+  // first time the list loads, so nothing said or made there is lost.
+  const importStudioChats = async (userId, threads) => {
+    const old = await deps.docs.read(userId, "agent-chats.json").catch(() => []);
+    let added = 0;
+    for (const chat of Array.isArray(old) ? old : []) {
+      const id = `juel_studio_${chat.id}`;
+      if (!chat?.id || threads.some((t) => t.id === id)) continue;
+      threads.push({
+        id,
+        title: String(chat.title || "Studio chat").slice(0, 60),
+        surface: "studio",
+        entityId: `agent:${chat.agent || "creative"}`,
+        createdAt: chat.createdAt,
+        updatedAt: chat.updatedAt || chat.createdAt,
+        messages: (chat.messages || []).map((m) => (m.role === "user"
+          ? { role: "user", content: String(m.content || ""), at: m.at }
+          : { role: "assistant", content: String(m.content || ""), at: m.at, attachments: (m.actions || []).filter((a) => a.generationId).map((a) => ({ kind: "generation", id: a.generationId, tab: a.app, prompt: clipText(String(a.prompt || ""), 300) })) })),
+      });
+      added += 1;
+    }
+    if (!added) return;
+    threads.sort((a, b) => String(b.updatedAt || b.createdAt).localeCompare(String(a.updatedAt || a.createdAt)));
+    await deps.docs.save(userId, THREADS, MAX_THREADS);
+  };
+
+  // An automation agent's conversations from before Juel (and the ones Telegram keeps adding there) come
+  // in as Juel conversations about that agent; an imported one refreshes until it's continued in Juel.
+  const importAgentChats = async (userId, agentId, cookie, threads) => {
+    const got = await callRoute({ method: "GET", path: `/api/automation/agents/${encodeURIComponent(agentId)}/chats` }, { baseUrl, cookie, signal: AbortSignal.timeout(15000) }).catch(() => null);
+    const chats = got?.status === 200 && Array.isArray(got.data?.chats) ? got.data.chats : [];
+    let changed = 0;
+    for (const chat of chats) {
+      if (!chat?.id || !Array.isArray(chat.messages) || !chat.messages.length) continue;
+      const id = `juel_agent_${chat.id}`;
+      const updatedAt = new Date(Number(chat.updatedAt) || Date.now()).toISOString();
+      const existing = threads.find((t) => t.id === id);
+      if (existing && (!existing.importedAt || existing.importedAt >= updatedAt)) continue;
+      const messages = chat.messages.filter((m) => m && (m.role === "user" || m.role === "assistant")).map((m) => {
+        const at = new Date(Number(m.timestamp) || Number(chat.updatedAt) || Date.now()).toISOString();
+        if (m.role === "user") return { role: "user", content: String(m.content || ""), at };
+        const rich = m.actions?.length || m.subagents?.length || m.applied?.length || m.unapplied?.length;
+        return { role: "assistant", content: String(m.content || ""), at, ...(m.stopped ? { stopped: true } : {}), ...(rich ? { attachments: [{ ...slimOperator(agentId, { ...m, reply: "" }) }] } : {}) };
+      });
+      const thread = { id, title: String(chat.title || "Agent chat").slice(0, 60), surface: "automation", entityId: agentId, createdAt: new Date(Number(chat.createdAt) || Date.now()).toISOString(), updatedAt, importedAt: updatedAt, messages };
+      if (existing) Object.assign(existing, thread);
+      else threads.push(thread);
+      changed += 1;
+    }
+    if (!changed) return;
+    threads.sort((a, b) => String(b.updatedAt || b.createdAt).localeCompare(String(a.updatedAt || a.createdAt)));
+    await deps.docs.save(userId, THREADS, MAX_THREADS);
+  };
+
   app.get("/api/juel/threads", async (req, res) => {
     const who = await signedIn(req, res);
     if (!who) return;
     const threads = await deps.docs.read(who.userId, THREADS);
-    res.json({ threads: threads.map(({ id, title, surface, updatedAt }) => ({ id, title, surface, updatedAt })) });
+    await importStudioChats(who.userId, threads).catch(() => undefined);
+    if (req.query?.agent) await importAgentChats(who.userId, String(req.query.agent).slice(0, 120), String(req.headers.cookie || ""), threads).catch(() => undefined);
+    res.json({ threads: threads.map(({ id, title, surface, entityId, updatedAt, createdAt }) => ({ id, title, surface, entityId: entityId || "", updatedAt: updatedAt || createdAt })) });
+  });
+
+  // What one call would cost and whether the balance covers it: the panel checks before an operator button runs.
+  app.post("/api/juel/quote", async (req, res) => {
+    const who = await signedIn(req, res);
+    if (!who) return;
+    const call = { method: String(req.body?.method || "POST"), path: String(req.body?.path || ""), body: req.body?.body };
+    const quote = await estimateCredits(call, await quoteSources(String(req.headers.cookie || ""))).catch(() => null);
+    const short = quote?.credits ? creditShortfall(await snapshot(who.userId), quote.credits) : null;
+    res.json({ credits: quote?.credits || 0, does: quote?.does || "", short });
   });
 
   app.get("/api/juel/threads/:id", async (req, res) => {
@@ -696,7 +994,7 @@ export function registerJuel(app, deps) {
     const threads = await deps.docs.read(who.userId, THREADS);
     const index = threads.findIndex((t) => t.id === req.params.id);
     if (index >= 0) threads.splice(index, 1);
-    await deps.docs.save(who.userId, THREADS, 50);
+    await deps.docs.save(who.userId, THREADS, MAX_THREADS);
     res.json({ deleted: index >= 0 });
   });
 
@@ -711,15 +1009,51 @@ export function registerJuel(app, deps) {
     const threads = await deps.docs.read(who.userId, THREADS);
     let thread = threads.find((t) => t.id === req.body?.threadId);
     if (!thread) {
-      thread = { id: newId("juel"), title: message.slice(0, 60), surface, messages: [], cards: {}, createdAt: new Date().toISOString() };
+      thread = { id: newId("juel"), title: message.slice(0, 60), surface, entityId, messages: [], createdAt: new Date().toISOString() };
       threads.unshift(thread);
     }
+    if (entityId) thread.entityId = entityId;
+    // Continued in Juel: an imported conversation stops refreshing from its old store.
+    delete thread.importedAt;
+    // Editing an earlier message (or asking again) replaces it and everything after it.
+    const from = typeof req.body?.editFrom === "number" ? req.body.editFrom : -1;
+    if (Number.isInteger(from) && from >= 0 && thread.messages[from]?.role === "user") thread.messages.splice(from);
     res.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
     res.setHeader("Cache-Control", "no-store");
-    const send = (event) => res.write(`${JSON.stringify(event)}\n`);
+    // The panel's Stop closes the stream; that stops the turn's model calls and route calls too.
+    const stop = new AbortController();
+    res.on("close", () => {
+      if (!res.writableEnded) stop.abort(new Error("Stopped."));
+    });
+    const send = (event) => {
+      if (!res.writableEnded) res.write(`${JSON.stringify(event)}\n`);
+    };
     const cookie = String(req.headers.cookie || "");
-    const turnCards = [];
     const context = { surface, label: String(where.label || "").slice(0, 120), entityId, details: where.details ?? null, clientTools: pageTools(where.clientTools) };
+    const sources = await quoteSources(cookie);
+    const before = await snapshot(who.userId);
+    const spends = [];
+    const attachments = [];
+    const attach = (attachment) => {
+      attachments.push(attachment);
+      send({ type: "attach", attachment });
+    };
+    // A paid call is quoted, checked against the balance, and refused (with a toast) when it can't be covered.
+    const charge = async (does, credits, specialist) => {
+      if (!credits) return;
+      const short = creditShortfall(await snapshot(who.userId), credits + spends.reduce((sum, s) => sum + (s.status === "started" ? s.credits : 0), 0));
+      if (short) {
+        spends.push({ specialist, does, credits, status: "refused" });
+        send({ type: "credits", does, ...short });
+        throw new JuelRefusal(`Not enough credits. ${short.message}`, "credits");
+      }
+    };
+    const spent = (does, credits, specialist) => {
+      if (!credits) return;
+      const spend = { specialist, does, credits, status: "started" };
+      spends.push(spend);
+      send({ type: "spend", spend });
+    };
     try {
       // A page that sends its live state (the open edit) needs no second look at the saved copy.
       if (SURFACE_READS[surface] && entityId && !where.details) {
@@ -730,77 +1064,93 @@ export function registerJuel(app, deps) {
     } catch {
       // The open item is a nicety; a turn goes on without it.
     }
-    const call = async ({ method, path, query, body, why, specialist }) => {
-      const hit = matchRoute(method, path);
-      if (hit && !hit.excluded && hit.approval) {
-        if (hit.specialist === "admin" && !who.admin) throw new JuelRefusal("That's an admin tool.", "forbidden");
-        const card = { id: newId("act"), specialist: specialist || hit.specialist, method: String(method).toUpperCase(), path, query: query || null, body: body ?? null, route: hit.key, risk: hit.risk, does: hit.does, why: String(why || "").slice(0, 300), status: "pending", at: new Date().toISOString() };
-        thread.cards[card.id] = card;
-        turnCards.push(card.id);
-        send({ type: "card", card });
-        return { pending: card.id };
+    const signal = (ms) => AbortSignal.any([stop.signal, AbortSignal.timeout(ms)]);
+    // The open agent's operator: called with this conversation and memory of the user's other ones about the
+    // agent, its progress streamed as steps, and its whole answer attached under Juel's reply.
+    const consultOperator = async (agentId, body, specialist) => {
+      const history = thread.messages.filter((m) => (m.role === "user" || m.role === "assistant") && !m.error && String(m.content || "").trim()).slice(-14).map((m) => ({ role: m.role, content: String(m.content).slice(0, 2000) }));
+      const ask = String(body?.message || body?.task || message).slice(0, 2000);
+      const response = await fetch(new URL(`/api/automation/agents/${encodeURIComponent(agentId)}/chat`, baseUrl), {
+        method: "POST",
+        headers: { cookie, accept: "application/x-ndjson", "content-type": "application/json", "x-juel": "1" },
+        body: JSON.stringify({ messages: [...history, { role: "user", content: ask }], memory: operatorMemory(threads, thread, agentId), conversationId: thread.id }),
+        signal: signal(6 * 60 * 1000),
+      });
+      if (!String(response.headers.get("content-type") || "").includes("ndjson")) return { status: response.status, data: await response.json().catch(() => null) };
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let data = null;
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+        for (const line of lines.filter((l) => l.trim())) {
+          const event = JSON.parse(line);
+          if (event.type === "progress") send({ type: "step", specialist, text: String(event.message || "Working").slice(0, 160) });
+          else if (event.type === "result") data = event.data;
+          else if (event.type === "error") throw new Error(event.error || "The agent's operator couldn't answer.");
+        }
       }
-      return callRoute({ method, path, query, body }, { baseUrl, cookie, admin: who.admin, signal: AbortSignal.timeout(120000) });
+      if (!data) throw new Error("The agent's operator didn't answer.");
+      attach(slimOperator(agentId, data));
+      return { status: 200, data: { reply: data.reply, applied: data.applied, unapplied: data.unapplied, actionsOffered: (data.actions || []).map((a) => a.label), shownToUser: true } };
     };
-    // Actions on the open page run in the browser: free ones are sent now, risky ones become cards.
+    const call = async ({ method, path, query, body, specialist }) => {
+      const hit = matchRoute(method, path);
+      const quote = hit && !hit.excluded ? await estimateCredits({ method, path, body }, sources).catch(() => null) : null;
+      const credits = quote?.credits || 0;
+      await charge(hit?.does || path, credits, specialist);
+      if (hit?.key === OPERATOR && !hit.excluded) {
+        const result = await consultOperator(hit.params.id, body, specialist);
+        if (result.status < 400) spent(hit.does, credits, specialist);
+        return { ...result, credits };
+      }
+      const result = await callRoute({ method, path, query, body }, { baseUrl, cookie, admin: who.admin, signal: signal(180000) });
+      if (result.status === 402) send({ type: "credits", does: hit?.does || path, needed: credits, balance: null, message: String(result.data?.error || "You're out of credits.") });
+      if (result.status < 400) spent(hit?.does || path, credits, specialist);
+      const generation = hit?.key === STUDIO_GENERATE && result.status < 400 ? result.data?.generation : null;
+      if (generation?.id) attach({ kind: "generation", id: generation.id, tab: generation.tab || body?.tab || "", prompt: clipText(String(generation.prompt || body?.prompt || ""), 300) });
+      return { ...result, credits };
+    };
+    // Actions on the open page run in the browser, after the same credit check for the paid ones.
     let applied = 0;
-    const page = async ({ type, args, why, specialist }) => {
+    const page = async ({ type, args, specialist }) => {
       const action = context.clientTools?.actions?.[type];
       if (!action) throw new JuelRefusal(`The open page has no "${type}" action.`, "unknown");
-      if (needsApproval(action.risk)) {
-        const card = { id: newId("act"), kind: "page", specialist, pageAction: { type, args }, risk: action.risk, does: action.about || type, why: String(why || "").slice(0, 300), status: "pending", at: new Date().toISOString() };
-        thread.cards[card.id] = card;
-        turnCards.push(card.id);
-        send({ type: "card", card });
-        return { pending: card.id };
-      }
+      const credits = pageActionCredits(action, sources.pricing);
+      await charge(action.about || type, credits, specialist);
       applied += 1;
+      spent(action.about || type, credits, specialist);
       send({ type: "page", surface, actions: [{ type, args }] });
-      return { sent: true };
+      return { sent: true, credits };
     };
-    const think = (prompt) => deps.generateJson(prompt, { maxTokens: 2500 });
+    const think = (prompt) => deps.generateJson(prompt, { maxTokens: 2500, signal: stop.signal });
+    const shown = () => attachments.map((a) => (a.kind === "operator" ? "the agent operator's full answer (report, cards, buttons)" : `the ${a.tab || "studio"} generation it started`)).join("; ");
+    const at = new Date().toISOString();
     try {
-      const turn = await deps.withUsage(who.userId, "juel", () => juelTurn({ message, history: thread.messages, context, admin: who.admin, think, call, page, onStep: (s) => send({ type: "step", ...s }) }));
-      thread.messages.push({ role: "user", content: message, at: new Date().toISOString() }, { role: "assistant", content: turn.reply, steps: turn.steps, cards: turnCards, ...(applied ? { applied } : {}), at: new Date().toISOString() });
+      // A page that sends its live state (the open edit) needs no second look at the saved copy.
+      if (SURFACE_READS[surface] && entityId && !where.details) {
+        send({ type: "step", specialist: surface, text: "Looking at what you have open" });
+        const open = await callRoute({ method: "GET", path: SURFACE_READS[surface](entityId) }, { baseUrl, cookie, admin: who.admin, signal: signal(20000) }).catch(() => null);
+        if (open?.status === 200) context.open = clipText(open.data, 6000);
+      }
+      const turn = await deps.withUsage(who.userId, "juel", () => juelTurn({ message, history: thread.messages, context, admin: who.admin, think, call, page, shown, onStep: (s) => send({ type: "step", ...s }) }));
+      // What the turn has actually charged so far (Juel's own thinking included); long jobs keep charging after.
+      const after = before ? await snapshot(who.userId) : null;
+      const charged = before && after ? Math.max(0, Math.round((Number(after.periodUsed) - Number(before.periodUsed)) / 100)) : null;
+      thread.messages.push({ role: "user", content: message, at }, { role: "assistant", content: turn.reply, steps: turn.steps, ...(spends.length ? { spends } : {}), ...(attachments.length ? { attachments } : {}), ...(applied ? { applied } : {}), ...(charged ? { charged } : {}), at: new Date().toISOString() });
     } catch (error) {
-      thread.messages.push({ role: "user", content: message, at: new Date().toISOString() }, { role: "assistant", content: `Something went wrong: ${error instanceof Error ? error.message : error}`, error: true, at: new Date().toISOString() });
+      const stopped = stop.signal.aborted;
+      thread.messages.push({ role: "user", content: message, at }, { role: "assistant", content: stopped ? "Stopped." : `Something went wrong: ${error instanceof Error ? error.message : error}`, ...(stopped ? { stopped: true } : { error: true }), ...(spends.length ? { spends } : {}), ...(attachments.length ? { attachments } : {}), at: new Date().toISOString() });
     }
-    if (thread.messages.length > 80) thread.messages.splice(0, thread.messages.length - 80);
+    trimThread(thread);
     thread.updatedAt = new Date().toISOString();
     threads.sort((a, b) => String(b.updatedAt || b.createdAt).localeCompare(String(a.updatedAt || a.createdAt)));
-    await deps.docs.save(who.userId, THREADS, 50);
+    await deps.docs.save(who.userId, THREADS, MAX_THREADS);
     send({ type: "done", thread });
     res.end();
-  });
-
-  // Approve (or decline) a card: only now does the paid, publish, or delete call run.
-  app.post("/api/juel/threads/:id/actions/:actionId", async (req, res) => {
-    const who = await signedIn(req, res);
-    if (!who) return;
-    const threads = await deps.docs.read(who.userId, THREADS);
-    const thread = threads.find((t) => t.id === req.params.id);
-    const card = thread?.cards?.[req.params.actionId];
-    if (!card) return res.status(404).json({ error: "That card is gone." });
-    if (card.status !== "pending") return res.json({ thread });
-    if (req.body?.approve !== true) {
-      card.status = "declined";
-    } else if (card.kind === "page") {
-      // A page action runs in the browser: the panel hands it to the open page once approved.
-      card.status = "done";
-    } else {
-      card.status = "running";
-      try {
-        const result = await deps.withUsage(who.userId, "juel", () => callRoute({ method: card.method, path: card.path, query: card.query, body: card.body ?? undefined }, { baseUrl, cookie: String(req.headers.cookie || ""), admin: who.admin, approved: true, signal: AbortSignal.timeout(180000) }));
-        card.status = result.status < 400 ? "done" : "failed";
-        card.result = clipText(result.data, 1500);
-      } catch (error) {
-        card.status = "failed";
-        card.result = error instanceof Error ? error.message : String(error);
-      }
-    }
-    card.decidedAt = new Date().toISOString();
-    thread.updatedAt = card.decidedAt;
-    await deps.docs.save(who.userId, THREADS, 50);
-    res.json({ thread });
   });
 }

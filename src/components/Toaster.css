@@ -47,6 +47,37 @@
 .toast.is-error .toast-icon { color: var(--toast-error); }
 .toast.is-success .toast-icon { color: var(--toast-success); }
 .toast.is-info .toast-icon { color: var(--toast-info); }
+/* Not enough credits: a warm accent edge, the balance against what the task needs, and a way to top up. */
+.toast.is-credits {
+  border-color: color-mix(in srgb, var(--ui-accent) 38%, var(--toast-line));
+  background: linear-gradient(180deg, color-mix(in srgb, var(--ui-accent) 9%, var(--toast-bg)), var(--toast-bg) 70%);
+}
+.toast.is-credits .toast-icon { color: var(--ui-accent-text, var(--ui-accent)); }
+.toast.is-credits .toast-timer { color: var(--ui-accent); opacity: 0.55; }
+.toast-meter { margin-top: 10px; }
+.toast-meter-bar {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--toast-line);
+}
+.toast-meter-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--ui-accent);
+  transition: width 400ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.toast-body .toast-meter-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 6px;
+  color: var(--toast-muted);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+.toast-meter-row b { color: var(--toast-text); font-weight: 700; }
 .toast-body {
   min-width: 0;
 }

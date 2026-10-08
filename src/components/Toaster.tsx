@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { CircleAlert, CircleCheck, Info, X } from "lucide-react";
+import { CircleAlert, CircleCheck, Coins, Info, X } from "lucide-react";
 import { toast, useToasts, type Toast } from "../utils/toast";
 import "./Toaster.css";
 
-const ICONS = { error: CircleAlert, success: CircleCheck, info: Info };
+const ICONS = { error: CircleAlert, success: CircleCheck, info: Info, credits: Coins };
+const credits = (n: number) => `${Math.max(0, Math.round(n)).toLocaleString("en-US")}`;
 
 export function Toaster() {
   const items = useToasts();
@@ -42,7 +43,7 @@ function ToastItem({ item }: { item: Toast }) {
   return (
     <div
       className={`toast is-${item.tone}${leaving ? " is-leaving" : ""}`}
-      role={item.tone === "error" ? "alert" : "status"}
+      role={item.tone === "error" || item.tone === "credits" ? "alert" : "status"}
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
       onFocus={() => setPaused(true)}
@@ -57,6 +58,17 @@ function ToastItem({ item }: { item: Toast }) {
           {item.message}
           {item.count > 1 ? <span className="toast-count">×{item.count}</span> : null}
         </p>
+        {item.meter && item.meter.needed > 0 ? (
+          <div className="toast-meter">
+            <div className="toast-meter-bar" aria-hidden="true">
+              <span style={{ width: `${Math.min(100, Math.max(item.meter.balance ? 4 : 0, ((item.meter.balance ?? 0) / item.meter.needed) * 100))}%` }} />
+            </div>
+            <p className="toast-meter-row">
+              <span>{item.meter.balance === null ? "Your balance is used up" : <>You have <b>{credits(item.meter.balance)}</b></>}</span>
+              <span>Needs <b>{credits(item.meter.needed)}</b></span>
+            </p>
+          </div>
+        ) : null}
         {item.action ? (
           <button
             type="button"

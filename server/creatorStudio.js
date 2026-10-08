@@ -24,6 +24,7 @@ import { findPromoSubject, findPromoTemplate, PROMO_ASPECTS, PROMO_DURATIONS } f
 import { findPromoStyle } from "../src/utils/promoStyles.js";
 import { recordingFrames, runExplainerFilm, runExplainerPlan } from "./explainerStudio.js";
 import { compactDesignHtml, DESIGN_CANVASES, designHtmlMessages, designPlanMessages, designSettings, extractDesignDocument, extractJsonObject, imageSize, inlineDesignAssets, listDesignLayers, normalizeDesignPlan, sanitizeDesignHtml, validateDesignHtml } from "./editableDesign.js";
+import { STUDIO_PERSONAS } from "./juel.js";
 import { EXPLAINER_ASPECTS, EXPLAINER_LENGTHS, EXPLAINER_MAX_SECONDS, EXPLAINER_MAX_WORDS, findExplainerTemplate, normalizeExplainerScript, scriptWords } from "../src/utils/explainerPresets.js";
 
 const API = "https://openrouter.ai/api/v1";
@@ -1798,72 +1799,9 @@ async function enqueue(userId, request) {
   return item;
 }
 
-// ---------- Agents (chat that plans and launches generations) ----------
-export const AGENTS = {
-  creative: { name: "Creative Director", intro: "I plan and produce images, videos, and music from one idea.", brief: "a versatile creative director for video creators" },
-  thumbnail: { name: "Thumbnail Designer", intro: "I design high-click YouTube thumbnails.", brief: "a YouTube thumbnail designer. Default to 16:9 images with a bold focal subject, strong contrast, and at most 4 words of large on-image text" },
-  storyboard: { name: "Storyboard Artist", intro: "I break a story into consistent shots and animate them.", brief: "a storyboard artist who keeps characters and style consistent from shot to shot" },
-  ads: { name: "Ad Creative", intro: "I turn a product into ad images and short ad videos.", brief: "a performance ad creative who writes scroll-stopping social ad concepts" },
-  design: { name: "Design Agent", intro: "I make posters, social graphics, logos, and brand visuals.", brief: "a senior graphic designer who makes posters, social graphics, logos, and brand visuals with precise typography and layout. Prefer image models that render text well" },
-};
-async function agentTurn(userId, chat, message, signal) {
-  const agent = AGENTS[chat.agent] || AGENTS.creative;
-  const transcript = chat.messages.slice(-16).map((m) => ({ role: m.role, content: m.role === "assistant" && m.actions?.length ? `${m.content}\n[launched: ${m.actions.map((a) => `${a.app}: ${a.prompt}`).join(" | ")}]` : m.content }));
-  const { value } = await requestOpenRouter({
-    kind: "agent",
-    json: true,
-    maxTokens: 2500,
-    temperature: 0.6,
-    signal,
-    messages: [
-      {
-        role: "system",
-        content: `You are ${agent.brief}, working inside AutoYT Creator Studio.
-You can propose generations. Each one costs the user credits, so it is shown as a card they approve before it runs; its result then appears in the chat.
-Apps: "image" (prompt, aspectRatio one of 16:9, 9:16, 1:1, 4:5; count 1-4), "video" (prompt, aspectRatio 16:9 or 9:16, duration 5 or 8), "audio" (prompt for an instrumental music cue).
-Reply in JSON only: {"reply":"short conversational message","actions":[{"app":"image","prompt":"detailed generation prompt","aspectRatio":"16:9","count":1}]}
-Propose at most 4 actions per turn, and only when the user wants something made. Ask one clarifying question instead when the request is too vague. Write rich, specific generation prompts.`,
-      },
-      ...transcript,
-      { role: "user", content: message },
-    ],
-    validate: (v) => {
-      if (typeof v?.reply !== "string") throw new Error("No reply");
-    },
-  });
-  // Generations cost credits, so they're proposals until the user approves them (approveAgentActions).
-  const actions = [];
-  for (const action of (Array.isArray(value.actions) ? value.actions : []).slice(0, 4)) {
-    const app = ["image", "video", "audio"].includes(action?.app) ? action.app : "";
-    const prompt = clip(action?.prompt, 2000);
-    if (!app || !prompt) continue;
-    const settings = {
-      aspectRatio: clip(action.aspectRatio, 8) || "16:9",
-      count: Math.min(4, Math.max(1, Number(action.count) || 1)),
-      duration: [5, 8].includes(Number(action.duration)) ? Number(action.duration) : 5,
-      instrumental: true,
-    };
-    actions.push({ app, prompt, settings, status: "proposed" });
-  }
-  return { content: clip(value.reply, 4000) || "Done.", actions };
-}
-
-/** Runs (or skips) the proposed generations on one agent reply: all of them, or the one at `only`. */
-async function approveAgentActions(userId, message, { only = null, skip = false } = {}) {
-  for (const [n, action] of (message.actions || []).entries()) {
-    if (action.status !== "proposed" || (only !== null && n !== only)) continue;
-    if (skip) {
-      action.status = "skipped";
-      continue;
-    }
-    try {
-      const item = await enqueue(userId, normalizeRequest({ tab: action.app, prompt: action.prompt, settings: action.settings || {} }));
-      Object.assign(action, { status: "launched", generationId: item.id });
-    } catch (error) {
-      Object.assign(action, { status: "failed", error: publicMessage(error.message) });
-    }
-  }
-}
+// ---------- Agents ----------
+// The Agents tabs are Juel working as one of these personas (server/juel.js); the catalog lists them.
+export const AGENTS = STUDIO_PERSONAS;
 
 // ---------- Link imports ----------
 const IMAGE_EXTS = new Set(["png", "jpg", "webp"]);
@@ -2203,49 +2141,4 @@ export function registerCreatorStudio(app, express) {
     res.json({ pinned: index < 0 });
   }));
 
-  app.get("/api/studio/agents/chats", route(async (_req, res, userId) => {
-    res.json({ chats: await doc(userId, "agent-chats.json") });
-  }));
-
-  app.post("/api/studio/agents/chats", route(async (req, res, userId) => {
-    if (!openRouterConfigured()) throw fail("Agents aren't set up on the server yet.", 503);
-    const message = clip(req.body?.message, 4000);
-    if (!message) throw fail("Write a message first");
-    const chats = await doc(userId, "agent-chats.json");
-    let chat = chats.find((c) => c.id === req.body?.chatId);
-    if (!chat) {
-      const agent = AGENTS[req.body?.agent] ? req.body.agent : "creative";
-      chat = { id: newId("chat"), agent, title: message.slice(0, 60), messages: [], createdAt: new Date().toISOString() };
-      chats.unshift(chat);
-    }
-    const reply = await agentTurn(userId, chat, message, AbortSignal.timeout(180000));
-    chat.messages.push({ role: "user", content: message, at: new Date().toISOString() }, { role: "assistant", ...reply, at: new Date().toISOString() });
-    if (chat.messages.length > 80) chat.messages.splice(0, chat.messages.length - 80);
-    chat.updatedAt = new Date().toISOString();
-    chats.sort((a, b) => String(b.updatedAt || b.createdAt).localeCompare(String(a.updatedAt || a.createdAt)));
-    await saveDoc(userId, "agent-chats.json", 60);
-    res.json({ chat });
-  }));
-
-  // Approve (or skip) an agent's proposed generations: { message: index of the reply, action?: index, skip?: true }.
-  app.post("/api/studio/agents/chats/:id/approve", route(async (req, res, userId) => {
-    const chats = await doc(userId, "agent-chats.json");
-    const chat = chats.find((c) => c.id === req.params.id);
-    if (!chat) throw fail("That chat is gone.", 404);
-    const message = chat.messages[Number(req.body?.message)];
-    if (!message || message.role !== "assistant") throw fail("That reply isn't in this chat.", 404);
-    const only = Number.isInteger(req.body?.action) ? req.body.action : null;
-    await approveAgentActions(userId, message, { only, skip: req.body?.skip === true });
-    chat.updatedAt = new Date().toISOString();
-    await saveDoc(userId, "agent-chats.json", 60);
-    res.json({ chat });
-  }));
-
-  app.delete("/api/studio/agents/chats/:id", route(async (req, res, userId) => {
-    const chats = await doc(userId, "agent-chats.json");
-    const index = chats.findIndex((c) => c.id === req.params.id);
-    if (index >= 0) chats.splice(index, 1);
-    await saveDoc(userId, "agent-chats.json", 60);
-    res.json({ deleted: index >= 0 });
-  }));
 }

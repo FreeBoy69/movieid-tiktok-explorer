@@ -410,6 +410,19 @@ SELECT COALESCE((
   }
   const forget = (userId) => cache.users.delete(userId);
 
+  // What each route has typically cost per request lately (one user's events on one route in the same
+  // minute count as one request), so Juel can quote text-model routes that have no flat price.
+  let featureCostCache = { at: 0, value: {} };
+  async function featureCosts() {
+    if (Date.now() - featureCostCache.at < 30 * 60 * 1000) return featureCostCache.value;
+    const rows = await list(`SELECT feature, percentile_cont(0.5) WITHIN GROUP (ORDER BY tokens) AS tokens, count(*) AS n
+FROM (SELECT feature, user_id, date_trunc('minute', created_at) AS m, SUM(tokens_charged) AS tokens FROM ai_usage_events
+  WHERE created_at > now() - interval '45 days' AND feature LIKE '% /api/%' GROUP BY 1, 2, 3) r
+GROUP BY feature HAVING count(*) >= 3`).catch(() => []);
+    featureCostCache = { at: Date.now(), value: Object.fromEntries(rows.map((r) => [r.feature, { tokens: Number(r.tokens) || 0, n: Number(r.n) || 0 }])) };
+    return featureCostCache.value;
+  }
+
   async function guard({ provider, userId, model }) {
     const governance = await getSettings("governance");
     if (!governance.aiEnabled)
@@ -2153,6 +2166,6 @@ UNION ALL (SELECT 'creator', id, user_id, stage, left(error, 300), updated_at FR
 
   return {
     register, usageMiddleware, maintenanceMiddleware, publicNotice, signupAllowed, userStatus, touch,
-    billingSnapshot, adjustTokens, changePlan, getSettings, adminRole, recalcAutoPlans,
+    billingSnapshot, adjustTokens, changePlan, getSettings, adminRole, recalcAutoPlans, featureCosts,
   };
 }
