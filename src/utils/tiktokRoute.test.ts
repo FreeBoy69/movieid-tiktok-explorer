@@ -215,6 +215,12 @@ describe("Automation agent deep links", () => {
     expect(parseHref("/agent/anime-recaps/chat")).toMatchObject({ view: "automation", slug: "anime-recaps", automationTab: "chat" });
   });
 
+  it("sends an address that isn't a page home, not to the Agents page", () => {
+    expect(readDeepLinkFromLocation("/pricing", "")).toMatchObject({ view: "tools" });
+    expect(readDeepLinkFromLocation("/explore/anything", "")).toMatchObject({ view: "tools" });
+    expect(readDeepLinkFromLocation("/agent", "")).toMatchObject({ view: "automation" });
+  });
+
   it("keeps legacy automation links readable while rebuilding them canonically", () => {
     const legacy = readDeepLinkFromLocation("/automation/anime-recaps", "?tab=setup");
     expect(legacy).toMatchObject({ view: "automation", slug: "anime-recaps", automationTab: "setup" });

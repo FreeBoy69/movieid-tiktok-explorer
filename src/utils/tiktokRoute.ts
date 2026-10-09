@@ -2,7 +2,7 @@
  * Small SPA router for MovieID without pulling in react-router.
  *
  * URL shape:
- *   /                                      -> selected automation agent overview
+ *   /                                      -> Create home (also any address that isn't a page)
  *   /tools                                 -> tools catalog
  *   /movie                                 -> Movie ID
  *   /downloader                            -> Video Downloader
@@ -405,8 +405,9 @@ export function readDeepLinkFromLocation(pathname: string, search = ""): TikTokD
   }
 
   const rawView = params.get("view");
-  // Explore is the home page; unknown paths still land on Automation as before.
-  const view: MainView = isMainView(rawView) ? rawView : pathParts.length ? "automation" : "tools";
+  // Home (Create) for "/" and for any address that isn't a page (a typo or an old link), never the
+  // signed-in Agents page, which a visitor would see blurred behind a "Sign in required" error.
+  const view: MainView = isMainView(rawView) ? rawView : "tools";
   return {
     view,
     section: view === "tiktok" ? "analyze" : undefined,
