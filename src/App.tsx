@@ -48,6 +48,7 @@ import { lazyPage, PageBoundary, PageLoading } from "./utils/lazyPage";
 import { readDeepLink, writeDeepLink, type MainView as View } from "./utils/tiktokRoute";
 import { BackgroundProcessCenter, openBackgroundProcessCenter, type BackgroundProcess } from "./components/BackgroundProcessCenter";
 import { MobileDock } from "./components/MobileDock";
+import { ToolsPage } from "./components/ToolsDirectory";
 
 // The admin console ships as its own chunk so users never download it.
 const AdminApp = lazyPage(() => import("./admin/AdminApp"));
@@ -245,8 +246,8 @@ function WorkspaceApp() {
       setRouteLink(link);
       return;
     }
-    if (next === "tools") {
-      const link = { view: "tools" as const };
+    if (next === "tools" || next === "all-tools") {
+      const link = { view: next };
       writeDeepLink(link);
       setRouteLink(link);
       return;
@@ -647,6 +648,10 @@ function WorkspaceApp() {
                     <VibeEdit theme={channelTheme} projectId={routeLink.view === "vibe-edit" ? routeLink.projectId : undefined} />
                   </Suspense>
                 </PageBoundary>
+              </motion.div>
+            ) : activeView === "all-tools" ? (
+              <motion.div key="all-tools-view" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                <ToolsPage onNavigate={handleNavigate} />
               </motion.div>
             ) : activeView === "tools" ? (
               <motion.div key="tools-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>

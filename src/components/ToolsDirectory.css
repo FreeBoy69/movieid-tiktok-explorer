@@ -1,0 +1,157 @@
+/* Tools directory: the /tools page (described rows) and the phone dock sheet (icon tiles). */
+.td { display: grid; gap: 22px; color: var(--ui-text); }
+.td-group { display: grid; gap: 10px; }
+.td-group h3 {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+  color: var(--ui-text-faint);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.td-group h3 small { font-size: 11px; font-weight: 600; letter-spacing: 0; opacity: 0.8; }
+.td-empty { margin: 8px 0; color: var(--ui-text-muted); font-size: 14px; }
+
+/* ---------- Page ---------- */
+.td-page {
+  width: min(1120px, 100%);
+  margin: 0 auto;
+  padding: 36px 24px 72px;
+}
+.td-page-head { margin-bottom: 20px; }
+.td-page-head h1 {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: clamp(34px, 6vw, 52px);
+  font-weight: 700;
+  line-height: 1;
+}
+.td-page-head p { margin: 8px 0 0; color: var(--ui-text-muted); font-size: 15px; }
+.td-page .td-search { max-width: 520px; }
+
+.td-popular {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
+}
+.td .td-card {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  min-height: 116px;
+  padding: 14px;
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius-md) !important;
+  background: var(--ui-panel);
+  color: var(--ui-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--ui-duration) ease, transform var(--ui-duration) ease;
+}
+.td .td-card:hover { border-color: var(--ui-line-strong); transform: translateY(-1px); }
+.td-card-icon {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  margin-bottom: 8px;
+  border-radius: 10px;
+  background: var(--ui-accent-soft);
+  color: var(--ui-text);
+}
+.td-card strong { font-size: 14px; font-weight: 650; }
+.td-card > span:last-child { color: var(--ui-text-muted); font-size: 12.5px; line-height: 1.45; }
+
+.td-rows {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 2px 12px;
+}
+.td .td-row {
+  display: flex;
+  min-height: 56px;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--ui-radius-md) !important;
+  background: none;
+  color: var(--ui-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--ui-duration) ease;
+}
+.td .td-row:hover { background: var(--ui-hover); }
+.td .td-row[aria-current="page"], .td .td-card[aria-current="page"] { background: var(--ui-accent-soft); }
+.td-row-icon {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex: none;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--ui-chip);
+  color: var(--ui-text);
+}
+.td-row-text { display: grid; min-width: 0; flex: 1; gap: 1px; }
+.td-row-text strong { font-size: 14px; font-weight: 600; }
+.td-row-text span { overflow: hidden; color: var(--ui-text-muted); font-size: 12.5px; text-overflow: ellipsis; white-space: nowrap; }
+.td-row-go { flex: none; color: var(--ui-text-faint); }
+
+/* ---------- Sheet (phone dock) ---------- */
+.td-is-sheet { gap: 18px; }
+.td-tiles {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px 6px;
+}
+.td .td-tile {
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  gap: 6px;
+  padding: 4px 0;
+  border: 0;
+  border-radius: 14px !important;
+  background: none;
+  color: var(--ui-text);
+  font: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.td-tile-icon {
+  display: grid;
+  width: 50px;
+  height: 50px;
+  place-items: center;
+  border-radius: 16px;
+  background: var(--ui-chip);
+  color: var(--ui-text);
+  transition: transform 180ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.td-tile-icon svg { width: 20px; height: 20px; }
+.td .td-tile:active .td-tile-icon { transform: scale(0.9); }
+.td .td-tile[aria-current="page"] .td-tile-icon { background: var(--ui-accent-soft); }
+.td-tile-label {
+  display: -webkit-box;
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.25;
+  text-align: center;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+@media (max-width: 640px) {
+  .td-page { padding: 22px 16px 40px; }
+  .td-popular { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .td .td-card { min-height: 104px; }
+  .td-rows { grid-template-columns: minmax(0, 1fr); }
+}

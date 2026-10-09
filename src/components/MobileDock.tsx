@@ -3,11 +3,12 @@
 // Shows below 760px and inside the native apps; hidden in full-screen editors.
 import { type ComponentType, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Bot, FolderOpen, Grid2x2, Plus, Sparkles } from "lucide-react";
-import { ALL_NAV_ENTRIES, CREATE_HOME_ENTRY, currentGroup, isCurrentEntry, navEntryFor, TOOL_NAV_GROUPS, type NavEntry, type NavTarget } from "../utils/appNavigation";
+import { ALL_NAV_ENTRIES, CREATE_HOME_ENTRY, currentGroup, isCurrentEntry, navEntryFor, type NavEntry, type NavTarget } from "../utils/appNavigation";
 import type { MainView, StudioTab, ToolId } from "../utils/tiktokRoute";
 import { nativePlatform } from "../native/platform";
 import { tapFeedback } from "../native/bootstrap";
 import { Dialog } from "./ui/Dialog";
+import { ToolsDirectory } from "./ToolsDirectory";
 import "./MobileDock.css";
 
 type SectionId = "create" | "projects" | "agents" | "tools";
@@ -72,6 +73,7 @@ export function quickToolsFor(view: MainView, studioTab?: StudioTab, toolId?: To
 
 export function sectionFor(view: MainView, studioTab?: StudioTab, toolId?: ToolId): SectionId | null {
   if (view === "projects" || view === "styles") return "projects";
+  if (view === "all-tools") return "tools";
   const group = currentGroup(view, studioTab, toolId);
   if (view === "automation" || group === "agents") return "agents";
   if (view === "tools" || view === "create" || view === "drama" || view === "vibe-edit" || ["image", "video", "film", "audio"].includes(group)) return "create";
@@ -153,7 +155,18 @@ export function MobileDock({ view, studioTab, toolId, onNavigate, hidden }: { vi
     };
   }, [trayOpen]);
 
-  if (hidden || HIDDEN_VIEWS.has(view)) return null;
+  // Tell the page the dock floats over it, so the page leaves room at its end.
+  const shown = !hidden && !HIDDEN_VIEWS.has(view);
+  useEffect(() => {
+    const html = document.documentElement;
+    if (shown) html.dataset.mobileDock = native ? "native" : "on";
+    else delete html.dataset.mobileDock;
+    return () => {
+      delete html.dataset.mobileDock;
+    };
+  }, [shown, native]);
+
+  if (!shown) return null;
 
   const go = (target: NavTarget) => {
     tapFeedback();
@@ -221,20 +234,18 @@ export function MobileDock({ view, studioTab, toolId, onNavigate, hidden }: { vi
         </button>
       </nav>
       {toolsOpen ? (
-        <Dialog title="Tools" description="Every tool, grouped" onClose={() => setToolsOpen(false)} size="md" className="mdock-tools">
-          {TOOL_NAV_GROUPS.map((group) => (
-            <section key={group.id} className="mdock-tools-group">
-              <h3>{group.label}</h3>
-              <div className="mdock-tools-grid">
-                {group.columns.flatMap((column) => column.entries).map((entry) => (
-                  <button key={entry.id} type="button" className="mdock-tool" aria-current={isCurrentEntry(entry, view, studioTab, toolId) ? "page" : undefined} onClick={() => go(entry.target)}>
-                    <span className="mdock-tool-icon">{entry.icon}</span>
-                    <span>{entry.label}</span>
-                  </button>
-                ))}
-              </div>
-            </section>
-          ))}
+        <Dialog
+          title="Tools"
+          onClose={() => setToolsOpen(false)}
+          size="lg"
+          className="mdock-tools"
+          footer={
+            <button type="button" className="ui-btn is-block" onClick={() => go({ view: "all-tools" })}>
+              See all tools
+            </button>
+          }
+        >
+          <ToolsDirectory variant="sheet" onNavigate={go} view={view} studioTab={studioTab} toolId={toolId} />
         </Dialog>
       ) : null}
     </div>

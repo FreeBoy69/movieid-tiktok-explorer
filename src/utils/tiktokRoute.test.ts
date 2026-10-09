@@ -18,7 +18,8 @@ function queryFor(href: string): URLSearchParams {
 describe("TikTok deep links", () => {
   it("opens Explore at the site root and links Explore back to it", () => {
     expect(readDeepLinkFromLocation("/", "")).toMatchObject({ view: "tools" });
-    expect(readDeepLinkFromLocation("/tools", "")).toMatchObject({ view: "tools" });
+    expect(readDeepLinkFromLocation("/tools", "")).toMatchObject({ view: "all-tools" });
+    expect(buildDeepLinkHref({ view: "all-tools" })).toBe("/tools");
     expect(readDeepLinkFromLocation("/", "?view=automation")).toMatchObject({ view: "automation" });
     expect(buildDeepLinkHref({ view: "tools" })).toBe("/");
     expect(readDeepLinkFromLocation("/studio/apps", "")).toMatchObject({ view: "tools" });
@@ -62,7 +63,7 @@ describe("TikTok deep links", () => {
 
   it("routes the Tools suite at /tools/<id> and sends old Layers Studio links to its first tool", () => {
     expect(readDeepLinkFromLocation("/tools/transcriber", "")).toMatchObject({ view: "tool", toolId: "transcriber" });
-    expect(readDeepLinkFromLocation("/tools/not-a-tool", "")).toMatchObject({ view: "tools" });
+    expect(readDeepLinkFromLocation("/tools/not-a-tool", "")).toMatchObject({ view: "all-tools" });
     expect(readDeepLinkFromLocation("/studio/layers", "")).toMatchObject({ view: "tool", toolId: "background-remover" });
     expect(buildDeepLinkHref({ view: "tool", toolId: "poster-finder" })).toBe("/tools/poster-finder");
     expect(buildDeepLinkHref({ view: "tool" })).toBe("/");

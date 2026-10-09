@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Activity, ArrowRight, AudioLines, Bot, ChevronDown, ChevronRight, Compass, Film, ImageIcon, LifeBuoy, Loader2, LogOut, Menu, Moon, PenLine, Search, SlidersHorizontal, Sun, Trash2, Users, Wrench, X, Youtube } from "lucide-react";
+import { Activity, ArrowRight, LayoutGrid, ChevronDown, ChevronRight, Film, LifeBuoy, Loader2, LogOut, Menu, Moon, Search, Sun, Trash2, Users } from "lucide-react";
 import { BillingOnboarding, BillingReturnVerifier, DeleteAccountDialog, SupportDialog, TokenSummary } from "./AccountServices";
-import { ALL_NAV_ENTRIES, isCurrentEntry, MENU_ONLY_NAV_IDS, PRIMARY_NAV_CHILDREN, PRIMARY_NAV_ENTRIES, TOOL_NAV_GROUPS, type NavEntry, type NavGroup, type NavTarget } from "../utils/appNavigation";
+import { ALL_NAV_ENTRIES, CREATE_HOME_ENTRY, isCurrentEntry, MENU_ONLY_NAV_IDS, PRIMARY_NAV_CHILDREN, PRIMARY_NAV_ENTRIES, TOOL_NAV_GROUPS, type NavEntry, type NavGroup, type NavTarget } from "../utils/appNavigation";
 import type { MainView, StudioTab, ToolId } from "../utils/tiktokRoute";
 import { JuelButton } from "./JuelPanel";
 import "./AppHeader.css";
@@ -408,19 +408,11 @@ function QuickSearch({ theme, onClose, onPick }: { theme: Theme; onClose: () => 
   );
 }
 
-const GROUP_ICONS: Record<string, ReactNode> = {
-  image: <ImageIcon size={18} strokeWidth={1.8} />,
-  video: <Film size={18} strokeWidth={1.8} />,
-  audio: <AudioLines size={18} strokeWidth={1.8} />,
-  "image-tools": <SlidersHorizontal size={18} strokeWidth={1.8} />,
-  research: <Compass size={18} strokeWidth={1.8} />,
-  tools: <Wrench size={18} strokeWidth={1.8} />,
-  writing: <PenLine size={18} strokeWidth={1.8} />,
-  agents: <Bot size={18} strokeWidth={1.8} />,
-  channels: <Youtube size={18} strokeWidth={1.8} />,
-};
+/** The phone menu: a left drawer with the account on top, the main destinations as a plain
+    icon list (Tools opens the /tools page), secondary links, and the theme at the foot. */
+const DRAWER_IDS = ["home", "image", "video", "create", "film", "audio", "projects", "automation", "channels"];
+const DRAWER_LABELS: Record<string, string> = { home: "Create", automation: "Agents", channels: "Channels", film: "Create Film" };
 
-/** The phone menu: one scrolling sheet with Studios, Tools, and the account at the foot. */
 function MobileMenu({ theme, view, studioTab, toolId, account, signedIn, onSignIn, onLogout, onSearch, onClose, onPick, onThemeChange }: {
   theme: Theme;
   view: MainView;
@@ -435,126 +427,59 @@ function MobileMenu({ theme, view, studioTab, toolId, account, signedIn, onSignI
   onPick: (target: NavTarget) => void;
   onThemeChange: (theme: Theme) => void;
 }) {
-  const current = (entry: NavEntry) => isCurrentEntry(entry, view, studioTab, toolId);
-  const activeGroup = TOOL_NAV_GROUPS.find((group) => group.columns.some((column) => column.entries.some(current)))?.id || "";
-  const activeParent = PRIMARY_NAV_ENTRIES.find((entry) => PRIMARY_NAV_CHILDREN[entry.id]?.some(current))?.id || "";
-  const [open, setOpen] = useState(activeParent || activeGroup);
-  const toggle = (id: string) => setOpen((value) => (value === id ? "" : id));
-  const groupEntries = (group: NavGroup) => group.columns.flatMap((column) => column.entries);
+  const entries = DRAWER_IDS.map((id) => (id === "home" ? CREATE_HOME_ENTRY : ALL_NAV_ENTRIES.find((entry) => entry.id === id))).filter((entry): entry is NavEntry => Boolean(entry));
+  const current = (entry: NavEntry) => (entry.id === "home" ? view === "tools" : isCurrentEntry(entry, view, studioTab, toolId));
+  const row = (key: string, icon: ReactNode, label: string, on: boolean, onClick: () => void) => (
+    <button key={key} type="button" className="ah-d-item" aria-current={on ? "page" : undefined} onClick={onClick}>
+      <span className="ah-d-icon">{icon}</span>
+      <span>{label}</span>
+    </button>
+  );
   return (
-    <Overlay theme={theme} onClose={onClose} className="is-mobile" label="Menu">
-      <div className="ah-m-head">
-        <span className="ah-logo"><img src={LOGO_SRC[theme]} alt="AutoYT" /></span>
-        <div className="ah-m-head-tools">
-          <button type="button" className="ah-icon" onClick={onSearch} aria-label="Search"><Search size={18} /></button>
-          <button type="button" className="ah-icon" onClick={onClose} aria-label="Close menu"><X size={18} /></button>
-        </div>
-      </div>
-      <div className="ah-m-body">
-        <button type="button" className="ah-m-search" onClick={onSearch}>
-          <Search size={16} aria-hidden="true" />
-          <span>Search every tool</span>
-        </button>
-
-        <section className="ah-m-section" aria-labelledby="ah-m-studios">
-          <h2 id="ah-m-studios" className="ah-m-label">Make</h2>
-          <div className="ah-m-list">
-            {PRIMARY_NAV_ENTRIES.map((entry) => {
-              const children = PRIMARY_NAV_CHILDREN[entry.id] || [];
-              const menuOnly = MENU_ONLY_NAV_IDS.has(entry.id);
-              const expanded = open === entry.id;
-              const isCurrent = current(entry) || children.some(current);
-              return (
-                <div key={entry.id} className="ah-m-row" data-open={expanded ? "true" : undefined}>
-                  <div className="ah-m-row-main">
-                    <button type="button" className="ah-m-item" aria-current={isCurrent ? "page" : undefined} aria-expanded={menuOnly ? expanded : undefined} onClick={() => (menuOnly ? toggle(entry.id) : onPick(entry.target))}>
-                      <span className="ah-m-icon">{entry.icon}</span>
-                      <span className="ah-m-item-text">
-                        <strong>{entry.label}</strong>
-                        <span>{menuOnly ? `${children.length} studios` : entry.description}</span>
-                      </span>
-                      {menuOnly ? <ChevronDown className="ah-m-chevron" size={18} aria-hidden="true" /> : <ChevronRight className="ah-m-chevron" size={18} aria-hidden="true" />}
-                    </button>
-                    {!menuOnly && children.length > 0 ? (
-                      <button type="button" className="ah-m-expand" aria-label={`${expanded ? "Hide" : "Show"} ${entry.label} options`} aria-expanded={expanded} onClick={() => toggle(entry.id)}>
-                        <ChevronDown size={18} aria-hidden="true" />
-                      </button>
-                    ) : null}
-                  </div>
-                  {expanded && children.length > 0 ? (
-                    <div className="ah-m-children">
-                      {children.map((child) => <EntryButton key={child.id} entry={child} current={current(child)} onPick={() => onPick(child.target)} />)}
-                    </div>
-                  ) : null}
-                </div>
-              );
-            })}
-          </div>
-        </section>
-
-        <section className="ah-m-section" aria-labelledby="ah-m-tools">
-          <h2 id="ah-m-tools" className="ah-m-label">Tools</h2>
-          <div className="ah-m-list">
-            {TOOL_NAV_GROUPS.map((group) => {
-              const entries = groupEntries(group);
-              const expanded = open === group.id;
-              return (
-                <div key={group.id} className="ah-m-row" data-open={expanded ? "true" : undefined}>
-                  <div className="ah-m-row-main">
-                    <button type="button" className="ah-m-item" aria-expanded={expanded} aria-current={activeGroup === group.id ? "page" : undefined} onClick={() => toggle(group.id)}>
-                      <span className="ah-m-icon">{GROUP_ICONS[group.id] || <Wrench size={18} strokeWidth={1.8} />}</span>
-                      <span className="ah-m-item-text">
-                        <strong>{group.label}</strong>
-                        <span>{entries.length} {entries.length === 1 ? "tool" : "tools"}</span>
-                      </span>
-                      <ChevronDown className="ah-m-chevron" size={18} aria-hidden="true" />
-                    </button>
-                  </div>
-                  {expanded ? (
-                    <div className="ah-m-children">
-                      {entries.map((entry) => <EntryButton key={entry.id} entry={entry} current={current(entry)} onPick={() => onPick(entry.target)} />)}
-                    </div>
-                  ) : null}
-                </div>
-              );
-            })}
-            <div className="ah-m-row">
-              <div className="ah-m-row-main">
-                <button type="button" className="ah-m-item is-link" onClick={() => onPick({ view: "tools" })}>
-                  <span className="ah-m-icon is-accent"><ArrowRight size={18} strokeWidth={2} /></span>
-                  <span className="ah-m-item-text"><strong>All tools</strong><span>Browse everything on one page</span></span>
-                  <ChevronRight className="ah-m-chevron" size={18} aria-hidden="true" />
-                </button>
-              </div>
-            </div>
-          </div>
-        </section>
-      </div>
-      <footer className="ah-m-foot">
+    <Overlay theme={theme} onClose={onClose} className="is-drawer" label="Menu">
+      <div className="ah-d-head">
         {signedIn ? (
-          <div className="ah-m-account">
-            <button type="button" className="ah-m-account-open" onClick={() => onPick({ view: "account" })} aria-label="Account settings">
-              <Avatar src={account.image} label={account.name} />
-              <span className="ah-m-item-text">
-                <strong>{account.name}</strong>
-                <span>{account.email}</span>
-              </span>
-            </button>
-            <button type="button" className="ah-icon" onClick={onLogout} aria-label="Log out" title="Log out"><LogOut size={17} /></button>
-          </div>
+          <button type="button" className="ah-d-profile" onClick={() => onPick({ view: "account" })}>
+            <Avatar src={account.image} label={account.name} />
+            <span className="ah-d-profile-text">
+              <strong>{account.name}</strong>
+              <span>View my account</span>
+            </span>
+          </button>
         ) : (
-          <button type="button" className="ah-get-started ah-m-signin" onClick={onSignIn}>Get started <ArrowRight size={15} aria-hidden="true" /></button>
+          <div className="ah-d-profile is-guest">
+            <span className="ah-logo"><img src={LOGO_SRC[theme]} alt="AutoYT" /></span>
+          </div>
         )}
-        <Segmented
-          label="Theme"
-          className="ah-m-theme"
-          value={theme}
-          onChange={(next) => onThemeChange(next as Theme)}
-          options={[
-            { value: "light", label: "Light", icon: <Sun size={15} aria-hidden="true" /> },
-            { value: "dark", label: "Dark", icon: <Moon size={15} aria-hidden="true" /> },
-          ]}
-        />
+        <button type="button" className="ah-icon" onClick={onSearch} aria-label="Search"><Search size={18} /></button>
+      </div>
+      <nav className="ah-d-body" aria-label="Main">
+        {entries.map((entry) => row(entry.id, entry.icon, DRAWER_LABELS[entry.id] || entry.label, current(entry), () => onPick(entry.target)))}
+        {row("all-tools", <LayoutGrid size={18} strokeWidth={1.8} />, "Tools", view === "all-tools" || view === "tool", () => onPick({ view: "all-tools" }))}
+        <hr className="ah-d-rule" />
+        <div className="ah-d-links">
+          <button type="button" onClick={() => onPick({ view: "docs" })}>Docs and guides</button>
+          {signedIn ? <button type="button" onClick={() => onPick({ view: "account" })}>Account settings</button> : null}
+          {signedIn ? <button type="button" onClick={() => onPick({ view: "account", accountSection: "billing" })}>Plan and billing</button> : null}
+          {signedIn ? <button type="button" onClick={onLogout}>Sign out</button> : null}
+        </div>
+      </nav>
+      <footer className="ah-d-foot">
+        {signedIn ? null : <button type="button" className="ah-get-started ah-d-signin" onClick={onSignIn}>Get started <ArrowRight size={15} aria-hidden="true" /></button>}
+        <div className="ah-d-foot-row">
+          <span className="ah-d-version">AutoYT</span>
+          <Segmented
+            label="Theme"
+            size="sm"
+            className="ah-d-theme"
+            value={theme}
+            onChange={(next) => onThemeChange(next as Theme)}
+            options={[
+              { value: "light", label: "Light", icon: <Sun size={14} aria-hidden="true" /> },
+              { value: "dark", label: "Dark", icon: <Moon size={14} aria-hidden="true" /> },
+            ]}
+          />
+        </div>
       </footer>
     </Overlay>
   );

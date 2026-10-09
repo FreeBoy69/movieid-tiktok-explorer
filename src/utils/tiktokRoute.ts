@@ -35,7 +35,7 @@
  *   /vibe-edit[/<project>]                 -> Vibe Edit, the chat-driven video editor
  */
 
-export const MAIN_VIEWS = ["tools", "tool", "movie", "downloader", "tiktok", "youtube", "niches", "feed", "channels", "publish", "compile", "automation", "rewriter", "voiceover", "tts", "prompts", "discover", "projects", "create", "styles", "drama", "products", "studio", "vibe-edit", "account", "docs"] as const;
+export const MAIN_VIEWS = ["tools", "all-tools", "tool", "movie", "downloader", "tiktok", "youtube", "niches", "feed", "channels", "publish", "compile", "automation", "rewriter", "voiceover", "tts", "prompts", "discover", "projects", "create", "styles", "drama", "products", "studio", "vibe-edit", "account", "docs"] as const;
 export type MainView = (typeof MAIN_VIEWS)[number];
 export const ACCOUNT_SECTIONS = ["profile", "billing", "usage", "channels", "telegram", "developers", "security"] as const;
 export type AccountSection = (typeof ACCOUNT_SECTIONS)[number];
@@ -234,7 +234,7 @@ export function readDeepLinkFromLocation(pathname: string, search = ""): TikTokD
   if (pathParts[0] === "docs") return { view: "docs", ...(pathParts[1] && /^[a-z0-9-]{1,60}$/.test(pathParts[1]) ? { docsPage: pathParts[1] } : {}) };
   if (pathParts[0] === "tools") {
     if (isToolId(pathParts[1])) return { view: "tool", toolId: pathParts[1] };
-    return { view: "tools" };
+    return { view: "all-tools" };
   }
 
   if (pathParts[0] === "movie") {
@@ -458,6 +458,7 @@ export function buildDeepLinkHref(link: TikTokDeepLink): string {
   }
 
   if (link.view === "tools") return "/";
+  if (link.view === "all-tools") return "/tools";
   if (link.view === "tool") return link.toolId ? `/tools/${link.toolId}` : "/";
   if (link.view === "downloader") return "/downloader";
   if (link.view === "movie") return "/movie";
