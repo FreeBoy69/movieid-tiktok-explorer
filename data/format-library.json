@@ -1,0 +1,3310 @@
+[
+ {
+  "id": "documentary-deep-dive",
+  "name": "Documentary deep dive (TV-paced)",
+  "category": "Long-form narrative",
+  "summary": "A researched, cinematic 25-60 minute story about one company, person, event or scandal, built to be watched on a TV.",
+  "structure": [
+   {
+    "beat": "Cold open",
+    "seconds": "0-60",
+    "what": "Drop into the most dramatic moment of the story, then cut to title."
+   },
+   {
+    "beat": "Stakes and question",
+    "seconds": "60-180",
+    "what": "State the central question the film answers and why it matters now."
+   },
+   {
+    "beat": "Act 1: origins",
+    "seconds": "180-600",
+    "what": "Backstory with archive footage, maps, documents and interviews."
+   },
+   {
+    "beat": "Act 2: escalation",
+    "seconds": "600-1500",
+    "what": "Turning points and reversals; a mid-film reveal around the halfway mark."
+   },
+   {
+    "beat": "Act 3: fallout",
+    "seconds": "1500-2100",
+    "what": "Consequences, what happened to the people, the present day."
+   },
+   {
+    "beat": "Takeaway",
+    "seconds": "2100-2400",
+    "what": "What it means; tease the next episode or a related film."
+   }
+  ],
+  "length": "25-60 min",
+  "aspect": "16:9",
+  "faceless": false,
+  "productionLoad": "High",
+  "titlePatterns": [
+   "The Rise and Fall of [Company]",
+   "How [Person] Fooled [Group]",
+   "The [Adjective] Collapse of [Thing]",
+   "Why [Place] Is [Surprising State]"
+  ],
+  "hookTemplates": [
+   "On [date], [person] made a decision that would cost [number] people everything.",
+   "This is the story of how [thing] went from [peak] to [ruin] in [timeframe]."
+  ],
+  "thumbnailPattern": "One iconic subject photo or object, high contrast, two to four words or none, readable from ten feet away.",
+  "bestNiches": [
+   "business",
+   "tech",
+   "geopolitics",
+   "sports history",
+   "internet culture"
+  ],
+  "retentionTips": [
+   "Slower pacing is fine on TV but each act must open a new question.",
+   "Invest in clean audio; TV viewers notice it.",
+   "Use chapters so living-room viewers can resume.",
+   "Plant the mid-film reveal before minute 15."
+  ],
+  "trend": "rising",
+  "trendNote": "Over half of US YouTube watch time is on TV; Paddy Galloway says TV rewards 20+ minute, slower, higher-production videos in 2026, and average long-form length is up 51% since 2020. PBS launched a dedicated documentaries channel on YouTube in March 2026.",
+  "monetizationRisk": "Low",
+  "riskNote": "Low if you write and voice it; footage-heavy faceless versions with TTS fall into the inauthentic bucket.",
+  "examples": [
+   {
+    "channel": "@magnatesmedia",
+    "note": "business rise-and-fall documentaries",
+    "subscribers": 1860000
+   },
+   {
+    "channel": "@johnnyharris",
+    "note": "on-camera, map-heavy geopolitical investigations",
+    "subscribers": 7970000
+   }
+  ],
+  "sourceRefs": [
+   "https://www.kidelight.com/2026/10/why-50-of-youtube-watch-time-is-on-your.html",
+   "https://blog.youtube/news-and-events/made-on-youtube-creators-shorts-series-tv-features/",
+   "https://www.colinandsamir.com/resources/the-new-rules-of-youtube-from-paddy-galloway"
+  ]
+ },
+ {
+  "id": "true-crime-case-narration",
+  "name": "True crime case narration",
+  "category": "Long-form narrative",
+  "summary": "One case told chronologically, from the first call to the verdict, with evidence and interrogation footage.",
+  "structure": [
+   {
+    "beat": "Hook",
+    "seconds": "0-30",
+    "what": "The most unsettling detail of the case, out of order."
+   },
+   {
+    "beat": "Setting",
+    "seconds": "30-180",
+    "what": "Who the victim and suspect were; place and date."
+   },
+   {
+    "beat": "Investigation",
+    "seconds": "180-900",
+    "what": "Evidence, timelines, bodycam or interrogation clips with analysis."
+   },
+   {
+    "beat": "Twist",
+    "seconds": "900-1300",
+    "what": "The detail that changed the case."
+   },
+   {
+    "beat": "Resolution",
+    "seconds": "1300-1600",
+    "what": "Verdict, sentencing, open questions."
+   }
+  ],
+  "length": "20-45 min",
+  "aspect": "16:9",
+  "faceless": true,
+  "productionLoad": "Medium",
+  "titlePatterns": [
+   "The [Adjective] Case of [Name]",
+   "[Suspect] Didn't Realize [Detail] Was Recorded",
+   "What Really Happened to [Victim]"
+  ],
+  "hookTemplates": [
+   "The 911 call lasted [N] seconds. What the caller didn't say is what solved it.",
+   "Detectives had one piece of evidence. It was enough."
+  ],
+  "thumbnailPattern": "Suspect or location photo with one red-circled detail and a three-word caption.",
+  "bestNiches": [
+   "true crime",
+   "legal",
+   "mysteries"
+  ],
+  "retentionTips": [
+   "Reveal the timeline in layers rather than all at once.",
+   "Add analysis between footage segments, not just narration.",
+   "Avoid sensational shock framing, which the 2026 'off-putting content' category targets."
+  ],
+  "trend": "stable",
+  "trendNote": "True crime is among the fastest-growing niches by subscriber growth rate (1.34% in a 30-day window to Oct 2026, per AIR Media-Tech) but is a mature, crowded format.",
+  "monetizationRisk": "Medium",
+  "riskNote": "Graphic content gets limited ads; reused bodycam with thin narration risks reused-content review.",
+  "examples": [
+   {
+    "channel": "@mrballen",
+    "note": "on-camera storyteller format for strange, dark and mysterious cases",
+    "subscribers": 11300000
+   }
+  ],
+  "sourceRefs": [
+   "https://air.io/en/audience-growth/whos-growing-fastest-on-youtube-and-which-niches-are-hot-in-2025",
+   "https://www.tubefilter.com/2026/07/13/youtube-inauthentic-content-monetization-policy-update/"
+  ]
+ },
+ {
+  "id": "revenge-betrayal-story-narration",
+  "name": "Revenge and betrayal story narration (long)",
+  "category": "Long-form narrative",
+  "summary": "A 20-60 minute narrated first-person family or workplace betrayal story with a satisfying comeuppance.",
+  "structure": [
+   {
+    "beat": "Hook",
+    "seconds": "0-30",
+    "what": "The betrayal in one line ('My son sold my house while I was in hospital')."
+   },
+   {
+    "beat": "Setup",
+    "seconds": "30-300",
+    "what": "Who the narrator is, what they built, who the antagonist is."
+   },
+   {
+    "beat": "Escalation",
+    "seconds": "300-1200",
+    "what": "Three or four rising insults or schemes."
+   },
+   {
+    "beat": "Turn",
+    "seconds": "1200-1800",
+    "what": "The narrator discovers leverage: a document, a will, a recording."
+   },
+   {
+    "beat": "Payoff",
+    "seconds": "1800-2400",
+    "what": "Public comeuppance, then a quiet closing reflection."
+   }
+  ],
+  "length": "20-60 min",
+  "aspect": "16:9",
+  "faceless": true,
+  "productionLoad": "Low",
+  "titlePatterns": [
+   "My [Relative] [Betrayal]... So I [Revenge]",
+   "They Laughed When I [Action]. Then the Lawyer Read the Will.",
+   "At [Event], My [Relative] Said [Insult]. I Smiled."
+  ],
+  "hookTemplates": [
+   "The day after the funeral, my daughter-in-law changed the locks.",
+   "They thought I didn't know about the second account."
+  ],
+  "thumbnailPattern": "A stock or illustrated older narrator with a shocked antagonist, plus one quoted line of dialogue.",
+  "bestNiches": [
+   "family drama",
+   "workplace drama",
+   "inheritance stories"
+  ],
+  "retentionTips": [
+   "Write original stories, not lightly reworded Reddit posts.",
+   "Give the narrator a recurring voice and persona across episodes.",
+   "Escalate every 3-5 minutes."
+  ],
+  "trend": "rising",
+  "trendNote": "OutlierKit tracks betrayal/revenge storytelling at 21x year-over-year growth, and its September 2026 drama report lists AI-narrated revenge stories as one of the four fastest-growing drama sub-niches, aimed at US adults 25-54.",
+  "monetizationRisk": "High",
+  "riskNote": "This is the exact 'templated storylines' pattern that YouTube's July 2026 clarification names; a channel full of interchangeable TTS stories is likely to be demonetized.",
+  "examples": [
+   {
+    "channel": "@charlottedobre",
+    "note": "on-camera reading and reacting to family-drama stories, which counts as transformative",
+    "subscribers": 2620000
+   },
+   {
+    "channel": "@rslash",
+    "note": "curated Reddit drama with human editorial voice",
+    "subscribers": 1850000
+   }
+  ],
+  "sourceRefs": [
+   "https://outlierkit.com/blog/trending-niches-on-youtube",
+   "https://outlierkit.com/resources/youtube-drama-trends-2026/",
+   "https://www.tubefilter.com/2026/07/13/youtube-inauthentic-content-monetization-policy-update/"
+  ]
+ },
+ {
+  "id": "analog-horror-web-series",
+  "name": "Analog horror and found-footage web series",
+  "category": "Long-form narrative",
+  "summary": "A serialized fictional horror world told through fake archival tapes, building lore across episodes.",
+  "structure": [
+   {
+    "beat": "Cold open",
+    "seconds": "0-20",
+    "what": "Static, timestamp, an innocuous scene that is slightly wrong."
+   },
+   {
+    "beat": "Artifact",
+    "seconds": "20-240",
+    "what": "The 'found' tape or broadcast plays out in real time."
+   },
+   {
+    "beat": "Break",
+    "seconds": "240-360",
+    "what": "The anomaly appears; the camera keeps rolling."
+   },
+   {
+    "beat": "Lore drop",
+    "seconds": "360-480",
+    "what": "A clue that connects to earlier episodes."
+   },
+   {
+    "beat": "End card",
+    "seconds": "480-540",
+    "what": "Unsettling text card; no explanation."
+   }
+  ],
+  "length": "3-15 min per episode",
+  "aspect": "16:9",
+  "faceless": true,
+  "productionLoad": "High",
+  "titlePatterns": [
+   "[Codename] - Found Footage ([Year])",
+   "[Company] Training Video #[N]",
+   "The [Place] Tapes: Part [N]"
+  ],
+  "hookTemplates": [
+   "(No spoken hook: a timestamp and an empty corridor)",
+   "This tape was recovered from [place] in [year]."
+  ],
+  "thumbnailPattern": "A grainy VHS frame of a liminal space with a tiny wrong detail, no text.",
+  "bestNiches": [
+   "horror",
+   "sci-fi",
+   "internet mysteries",
+   "ARG"
+  ],
+  "retentionTips": [
+   "Hide clues for commenters to decode; lore drives rewatches.",
+   "Keep episodes short and frequent; the series is the product.",
+   "Use Shorts series or playlists so viewers binge in order."
+  ],
+  "trend": "rising",
+  "trendNote": "Kane Parsons' YouTube Backrooms series became the A24 film Backrooms (May 2026), A24's highest-grossing film at about $402M; YouTube's September 2026 Culture & Trends report uses it as the model for niche-to-mainstream.",
+  "monetizationRisk": "Low",
+  "riskNote": "Original fiction; only risk is age-restriction on gore.",
+  "examples": [
+   {
+    "channel": "@kanepixels",
+    "note": "Backrooms found-footage series",
+    "subscribers": 3670000
+   }
+  ],
+  "sourceRefs": [
+   "https://en.wikipedia.org/wiki/Backrooms_(film)",
+   "https://blog.youtube/culture-and-trends/youtube-culture-trends-modern-mainstream-research/"
+  ]
+ },
+ {
+  "id": "creator-tv-show-seasons",
+  "name": "Creator TV show in seasons",
+  "category": "Long-form narrative",
+  "summary": "A recurring branded show with a fixed premise, host and guests, released as numbered episodes and seasons like TV.",
+  "structure": [
+   {
+    "beat": "Cold open",
+    "seconds": "0-45",
+    "what": "Best moment of the episode as a teaser."
+   },
+   {
+    "beat": "Title and premise",
+    "seconds": "45-90",
+    "what": "Show open, recurring intro and today's guest or mission."
+   },
+   {
+    "beat": "Segment 1",
+    "seconds": "90-900",
+    "what": "Main activity: cooking, challenge, interview."
+   },
+   {
+    "beat": "Segment 2",
+    "seconds": "900-1800",
+    "what": "Escalation or second recurring segment."
+   },
+   {
+    "beat": "Recurring closer",
+    "seconds": "1800-2100",
+    "what": "Signature ending ritual; next episode tease."
+   }
+  ],
+  "length": "20-60 min",
+  "aspect": "16:9",
+  "faceless": false,
+  "productionLoad": "High",
+  "titlePatterns": [
+   "[Show Name] ft. [Guest]",
+   "[Show Name] S[N] E[N]: [Mission]",
+   "I Tried [Job] for a Week | [Show Name]"
+  ],
+  "hookTemplates": [
+   "Welcome back to [Show]. Today [guest] has [constraint].",
+   "Season [N], episode [N]: this one went wrong fast."
+  ],
+  "thumbnailPattern": "Host plus guest in the show's fixed visual frame, with the show logo in the same corner every time.",
+  "bestNiches": [
+   "food",
+   "celebrity",
+   "challenges",
+   "comedy"
+  ],
+  "retentionTips": [
+   "Keep a fixed segment order so returning viewers know what is coming.",
+   "Use the Creator Shows / seasons tooling so TV viewers get sequential playback.",
+   "Guests bring audiences; tag them with Collabs."
+  ],
+  "trend": "rising",
+  "trendNote": "YouTube's trends reporting cites Quenlin Blackwell's 'Feeding Starving Celebrities' growing from 10-minute slots to hour-long episodes; TechCrunch notes Michelle Khare and Rhett & Link using Creator Shows seasons (Sept 2026).",
+  "monetizationRisk": "Low",
+  "riskNote": "Fully original, on camera.",
+  "examples": [
+   {
+    "channel": "@michellekhare",
+    "note": "Challenge Accepted, a season-based show",
+    "subscribers": 5500000
+   },
+   {
+    "channel": "@goodmythicalmorning",
+    "note": "daily talk/game show with fixed segments",
+    "subscribers": 19800000
+   }
+  ],
+  "sourceRefs": [
+   "https://www.epidemicsound.com/blog/youtube-trends-2026/",
+   "https://techcrunch.com/2026/09/23/youtubes-new-short-series-feature-brings-episodic-viewing-to-shorts/"
+  ]
+ },
+ {
+  "id": "day-in-the-life-historical",
+  "name": "A day in the life of a [historical person]",
+  "category": "Long-form narrative",
+  "summary": "An hour-by-hour walk through an ordinary person's day in another era: food, work, hygiene and danger.",
+  "structure": [
+   {
+    "beat": "Hook",
+    "seconds": "0-20",
+    "what": "A visceral detail ('You wake at 4am on a straw mattress full of lice')."
+   },
+   {
+    "beat": "Morning",
+    "seconds": "20-180",
+    "what": "Waking, dressing, breakfast and why."
+   },
+   {
+    "beat": "Work",
+    "seconds": "180-420",
+    "what": "Labor, money and social rules."
+   },
+   {
+    "beat": "Danger",
+    "seconds": "420-600",
+    "what": "Disease, law, violence: the part people remember."
+   },
+   {
+    "beat": "Night",
+    "seconds": "600-720",
+    "what": "Evening, entertainment, sleep."
+   },
+   {
+    "beat": "Reflection",
+    "seconds": "720-780",
+    "what": "Would you survive? Prompt for comments."
+   }
+  ],
+  "length": "10-20 min",
+  "aspect": "16:9",
+  "faceless": true,
+  "productionLoad": "Medium",
+  "titlePatterns": [
+   "A Day in the Life of a [Role] in [Era]",
+   "What It Was Like to Be a [Role] in [Place]",
+   "Would You Survive a Day as a [Role]?"
+  ],
+  "hookTemplates": [
+   "Congratulations, you were just born a [role] in [year]. Here's your day.",
+   "By sunrise, a [role] had already done more work than you do all week."
+  ],
+  "thumbnailPattern": "An illustrated or AI-assisted figure in period costume with one gross or dangerous object highlighted.",
+  "bestNiches": [
+   "history",
+   "anthropology",
+   "military history"
+  ],
+  "retentionTips": [
+   "Use second person ('you') throughout.",
+   "Cite sources on screen; AI history visuals are drawing accuracy criticism.",
+   "Close each section with a cliffhanger fact."
+  ],
+  "trend": "stable",
+  "trendNote": "Evergreen long-form; its Shorts cousin (AI time-traveller POV) exploded in 2025-26, feeding interest back to long versions.",
+  "monetizationRisk": "Medium",
+  "riskNote": "AI stills plus TTS in a fixed template invites 'generic or repetitive' review; original research and voice keep it safe.",
+  "examples": [
+   {
+    "channel": "@theinfographicsshow",
+    "note": "animated 'day in the life' and what-if episodes",
+    "subscribers": 15500000
+   }
+  ],
+  "sourceRefs": [
+   "https://www.autoclips.app/ai-history-pov-videos",
+   "https://www.tubefilter.com/2026/07/13/youtube-inauthentic-content-monetization-policy-update/"
+  ]
+ },
+ {
+  "id": "video-essay",
+  "name": "Video essay",
+  "category": "Long-form narrative",
+  "summary": "An argued, personal analysis of a film, game, trend or idea, with a thesis the viewer can disagree with.",
+  "structure": [
+   {
+    "beat": "Hook",
+    "seconds": "0-60",
+    "what": "A provocative claim or a specific scene."
+   },
+   {
+    "beat": "Thesis",
+    "seconds": "60-180",
+    "what": "What this essay argues and why it matters."
+   },
+   {
+    "beat": "Evidence chapters",
+    "seconds": "180-1800",
+    "what": "Three to five chapters, each a mini-argument with clips."
+   },
+   {
+    "beat": "Counterargument",
+    "seconds": "1800-2200",
+    "what": "Steelman the other side."
+   },
+   {
+    "beat": "Conclusion",
+    "seconds": "2200-2500",
+    "what": "Restate the thesis with a new emotional beat."
+   }
+  ],
+  "length": "25-90 min",
+  "aspect": "16:9",
+  "faceless": false,
+  "productionLoad": "High",
+  "titlePatterns": [
+   "Why [Thing] Doesn't Work Anymore",
+   "[Thing] Is [Bold Claim]",
+   "The Problem With [Popular Thing]"
+  ],
+  "hookTemplates": [
+   "There's a scene in [work] that explains everything wrong with [industry].",
+   "Everyone says [common belief]. I think the opposite is true."
+  ],
+  "thumbnailPattern": "A single well-known image with an odd edit or a short bold claim in two to three words.",
+  "bestNiches": [
+   "film",
+   "games",
+   "internet culture",
+   "philosophy"
+  ],
+  "retentionTips": [
+   "Use chapters; long essays are watched in sessions on TV.",
+   "Keep commentary-to-clip ratio high for fair use and reused-content safety.",
+   "Each chapter should end on a question."
+  ],
+  "trend": "stable",
+  "trendNote": "Videos 15+ minutes make up a small share of uploads but a large share of engagement, and TV viewing favors them; the format is mature rather than surging.",
+  "monetizationRisk": "Low",
+  "riskNote": "Transformative by design; risk only from Content ID on long clips.",
+  "examples": [
+   {
+    "channel": "@hbomberguy",
+    "note": "multi-hour investigative essays",
+    "subscribers": 1880000
+   },
+   {
+    "channel": "@lemmino",
+    "note": "meticulous mystery and history essays",
+    "subscribers": 5920000
+   }
+  ],
+  "sourceRefs": [
+   "https://www.kidelight.com/2026/10/why-50-of-youtube-watch-time-is-on-your.html",
+   "https://www.colinandsamir.com/resources/the-new-rules-of-youtube-from-paddy-galloway"
+  ]
+ },
+ {
+  "id": "what-happens-if",
+  "name": "What happens if / What if",
+  "category": "Long-form explainer",
+  "summary": "A hypothetical scenario followed step by step through its consequences, from minute one to centuries later.",
+  "structure": [
+   {
+    "beat": "Premise",
+    "seconds": "0-20",
+    "what": "State the hypothetical with one vivid image."
+   },
+   {
+    "beat": "First seconds",
+    "seconds": "20-120",
+    "what": "Immediate physical effects."
+   },
+   {
+    "beat": "Days to years",
+    "seconds": "120-420",
+    "what": "Cascading consequences for people and systems."
+   },
+   {
+    "beat": "Escalation",
+    "seconds": "420-600",
+    "what": "The surprising second-order effect."
+   },
+   {
+    "beat": "Long view",
+    "seconds": "600-720",
+    "what": "Centuries later; what it says about our world now."
+   }
+  ],
+  "length": "8-15 min",
+  "aspect": "both",
+  "faceless": true,
+  "productionLoad": "Medium",
+  "titlePatterns": [
+   "What If [X] Disappeared Tomorrow?",
+   "What Happens If You [Extreme Action]?",
+   "What If [Historical Event] Never Happened?"
+  ],
+  "hookTemplates": [
+   "In the next 60 seconds, every [thing] on Earth vanishes. Here's what happens.",
+   "If you [action], your body has about [N] seconds."
+  ],
+  "thumbnailPattern": "Familiar object or planet in an impossible state, with a short question.",
+  "bestNiches": [
+   "science",
+   "space",
+   "history",
+   "biology"
+  ],
+  "retentionTips": [
+   "Use a visible timeline counter so viewers know how far in they are.",
+   "Each step should be more surprising than the last.",
+   "Cut a 60-90 s Shorts version of the most shocking step."
+  ],
+  "trend": "stable",
+  "trendNote": "Evergreen curiosity format; Shorts versions benefit from 90-second dense-narrative Shorts doing well.",
+  "monetizationRisk": "Medium",
+  "riskNote": "Easy to template with AI; vary visuals and research per episode.",
+  "examples": [
+   {
+    "channel": "@theinfographicsshow",
+    "note": "animated what-if scenarios",
+    "subscribers": 15500000
+   },
+   {
+    "channel": "@kurzgesagt",
+    "note": "science what-ifs with high-end animation",
+    "subscribers": 25700000
+   }
+  ],
+  "sourceRefs": [
+   "https://miraflow.ai/blog/youtube-trends-rest-of-2026",
+   "https://www.tubefilter.com/2026/07/13/youtube-inauthentic-content-monetization-policy-update/"
+  ]
+ },
+ {
+  "id": "iceberg-explained",
+  "name": "Iceberg explained",
+  "category": "Long-form explainer",
+  "summary": "A tier-by-tier descent through an iceberg chart, from known facts at the top to the most obscure at the bottom.",
+  "structure": [
+   {
+    "beat": "Hook",
+    "seconds": "0-45",
+    "what": "Show the full iceberg and tease the darkest entry."
+   },
+   {
+    "beat": "Tier 1",
+    "seconds": "45-600",
+    "what": "Well-known entries, quick."
+   },
+   {
+    "beat": "Middle tiers",
+    "seconds": "600-3000",
+    "what": "Stranger entries with longer stories."
+   },
+   {
+    "beat": "Bottom tiers",
+    "seconds": "3000-5000",
+    "what": "Obscure or unverified entries, with caveats."
+   },
+   {
+    "beat": "Wrap",
+    "seconds": "5000-5400",
+    "what": "Reflection; invite next iceberg suggestions."
+   }
+  ],
+  "length": "45 min - 4 h",
+  "aspect": "16:9",
+  "faceless": false,
+  "productionLoad": "Medium",
+  "titlePatterns": [
+   "The [Topic] Iceberg Explained",
+   "The COMPLETE [Year] [Topic] Iceberg",
+   "[Topic] Iceberg: Every Tier"
+  ],
+  "hookTemplates": [
+   "Everyone knows the top of this iceberg. Almost nobody has heard of the bottom.",
+   "Tier one is trivia. Tier seven is why this video is age-restricted."
+  ],
+  "thumbnailPattern": "The iceberg graphic with a glowing or redacted bottom tier.",
+  "bestNiches": [
+   "conspiracies",
+   "internet mysteries",
+   "film",
+   "games",
+   "history"
+  ],
+  "retentionTips": [
+   "Show your position on the iceberg at all times.",
+   "Use chapters per tier for TV viewers.",
+   "Debunk where needed, which builds trust and avoids misinformation strikes."
+  ],
+  "trend": "stable",
+  "trendNote": "Long-running format; 2026 uploads like a four-hour conspiracy iceberg still pull views, and multi-hour runtimes suit TV.",
+  "monetizationRisk": "Low",
+  "riskNote": "Original commentary; watch for misinformation policies on conspiracy topics.",
+  "examples": [
+   {
+    "channel": "@wendigoon",
+    "note": "popularized iceberg-explained deep dives",
+    "subscribers": 4730000
+   }
+  ],
+  "sourceRefs": [
+   "https://www.kidelight.com/2026/10/why-50-of-youtube-watch-time-is-on-your.html"
+  ]
+ },
+ {
+  "id": "n-levels-of-difficulty",
+  "name": "Explaining X in N levels of difficulty",
+  "category": "Long-form explainer",
+  "summary": "An expert explains one concept to a child, a teen, a student, a grad student and a peer.",
+  "structure": [
+   {
+    "beat": "Intro",
+    "seconds": "0-40",
+    "what": "The expert and the concept."
+   },
+   {
+    "beat": "Level 1: child",
+    "seconds": "40-240",
+    "what": "Plain-language analogy."
+   },
+   {
+    "beat": "Level 2-3",
+    "seconds": "240-720",
+    "what": "Teen and undergrad add mechanism."
+   },
+   {
+    "beat": "Level 4",
+    "seconds": "720-1080",
+    "what": "Grad student: open problems."
+   },
+   {
+    "beat": "Level 5: peer",
+    "seconds": "1080-1500",
+    "what": "Expert-to-expert debate."
+   }
+  ],
+  "length": "15-30 min",
+  "aspect": "16:9",
+  "faceless": false,
+  "productionLoad": "High",
+  "titlePatterns": [
+   "[Expert] Explains [Concept] in 5 Levels of Difficulty",
+   "[Concept] Explained at Every Level",
+   "I Explained [Concept] to a 5-Year-Old and a PhD"
+  ],
+  "hookTemplates": [
+   "I'm going to explain [concept] five times, each harder than the last.",
+   "Level one is a kid. Level five has a Nobel nomination."
+  ],
+  "thumbnailPattern": "Split frame of the expert and a child, numbered level badges.",
+  "bestNiches": [
+   "science",
+   "tech",
+   "music",
+   "finance",
+   "AI"
+  ],
+  "retentionTips": [
+   "Viewers drop in at their level, so chapter each level.",
+   "Cast real people; chemistry carries it.",
+   "Clip level 1 as a Short."
+  ],
+  "trend": "stable",
+  "trendNote": "Long-running WIRED franchise (about 25 min average); widely adapted by smaller educators.",
+  "monetizationRisk": "Low",
+  "riskNote": "Original, on camera.",
+  "examples": [
+   {
+    "channel": "@wired",
+    "note": "the original 5 Levels series",
+    "subscribers": 13000000
+   }
+  ],
+  "sourceRefs": [
+   "https://www.kidelight.com/2026/10/why-50-of-youtube-watch-time-is-on-your.html"
+  ]
+ },
+ {
+  "id": "map-animation-history",
+  "name": "Map animation history",
+  "category": "Long-form explainer",
+  "summary": "Borders, empires and wars animated year by year on a map, narrated or set to music.",
+  "structure": [
+   {
+    "beat": "Hook",
+    "seconds": "0-15",
+    "what": "Start map with a question ('How did a tiny state become an empire?')."
+   },
+   {
+    "beat": "Starting state",
+    "seconds": "15-90",
+    "what": "The world or region at year zero."
+   },
+   {
+    "beat": "Expansion",
+    "seconds": "90-600",
+    "what": "Year counter running; key battles zoomed."
+   },
+   {
+    "beat": "Collapse or turn",
+    "seconds": "600-900",
+    "what": "The pivot event."
+   },
+   {
+    "beat": "Present",
+    "seconds": "900-1080",
+    "what": "Today's map; what remains."
+   }
+  ],
+  "length": "5-30 min",
+  "aspect": "both",
+  "faceless": true,
+  "productionLoad": "Medium",
+  "titlePatterns": [
+   "The History of [Region]: Every Year",
+   "How [Empire] Conquered [Area] (Animated)",
+   "Why [Country] Has Such Weird Borders"
+  ],
+  "hookTemplates": [
+   "In [year], [country] didn't exist. Watch.",
+   "This map changes [N] times in the next ten minutes."
+  ],
+  "thumbnailPattern": "A colored map with an arrow and one bold year.",
+  "bestNiches": [
+   "history",
+   "geography",
+   "geopolitics"
+  ],
+  "retentionTips": [
+   "Keep a year counter on screen.",
+   "Zoom into battles; static maps lose viewers.",
+   "Vertical cuts of single wars work as Shorts."
+  ],
+  "trend": "stable",
+  "trendNote": "Long-established 'every year' format; history is one of the dense-narrative niches where longer Shorts now perform.",
+  "monetizationRisk": "Medium",
+  "riskNote": "Fine with original maps and narration; music-only repetitive uploads risk repetitive-content review.",
+  "examples": [
+   {
+    "channel": "@emperortigerstar",
+    "note": "every-year map timelapses",
+    "subscribers": 569000
+   }
+  ],
+  "sourceRefs": [
+   "https://miraflow.ai/blog/youtube-trends-rest-of-2026"
+  ]
+ },
+ {
+  "id": "animated-science-explainer",
+  "name": "Animated science explainer",
+  "category": "Long-form explainer",
+  "summary": "A beautifully animated, tightly scripted answer to one big science or philosophy question.",
+  "structure": [
+   {
+    "beat": "Question",
+    "seconds": "0-30",
+    "what": "A simple question with a surprising answer."
+   },
+   {
+    "beat": "Foundation",
+    "seconds": "30-180",
+    "what": "The basics needed to follow."
+   },
+   {
+    "beat": "Core idea",
+    "seconds": "180-480",
+    "what": "The mechanism, with visual metaphor."
+   },
+   {
+    "beat": "Twist",
+    "seconds": "480-600",
+    "what": "The implication nobody expects."
+   },
+   {
+    "beat": "Meaning",
+    "seconds": "600-720",
+    "what": "What it means for us."
+   }
+  ],
+  "length": "8-15 min",
+  "aspect": "16:9",
+  "faceless": true,
+  "productionLoad": "High",
+  "titlePatterns": [
+   "What Is [Phenomenon], Really?",
+   "Why [Everyday Thing] Is Actually [Surprising]",
+   "The [Superlative] Thing in the Universe"
+  ],
+  "hookTemplates": [
+   "Right now, [N] [things] are passing through your body.",
+   "This is the most [adjective] thing we know about."
+  ],
+  "thumbnailPattern": "A signature illustration style with a single central object.",
+  "bestNiches": [
+   "science",
+   "space",
+   "health",
+   "philosophy"
+  ],
+  "retentionTips": [
+   "A consistent art style is your brand.",
+   "Use dubbing; animation travels across languages (half of animation fans watch outside their own language).",
+   "Fact-check in description; trust is the moat."
+  ],
+  "trend": "stable",
+  "trendNote": "YouTube's April 2026 animation report: 61% of Gen Z animation fans prefer independent YouTube animation equally or more than studio work, and 50% watch in other languages, which suits auto-dubbing.",
+  "monetizationRisk": "Low",
+  "riskNote": "Original animation and scripts.",
+  "examples": [
+   {
+    "channel": "@kurzgesagt",
+    "note": "flagship animated science explainers",
+    "subscribers": 25700000
+   }
+  ],
+  "sourceRefs": [
+   "https://blog.youtube/culture-and-trends/independent-animation-trends-report/",
+   "https://winbuzzer.com/2026/02/05/youtube-ai-auto-dubbing-all-creators-27-languages-xcxwbn/"
+  ]
+ },
+ {
+  "id": "lore-and-theory-explained",
+  "name": "Lore and fan theory explained",
+  "category": "Long-form explainer",
+  "summary": "The full timeline or a bold theory about a game, show or meme universe, built from in-world clues.",
+  "structure": [
+   {
+    "beat": "Hook",
+    "seconds": "0-30",
+    "what": "A clue most fans missed."
+   },
+   {
+    "beat": "Recap",
+    "seconds": "30-240",
+    "what": "What the official story says."
+   },
+   {
+    "beat": "Evidence",
+    "seconds": "240-900",
+    "what": "Clue-by-clue build with screenshots."
+   },
+   {
+    "beat": "Theory",
+    "seconds": "900-1200",
+    "what": "The claim, stated plainly."
+   },
+   {
+    "beat": "Open question",
+    "seconds": "1200-1320",
+    "what": "What would prove it wrong; ask comments."
+   }
+  ],
+  "length": "12-30 min",
+  "aspect": "16:9",
+  "faceless": false,
+  "productionLoad": "Medium",
+  "titlePatterns": [
+   "[Franchise] Lore Explained",
+   "The [Character] Theory That Changes Everything",
+   "Every [Meme Character] Explained in [N] Minutes"
+  ],
+  "hookTemplates": [
+   "There's a frame in [episode] that changes how you see the whole series.",
+   "You've been reading [character] wrong."
+  ],
+  "thumbnailPattern": "Character face with a red circle on a tiny background detail.",
+  "bestNiches": [
+   "games",
+   "animation",
+   "anime",
+   "meme universes (Italian brainrot)"
+  ],
+  "retentionTips": [
+   "Lore fans rewatch; reward them with hidden callbacks.",
+   "Fan participation is how niche properties go mainstream, so invite theories.",
+   "Make Shorts of single clues."
+  ],
+  "trend": "rising",
+  "trendNote": "YouTube's Sept 2026 'In Search of Mainstream' report centers fan lore (Backrooms) and Italian brainrot as participation-driven culture; 'explained' videos of brainrot characters have spread.",
+  "monetizationRisk": "Low",
+  "riskNote": "Commentary is transformative; keep clips short.",
+  "examples": [
+   {
+    "channel": "@gametheory",
+    "note": "game and media theories",
+    "subscribers": 19600000
+   }
+  ],
+  "sourceRefs": [
+   "https://blog.youtube/culture-and-trends/youtube-culture-trends-modern-mainstream-research/",
+   "https://blog.youtube/culture-and-trends/next-gen-creativity/"
+  ]
+ },
+ {
+  "id": "legal-court-commentary",
+  "name": "Legal and courtroom commentary",
+  "category": "Long-form explainer",
+  "summary": "A lawyer or legal analyst breaks down a trial, lawsuit or viral legal moment and predicts the outcome.",
+  "structure": [
+   {
+    "beat": "Hook",
+    "seconds": "0-30",
+    "what": "The moment from court everyone is sharing."
+   },
+   {
+    "beat": "Background",
+    "seconds": "30-240",
+    "what": "Parties, claims, stakes."
+   },
+   {
+    "beat": "Breakdown",
+    "seconds": "240-900",
+    "what": "Clip-and-analyze key testimony or filings."
+   },
+   {
+    "beat": "Prediction",
+    "seconds": "900-1100",
+    "what": "What the law says will happen."
+   },
+   {
+    "beat": "Verdict watch",
+    "seconds": "1100-1200",
+    "what": "What to watch next; live stream invite."
+   }
+  ],
+  "length": "15-30 min",
+  "aspect": "16:9",
+  "faceless": false,
+  "productionLoad": "Medium",
+  "titlePatterns": [
+   "Lawyer Reacts: [Case]",
+   "Why [Celebrity] Is Going to Lose This Lawsuit",
+   "The [Moment] That Ended [Trial]"
+  ],
+  "hookTemplates": [
+   "In one sentence, [witness] just blew up the defense.",
+   "This lawsuit is weaker than the headlines say. Here's why."
+  ],
+  "thumbnailPattern": "Host plus the defendant, a legal document graphic and a verdict word.",
+  "bestNiches": [
+   "law",
+   "celebrity news",
+   "true crime"
+  ],
+  "retentionTips": [
+   "Credentials on screen early.",
+   "Pair with live trial watch-alongs.",
+   "Clip the single best legal insight as a Short."
+  ],
+  "trend": "rising",
+  "trendNote": "OutlierKit's Sept 2026 drama report lists legal and court commentary at 2.5x growth with higher ad rates, audience US adults 25-54.",
+  "monetizationRisk": "Low",
+  "riskNote": "Expert commentary is transformative; avoid AI 'lawyer' personas, which the July 2026 clarification explicitly demonetizes.",
+  "examples": [
+   {
+    "channel": "@legaleagle",
+    "note": "lawyer breakdowns of cases and pop culture",
+    "subscribers": 3950000
+   }
+  ],
+  "sourceRefs": [
+   "https://outlierkit.com/resources/youtube-drama-trends-2026/",
+   "https://www.tubefilter.com/2026/07/13/youtube-inauthentic-content-monetization-policy-update/"
+  ]
+ },
+ {
+  "id": "ranked-countdown",
+  "name": "Ranked countdown (Top N)",
+  "category": "Lists & rankings",
+  "summary": "N items ranked from least to most impressive, with the number one held back until the end.",
+  "structure": [
+   {
+    "beat": "Hook",
+    "seconds": "0-20",
+    "what": "Tease number one without naming it."
+   },
+   {
+    "beat": "Entries N to 6",
+    "seconds": "20-300",
+    "what": "Quick entries, each with a fact and visual."
+   },
+   {
+    "beat": "Honorable mentions",
+    "seconds": "300-360",
+    "what": "Retention bridge."
+   },
+   {
+    "beat": "Entries 5 to 2",
+    "seconds": "360-600",
+    "what": "Longer entries with stories."
+   },
+   {
+    "beat": "Number 1",
+    "seconds": "600-720",
+    "what": "The payoff with the best footage."
+   }
+  ],
+  "length": "8-15 min",
+  "aspect": "both",
+  "faceless": true,
+  "productionLoad": "Low",
+  "titlePatterns": [
+   "Top [N] [Superlative] [Things] of [Year]",
+   "[N] [Things] That [Surprising Outcome]",
+   "Ranking Every [Thing] From Worst to Best"
+  ],
+  "hookTemplates": [
+   "Number one on this list shouldn't exist.",
+   "We ranked [N] [things]. You'll argue about number three."
+  ],
+  "thumbnailPattern": "The #1 item with a large number badge and a reaction element.",
+  "bestNiches": [
+   "entertainment",
+   "travel",
+   "animals",
+   "tech",
+   "film"
+  ],
+  "retentionTips": [
+   "Use honorable mentions as a mid-roll bridge.",
+   "Put a disputable pick near the top to drive comments.",
+   "Avoid identical structure across every upload."
+  ],
+  "trend": "cooling",
+  "trendNote": "Still common, but generic stock-footage countdowns are the textbook 'generic or repetitive' template and slideshow content called out in the July 2026 clarification.",
+  "monetizationRisk": "High",
+  "riskNote": "Stock clips plus TTS lists are prime inauthentic-content targets; on-camera or deeply researched versions are fine.",
+  "examples": [
+   {
+    "channel": "@watchmojo",
+    "note": "the long-running top-10 brand",
+    "subscribers": 25800000
+   }
+  ],
+  "sourceRefs": [
+   "https://www.tubefilter.com/2026/07/13/youtube-inauthentic-content-monetization-policy-update/",
+   "https://outlierkit.com/blog/youtube-ai-crackdown"
+  ]
+ },
+ {
+  "id": "tier-list",
+  "name": "Tier list",
+  "category": "Lists & rankings",
+  "summary": "A host places items into S-to-D tiers on screen, defending each pick.",
+  "structure": [
+   {
+    "beat": "Hook",
+    "seconds": "0-20",
+    "what": "Show the empty tier board and a controversial S-tier pick."
+   },
+   {
+    "beat": "Rules",
+    "seconds": "20-60",
+    "what": "Criteria for ranking."
+   },
+   {
+    "beat": "Placements",
+    "seconds": "60-900",
+    "what": "Item by item with reasons and banter."
+   },
+   {
+    "beat": "Debate",
+    "seconds": "900-1100",
+    "what": "Re-shuffle; second guest disagrees."
+   },
+   {
+    "beat": "Final board",
+    "seconds": "1100-1200",
+    "what": "Full board; ask viewers for theirs."
+   }
+  ],
+  "length": "10-60 min (Shorts versions 30-90 s)",
+  "aspect": "both",
+  "faceless": false,
+  "productionLoad": "Low",
+  "titlePatterns": [
+   "Ranking Every [Thing] (Tier List)",
+   "[Thing] Tier List [Year]",
+   "I Ranked Every [Thing] So You Don't Have To"
+  ],
+  "hookTemplates": [
+   "This is going to make a lot of people angry.",
+   "Only one [thing] is S tier."
+  ],
+  "thumbnailPattern": "Colored tier board, host face, one item in S tier.",
+  "bestNiches": [
+   "food",
+   "games",
+   "beauty",
+   "TV",
+   "fitness"
+  ],
+  "retentionTips": [
+   "Personality is the product; tier lists without opinions die.",
+   "Bring a guest who disagrees.",
+   "Pin the community tier list."
+  ],
+  "trend": "stable",
+  "trendNote": "YouTube Culture & Trends counted over 1 billion views on 'tier list' titled videos in H1 2025; format spans 30-second Shorts to three-hour deep dives.",
+  "monetizationRisk": "Low",
+  "riskNote": "Opinion-driven and on camera.",
+  "examples": [
+   {
+    "channel": "@penguinz0",
+    "note": "commentary creator who regularly does tier lists (verify specific uploads)",
+    "subscribers": 18300000
+   }
+  ],
+  "sourceRefs": [
+   "https://blog.youtube/culture-and-trends/tier-list/"
+  ]
+ },
+ {
+  "id": "price-tier-versus",
+  "name": "Price-tier versus ($1 vs $1,000)",
+  "category": "Lists & rankings",
+  "summary": "The same thing at escalating price or effort tiers, compared head to head.",
+  "structure": [
+   {
+    "beat": "Hook",
+    "seconds": "0-15",
+    "what": "Show the most expensive tier first."
+   },
+   {
+    "beat": "Tier 1",
+    "seconds": "15-180",
+    "what": "Cheap version, honest reaction."
+   },
+   {
+    "beat": "Tier 2",
+    "seconds": "180-420",
+    "what": "Mid tier, the surprise winner setup."
+   },
+   {
+    "beat": "Tier 3",
+    "seconds": "420-720",
+    "what": "Luxury tier, spectacle."
+   },
+   {
+    "beat": "Verdict",
+    "seconds": "720-840",
+    "what": "Which is actually worth it."
+   }
+  ],
+  "length": "8-20 min",
+  "aspect": "both",
+  "faceless": false,
+  "productionLoad": "Medium",
+  "titlePatterns": [
+   "$1 vs $1,000 [Thing]",
+   "Cheap vs Expensive [Thing]",
+   "10 Minutes vs 24 Hours [Task]"
+  ],
+  "hookTemplates": [
+   "One of these cost $1. One cost $10,000. You can't tell which.",
+   "I spent [amount] to find out if expensive [thing] is a scam."
+  ],
+  "thumbnailPattern": "Side-by-side items with price tags in bold contrast.",
+  "bestNiches": [
+   "food",
+   "travel",
+   "tech",
+   "cars",
+   "hotels"
+  ],
+  "retentionTips": [
+   "Escalate visibly; each tier should look different.",
+   "Give a clear verdict.",
+   "Paddy Galloway: transplant proven formats into new niches."
+  ],
+  "trend": "stable",
+  "trendNote": "Paddy Galloway (Colin & Samir, 2026) cites '$1 vs $100' and '10 minutes vs 24 hours' as formats that transplant across niches.",
+  "monetizationRisk": "Low",
+  "riskNote": "Original filmed content.",
+  "examples": [
+   {
+    "channel": "@mrbeast",
+    "note": "price-tier spectacles",
+    "subscribers": 520000000
+   },
+   {
+    "channel": "@nickdigiovanni",
+    "note": "cheap vs expensive food",
+    "subscribers": 47200000
+   }
+  ],
+  "sourceRefs": [
+   "https://www.colinandsamir.com/resources/the-new-rules-of-youtube-from-paddy-galloway"
+  ]
+ },
+ {
+  "id": "history-for-sleep",
+  "name": "History for sleep (multi-hour narration)",
+  "category": "Sleep & ambient",
+  "summary": "A calm, slow, multi-hour narration about a historical period, designed to fall asleep to.",
+  "structure": [
+   {
+    "beat": "Soft open",
+    "seconds": "0-60",
+    "what": "Gentle greeting, permission to drift off."
+   },
+   {
+    "beat": "Settle",
+    "seconds": "60-600",
+    "what": "Slow scene setting, low-stakes detail."
+   },
+   {
+    "beat": "Long body",
+    "seconds": "600-9000",
+    "what": "Chapters of everyday-life history at an even pace."
+   },
+   {
+    "beat": "Fade",
+    "seconds": "9000-10800",
+    "what": "Quieter delivery, longer pauses, music swells down."
+   }
+  ],
+  "length": "2-8 h",
+  "aspect": "16:9",
+  "faceless": true,
+  "productionLoad": "Medium",
+  "titlePatterns": [
+   "Boring History for Sleep: [Era]",
+   "[N] Hours of [Topic] to Fall Asleep To",
+   "Fall Asleep to [Era] Life | Calm History"
+  ],
+  "hookTemplates": [
+   "Get comfortable. Tonight we're going to [place] in [year].",
+   "Let your eyes close. We'll begin slowly."
+  ],
+  "thumbnailPattern": "Dim, painterly period scene with soft text and a moon or candle.",
+  "bestNiches": [
+   "history",
+   "mythology",
+   "space",
+   "nature"
+  ],
+  "retentionTips": [
+   "No sudden sounds or mid-roll stings.",
+   "Even, low pacing; no cliffhangers.",
+   "Longer versions pile up total watch time."
+  ],
+  "trend": "rising",
+  "trendNote": "OutlierKit tracks sleep and ambient content at 14x year-over-year growth with low competition; TV now over half of US watch time, and long passive viewing fits living rooms.",
+  "monetizationRisk": "Medium",
+  "riskNote": "The niche is flooded with templated AI narration; original scripts and a recurring human or distinctive voice are what keep channels monetized.",
+  "examples": [
+   {
+    "channel": "@historyandsleep",
+    "note": "long calm history narrations",
+    "subscribers": 54800
+   }
+  ],
+  "sourceRefs": [
+   "https://outlierkit.com/blog/trending-niches-on-youtube",
+   "https://www.kidelight.com/2026/10/why-50-of-youtube-watch-time-is-on-your.html",
+   "https://www.tubefilter.com/2026/07/13/youtube-inauthentic-content-monetization-policy-update/"
+  ]
+ },
+ {
+  "id": "ambient-soundscape-stream",
+  "name": "Ambient soundscape and lofi stream",
+  "category": "Sleep & ambient",
+  "summary": "Hours of looping visuals and music or room sounds for study, work or sleep.",
+  "structure": [
+   {
+    "beat": "Scene",
+    "seconds": "0-10",
+    "what": "Establish the space (rainy window, cabin, spaceship)."
+   },
+   {
+    "beat": "Loop",
+    "seconds": "10-end",
+    "what": "Seamless visual loop and evolving audio."
+   },
+   {
+    "beat": "Micro-events",
+    "seconds": "every 10-20 min",
+    "what": "Small changes (a cat moves, thunder) to reward glances."
+   },
+   {
+    "beat": "Community",
+    "seconds": "live",
+    "what": "Chat, timers, song IDs when streamed."
+   }
+  ],
+  "length": "1-10 h or 24/7 live",
+  "aspect": "16:9",
+  "faceless": true,
+  "productionLoad": "Low",
+  "titlePatterns": [
+   "[Mood] [Place] Ambience | [N] Hours",
+   "lofi [Activity] Radio",
+   "Rain on [Place] for Sleep"
+  ],
+  "hookTemplates": [
+   "(No voice: first frame is the scene)",
+   "Put this on and get some work done."
+  ],
+  "thumbnailPattern": "A cozy illustrated or filmed space with warm light, small title.",
+  "bestNiches": [
+   "study",
+   "sleep",
+   "focus",
+   "gaming ambience"
+  ],
+  "retentionTips": [
+   "Original or licensed music only.",
+   "Distinct world-building beats generic stock loops.",
+   "Live versions build community."
+  ],
+  "trend": "stable",
+  "trendNote": "Strong TV fit, but identical uploads are what the 'repetitive' language targets; growth concentrates in branded worlds.",
+  "monetizationRisk": "High",
+  "riskNote": "Near-identical loops uploaded at volume are a classic repetitive-content pattern.",
+  "examples": [
+   {
+    "channel": "@lofigirl",
+    "note": "24/7 lofi radio with a recurring character",
+    "subscribers": 15800000
+   }
+  ],
+  "sourceRefs": [
+   "https://outlierkit.com/blog/trending-niches-on-youtube",
+   "https://www.tubefilter.com/2026/07/13/youtube-inauthentic-content-monetization-policy-update/"
+  ]
+ },
+ {
+  "id": "asmr-sleep-roleplay",
+  "name": "ASMR and sleep roleplay",
+  "category": "Sleep & ambient",
+  "summary": "Whispered, tactile sound roleplays designed to relax or trigger tingles.",
+  "structure": [
+   {
+    "beat": "Intro",
+    "seconds": "0-60",
+    "what": "Whispered welcome and scenario."
+   },
+   {
+    "beat": "Triggers",
+    "seconds": "60-1500",
+    "what": "Tapping, brushing, personal attention."
+   },
+   {
+    "beat": "Scenario beats",
+    "seconds": "1500-2700",
+    "what": "Roleplay progression (exam, haircut, spa)."
+   },
+   {
+    "beat": "Wind down",
+    "seconds": "2700-3600",
+    "what": "Slower, darker, quieter."
+   }
+  ],
+  "length": "30-90 min",
+  "aspect": "16:9",
+  "faceless": false,
+  "productionLoad": "Medium",
+  "titlePatterns": [
+   "ASMR [Scenario] Roleplay",
+   "ASMR for People Who [Problem]",
+   "[N] Triggers to Fall Asleep in [Time]"
+  ],
+  "hookTemplates": [
+   "Hi, come in, sit down. I'm going to take care of you tonight.",
+   "If you can't sleep, try this."
+  ],
+  "thumbnailPattern": "Close-up of the creator with a trigger object, soft lighting.",
+  "bestNiches": [
+   "ASMR",
+   "sleep",
+   "relaxation"
+  ],
+  "retentionTips": [
+   "Keep external links clean; in August 2026 YouTube terminated ASMR channels for links to sexual content.",
+   "Recurring characters and series.",
+   "Offer a no-talking version."
+  ],
+  "trend": "stable",
+  "trendNote": "ASMR is among the fastest-growing niches by subscriber growth (1.56% in a 30-day window to Oct 2026), but August 2026 terminations hit several ASMR channels over off-platform links.",
+  "monetizationRisk": "Low",
+  "riskNote": "Monetization fine; the 2026 risk is policy on external links and suggestive thumbnails.",
+  "examples": [
+   {
+    "channel": "@gibiasmr",
+    "note": "roleplay-driven ASMR",
+    "subscribers": 5220000
+   }
+  ],
+  "sourceRefs": [
+   "https://air.io/en/audience-growth/whos-growing-fastest-on-youtube-and-which-niches-are-hot-in-2025",
+   "https://fstoppers.com/news/popular-asmr-creators-say-youtube-wiped-their-channels-no-warning-903800"
+  ]
+ },
+ {
+  "id": "reddit-story-gameplay-short",
+  "name": "Reddit story over gameplay",
+  "category": "Shorts",
+  "summary": "A narrated Reddit post with captions over Minecraft parkour or Subway Surfers footage.",
+  "structure": [
+   {
+    "beat": "Hook",
+    "seconds": "0-3",
+    "what": "Post title as a caption and line one of narration."
+   },
+   {
+    "beat": "Setup",
+    "seconds": "3-20",
+    "what": "Context of the conflict."
+   },
+   {
+    "beat": "Escalation",
+    "seconds": "20-45",
+    "what": "The twist or update."
+   },
+   {
+    "beat": "Payoff / Part 2",
+    "seconds": "45-90",
+    "what": "Resolution or cliffhanger to Part 2."
+   }
+  ],
+  "length": "45-120 s",
+  "aspect": "9:16",
+  "faceless": true,
+  "productionLoad": "Low",
+  "titlePatterns": [
+   "AITA for [Action]?",
+   "My [Relative] [Did Thing]... (Part [N])",
+   "[Person] Got Instant Karma"
+  ],
+  "hookTemplates": [
+   "AITA for refusing to [action] at my sister's wedding?",
+   "My boss fired me by text. Big mistake."
+  ],
+  "thumbnailPattern": "Shorts frame: bold caption over gameplay; no custom thumbnail needed.",
+  "bestNiches": [
+   "relationship drama",
+   "workplace",
+   "entitled people"
+  ],
+  "retentionTips": [
+   "Add your own reaction or verdict on screen.",
+   "Use Shorts series for multi-part stories.",
+   "Rewrite posts; don't read verbatim."
+  ],
+  "trend": "cooling",
+  "trendNote": "The most saturated faceless format; a 246K-subscriber Reddit channel using hired voice actors was reportedly demonetized under the inauthentic policy in May 2026.",
+  "monetizationRisk": "High",
+  "riskNote": "Templated narration over unrelated gameplay is what 'generic or repetitive' and reused content target.",
+  "examples": [
+   {
+    "channel": "@rslash",
+    "note": "curated Reddit drama with editorial voice",
+    "subscribers": 1850000
+   }
+  ],
+  "sourceRefs": [
+   "https://www.tubefilter.com/2026/07/13/youtube-inauthentic-content-monetization-policy-update/",
+   "https://outlierkit.com/blog/youtube-ai-crackdown"
+  ]
+ },
+ {
+  "id": "3d-animated-fact-short",
+  "name": "3D animated 'how it works' fact Short",
+  "category": "Shorts",
+  "summary": "A 30-60 second 3D-animated answer to one weird or gross question about the body, history or survival.",
+  "structure": [
+   {
+    "beat": "Question",
+    "seconds": "0-2",
+    "what": "Visual question ('What happens if you swallow gum?')."
+   },
+   {
+    "beat": "Mechanism",
+    "seconds": "2-30",
+    "what": "Animated inside view."
+   },
+   {
+    "beat": "Twist",
+    "seconds": "30-45",
+    "what": "The surprising detail."
+   },
+   {
+    "beat": "Loop",
+    "seconds": "45-55",
+    "what": "End that cuts back to the opening frame."
+   }
+  ],
+  "length": "30-60 s",
+  "aspect": "9:16",
+  "faceless": true,
+  "productionLoad": "Medium",
+  "titlePatterns": [
+   "What Happens If You [Action]",
+   "How [Thing] Actually Works",
+   "Why You Should Never [Action]"
+  ],
+  "hookTemplates": [
+   "This is what happens inside your body when you [action].",
+   "Doctors had to remove [N] [things] from this man."
+  ],
+  "thumbnailPattern": "Shorts first frame shows the impossible inside view.",
+  "bestNiches": [
+   "health",
+   "science",
+   "survival",
+   "history"
+  ],
+  "retentionTips": [
+   "First frame must be the most visual moment.",
+   "Seamless loop to drive replays.",
+   "Consistent 3D character style across uploads."
+  ],
+  "trend": "stable",
+  "trendNote": "Zack D. Films reached roughly 26-29M subscribers in 2026 posting several Shorts a day, showing the ceiling of this format.",
+  "monetizationRisk": "Medium",
+  "riskNote": "Original 3D work is safe; AI-image slideshow copies are not.",
+  "examples": [
+   {
+    "channel": "@zackdfilms",
+    "note": "3D animated fact Shorts",
+    "subscribers": 28900000
+   }
+  ],
+  "sourceRefs": [
+   "https://www.tubefilter.com/2026/07/13/youtube-inauthentic-content-monetization-policy-update/"
+  ]
+ },
+ {
+  "id": "non-verbal-skit-short",
+  "name": "Non-verbal family skit Short",
+  "category": "Shorts",
+  "summary": "A wordless, Tom-and-Jerry-style physical comedy skit that works in any language.",
+  "structure": [
+   {
+    "beat": "Setup",
+    "seconds": "0-3",
+    "what": "A tempting object and two characters."
+   },
+   {
+    "beat": "Scheme",
+    "seconds": "3-20",
+    "what": "One tries to trick the other."
+   },
+   {
+    "beat": "Reversal",
+    "seconds": "20-35",
+    "what": "The trick backfires."
+   },
+   {
+    "beat": "Twist",
+    "seconds": "35-45",
+    "what": "Final twist, often a third character."
+   }
+  ],
+  "length": "20-60 s",
+  "aspect": "9:16",
+  "faceless": false,
+  "productionLoad": "Low",
+  "titlePatterns": [
+   "[Character] vs [Character] [Emoji]",
+   "Real End Twist [Emoji]",
+   "Who Ate the [Food]? [Emoji]"
+  ],
+  "hookTemplates": [
+   "(No dialogue: the object and a sneaky look)"
+  ],
+  "thumbnailPattern": "Expressive face plus the prop; emojis in title instead of text.",
+  "bestNiches": [
+   "family comedy",
+   "kids",
+   "pranks"
+  ],
+  "retentionTips": [
+   "No dialogue means global reach without dubbing.",
+   "Exaggerated expressions and sound effects.",
+   "Recurring characters."
+  ],
+  "trend": "peaking",
+  "trendNote": "Non-verbal Shorts built some of 2025-26's biggest channels: KL BRO Biju Rithvik (80M+ subscribers, India) and South Korea's KIMPRO (130M+, world's most-viewed monthly channel in Jan 2025).",
+  "monetizationRisk": "Low",
+  "riskNote": "Original filmed skits; watch made-for-kids designation.",
+  "examples": [
+   {
+    "channel": "@klbrobijurithvik1",
+    "note": "wordless family skits",
+    "subscribers": 89600000
+   }
+  ],
+  "sourceRefs": [
+   "https://www.epidemicsound.com/blog/youtube-trends-2026/",
+   "https://en.wikipedia.org/wiki/KIMPRO"
+  ]
+ },
+ {
+  "id": "street-interview-short",
+  "name": "Street interview Short",
+  "category": "Shorts",
+  "summary": "A host stops strangers with one question (salary, opinion, quiz) and cuts the best answers.",
+  "structure": [
+   {
+    "beat": "Question",
+    "seconds": "0-3",
+    "what": "On-screen question and first answer."
+   },
+   {
+    "beat": "Answers",
+    "seconds": "3-30",
+    "what": "Three to five quick respondents."
+   },
+   {
+    "beat": "Standout",
+    "seconds": "30-45",
+    "what": "The surprising answer."
+   },
+   {
+    "beat": "Kicker",
+    "seconds": "45-55",
+    "what": "Host reaction or follow-up."
+   }
+  ],
+  "length": "30-60 s",
+  "aspect": "9:16",
+  "faceless": false,
+  "productionLoad": "Low",
+  "titlePatterns": [
+   "How Much Do You Make as a [Job]?",
+   "Asking [Group] [Question]",
+   "Would You Rather [A] or [B]?"
+  ],
+  "hookTemplates": [
+   "What do you do and how much do you make?",
+   "Quick question: [question]?"
+  ],
+  "thumbnailPattern": "Mic in frame, respondent mid-answer, caption of the answer.",
+  "bestNiches": [
+   "careers",
+   "finance",
+   "dating",
+   "local culture"
+  ],
+  "retentionTips": [
+   "Lead with the best answer.",
+   "Consistent mic and caption branding.",
+   "Get releases; likeness and privacy complaints are rising."
+  ],
+  "trend": "stable",
+  "trendNote": "Salary Transparent Street was acquired by NowThis in January 2026; brands now copy the format for ads.",
+  "monetizationRisk": "Low",
+  "riskNote": "Original footage.",
+  "examples": [
+   {
+    "channel": "@salarytransparentstreet",
+    "note": "salary street interviews",
+    "subscribers": 220000
+   }
+  ],
+  "sourceRefs": [
+   "https://www.teleprompter.com/blog/trending-youtube-shorts"
+  ]
+ },
+ {
+  "id": "podcast-clip-short",
+  "name": "Podcast clip Short",
+  "category": "Shorts",
+  "summary": "The single most quotable 30-60 seconds of a long podcast episode, captioned and reframed vertical.",
+  "structure": [
+   {
+    "beat": "Hook line",
+    "seconds": "0-3",
+    "what": "Start mid-sentence on the boldest claim."
+   },
+   {
+    "beat": "Context",
+    "seconds": "3-15",
+    "what": "Guest name and credential caption."
+   },
+   {
+    "beat": "Argument",
+    "seconds": "15-45",
+    "what": "The full point, one idea."
+   },
+   {
+    "beat": "Close",
+    "seconds": "45-60",
+    "what": "Punchline or 'full episode' prompt."
+   }
+  ],
+  "length": "30-60 s",
+  "aspect": "9:16",
+  "faceless": false,
+  "productionLoad": "Low",
+  "titlePatterns": [
+   "[Guest] on [Topic]",
+   "Why [Bold Claim] | [Guest]",
+   "The [Thing] Nobody Talks About"
+  ],
+  "hookTemplates": [
+   "The biggest mistake people make with [topic] is...",
+   "I've never said this publicly, but..."
+  ],
+  "thumbnailPattern": "Tight vertical crop on the speaker with big burned-in captions.",
+  "bestNiches": [
+   "business",
+   "health",
+   "sports",
+   "comedy"
+  ],
+  "retentionTips": [
+   "One complete idea per clip.",
+   "Add a visual hook, not a lazy crop.",
+   "Link to the full episode via related video."
+  ],
+  "trend": "peaking",
+  "trendNote": "Every major podcast now clips; YouTube passed 1 billion monthly podcast viewers, but clip feeds are crowded.",
+  "monetizationRisk": "Medium",
+  "riskNote": "Your own podcast is safe; clip channels of other people's shows are reused content.",
+  "examples": [
+   {
+    "channel": "@thediaryofaceo",
+    "note": "heavy clip program off long episodes",
+    "subscribers": 20300000
+   }
+  ],
+  "sourceRefs": [
+   "https://blog.youtube/inside-youtube/the-future-of-youtube-2026/",
+   "https://blog.youtube/news-and-events/innovation-youtube-era-made-on-viewers-creators/"
+  ]
+ },
+ {
+  "id": "satisfying-process-short",
+  "name": "Satisfying process and restoration",
+  "category": "Shorts",
+  "summary": "Watching something get made, cleaned or restored from start to finish with crisp sound and no talking.",
+  "structure": [
+   {
+    "beat": "Before",
+    "seconds": "0-3",
+    "what": "The worst-looking state or raw material."
+   },
+   {
+    "beat": "Process",
+    "seconds": "3-45",
+    "what": "Sped-up steps with real sound."
+   },
+   {
+    "beat": "Reveal",
+    "seconds": "45-55",
+    "what": "The finished result, slow pan."
+   },
+   {
+    "beat": "Loop",
+    "seconds": "55-60",
+    "what": "Cut back to 'before'."
+   }
+  ],
+  "length": "30-60 s (long versions 15-30 min)",
+  "aspect": "both",
+  "faceless": true,
+  "productionLoad": "Medium",
+  "titlePatterns": [
+   "Restoring a [Year] [Object]",
+   "How [Product] Is Made in a [Country] Factory",
+   "[N]-Year-Old [Object] Restoration"
+  ],
+  "hookTemplates": [
+   "(No voice: the rusted object hits the bench)"
+  ],
+  "thumbnailPattern": "Before/after split of the object.",
+  "bestNiches": [
+   "restoration",
+   "manufacturing",
+   "cooking",
+   "cleaning",
+   "crafts"
+  ],
+  "retentionTips": [
+   "Record clean ambient audio.",
+   "Before/after must be dramatic.",
+   "Long-form versions suit TV."
+  ],
+  "trend": "stable",
+  "trendNote": "Evergreen; before-and-after transformations are on 2026 Shorts trend lists. Factory compilations using others' footage are risky.",
+  "monetizationRisk": "Medium",
+  "riskNote": "Own footage is safe; compilations of factory footage you didn't shoot are reused content.",
+  "examples": [
+   {
+    "channel": "@handtoolrescue",
+    "note": "long-form tool restorations",
+    "subscribers": 1200000
+   }
+  ],
+  "sourceRefs": [
+   "https://www.teleprompter.com/blog/trending-youtube-shorts",
+   "https://www.tubefilter.com/2026/07/13/youtube-inauthentic-content-monetization-policy-update/"
+  ]
+ },
+ {
+  "id": "mini-documentary-short",
+  "name": "90-second mini-documentary Short",
+  "category": "Shorts",
+  "summary": "A complete story (a person, event or product) told in 60-180 seconds now that Shorts can run three minutes.",
+  "structure": [
+   {
+    "beat": "Hook",
+    "seconds": "0-3",
+    "what": "The most surprising fact."
+   },
+   {
+    "beat": "Context",
+    "seconds": "3-25",
+    "what": "Who, where, when."
+   },
+   {
+    "beat": "Story",
+    "seconds": "25-75",
+    "what": "Two beats of rising tension."
+   },
+   {
+    "beat": "Payoff",
+    "seconds": "75-90",
+    "what": "Outcome and one-line takeaway."
+   }
+  ],
+  "length": "60-180 s",
+  "aspect": "9:16",
+  "faceless": true,
+  "productionLoad": "Medium",
+  "titlePatterns": [
+   "The [Person] Who [Feat]",
+   "How [Company] [Outcome] in [Timeframe]",
+   "This [Object] Changed [Field]"
+  ],
+  "hookTemplates": [
+   "In 1962, one man [action] and nobody noticed for [N] years.",
+   "This [thing] was worth [amount]. Then [event]."
+  ],
+  "thumbnailPattern": "Use the new Shorts custom thumbnail: archival photo plus four-word caption.",
+  "bestNiches": [
+   "history",
+   "business",
+   "science",
+   "sports"
+  ],
+  "retentionTips": [
+   "Completion rate decides reach; cut every redundant line.",
+   "Group into a Shorts series for binging.",
+   "Use it as a trailer for the long version."
+  ],
+  "trend": "rising",
+  "trendNote": "Since Shorts allow 3 minutes, 60-90 s is reported as the sweet spot in many niches (Miraflow, Apr 2026); YouTube added custom Shorts thumbnails (July 2026) and Shorts series (Sept 2026).",
+  "monetizationRisk": "Medium",
+  "riskNote": "Fine with original narration; AI-slideshow versions are named in the July 2026 clarification.",
+  "examples": [
+   {
+    "channel": "@zackdfilms",
+    "note": "dense story Shorts (animated)",
+    "subscribers": 28900000
+   }
+  ],
+  "sourceRefs": [
+   "https://miraflow.ai/blog/youtube-trends-rest-of-2026",
+   "https://air.io/en/trending/youtube-algorithm-in-2026-month-by-month-changes-that-affect-your-views",
+   "https://blog.youtube/news-and-events/made-on-youtube-creators-shorts-series-tv-features/"
+  ]
+ },
+ {
+  "id": "microdrama-shorts-series",
+  "name": "Live-action microdrama Shorts series",
+  "category": "Shorts",
+  "summary": "A scripted vertical drama told in one- to three-minute episodes with a cliffhanger each time.",
+  "structure": [
+   {
+    "beat": "Cold open",
+    "seconds": "0-5",
+    "what": "Emotional peak or slap moment."
+   },
+   {
+    "beat": "Recap",
+    "seconds": "5-15",
+    "what": "One-line reminder of the last episode."
+   },
+   {
+    "beat": "Scene",
+    "seconds": "15-90",
+    "what": "One conflict, one reveal."
+   },
+   {
+    "beat": "Cliffhanger",
+    "seconds": "90-120",
+    "what": "Freeze on the twist; next episode prompt."
+   }
+  ],
+  "length": "1-3 min per episode, 20-80 episodes",
+  "aspect": "9:16",
+  "faceless": false,
+  "productionLoad": "High",
+  "titlePatterns": [
+   "[Show Title] Ep. [N]",
+   "She Didn't Know He Was a [Secret Identity] (Part [N])",
+   "The [Role] Who [Twist]"
+  ],
+  "hookTemplates": [
+   "You married me for my money? Then you won't mind this.",
+   "Previously: she found the second phone."
+  ],
+  "thumbnailPattern": "Use Shorts series custom thumbnails: lead couple, high emotion, episode number.",
+  "bestNiches": [
+   "romance",
+   "revenge",
+   "billionaire",
+   "family drama",
+   "workplace"
+  ],
+  "retentionTips": [
+   "Organize into Shorts series seasons for sequential play.",
+   "End every episode on an unresolved line.",
+   "Design for TV too; microdrama TV viewing is up 90%."
+  ],
+  "trend": "rising",
+  "trendNote": "YouTube: microdramas passed 6.5 billion views in H1 2026, watch time up 50%+ YoY and TV viewing up 90%+; Shorts series launched Sept 23, 2026 citing Kinigra Deon and GOKKO CLUB.",
+  "monetizationRisk": "Low",
+  "riskNote": "Original scripted content.",
+  "examples": [
+   {
+    "channel": "@gokko5club",
+    "note": "Japanese 3-minute vertical drama team",
+    "subscribers": 888000
+   },
+   {
+    "channel": "@dharmann",
+    "note": "morality dramas, now producing vertical microdrama slates",
+    "subscribers": 27700000
+   }
+  ],
+  "sourceRefs": [
+   "https://blog.youtube/news-and-events/made-on-youtube-creators-shorts-series-tv-features/",
+   "https://socialday.live/features/youtubes-made-on-2026-unpacks-where-the-platform-thinks-creation-is-heading-ai",
+   "https://www.tvtechnology.com/platform/streaming/youtube-embraces-microdramas-with-features-for-episodic-shorts",
+   "https://techcrunch.com/2026/09/23/youtubes-new-short-series-feature-brings-episodic-viewing-to-shorts/",
+   "https://outlierkit.com/resources/youtube-drama-trends-2026/"
+  ]
+ },
+ {
+  "id": "movie-recap",
+  "name": "Movie recap explained",
+  "category": "Recaps & commentary",
+  "summary": "A whole film summarized in 10-20 minutes with narration over clips, often with a humorous voice.",
+  "structure": [
+   {
+    "beat": "Hook",
+    "seconds": "0-20",
+    "what": "The premise as a one-line mystery."
+   },
+   {
+    "beat": "Setup",
+    "seconds": "20-180",
+    "what": "Characters and situation."
+   },
+   {
+    "beat": "Escalation",
+    "seconds": "180-600",
+    "what": "Major turns, compressed."
+   },
+   {
+    "beat": "Ending",
+    "seconds": "600-840",
+    "what": "The twist and ending explained."
+   },
+   {
+    "beat": "Verdict",
+    "seconds": "840-900",
+    "what": "Quick opinion; next recap tease."
+   }
+  ],
+  "length": "10-25 min",
+  "aspect": "16:9",
+  "faceless": true,
+  "productionLoad": "Medium",
+  "titlePatterns": [
+   "[Premise in One Sentence] | Movie Recap",
+   "A Man [Situation]... ([Film] Explained)",
+   "[Film] Ending Explained"
+  ],
+  "hookTemplates": [
+   "A man wakes up in a room with no doors. He has 24 hours.",
+   "This family moves into a house where [rule]."
+  ],
+  "thumbnailPattern": "A key frame with the creepiest or most intriguing element and no text.",
+  "bestNiches": [
+   "horror",
+   "thriller",
+   "sci-fi",
+   "K-drama"
+  ],
+  "retentionTips": [
+   "Human narration with personality; channels have switched from TTS to avoid demonetization.",
+   "Add commentary and jokes every few minutes.",
+   "Avoid opening and ending scenes Content ID matches."
+  ],
+  "trend": "cooling",
+  "trendNote": "Still huge but monetization is described as 'a coin toss' in 2026; the July 2026 clarification and reused-content reviews pressure pure summary channels.",
+  "monetizationRisk": "High",
+  "riskNote": "Clip-heavy and summary-only is reused content; Content ID claims divert revenue.",
+  "examples": [
+   {
+    "channel": "@mysteryrecappedofficial",
+    "note": "comedic narrated recaps; moved to a human narrator",
+    "subscribers": 4140000
+   }
+  ],
+  "sourceRefs": [
+   "https://www.tubefilter.com/2026/07/13/youtube-inauthentic-content-monetization-policy-update/",
+   "https://outlierkit.com/blog/youtube-ai-crackdown"
+  ]
+ },
+ {
+  "id": "manhwa-recap",
+  "name": "Manhwa and webtoon recap",
+  "category": "Recaps & commentary",
+  "summary": "A long webtoon arc retold as a narrated video over panels, often several hours long.",
+  "structure": [
+   {
+    "beat": "Hook",
+    "seconds": "0-30",
+    "what": "The protagonist's humiliation or regression moment."
+   },
+   {
+    "beat": "Setup",
+    "seconds": "30-300",
+    "what": "World rules and power system."
+   },
+   {
+    "beat": "Arc",
+    "seconds": "300-3600",
+    "what": "Chapters compressed with panel pans."
+   },
+   {
+    "beat": "Power-up",
+    "seconds": "3600-5400",
+    "what": "The big reversal."
+   },
+   {
+    "beat": "Cliff",
+    "seconds": "5400-6000",
+    "what": "Where the next part picks up."
+   }
+  ],
+  "length": "30 min - 6 h",
+  "aspect": "16:9",
+  "faceless": true,
+  "productionLoad": "Medium",
+  "titlePatterns": [
+   "He Was the Weakest [Class]... Until [Twist] | Manhwa Recap",
+   "[Title] Recap Part [N]",
+   "Reincarnated as [X], He [Y]"
+  ],
+  "hookTemplates": [
+   "Everyone called him trash. Then the system chose him.",
+   "He died, and woke up 10 years in the past."
+  ],
+  "thumbnailPattern": "Glowing protagonist panel with a red or blue aura and a short power claim.",
+  "bestNiches": [
+   "manhwa",
+   "webtoon",
+   "manhua",
+   "light novels"
+  ],
+  "retentionTips": [
+   "Original narration with commentary and panel motion.",
+   "Permission or licensing from artists where possible.",
+   "Long runtimes favor TV and background viewing."
+  ],
+  "trend": "rising",
+  "trendNote": "OutlierKit tracks manhwa/webtoon recaps at 5.8x YoY; but one recap channel publicly reported a Jan 7, 2026 inauthentic-content strike and 150+ days demonetized.",
+  "monetizationRisk": "High",
+  "riskNote": "Panels are someone else's art and narration is often templated TTS; both trigger reused/inauthentic review.",
+  "examples": [
+   {
+    "channel": "@manhwarecapzone",
+    "note": "long manhwa recaps",
+    "subscribers": 297000
+   }
+  ],
+  "sourceRefs": [
+   "https://outlierkit.com/blog/trending-niches-on-youtube",
+   "https://www.tubefilter.com/2026/07/13/youtube-inauthentic-content-monetization-policy-update/"
+  ]
+ },
+ {
+  "id": "kdrama-cdrama-recap",
+  "name": "K-drama and C-drama recap",
+  "category": "Recaps & commentary",
+  "summary": "A full Asian drama series recapped episode by episode or compressed into 10-30 minutes for global fans.",
+  "structure": [
+   {
+    "beat": "Hook",
+    "seconds": "0-20",
+    "what": "The central romance or revenge setup."
+   },
+   {
+    "beat": "Episodes 1-4",
+    "seconds": "20-300",
+    "what": "Meet-cute or inciting betrayal."
+   },
+   {
+    "beat": "Middle",
+    "seconds": "300-900",
+    "what": "Misunderstandings and reveals."
+   },
+   {
+    "beat": "Finale",
+    "seconds": "900-1400",
+    "what": "Ending explained."
+   },
+   {
+    "beat": "Opinion",
+    "seconds": "1400-1500",
+    "what": "Rating; next drama tease."
+   }
+  ],
+  "length": "10-30 min",
+  "aspect": "both",
+  "faceless": true,
+  "productionLoad": "Medium",
+  "titlePatterns": [
+   "[Drama] Full Recap",
+   "Poor Girl Marries [Rich CEO]... | Drama Recap",
+   "[Drama] Ending Explained"
+  ],
+  "hookTemplates": [
+   "She was hired to fake-date the CEO. She didn't know he [twist].",
+   "Ten years after he betrayed her, she came back as his boss."
+  ],
+  "thumbnailPattern": "Lead couple still with emotional expression and a short romantic hook.",
+  "bestNiches": [
+   "K-drama",
+   "C-drama",
+   "Thai drama",
+   "anime"
+  ],
+  "retentionTips": [
+   "Add your own reactions and cultural context.",
+   "Use dubbing for SEA and LATAM audiences.",
+   "Clip the biggest scene as a Short."
+  ],
+  "trend": "rising",
+  "trendNote": "OutlierKit (Sept 2026) lists K-/C-drama recaps among the four fastest-growing drama sub-niches (about 3x), riding Netflix and Viki expansion.",
+  "monetizationRisk": "High",
+  "riskNote": "Heavy use of copyrighted footage; Content ID and reused-content risk unless commentary dominates.",
+  "examples": [
+   {
+    "channel": "@kdramarecaphub",
+    "note": "K-drama recaps",
+    "subscribers": 31400
+   }
+  ],
+  "sourceRefs": [
+   "https://outlierkit.com/resources/youtube-drama-trends-2026/"
+  ]
+ },
+ {
+  "id": "drama-news-commentary",
+  "name": "Internet drama and news commentary",
+  "category": "Recaps & commentary",
+  "summary": "A host explains and opines on this week's internet controversy or viral news with clips and receipts.",
+  "structure": [
+   {
+    "beat": "Hook",
+    "seconds": "0-20",
+    "what": "The wildest clip or quote."
+   },
+   {
+    "beat": "Context",
+    "seconds": "20-120",
+    "what": "Who's involved and what happened."
+   },
+   {
+    "beat": "Receipts",
+    "seconds": "120-480",
+    "what": "Evidence walk-through."
+   },
+   {
+    "beat": "Take",
+    "seconds": "480-660",
+    "what": "Host opinion and jokes."
+   },
+   {
+    "beat": "Outro",
+    "seconds": "660-720",
+    "what": "What's next."
+   }
+  ],
+  "length": "8-20 min",
+  "aspect": "16:9",
+  "faceless": false,
+  "productionLoad": "Low",
+  "titlePatterns": [
+   "[Creator] Just Ruined Their Career",
+   "This Is Getting Out of Hand",
+   "The [Event] Situation Is Insane"
+  ],
+  "hookTemplates": [
+   "So this happened.",
+   "I genuinely can't believe this is real."
+  ],
+  "thumbnailPattern": "Host face with a reaction and the subject's screenshot.",
+  "bestNiches": [
+   "internet culture",
+   "gaming",
+   "tech",
+   "celebrity"
+  ],
+  "retentionTips": [
+   "Speed matters: publish within 24 hours.",
+   "Personality is the moat.",
+   "Pair with Watch With live reactions when available."
+  ],
+  "trend": "stable",
+  "trendNote": "Commentary stays strong; creators report YouTube news coverage reaching under-35 audiences like mainstream outlets (HugoDecrypte example).",
+  "monetizationRisk": "Low",
+  "riskNote": "Transformative commentary; ad suitability limits on harsh topics.",
+  "examples": [
+   {
+    "channel": "@penguinz0",
+    "note": "deadpan commentary on internet news",
+    "subscribers": 18300000
+   }
+  ],
+  "sourceRefs": [
+   "https://www.epidemicsound.com/blog/youtube-trends-2026/"
+  ]
+ },
+ {
+  "id": "split-screen-live-reaction",
+  "name": "Split-screen and live reaction (Watch With)",
+  "category": "Recaps & commentary",
+  "summary": "A creator watches another video or event with their face beside it, adding live commentary.",
+  "structure": [
+   {
+    "beat": "Setup",
+    "seconds": "0-30",
+    "what": "What we're watching and why."
+   },
+   {
+    "beat": "Watch",
+    "seconds": "30-end-120",
+    "what": "Pause-and-comment rhythm."
+   },
+   {
+    "beat": "Big moment",
+    "seconds": "mid",
+    "what": "Peak reaction."
+   },
+   {
+    "beat": "Verdict",
+    "seconds": "last 2 min",
+    "what": "Overall take; chat Q&A when live."
+   }
+  ],
+  "length": "15 min - 3 h (Shorts versions 30-60 s)",
+  "aspect": "both",
+  "faceless": false,
+  "productionLoad": "Low",
+  "titlePatterns": [
+   "Reacting to [Video]",
+   "[Expert] Reacts to [Thing]",
+   "Watching [Event] LIVE With Chat"
+  ],
+  "hookTemplates": [
+   "I've been told this is the worst [thing] ever made. Let's see.",
+   "Chat, we're watching this together."
+  ],
+  "thumbnailPattern": "Host face in a corner over the original's key frame.",
+  "bestNiches": [
+   "gaming",
+   "sports",
+   "music",
+   "commentary",
+   "expert reactions"
+  ],
+  "retentionTips": [
+   "Talk more than you watch.",
+   "Use YouTube's official Watch With so the original creator gets credit.",
+   "Expert angles add value."
+  ],
+  "trend": "rising",
+  "trendNote": "At Made on YouTube (Sept 2026) YouTube said Watch With expands from livestreams to all eligible long-form videos later in 2026, with reacting creators keeping live ad revenue and fan funding.",
+  "monetizationRisk": "Medium",
+  "riskNote": "Native Watch With is sanctioned; re-uploading reactions with little commentary is reused content.",
+  "examples": [
+   {
+    "channel": "@penguinz0",
+    "note": "reaction and commentary",
+    "subscribers": 18300000
+   }
+  ],
+  "sourceRefs": [
+   "https://blog.youtube/news-and-events/made-on-youtube-live-tools-fan-funding-dubbing/",
+   "https://blog.youtube/news-and-events/innovation-youtube-era-made-on-viewers-creators/"
+  ]
+ },
+ {
+  "id": "ai-animated-microdrama",
+  "name": "AI-generated microdrama series",
+  "category": "Animation & AI video",
+  "summary": "An episodic vertical soap opera (often anthropomorphic fruit, animals or objects) made with AI video and voices.",
+  "structure": [
+   {
+    "beat": "Hook",
+    "seconds": "0-3",
+    "what": "Absurd character in a dramatic moment."
+   },
+   {
+    "beat": "Recap",
+    "seconds": "3-10",
+    "what": "Who's dating, who betrayed whom."
+   },
+   {
+    "beat": "Drama",
+    "seconds": "10-90",
+    "what": "Reality-show beats: challenge, betrayal, recoupling."
+   },
+   {
+    "beat": "Cliffhanger",
+    "seconds": "90-150",
+    "what": "Vote or 'next episode' prompt."
+   }
+  ],
+  "length": "1-4 min per episode",
+  "aspect": "9:16",
+  "faceless": true,
+  "productionLoad": "Medium",
+  "titlePatterns": [
+   "[Show Name] Episode [N]",
+   "[Character] Got Dumped on [Show]",
+   "[Character] vs [Character]: Who Goes Home?"
+  ],
+  "hookTemplates": [
+   "Strawberry just found out Banana kissed Mango.",
+   "Previously on [show]..."
+  ],
+  "thumbnailPattern": "Expressive AI character close-up with the episode number.",
+  "bestNiches": [
+   "comedy",
+   "reality-show parody",
+   "romance",
+   "kids-adjacent"
+  ],
+  "retentionTips": [
+   "Let viewers vote on plot; Fruit Love Island used polls.",
+   "Disclose AI and keep consistent characters.",
+   "Package as a Shorts series."
+  ],
+  "trend": "rising",
+  "trendNote": "Fruit Love Island (Mar 13-28, 2026) reached 300M+ views across TikTok and YouTube in 15 days; YouTube's microdrama boom and Shorts series give it a home.",
+  "monetizationRisk": "High",
+  "riskNote": "Original writing helps, but AI-only templated episodes are the core target of the inauthentic policy and 'AI slop' feedback surveys.",
+  "examples": [],
+  "sourceRefs": [
+   "https://en.wikipedia.org/wiki/Fruit_Love_Island",
+   "https://socialday.live/features/youtubes-made-on-2026-unpacks-where-the-platform-thinks-creation-is-heading-ai",
+   "https://www.tubefilter.com/2026/07/13/youtube-inauthentic-content-monetization-policy-update/"
+  ]
+ },
+ {
+  "id": "ai-historical-pov-vlog",
+  "name": "AI time-traveller POV vlog",
+  "category": "Animation & AI video",
+  "summary": "An AI-generated selfie-vlogger walks through a historical moment ('POV: you wake up in 1351').",
+  "structure": [
+   {
+    "beat": "POV caption",
+    "seconds": "0-2",
+    "what": "'POV: You wake up in [place, year]'."
+   },
+   {
+    "beat": "Selfie intro",
+    "seconds": "2-10",
+    "what": "Vlogger talks to camera in period setting."
+   },
+   {
+    "beat": "Tour",
+    "seconds": "10-40",
+    "what": "Three quick scenes: food, street, danger."
+   },
+   {
+    "beat": "Kicker",
+    "seconds": "40-55",
+    "what": "The grim or funny reveal."
+   }
+  ],
+  "length": "30-60 s",
+  "aspect": "9:16",
+  "faceless": true,
+  "productionLoad": "Low",
+  "titlePatterns": [
+   "POV: You Wake Up in [Year]",
+   "Vlogging the [Historical Event]",
+   "A Day at [Historical Place] (POV)"
+  ],
+  "hookTemplates": [
+   "Okay guys, it's 1347 and nobody here washes their hands.",
+   "Day one in Pompeii. The mountain is smoking but everyone says it's fine."
+  ],
+  "thumbnailPattern": "First frame: modern-style selfie face in a period setting.",
+  "bestNiches": [
+   "history",
+   "disasters",
+   "mythology",
+   "travel"
+  ],
+  "retentionTips": [
+   "Fact-check; historians publicly criticized inaccuracies.",
+   "Add an on-screen 'fact or AI' note.",
+   "Build one recurring vlogger character."
+  ],
+  "trend": "peaking",
+  "trendNote": "Started on TikTok (@timetravellerpov, Jan 2025) with 20M-view episodes and spread to Shorts; The Guardian covered the trend in May 2026, along with accuracy pushback.",
+  "monetizationRisk": "High",
+  "riskNote": "Easy to mass-produce; templated AI clips risk inauthentic-content demonetization and mislabeled realism needs AI disclosure.",
+  "examples": [],
+  "sourceRefs": [
+   "https://www.autoclips.app/ai-history-pov-videos",
+   "https://www.subsub.io/blog/how-ai-generated-youtube-shorts-will-change-creators-in-2026"
+  ]
+ },
+ {
+  "id": "brainrot-character-animation",
+  "name": "Brainrot character animation and lore",
+  "category": "Animation & AI video",
+  "summary": "Short absurd animations starring meme characters (Italian brainrot) with chaotic sound and layered in-jokes.",
+  "structure": [
+   {
+    "beat": "Character drop",
+    "seconds": "0-2",
+    "what": "Recognizable meme character and audio chant."
+   },
+   {
+    "beat": "Scenario",
+    "seconds": "2-20",
+    "what": "Absurd situation or battle."
+   },
+   {
+    "beat": "Escalation",
+    "seconds": "20-40",
+    "what": "More characters, faster cuts."
+   },
+   {
+    "beat": "Punchline",
+    "seconds": "40-55",
+    "what": "Meme payoff."
+   }
+  ],
+  "length": "15-60 s (lore explainers 5-15 min)",
+  "aspect": "both",
+  "faceless": true,
+  "productionLoad": "Medium",
+  "titlePatterns": [
+   "[Character] vs [Character]",
+   "Italian Brainrot but [Twist]",
+   "Every Brainrot Character Explained"
+  ],
+  "hookTemplates": [
+   "(Chant audio of the character's name)",
+   "Tung tung tung..."
+  ],
+  "thumbnailPattern": "Two meme characters face-off with saturated colors.",
+  "bestNiches": [
+   "kids/teens",
+   "gaming (Roblox)",
+   "meme culture"
+  ],
+  "retentionTips": [
+   "Layer references; YouTube calls this 'creative maximalism'.",
+   "Original animation or lore beats raw AI clips.",
+   "Ride memes fast; they burn out."
+  ],
+  "trend": "cooling",
+  "trendNote": "Italian brainrot peaked in 2025 (YouTube trend coverage and Epidemic's 2026 predictions); Kapwing found about a third of Shorts served to a fresh account qualified as brainrot.",
+  "monetizationRisk": "High",
+  "riskNote": "Kids-adjacent AI slop draws extra scrutiny; 230 experts petitioned YouTube in Apr 2026 to restrict AI content for minors.",
+  "examples": [],
+  "sourceRefs": [
+   "https://blog.youtube/culture-and-trends/next-gen-creativity/",
+   "https://www.epidemicsound.com/blog/youtube-trends-2026/",
+   "https://www.kapwing.com/blog/ai-slop-report-the-global-rise-of-low-quality-ai-videos/",
+   "https://thenextweb.com/news/youtube-ai-slop-crackdown-faceless-creators-collateral-damage"
+  ]
+ },
+ {
+  "id": "independent-animated-series",
+  "name": "Independent animated series",
+  "category": "Animation & AI video",
+  "summary": "A creator-owned animated show with recurring characters and episodes, studio quality without a studio.",
+  "structure": [
+   {
+    "beat": "Cold open",
+    "seconds": "0-60",
+    "what": "A character gag or mystery."
+   },
+   {
+    "beat": "Titles",
+    "seconds": "60-90",
+    "what": "Theme song."
+   },
+   {
+    "beat": "Episode plot",
+    "seconds": "90-1200",
+    "what": "A-story and B-story."
+   },
+   {
+    "beat": "Climax",
+    "seconds": "1200-1500",
+    "what": "Musical number or reveal."
+   },
+   {
+    "beat": "Stinger",
+    "seconds": "1500-1560",
+    "what": "Post-credit tease."
+   }
+  ],
+  "length": "10-30 min per episode",
+  "aspect": "16:9",
+  "faceless": true,
+  "productionLoad": "High",
+  "titlePatterns": [
+   "[Show]: Episode [N] - [Title]",
+   "[Show] Pilot",
+   "[Show] Season [N] Trailer"
+  ],
+  "hookTemplates": [
+   "(Character line that establishes the world in one joke)"
+  ],
+  "thumbnailPattern": "Key art with the cast and episode title.",
+  "bestNiches": [
+   "comedy",
+   "horror",
+   "fantasy",
+   "kids/teens"
+  ],
+  "retentionTips": [
+   "Merch and fan art fuel the community.",
+   "Shorts of songs and gags drive discovery.",
+   "Dub it; half of animation fans watch in other languages."
+  ],
+  "trend": "rising",
+  "trendNote": "YouTube's April 2026 'Animation's New Wave' report: 61% of Gen Z animation fans like indie YouTube animation as much or more than studios; 63% watch weekly.",
+  "monetizationRisk": "Low",
+  "riskNote": "Original IP.",
+  "examples": [
+   {
+    "channel": "@glitch",
+    "note": "The Amazing Digital Circus studio channel",
+    "subscribers": 23400000
+   }
+  ],
+  "sourceRefs": [
+   "https://blog.youtube/culture-and-trends/independent-animation-trends-report/",
+   "https://www.epidemicsound.com/blog/youtube-trends-2026/"
+  ]
+ },
+ {
+  "id": "hundred-days-challenge",
+  "name": "100 days of / I survived N days",
+  "category": "Challenge & experiment",
+  "summary": "A long survival or progression run compressed into one video, day counter on screen.",
+  "structure": [
+   {
+    "beat": "Hook",
+    "seconds": "0-30",
+    "what": "Rules and the scariest threat."
+   },
+   {
+    "beat": "Days 1-10",
+    "seconds": "30-300",
+    "what": "Struggle and first base."
+   },
+   {
+    "beat": "Middle days",
+    "seconds": "300-1200",
+    "what": "Progress montage with setbacks."
+   },
+   {
+    "beat": "Crisis",
+    "seconds": "1200-1500",
+    "what": "Near-death or loss."
+   },
+   {
+    "beat": "Day 100",
+    "seconds": "1500-1800",
+    "what": "Final build and tally; tease longer run."
+   }
+  ],
+  "length": "20-60 min",
+  "aspect": "16:9",
+  "faceless": false,
+  "productionLoad": "High",
+  "titlePatterns": [
+   "I Survived 100 Days in [Hard Mode]",
+   "100 Days as a [Role] in [Game]",
+   "I Spent 100 Days [Real-Life Challenge]"
+  ],
+  "hookTemplates": [
+   "If I die once, it's over. 100 days. Let's go.",
+   "Day one. I have nothing."
+  ],
+  "thumbnailPattern": "Character next to a big '100 DAYS' and the threat.",
+  "bestNiches": [
+   "Minecraft",
+   "survival games",
+   "fitness",
+   "skills"
+  ],
+  "retentionTips": [
+   "Day counter always visible.",
+   "Real-life versions (100 days of a skill) work too.",
+   "Escalate to 1,000-day sequels."
+  ],
+  "trend": "stable",
+  "trendNote": "Still being uploaded in Aug-Sept 2026 with themed twists; Luke TheNotable's original series now runs to 5,000 days.",
+  "monetizationRisk": "Low",
+  "riskNote": "Original gameplay with commentary.",
+  "examples": [
+   {
+    "channel": "@lukethenotable",
+    "note": "originated hardcore Minecraft day-count series",
+    "subscribers": 4870000
+   }
+  ],
+  "sourceRefs": [
+   "https://www.colinandsamir.com/resources/the-new-rules-of-youtube-from-paddy-galloway"
+  ]
+ },
+ {
+  "id": "last-to-leave-stakes-challenge",
+  "name": "Stakes challenge (last to leave, survive N hours)",
+  "category": "Challenge & experiment",
+  "summary": "Contestants endure a constraint for a prize; eliminations drive the story.",
+  "structure": [
+   {
+    "beat": "Hook",
+    "seconds": "0-20",
+    "what": "Prize amount and the rule."
+   },
+   {
+    "beat": "Contestants",
+    "seconds": "20-90",
+    "what": "Quick intros with personalities."
+   },
+   {
+    "beat": "Rounds",
+    "seconds": "90-900",
+    "what": "Escalating twists and eliminations."
+   },
+   {
+    "beat": "Final two",
+    "seconds": "900-1100",
+    "what": "Big temptation offer."
+   },
+   {
+    "beat": "Winner",
+    "seconds": "1100-1200",
+    "what": "Payoff and reaction."
+   }
+  ],
+  "length": "15-30 min",
+  "aspect": "16:9",
+  "faceless": false,
+  "productionLoad": "High",
+  "titlePatterns": [
+   "Last to Leave [Place] Wins $[N]",
+   "Survive [N] Days in [Place], Win $[N]",
+   "[N] People vs [Thing]"
+  ],
+  "hookTemplates": [
+   "Whoever stays in this circle the longest wins $500,000.",
+   "Fifty people. One winner. No phones."
+  ],
+  "thumbnailPattern": "Contestants plus a huge prize visual.",
+  "bestNiches": [
+   "entertainment",
+   "fitness",
+   "gaming"
+  ],
+  "retentionTips": [
+   "A twist every three minutes.",
+   "Make viewers pick a favorite early.",
+   "Show effort; 2026 audiences reward visible struggle."
+  ],
+  "trend": "stable",
+  "trendNote": "Challenges & stunts were among the fastest-growing niches in a 30-day window to Oct 2026 (1.47%); Epidemic notes 'effort visibility' (1M steps in 30 days) as a 2026 theme.",
+  "monetizationRisk": "Low",
+  "riskNote": "Original production.",
+  "examples": [
+   {
+    "channel": "@mrbeast",
+    "note": "the template for prize challenges",
+    "subscribers": 520000000
+   }
+  ],
+  "sourceRefs": [
+   "https://air.io/en/audience-growth/whos-growing-fastest-on-youtube-and-which-niches-are-hot-in-2025",
+   "https://www.epidemicsound.com/blog/youtube-trends-2026/"
+  ]
+ },
+ {
+  "id": "engineering-experiment",
+  "name": "I built / I tested experiment",
+  "category": "Challenge & experiment",
+  "summary": "A creator builds or tests something real to answer a question, showing failures along the way.",
+  "structure": [
+   {
+    "beat": "Question",
+    "seconds": "0-30",
+    "what": "The dramatic test result first."
+   },
+   {
+    "beat": "Why",
+    "seconds": "30-120",
+    "what": "The problem and stakes."
+   },
+   {
+    "beat": "Build",
+    "seconds": "120-600",
+    "what": "Iterations and failures."
+   },
+   {
+    "beat": "Test",
+    "seconds": "600-900",
+    "what": "The big test, slow motion."
+   },
+   {
+    "beat": "Lesson",
+    "seconds": "900-1020",
+    "what": "What the science says."
+   }
+  ],
+  "length": "12-25 min",
+  "aspect": "16:9",
+  "faceless": false,
+  "productionLoad": "High",
+  "titlePatterns": [
+   "I Built [Absurd Thing] to [Goal]",
+   "Testing If [Myth] Is Real",
+   "[Thing] vs [Thing]: Which Wins?"
+  ],
+  "hookTemplates": [
+   "This shouldn't work. It did.",
+   "I spent six months building this to settle one argument."
+  ],
+  "thumbnailPattern": "Creator plus the contraption mid-action.",
+  "bestNiches": [
+   "science",
+   "engineering",
+   "cars",
+   "DIY"
+  ],
+  "retentionTips": [
+   "Show failures; they build trust.",
+   "Collab with stars and tag them via Collabs.",
+   "Dub into many languages."
+  ],
+  "trend": "stable",
+  "trendNote": "Mark Rober averaged 30+ auto-dubbed languages per video in YouTube's pilot; his Ronaldo collab drew 44M+ views (Nov 2025).",
+  "monetizationRisk": "Low",
+  "riskNote": "Original.",
+  "examples": [
+   {
+    "channel": "@markrober",
+    "note": "engineering builds and tests",
+    "subscribers": 83700000
+   },
+   {
+    "channel": "@veritasium",
+    "note": "physics experiments",
+    "subscribers": 21300000
+   }
+  ],
+  "sourceRefs": [
+   "https://winbuzzer.com/2026/02/05/youtube-ai-auto-dubbing-all-creators-27-languages-xcxwbn/"
+  ]
+ },
+ {
+  "id": "creator-group-game-show",
+  "name": "Creator group game show",
+  "category": "Challenge & experiment",
+  "summary": "A friend group or creator crossover plays a structured game (hide and seek, tinder, quiz) with eliminations.",
+  "structure": [
+   {
+    "beat": "Hook",
+    "seconds": "0-30",
+    "what": "The rules and the prize."
+   },
+   {
+    "beat": "Teams",
+    "seconds": "30-120",
+    "what": "Pick teams; banter."
+   },
+   {
+    "beat": "Rounds",
+    "seconds": "120-1800",
+    "what": "Games with commentary."
+   },
+   {
+    "beat": "Final",
+    "seconds": "1800-2400",
+    "what": "Showdown."
+   },
+   {
+    "beat": "Wrap",
+    "seconds": "2400-2700",
+    "what": "Winner, punishment for loser."
+   }
+  ],
+  "length": "30-60 min",
+  "aspect": "16:9",
+  "faceless": false,
+  "productionLoad": "High",
+  "titlePatterns": [
+   "[Group] [Game] (Celebrity Edition)",
+   "[Group] vs [Group]: [Game]",
+   "20 vs 1: [Game]"
+  ],
+  "hookTemplates": [
+   "Loser has to [punishment].",
+   "We brought [N] strangers to [place]."
+  ],
+  "thumbnailPattern": "Group faces with team colors and the game in the background.",
+  "bestNiches": [
+   "entertainment",
+   "sports",
+   "dating"
+  ],
+  "retentionTips": [
+   "Tag every channel with Collabs so all audiences see it.",
+   "Long runtimes suit TV group viewing.",
+   "Recurring formats become franchises."
+  ],
+  "trend": "stable",
+  "trendNote": "Crossover events (Sidemen, influencer boxing with 2M concurrent viewers) and native Collabs tagging keep this strong.",
+  "monetizationRisk": "Low",
+  "riskNote": "Original.",
+  "examples": [
+   {
+    "channel": "@sidemen",
+    "note": "weekly group games and crossovers",
+    "subscribers": 23400000
+   }
+  ],
+  "sourceRefs": [
+   "https://www.epidemicsound.com/blog/youtube-trends-2026/"
+  ]
+ },
+ {
+  "id": "video-podcast-full-episode",
+  "name": "Full-episode video podcast",
+  "category": "Podcast & talk",
+  "summary": "A one- to three-hour filmed conversation with a guest, watched on TV or as background audio.",
+  "structure": [
+   {
+    "beat": "Cold open",
+    "seconds": "0-90",
+    "what": "Montage of the episode's best lines."
+   },
+   {
+    "beat": "Intro",
+    "seconds": "90-180",
+    "what": "Guest credential and why now."
+   },
+   {
+    "beat": "Conversation",
+    "seconds": "180-6000",
+    "what": "Chaptered topics."
+   },
+   {
+    "beat": "Rapid fire",
+    "seconds": "6000-6600",
+    "what": "Recurring closing questions."
+   },
+   {
+    "beat": "Outro",
+    "seconds": "6600-6900",
+    "what": "Plugs and next guest."
+   }
+  ],
+  "length": "60-180 min",
+  "aspect": "16:9",
+  "faceless": false,
+  "productionLoad": "Medium",
+  "titlePatterns": [
+   "[Guest]: [Bold Claim]",
+   "The [Topic] Expert: [Warning]",
+   "[Guest] Opens Up About [Thing]"
+  ],
+  "hookTemplates": [
+   "(Cold open montage)",
+   "You've said [quote]. Explain."
+  ],
+  "thumbnailPattern": "Guest portrait plus a few words of their boldest claim.",
+  "bestNiches": [
+   "business",
+   "health",
+   "sports",
+   "comedy",
+   "culture"
+  ],
+  "retentionTips": [
+   "Chapters for every topic.",
+   "Two-camera framing and clean audio.",
+   "Feed Shorts clips daily."
+  ],
+  "trend": "rising",
+  "trendNote": "YouTube podcasts passed 1B monthly viewers; Premium members watched 800M+ hours of podcasts in April 2026; OutlierKit tracks video podcasts at 15x YoY.",
+  "monetizationRisk": "Low",
+  "riskNote": "Original.",
+  "examples": [
+   {
+    "channel": "@thediaryofaceo",
+    "note": "long-form guest interviews",
+    "subscribers": 20300000
+   },
+   {
+    "channel": "@hubermanlab",
+    "note": "science solo and guest episodes",
+    "subscribers": 7940000
+   }
+  ],
+  "sourceRefs": [
+   "https://outlierkit.com/blog/trending-niches-on-youtube",
+   "https://blog.youtube/news-and-events/innovation-youtube-era-made-on-viewers-creators/",
+   "https://www.kidelight.com/2026/10/why-50-of-youtube-watch-time-is-on-your.html"
+  ]
+ },
+ {
+  "id": "culture-talk-show",
+  "name": "Culture and sports talk show",
+  "category": "Podcast & talk",
+  "summary": "A host-led sit-down show with celebrity guests, built for viral moments and long TV sessions.",
+  "structure": [
+   {
+    "beat": "Cold open",
+    "seconds": "0-60",
+    "what": "The viral moment."
+   },
+   {
+    "beat": "Welcome",
+    "seconds": "60-180",
+    "what": "Guest walk-in and banter."
+   },
+   {
+    "beat": "Story blocks",
+    "seconds": "180-4000",
+    "what": "Career stories, beef, reveals."
+   },
+   {
+    "beat": "Signature segment",
+    "seconds": "4000-4500",
+    "what": "Recurring game or drink segment."
+   },
+   {
+    "beat": "Close",
+    "seconds": "4500-4800",
+    "what": "Plugs and sign-off."
+   }
+  ],
+  "length": "60-150 min",
+  "aspect": "16:9",
+  "faceless": false,
+  "productionLoad": "High",
+  "titlePatterns": [
+   "[Guest] on [Controversy]",
+   "[Guest] Tells All",
+   "[Guest] | [Show Name]"
+  ],
+  "hookTemplates": [
+   "I've never told anyone this.",
+   "Let's talk about what really happened."
+  ],
+  "thumbnailPattern": "Host and guest mid-laugh or tense moment, show logo.",
+  "bestNiches": [
+   "sports",
+   "music",
+   "comedy",
+   "celebrity"
+  ],
+  "retentionTips": [
+   "Book guests with news hooks.",
+   "Clips feed Shorts daily.",
+   "Design the set to read on a TV."
+  ],
+  "trend": "stable",
+  "trendNote": "Two-host and sit-down shows match YouTube's TV shift; YouTube says over half of its top 100 creators now have TV as their top screen.",
+  "monetizationRisk": "Low",
+  "riskNote": "Original.",
+  "examples": [
+   {
+    "channel": "@clubshayshay",
+    "note": "sports and culture interviews",
+    "subscribers": 4320000
+   }
+  ],
+  "sourceRefs": [
+   "https://blog.youtube/news-and-events/made-on-youtube-creators-shorts-series-tv-features/",
+   "https://outlierkit.com/blog/trending-niches-on-youtube"
+  ]
+ },
+ {
+  "id": "industry-news-show",
+  "name": "Weekly niche news show",
+  "category": "Podcast & talk",
+  "summary": "Hosts break down the week's news in one industry with analysis and guests.",
+  "structure": [
+   {
+    "beat": "Headlines",
+    "seconds": "0-120",
+    "what": "Top three stories."
+   },
+   {
+    "beat": "Story 1 deep dive",
+    "seconds": "120-900",
+    "what": "Analysis and debate."
+   },
+   {
+    "beat": "Stories 2-3",
+    "seconds": "900-1800",
+    "what": "Shorter takes."
+   },
+   {
+    "beat": "Guest or Q&A",
+    "seconds": "1800-2700",
+    "what": "Expert or audience questions."
+   },
+   {
+    "beat": "Predictions",
+    "seconds": "2700-3000",
+    "what": "What's next."
+   }
+  ],
+  "length": "30-75 min",
+  "aspect": "16:9",
+  "faceless": false,
+  "productionLoad": "Medium",
+  "titlePatterns": [
+   "[Industry] News: [Biggest Story]",
+   "Why [Company]'s [Move] Changes Everything",
+   "This Week in [Industry]"
+  ],
+  "hookTemplates": [
+   "Three things happened this week that matter for [audience].",
+   "[Company] just did something nobody saw coming."
+  ],
+  "thumbnailPattern": "Hosts with the story's logo and a reaction.",
+  "bestNiches": [
+   "creator economy",
+   "tech",
+   "AI",
+   "finance",
+   "gaming"
+  ],
+  "retentionTips": [
+   "Same day and time every week.",
+   "Chapters per story.",
+   "AI tools and creator economy are among the fastest-growing niches."
+  ],
+  "trend": "stable",
+  "trendNote": "Creator economy and AI/ML were among the fastest-growing niches by subscriber growth in the 30 days to Oct 2, 2026.",
+  "monetizationRisk": "Low",
+  "riskNote": "Original.",
+  "examples": [
+   {
+    "channel": "@colinandsamir",
+    "note": "creator economy news and interviews",
+    "subscribers": 1630000
+   }
+  ],
+  "sourceRefs": [
+   "https://air.io/en/audience-growth/whos-growing-fastest-on-youtube-and-which-niches-are-hot-in-2025"
+  ]
+ },
+ {
+  "id": "live-reality-show-24-7",
+  "name": "24/7 livestreamed reality show",
+  "category": "Live & community",
+  "summary": "Contestants live together on camera around the clock for weeks; viewers vote with Super Chats.",
+  "structure": [
+   {
+    "beat": "Premiere",
+    "seconds": "day 1",
+    "what": "House reveal and contestant entrances."
+   },
+   {
+    "beat": "Daily loop",
+    "seconds": "24/7",
+    "what": "Tasks, fights, confessionals."
+   },
+   {
+    "beat": "Weekly vote",
+    "seconds": "weekly",
+    "what": "Super Chat voting and eliminations."
+   },
+   {
+    "beat": "Highlights",
+    "seconds": "daily",
+    "what": "Recap VODs and Shorts."
+   },
+   {
+    "beat": "Finale",
+    "seconds": "final day",
+    "what": "Winner and prize."
+   }
+  ],
+  "length": "30-40 days continuous",
+  "aspect": "16:9",
+  "faceless": false,
+  "productionLoad": "High",
+  "titlePatterns": [
+   "[Show] - Day [N] LIVE",
+   "[Show] [Season] Gran Premiere",
+   "[Contestant] vs [Contestant]: Expulsion Vote"
+  ],
+  "hookTemplates": [
+   "Ten influencers. One house. You decide who leaves."
+  ],
+  "thumbnailPattern": "Contestant grid with the live badge and day number.",
+  "bestNiches": [
+   "entertainment",
+   "music",
+   "local celebrity"
+  ],
+  "retentionTips": [
+   "Super Chat voting turns viewers into players.",
+   "Daily highlight VODs and Shorts for discovery.",
+   "Local-language focus; regional content has less competition."
+  ],
+  "trend": "rising",
+  "trendNote": "La Casa de Alofoke peaked at about 1.3M live viewers, set Guinness records (30 and 38 days), and drove Alofoke Radio Show to most-watched channel of 2025; Epidemic cites 2M concurrent and 300M views.",
+  "monetizationRisk": "Low",
+  "riskNote": "Original live production; moderation is the main risk.",
+  "examples": [
+   {
+    "channel": "@alofokeradioshow",
+    "note": "La Casa de Alofoke 24/7 reality",
+    "subscribers": 9090000
+   }
+  ],
+  "sourceRefs": [
+   "https://www.epidemicsound.com/blog/youtube-trends-2026/"
+  ]
+ },
+ {
+  "id": "co-stream-event",
+  "name": "Co-stream event and creator crossover match",
+  "category": "Live & community",
+  "summary": "A live one-off event (charity match, boxing, sports crossover) streamed with creator commentary.",
+  "structure": [
+   {
+    "beat": "Pre-show",
+    "seconds": "0-60 min",
+    "what": "Hype, interviews, predictions."
+   },
+   {
+    "beat": "Event",
+    "seconds": "60-180 min",
+    "what": "The match or competition."
+   },
+   {
+    "beat": "Interviews",
+    "seconds": "180-210 min",
+    "what": "Post-event reactions."
+   },
+   {
+    "beat": "VOD and Shorts",
+    "seconds": "after",
+    "what": "Highlights and best moments."
+   }
+  ],
+  "length": "2-5 h live",
+  "aspect": "16:9",
+  "faceless": false,
+  "productionLoad": "High",
+  "titlePatterns": [
+   "[Creator Team] vs [Creator Team] LIVE",
+   "[Event Name] [Year]",
+   "[Creator] vs [Creator]: Full Fight"
+  ],
+  "hookTemplates": [
+   "Tonight: [N] creators, one [event]."
+  ],
+  "thumbnailPattern": "Face-off of the headliners with event branding.",
+  "bestNiches": [
+   "sports",
+   "boxing",
+   "gaming",
+   "charity"
+  ],
+  "retentionTips": [
+   "Co-host so every creator brings their audience.",
+   "Live Showdowns (2027) will add on-screen score battles.",
+   "Clip immediately."
+  ],
+  "trend": "rising",
+  "trendNote": "Epidemic's 2026 predictions cite influencer boxing at 2M concurrent and a Spain vs England basketball crossover with MrBeast at 1M+; YouTube announced co-host matchmaking and Live Showdowns for 2027.",
+  "monetizationRisk": "Low",
+  "riskNote": "Original live content; rights for real sports footage matter.",
+  "examples": [
+   {
+    "channel": "@sidemen",
+    "note": "charity football matches and events",
+    "subscribers": 23400000
+   }
+  ],
+  "sourceRefs": [
+   "https://www.epidemicsound.com/blog/youtube-trends-2026/",
+   "https://blog.youtube/news-and-events/made-on-youtube-live-tools-fan-funding-dubbing/"
+  ]
+ }
+]

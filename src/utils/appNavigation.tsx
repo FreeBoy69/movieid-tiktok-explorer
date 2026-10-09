@@ -169,7 +169,7 @@ export const NAV_GROUPS: NavGroup[] = [
           { id: "discover", label: "Niche Finder", description: "Channels and outliers in any niche", icon: icon(Compass), target: { view: "discover" } },
           { id: "youtube", label: "YouTube Radar", description: "Scan niches and emerging channels", icon: icon(Radar), target: { view: "youtube" } },
           { id: "tiktok", label: "TikTok Explorer", description: "Analyze videos and collections", icon: icon(PlayCircle), target: { view: "tiktok" } },
-          { id: "niches", label: "Niche Library", description: "The taxonomy of content markets", icon: icon(LibraryBig), target: { view: "niches" } },
+          { id: "niches", label: "Niches & Formats", description: "Growing niches and the video formats that work now", icon: icon(LibraryBig), target: { view: "niches" } },
           { id: "movie", label: "Movie ID", description: "Identify a film from any clip", icon: icon(ScanSearch), target: { view: "movie" } },
         ],
       },

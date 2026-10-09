@@ -14,7 +14,7 @@ STAGE=$(mktemp -d)
 trap 'rm -rf "$STAGE"' EXIT
 mkdir -p "$STAGE/src/utils" "$STAGE/scripts" "$STAGE/data" "$STAGE/dist"
 cp package.json package-lock.json server.js requirements.txt "$STAGE/"
-cp data/premium-niche-library.json data/prompt-library.json data/image-prompts.json data/shortfilm-prompts.json data/seedance-prompts.json "$STAGE/data/"
+cp data/premium-niche-library.json data/format-library.json data/prompt-library.json data/image-prompts.json data/shortfilm-prompts.json data/seedance-prompts.json "$STAGE/data/"
 cp -R dist/. "$STAGE/dist/"
 # Vite's hashed scripts and styles go into one file, dist/assets.pack, which the
 # server serves from memory (server/builtAssets.js). Pages load on demand, so

@@ -71,6 +71,7 @@ import { JINA_READER, reachDoctor, readWebPage, youtubeCaptions } from "./server
 import { installRemoteMedia, registerRemoteMedia, remoteMediaStatus } from "./server/remoteMedia.js";
 import { registerPromptLibrary } from "./server/promptLibrary.js";
 import { guardUsage, meterUsage, withUsageUser } from "./src/utils/usageMeter.js";
+import { buildNicheIndex, classifyNiche } from "./src/utils/nicheClassifier.js";
 import { createAdminConsole } from "./server/adminConsole.js";
 import { hostedAudioFile, hostedVoiceProfile, hostedVoiceProfiles, isHostedVoice, storeHostedAudio, synthesizeHostedVoice } from "./server/hostedVoices.js";
 import { canUseVoice, claimVoice, inFlightVoiceGeneration, releaseVoice, reusableVoiceGeneration, visibleVoices } from "./server/voiceOwners.js";
@@ -3577,15 +3578,38 @@ function sqlNumber(value) {
     const n = Number(value);
     return Number.isFinite(n) ? String(n) : "0";
 }
+let nicheSeedCache = null;
 function loadNicheSeedEntries() {
+    if (nicheSeedCache)
+        return nicheSeedCache;
     const seedPath = path.join(__dirname, "data", "premium-niche-library.json");
     try {
-        return JSON.parse(fs.readFileSync(seedPath, "utf8"));
+        nicheSeedCache = JSON.parse(fs.readFileSync(seedPath, "utf8"));
+        return nicheSeedCache;
     }
     catch (error) {
         console.warn("Niche seed data unavailable:", error instanceof Error ? error.message : error);
         return [];
     }
+}
+let nicheIndexCache = null;
+/** The niche library as a classifier index (built once; the library ships with the app). */
+function nicheIndex() {
+    nicheIndexCache ||= buildNicheIndex(loadNicheSeedEntries());
+    return nicheIndexCache;
+}
+let formatLibraryCache = null;
+function loadFormatLibrary() {
+    if (formatLibraryCache)
+        return formatLibraryCache;
+    try {
+        formatLibraryCache = JSON.parse(fs.readFileSync(path.join(__dirname, "data", "format-library.json"), "utf8"));
+    }
+    catch (error) {
+        console.warn("Format library unavailable:", error instanceof Error ? error.message : error);
+        return [];
+    }
+    return formatLibraryCache;
 }
 function sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
@@ -4261,6 +4285,10 @@ ON CONFLICT (id) DO UPDATE SET
   risk_notes = EXCLUDED.risk_notes,
   source_refs = EXCLUDED.source_refs,
   updated_at = now();
+-- Entries dropped from the library (outdated niches) go; agent discoveries stay.
+DELETE FROM niche_library
+WHERE id NOT IN (${entries.filter((entry) => entry?.id).map((entry) => sqlString(entry.id)).join(", ")})
+  AND source_refs::text NOT ILIKE '%agent%';
 `);
 }
 async function listNicheLibraryEntries() {
@@ -4299,7 +4327,11 @@ FROM niche_library;
         const seedById = new Map(seed.map((entry) => [entry.id, entry]));
         return rows.map((row) => {
             const seedEntry = seedById.get(row.id);
-            return seedEntry ? { ...row, macroNiche: seedEntry.macroNiche, subNiche: seedEntry.subNiche } : row;
+            if (seedEntry)
+                return { ...row, ...seedEntry };
+            // Agent discoveries are filed under the current taxonomy, not the one they were found with.
+            const match = classifyNiche(nicheIndex(), { title: row.msn, description: (row.seedKeywords || []).join(" ") });
+            return match && !match.fallback ? { ...row, macroNiche: match.macroNiche, subNiche: match.subNiche } : { ...row, macroNiche: "Agent discoveries", subNiche: "Uncategorized" };
         });
     }
     if (Array.isArray(seed) && seed.length) {
@@ -6079,16 +6111,8 @@ FROM (
     }
 }
 function inferMacroFromAgentSettings(settings = {}, msn = "") {
-    const text = `${settings.genreFocus || ""} ${settings.microNicheGoal || ""} ${msn}`.toLowerCase();
-    if (/(anime|manga|donghua|manhwa|webtoon)/i.test(text))
-        return { macro: "Entertainment", sub: "Anime and Manga Recaps" };
-    if (/(movie|film|recap|cinema)/i.test(text))
-        return { macro: "Entertainment", sub: "Movie Recaps" };
-    if (/(geo|country|location|travel|map)/i.test(text))
-        return { macro: "Education", sub: "Geography Facts" };
-    if (/(fruit|animation|cartoon|story)/i.test(text))
-        return { macro: "Entertainment", sub: "Animated Story Channels" };
-    return { macro: "Creator-discovered", sub: "Agent-discovered MSNs" };
+    const match = classifyNiche(nicheIndex(), { title: msn, description: `${settings.genreFocus || ""} ${settings.microNicheGoal || ""}` });
+    return match && !match.fallback ? { macro: match.macroNiche, sub: match.subNiche } : { macro: "Agent discoveries", sub: "Uncategorized" };
 }
 async function refreshAgentNicheObservations(agentId, profile, agent) {
     for (const niche of (profile.bestMicroNiches || []).slice(0, 8)) {
@@ -18165,79 +18189,10 @@ function matchesVideoDurationFilter(durationKey, seconds) {
         return s >= 1200;
     return true;
 }
-function inferNiche(title, description, userQuery, categoryName, tagsText) {
-    const tags = String(tagsText || "");
-    const text = `${title} ${description} ${userQuery} ${tags}`.toLowerCase();
-    const rules = [
-        ["movie & TV recap", ["recap", "ending explained", "ending", "movie review", "film explained"]],
-        ["movie recap", ["movie", "recap", "film", "cinema", "trailer", "full movie"]],
-        ["documentary & explainers", ["documentary", "docuseries", "miniseries", "investigative", "exposed", "scandal", "controversy"]],
-        ["AI & automation", ["chatgpt", "openai", "midjourney", "gemini", "robot", "automation", "artificial intelligence", "llm", "neural", "sora", "claude"]],
-        ["space & astronomy", ["space", "nasa", "spacex", "moon", "mars", "galaxy", "planet", "solar", "astronom", "cosmos", "ufo", "james webb"]],
-        ["history & war", ["history", "ancient", "ww2", "wwii", "empire", "civilization", "battle of", "dynasty"]],
-        ["money & business", ["stonks", "stock", "passive income", "money", "business", "startup", "crypto", "invest", "hustle", "revenue"]],
-        ["true crime", ["true crime", "unsolved", "serial killer", "case file", "murder", "mystery", "jury", "court case"]],
-        ["health & fitness", ["gym", "workout", "diet", "protein", "longevity", "health", "sleep", "meditation", "yoga", "keto", "gains", "primal"]],
-        ["coding & software", ["coding", "python", "javascript", "typescript", "github", "programming", "debug", "react.js", "next.js", "node.js", "api", "devops", "linux", "cursor", "stack overflow"]],
-        ["reaction & review", ["reaction video", "reacts", "first time", "honest review", "rating", "game breakdown", "tier list", "i watched"]],
-        ["shorts & clips", ["#shorts", "shorts", "short video", "clip", "bitesized"]],
-        ["challenge & viral", ["challenge", "dare", "prank", "viral", "trending", "gone wrong", "satisfying", "satisfy"]],
-        ["music & audio", ["cover", "lyrics", "remix", "acoustic", "beat", "album", "mv", "official video", "live performance"]],
-        ["podcast & talk", ["podcast", "interview", "ep.", "livestream", "q&a", "debate", "opinion", "rant"]],
-        ["beauty & fashion", ["makeup", "skincare", "outfit", "fashion", "grwm", "aesthetic", "nails", "hairstyle"]],
-        ["food & cooking", ["recipe", "cooking", "mukbang", "eat", "food review", "chef", "kitchen", "baking"]],
-    ];
-    for (const [label, keywords] of rules) {
-        for (const keyword of keywords) {
-            if (text.includes(String(keyword).toLowerCase()))
-                return label;
-        }
-    }
-    const cat = String(categoryName || "").toLowerCase();
-    if (cat.includes("film") || cat.includes("animation")) {
-        if (/(movie|recap|trailer|scene|cinema|short film)/.test(text))
-            return "Film & long-form (category)";
-        return "Animation & video (category)";
-    }
-    if (cat.includes("gaming"))
-        return "Gaming (category)";
-    if (cat.includes("science") || cat.includes("technology")) {
-        if (/(space|nasa|planet|physics|quantum|data science|ml\b|code)/.test(text))
-            return "STEM & digital (category)";
-        return "Science & tech (category)";
-    }
-    if (cat.includes("howto") || cat.includes("style"))
-        return "How-to & life skills (category)";
-    if (cat.includes("education"))
-        return "Education (category)";
-    if (cat.includes("entertainment"))
-        return "Entertainment (category)";
-    if (cat.includes("news") || cat.includes("politics"))
-        return "News & politics (category)";
-    if (cat.includes("people") || cat.includes("blogs")) {
-        const topWord = compactKeyword(`${title} ${userQuery} ${tags}`)[0];
-        return topWord ? `${topWord} - creator` : "Creator & lifestyle (category)";
-    }
-    if (cat.includes("music"))
-        return "Music (category)";
-    if (cat.includes("sports"))
-        return "Sports (category)";
-    if (cat.includes("pets") || cat.includes("animals"))
-        return "Pets & animals (category)";
-    if (cat.includes("travel") || cat.includes("events"))
-        return "Travel & events (category)";
-    if (cat.includes("comedy"))
-        return "Comedy (category)";
-    if (cat.includes("nonprofit"))
-        return "Nonprofit (category)";
-    if (cat.includes("autos") || cat.includes("vehicles"))
-        return "Autos (category)";
-    const topWordN = compactKeyword(`${title} ${userQuery} ${tags}`)[0];
-    if (topWordN)
-        return `${topWordN} (topic signal)`;
-    if (categoryName && categoryName !== "Uncategorized" && categoryName !== "Not classified")
-        return `General - ${categoryName}`;
-    return "emerging / multi-topic";
+// The niche a video belongs to, from the niche library's taxonomy (see nicheClassifier.js).
+function inferNiche(title, description, userQuery, categoryName, tagsText, channelTitle = "") {
+    const match = classifyNiche(nicheIndex(), { title, channel: channelTitle, description, query: userQuery, category: categoryName, tags: tagsText });
+    return match?.label || "Unclassified";
 }
 function facelessSignals(title, description, channelTitle) {
     const text = `${title} ${description} ${channelTitle}`.toLowerCase();
@@ -18304,7 +18259,7 @@ function buildYouTubeRadarVideos(videos, channelMap, query) {
         const categoryId = String(snippet.categoryId ?? "").trim() || "0";
         const categoryName = getYoutubeCategoryName(categoryId);
         const tagStr = Array.isArray(snippet.tags) ? snippet.tags.join(" ") : "";
-        const niche = inferNiche(snippet.title, snippet.description, query, categoryName, tagStr);
+        const niche = inferNiche(snippet.title, snippet.description, query, categoryName, tagStr, snippet.channelTitle);
         const face = facelessSignals(snippet.title, snippet.description, snippet.channelTitle);
         const relevanceScore = youtubeRadarRelevanceScore({
             title: snippet.title,
@@ -19525,7 +19480,7 @@ async function listYouTubeCompetitorChannels(account, dashboard = {}, niches = [
         const channelStats = channel.statistics || {};
         const subscriberCount = channelStats.hiddenSubscriberCount ? 0 : Number(channelStats.subscriberCount || 0);
         const categoryName = getYoutubeCategoryName(snippet.categoryId || "");
-        const inferredNiche = inferNiche(snippet.title || "", snippet.description || "", matchedQueryByVideo.get(video.id) || "", categoryName, Array.isArray(snippet.tags) ? snippet.tags.join(" ") : "");
+        const inferredNiche = inferNiche(snippet.title || "", snippet.description || "", matchedQueryByVideo.get(video.id) || "", categoryName, Array.isArray(snippet.tags) ? snippet.tags.join(" ") : "", snippet.channelTitle || "");
         const microScore = youtubeCompetitorMicroMatchScore(`${snippet.title || ""} ${snippet.description || ""} ${snippet.channelTitle || ""} ${matchedQuery}`, targetTerms);
         const relevanceScore = Math.max(microScore, youtubeRadarRelevanceScore({
             title: snippet.title,
@@ -20307,7 +20262,7 @@ async function buildChannelStyleProfile(input = {}, account = null) {
                 commentCount: Number(stats.commentCount || 0),
                 durationSeconds,
                 hookPattern: inferHookPatternFromText(snippet.title || "", "", tagText),
-                niche: inferNiche(snippet.title || "", snippet.description || "", String(input.niche || ""), getYoutubeCategoryName(snippet.categoryId || ""), tagText),
+                niche: inferNiche(snippet.title || "", snippet.description || "", String(input.niche || ""), getYoutubeCategoryName(snippet.categoryId || ""), tagText, snippet.channelTitle || ""),
                 tags: Array.isArray(snippet.tags) ? snippet.tags.slice(0, 12) : [],
                 transcriptStatus: "pending",
                 descriptionExcerpt: String(snippet.description || "").slice(0, 700),
@@ -23812,6 +23767,10 @@ WHERE id = ${sqlString(req.params.id)}
             res.status(503).json({ error: error instanceof Error ? error.message : "Could not store TikTok comment cache" });
         }
     });
+    app.get("/api/formats", (_req, res) => {
+        res.setHeader("Cache-Control", "public, max-age=600");
+        res.json({ formats: loadFormatLibrary() });
+    });
     app.get("/api/niches", async (_req, res) => {
         try {
             const niches = await listNicheLibraryEntries();
@@ -23824,7 +23783,7 @@ WHERE id = ${sqlString(req.params.id)}
                     macroCount: new Set(niches.map((n) => n.macroNiche)).size,
                     subNicheCount: new Set(niches.map((n) => `${n.macroNiche}::${n.subNiche}`)).size,
                     tierOneCount: niches.filter((n) => String(n.geoTier || "").includes("Tier 1")).length,
-                    sourceRefs: ["user-pdf-2026", "user-docx-2026", "vidiq-2026", "nextglobalwave-2026", "packapop-2026", "imf-2026"],
+                    sourceRefs: [...new Set(niches.flatMap((n) => n.sourceRefs || []).filter((ref) => /^https?:/.test(String(ref))))].slice(0, 40),
                 },
             });
         }
