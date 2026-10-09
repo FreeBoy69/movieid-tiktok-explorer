@@ -907,3 +907,62 @@
 
 /* No title row: the tabs and refresh sit at the top, without the tall header. */
 .as-root .as-head { padding: 18px 0 14px; justify-content: flex-start; }
+
+/* ---------- Phones: one scrolling page ----------
+   The workspace itself scrolls on narrow screens, so nothing inside it keeps a
+   scroll area of its own (nested scrollers clipped the settings and the voice
+   list). Sections size to their content, side padding is the page's 12px only,
+   and the player stays pinned at the foot. */
+@media (max-width: 640px) {
+  .cs-audio-workspace.as-root { padding: 0 12px 10px; }
+  .as-root > .as-head, .as-root > .as-generate, .as-root > .as-library, .as-root > .as-clone { flex: none; min-height: auto; }
+  .as-root .as-head { padding: 12px 0 10px; }
+  .as-root .as-head-actions { gap: 8px; }
+  .as-root .ui-tabs.as-head-tabs > button { flex: 1; justify-content: center; padding: 0 8px; }
+  .as-root .as-icon { width: 40px; height: 40px; }
+
+  /* Generate: the script box, then settings, both at their natural height. */
+  .as-root .as-generate { gap: 10px; overflow: visible; grid-template-rows: auto auto; align-content: start; }
+  .as-root .as-write { border-radius: 20px; }
+  .as-root .as-script { min-height: 168px; padding: 18px 18px 12px; font-size: 17px; line-height: 1.6; }
+  .as-root .as-write-foot { flex-wrap: wrap; gap: 10px; padding: 10px 10px 10px 18px; }
+  .as-root .as-write-foot .as-count { font-size: 12.5px; }
+  .as-root .as-write-foot .as-primary { height: 44px; margin-left: auto; padding: 0 20px; }
+  .as-root .as-rail { gap: 14px; padding: 12px 14px 16px; overflow: visible; border-radius: 20px; }
+  .as-root .as-rail-body { gap: 12px; }
+
+  /* Voices: the filter and the create button share a row, search gets the full width. */
+  .as-root .as-library { flex: none; }
+  .as-root .as-library-bar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; padding: 2px 0 12px; }
+  .as-root .as-library-bar > .as-grow { grid-column: 1 / -1; grid-row: 2; }
+  .as-root .as-library-bar > .as-count { display: none; }
+  .as-root .as-library-bar > .as-primary { height: 40px; padding: 0 16px; font-size: 13.5px; }
+  .as-root .as-library-scroll { overflow: visible; padding: 12px 0 16px; }
+
+  /* One compact row per voice: sphere, name and details, save and rename, use. */
+  .as-root .as-list .as-card {
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    grid-template-areas: "sphere name actions use" "sphere meta meta meta";
+    column-gap: 10px;
+    row-gap: 2px;
+    padding: 10px 10px 10px 10px;
+  }
+  .as-root .as-list .as-card-actions { gap: 4px; }
+  .as-root .as-list .as-icon.is-sm { width: 34px; height: 34px; }
+  .as-root .as-list .as-card-name,
+  .as-root .as-list .as-rename { overflow: hidden; font-size: 17px; text-overflow: ellipsis; white-space: nowrap; }
+  .as-root .as-list .as-card-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .as-root .as-list .as-use { width: auto; height: 34px; margin: 0; padding: 0 12px; font-size: 13px; }
+
+  /* Clone: the page padding is enough; the steps stay full width. */
+  .as-root .as-clone { flex: none; overflow: visible; padding: 8px 0 24px; }
+  .as-root .as-clone-head h2 { font-size: 26px; }
+  .as-root .as-step { padding: 16px 14px; border-radius: 18px; }
+
+  /* Player: the title gets the room, the details shrink before it does. */
+  .as-root .as-dock { bottom: max(8px, env(safe-area-inset-bottom)); margin-top: auto; }
+  .as-root > .as-generate, .as-root > .as-library, .as-root > .as-clone { margin-bottom: 10px; }
+  .as-root .as-dock .mk-audio { column-gap: 10px; }
+  .as-root .as-dock .mk-audio-head .as-sphere { display: none; }
+  .as-root .as-dock .mk-audio-meta { display: none; }
+}
