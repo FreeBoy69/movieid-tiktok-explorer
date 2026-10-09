@@ -331,7 +331,8 @@ export function ModelPicker({ models, value, onChange, loading, pricing, auto }:
       </button>
       {open ? (
         <div className="ui-menu cs-menu cs-model-menu" role="dialog" aria-label="Choose a model">
-          <SearchField size="sm" autoFocus value={query} onChange={setQuery} placeholder={`Search ${models.length} models`} />
+          {/* On touch screens focusing the search would open the keyboard over the list. */}
+          <SearchField size="sm" autoFocus={typeof window !== "undefined" && window.matchMedia?.("(pointer: fine)").matches} value={query} onChange={setQuery} placeholder={`Search ${models.length} models`} />
           {providers.length > 1 ? (
             <div className="cs-providers">
               <button type="button" className="ui-chip" aria-pressed={!providerFilter} onClick={() => setProviderFilter("")}>All</button>
