@@ -16,7 +16,7 @@ export async function movieInfo(tmdbId, { fetch = globalThis.fetch, env = proces
   const url = new URL(`https://api.themoviedb.org/3/movie/${tmdbId}`);
   url.searchParams.set("append_to_response", "credits,external_ids");
   if (key) url.searchParams.set("api_key", key);
-  const response = await fetch(url, { headers: bearer ? { Authorization: `Bearer ${bearer}` } : {}, signal: signal || AbortSignal.timeout(15000) });
+  const response = await fetch(url, { headers: bearer ? { Authorization: `Bearer ${bearer}` } : {}, signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000) });
   if (!response.ok) throw new Error(`TMDB ${response.status}`);
   const d = await response.json();
   const imdbId = d.imdb_id || d.external_ids?.imdb_id || null;
@@ -47,7 +47,7 @@ export async function movieInfo(tmdbId, { fetch = globalThis.fetch, env = proces
 
 /** A poster from IMDb's public suggestion endpoint (no key), or "". */
 export async function imdbPoster(imdbId, { fetch = globalThis.fetch, signal } = {}) {
-  const response = await fetch(`https://v2.sg.media-imdb.com/suggestion/t/${imdbId}.json`, { signal: signal || AbortSignal.timeout(10000) });
+  const response = await fetch(`https://v2.sg.media-imdb.com/suggestion/t/${imdbId}.json`, { signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(10000)]) : AbortSignal.timeout(10000) });
   if (!response.ok) return "";
   const data = await response.json();
   const hit = (data.d || []).find((item) => item.id === imdbId);

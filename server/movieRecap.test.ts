@@ -736,10 +736,34 @@ describe("intro montage matched to its words", () => {
 describe("AI credits", () => {
   it("stops a render with a clear message when the provider is out of credits", async () => {
     const { checkAiCredits } = await import("./movieRecap.js");
-    await expect(checkAiCredits({ request: (async () => { throw new Error("AI provider (402): Insufficient credits."); }) as any })).rejects.toThrow(/out of credits/);
+    // The platform's AI account: the user is told it's paused, not sent to the provider's billing page.
+    const provider = checkAiCredits({ request: (async () => { throw new Error("AI provider (402): Insufficient credits."); }) as any });
+    await expect(provider).rejects.toThrow(/Recaps are paused/);
+    await expect(provider).rejects.not.toThrow(/openrouter|settings\/credits/i);
     await expect(checkAiCredits({ request: (async () => ({ value: "OK" })) as any })).resolves.toBeUndefined();
     // Another error (a timeout) doesn't stop the render.
     await expect(checkAiCredits({ request: (async () => { throw new Error("timeout"); }) as any })).resolves.toBeUndefined();
+  });
+});
+
+describe("running out of AutoYT credits", () => {
+  it("stops the recap with the user's own credits message instead of skipping the checks", async () => {
+    const { checkAiCredits } = await import("./movieRecap.js");
+    const blocked = Object.assign(new Error("You've used all your AutoYT credits. Top up to keep going."), { name: "UsageBlockedError", statusCode: 402 });
+    await expect(checkAiCredits({ request: (async () => { throw blocked; }) as any })).rejects.toBe(blocked);
+  });
+});
+
+describe("recap error messages", () => {
+  it("turns system text into something a user can act on", async () => {
+    const { recapErrorMessage } = await import("./movieRecap.js");
+    expect(recapErrorMessage(new Error("ENOENT: no such file or directory, copyfile '/tmp/x/a.t110.wav'"), "planning")).toMatch(/Press Try again: nothing you paid for is lost/);
+    expect(recapErrorMessage(new SyntaxError("Unexpected token < in JSON at position 0"))).toMatch(/unreadable answer/);
+    expect(recapErrorMessage(new Error("No long beats"))).toMatch(/couldn't write this part/);
+    expect(recapErrorMessage(new Error('Traceback (most recent call last):\n  File "movie_recap.py", line 3'))).toBe("Something went wrong. Press Try again.");
+    expect(recapErrorMessage(new Error("That video is under 5 minutes. Movie to Recap needs a full film or episode."))).toMatch(/under 5 minutes/);
+    const blocked = Object.assign(new Error("You've used all your AutoYT credits."), { name: "UsageBlockedError" });
+    expect(recapErrorMessage(blocked)).toBe("You've used all your AutoYT credits.");
   });
 });
 

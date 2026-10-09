@@ -112,13 +112,23 @@ export async function createRecap(body: NewRecap): Promise<Recap> {
   return data.recap;
 }
 
+/** Why a recap can't start right now (two in progress, a voice that isn't available), or "" when it can.
+ *  Asked before an upload so a 1.5 GB file isn't sent only to be refused. */
+export async function recapStartBlocker(voiceId: string): Promise<string> {
+  const response = await fetch(`/api/recaps/can-start?voiceId=${encodeURIComponent(voiceId)}`, { cache: "no-store" }).catch(() => null);
+  if (!response?.ok) return "";
+  const data = await response.json().catch(() => ({}));
+  return data.ok === false ? String(data.error || "") : "";
+}
+
 /** Streams a film to the server with progress (fetch can't report upload progress). */
-export function uploadFilm(file: File, onProgress: (share: number) => void, signal?: AbortSignal): Promise<{ upload: string; name: string; size: number }> {
+export function uploadFilm(file: File, onProgress: (share: number) => void, signal?: AbortSignal, voiceId = ""): Promise<{ upload: string; name: string; size: number }> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("POST", "/api/recaps/uploads");
     xhr.setRequestHeader("Content-Type", "application/octet-stream");
     xhr.setRequestHeader("X-File-Name", encodeURIComponent(file.name));
+    if (voiceId) xhr.setRequestHeader("X-Voice-Id", encodeURIComponent(voiceId));
     xhr.upload.onprogress = (event) => event.lengthComputable && onProgress(event.loaded / event.total);
     xhr.onload = () => {
       let data: { upload?: string; name?: string; size?: number; error?: string } = {};
@@ -169,7 +179,8 @@ export function followRecapPost(recapId: string, postId: string, channel: string
       const recap = await getRecap(recapId);
       const post = recap.posts?.find((p) => p.id === postId);
       if (!post || post.status === "uploading") {
-        if (Date.now() - started < 90 * 60 * 1000) return;
+        // The server calls a post still uploading after an hour interrupted (server/movieRecap.js summary).
+        if (Date.now() - started < 62 * 60 * 1000) return;
       }
       window.clearInterval(timer);
       following.delete(postId);
@@ -200,8 +211,12 @@ export async function correctNames(id: string): Promise<{ recap: Recap; changed:
   return json<{ recap: Recap; changed: number }>(await fetch(`/api/recaps/${encodeURIComponent(id)}/names`, { method: "POST" }), "Couldn't correct the names");
 }
 
-export async function rewriteScript(id: string): Promise<Recap> {
-  return (await json<{ recap: Recap }>(await fetch(`/api/recaps/${encodeURIComponent(id)}/rewrite`, { method: "POST" }), "Couldn't write the script again")).recap;
+/** A new script from the same analysis; `longMinutes` rewrites it at another length. */
+export async function rewriteScript(id: string, longMinutes?: number): Promise<Recap> {
+  return (await json<{ recap: Recap }>(
+    await fetch(`/api/recaps/${encodeURIComponent(id)}/rewrite`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(longMinutes ? { longMinutes } : {}) }),
+    "Couldn't write the script again",
+  )).recap;
 }
 
 export async function saveScript(id: string, script: RecapScript): Promise<Recap> {

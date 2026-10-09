@@ -129,6 +129,8 @@ export const JUEL_ROUTES = {
   "GET /api/prompts/suggest": ["studio", "read", "Suggests library prompts for a category and optional context."],
   "GET /api/recaps": ["recap", "read", "Lists the user's Movie to Recap projects with status, plus recap length limits."],
   "GET /api/recaps/:id": ["recap", "read", "Shows a recap's status, outputs, posts, and its script (recap id)."],
+  "GET /api/recaps/:id/jobs/:job": ["recap", "read", "Checks a background shot search or ranking started from Vibe Edit (recap id, job id)."],
+  "GET /api/recaps/can-start": ["recap", "read", "Says whether a new recap can start now (at most two at once, and the voice must be available)."],
   "GET /api/recaps/:id/backdrops": ["recap", "read", "Gets text-free film stills from TMDB for a recap's progress slideshow (recap id)."],
   "GET /api/recaps/:id/post/channels": ["recap", "read", "Lists the user's connected channels this recap can be posted to (recap id)."],
   "GET /api/recaps/sources": ["recap", "read", "Lists the user's saved film sources used for finding movies to recap."],

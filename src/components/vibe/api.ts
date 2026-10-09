@@ -221,18 +221,35 @@ export const findBroll = (moments: { start: number; end: number; text: string }[
 
 export type RankedShot = { n: number; t: number; filmTime: string; description: string; tags: string; score: number | null; match: string; aiPick: boolean; why: string; sheet: string; col: number; row: number };
 
+/** Starts a slow recap request as a background job and waits for it (minutes, past any proxy timeout). */
+async function recapJob<T>(recapId: string, path: string, body: Record<string, unknown>, fallback: string): Promise<T> {
+  const { job } = await post<{ job: string }>(`/api/recaps/${encodeURIComponent(recapId)}/${path}`, { ...body, async: true }, fallback);
+  for (let waited = 0; waited < 25 * 60 * 1000; waited += 2500) {
+    await new Promise((resolve) => setTimeout(resolve, 2500));
+    const response = await fetch(`/api/recaps/${encodeURIComponent(recapId)}/jobs/${encodeURIComponent(job)}`, { cache: "no-store" }).catch(() => null);
+    if (!response) continue; // a dropped poll is retried
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || fallback);
+    if (data.status === "done") return data.result as T;
+    if (data.status === "failed") throw new Error(data.error || fallback);
+  }
+  throw new Error(fallback);
+}
+
 /** The best shots for one recap cut's narration, ranked and classed by Jev (Movie to Recap). */
 export const rankShots = (recapId: string, format: "long" | "short", index: number, note: string) =>
-  post<{ said: string; line: string; current: { t: number; description: string }; shots: RankedShot[] }>(
-    `/api/recaps/${encodeURIComponent(recapId)}/shots`,
+  recapJob<{ said: string; line: string; current: { t: number; description: string }; shots: RankedShot[] }>(
+    recapId,
+    "shots",
     { format, index, note },
     "Couldn't rank shots for this narration",
   );
 
 /** Asks a recap for a better shot for one of its cuts: the top-ranked one, or the moment `t` an editor chose. */
 export async function findBetterShot(recapId: string, format: "long" | "short", index: number, note: string, t?: number) {
-  const data = await post<{ asset: Omit<VibeAsset, "id">; frame: { t: number; description?: string; why?: string } }>(
-    `/api/recaps/${encodeURIComponent(recapId)}/recut`,
+  const data = await recapJob<{ asset: Omit<VibeAsset, "id">; frame: { t: number; description?: string; why?: string } }>(
+    recapId,
+    "recut",
     { format, index, note, ...(Number.isFinite(t) ? { t } : {}) },
     "Couldn't find a better shot",
   );

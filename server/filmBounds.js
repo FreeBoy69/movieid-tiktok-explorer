@@ -44,7 +44,7 @@ export async function lookupFilm({ title, year }, { fetch = globalThis.fetch, en
     const url = new URL(`https://api.themoviedb.org/3/${pathName}`);
     for (const [k, v] of Object.entries(params)) if (v) url.searchParams.set(k, String(v));
     if (key) url.searchParams.set("api_key", key);
-    const response = await fetch(url, { headers: bearer ? { Authorization: `Bearer ${bearer}` } : {}, signal: signal || AbortSignal.timeout(12000) });
+    const response = await fetch(url, { headers: bearer ? { Authorization: `Bearer ${bearer}` } : {}, signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(12000)]) : AbortSignal.timeout(12000) });
     if (!response.ok) throw new Error(`TMDB ${response.status}`);
     return response.json();
   };
@@ -81,7 +81,7 @@ export async function filmCharacters(tmdbId, { fetch = globalThis.fetch, env = p
   if (!tmdbId || (!key && !bearer)) return [];
   const url = new URL(`https://api.themoviedb.org/3/movie/${tmdbId}/credits`);
   if (key) url.searchParams.set("api_key", key);
-  const response = await fetch(url, { headers: bearer ? { Authorization: `Bearer ${bearer}` } : {}, signal: signal || AbortSignal.timeout(12000) });
+  const response = await fetch(url, { headers: bearer ? { Authorization: `Bearer ${bearer}` } : {}, signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(12000)]) : AbortSignal.timeout(12000) });
   if (!response.ok) throw new Error(`TMDB ${response.status}`);
   const names = new Set();
   for (const member of (await response.json()).cast || []) {
@@ -132,7 +132,7 @@ export async function onlineSegments(film, duration, { fetch = globalThis.fetch,
   if (film.tmdbId)
     tries.push(async () => {
       const url = `https://api.theintrodb.org/v3/media?tmdb_id=${film.tmdbId}&duration_ms=${Math.round(duration * 1000)}`;
-      const data = await (await fetch(url, { signal: signal || AbortSignal.timeout(12000) })).json();
+      const data = await (await fetch(url, { signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(12000)]) : AbortSignal.timeout(12000) })).json();
       const intro = (data.intro || [])[0];
       const credits = (data.credits || [])[0];
       return {
@@ -145,7 +145,7 @@ export async function onlineSegments(film, duration, { fetch = globalThis.fetch,
   if (film.imdbId)
     tries.push(async () => {
       const url = `https://api.introdb.app/segments?imdb_id=${film.imdbId}&is_movie=true`;
-      const data = await (await fetch(url, { signal: signal || AbortSignal.timeout(12000) })).json();
+      const data = await (await fetch(url, { signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(12000)]) : AbortSignal.timeout(12000) })).json();
       const seg = (value) => (Array.isArray(value) ? value[0] : value) || null;
       const intro = seg(data.intro);
       const outro = seg(data.outro);

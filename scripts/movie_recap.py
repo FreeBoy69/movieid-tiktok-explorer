@@ -82,8 +82,10 @@ def set_status(pdir, **fields):
 def run(cmd, timeout=None):
     result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=timeout)
     if result.returncode != 0:
-        tail = "\n".join(line for line in (result.stderr or "").splitlines() if line.strip())[-1500:]
-        raise RuntimeError(f"{os.path.basename(cmd[0])} failed: {tail}")
+        lines = [line for line in (result.stderr or "").splitlines() if line.strip()]
+        # The full output goes to the run's log; the error the app shows stays one line.
+        sys.stderr.write("\n".join(lines[-40:]) + "\n")
+        raise RuntimeError(f"{os.path.basename(cmd[0])} failed: {(lines[-1] if lines else 'no output')[:200]}")
     return result.stdout
 
 
@@ -94,7 +96,10 @@ def which_ytdlp():
 
 def probe_duration(path):
     out = run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", path], timeout=120)
-    return float(out.strip() or 0)
+    try:
+        return float(out.strip() or 0)
+    except ValueError:  # "N/A": the container doesn't say how long it is
+        return 0.0
 
 
 def probe_height(movie):
@@ -121,7 +126,8 @@ def sweep_old():
     for name in os.listdir(ROOT):
         full = os.path.join(ROOT, name)
         try:
-            if os.path.isdir(full) and os.path.getmtime(full) < cutoff:
+            status = read_json(os.path.join(full, "status.json"), {}) or {}
+            if os.path.isdir(full) and os.path.getmtime(full) < cutoff and status.get("state") != "running":
                 shutil.rmtree(full, ignore_errors=True)
         except OSError:
             pass
@@ -164,6 +170,28 @@ def heartbeat(pdir):
 
 # ---------------------------------------------------------------- analyze
 
+DOWNLOAD_STALL = 15 * 60  # no progress for this long ends a download
+DOWNLOAD_LIMIT = 4 * 3600  # nor may one run longer than this
+DOWNLOAD_STALLED = "The download stopped making progress. The host may be slow or blocking the server: try again later, use another link, or upload the file."
+
+
+def watch(proc):
+    """Kills a download that stops making progress. The caller sets state["last"] whenever the download
+    moves; state["killed"] says whether the watchdog ended it."""
+    state = {"last": time.time(), "killed": False}
+    started = time.time()
+
+    def guard():
+        while proc.poll() is None:
+            time.sleep(15)
+            if time.time() - state["last"] > DOWNLOAD_STALL or time.time() - started > DOWNLOAD_LIMIT:
+                state["killed"] = True
+                proc.kill()
+                return
+    threading.Thread(target=guard, daemon=True).start()
+    return state
+
+
 def download(pdir, url, file_path):
     if movie_path(pdir):
         return movie_path(pdir)
@@ -190,14 +218,20 @@ def download(pdir, url, file_path):
     if "youtube.com" in url or "youtu.be" in url:
         cmd[1:1] = ["--js-runtimes", "node"]
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    watched = watch(proc)
     last = 0.0
     tail = []
     for line in proc.stdout:
+        # A repeated progress line isn't progress; anything new is.
+        if not tail or line.strip() != tail[-1]:
+            watched["last"] = time.time()
         tail = (tail + [line.strip()])[-12:]
         match = re.search(r"(\d+(?:\.\d+)?)%", line)
         if match and time.time() - last > 4:
             last = time.time()
             set_status(pdir, message=f"Downloading the movie ({float(match.group(1)):.0f}%)", progress=0.02 + 0.13 * float(match.group(1)) / 100)
+    if proc.wait() != 0 and watched["killed"]:
+        raise RuntimeError(DOWNLOAD_STALLED)
     if proc.wait() != 0 or not movie_path(pdir):
         # yt-dlp can refuse plain file links; fetch those directly (aria2, then curl).
         direct = aria2_download(pdir, url, "", require_video=True) or direct_download(pdir, url)
@@ -210,7 +244,14 @@ def download(pdir, url, file_path):
         if re.search(r"HTTP Error (403|404|410)", said) and re.search(r"(^|&)(sig|signature|token|expire|expires|exp|hash)=", query):
             raise RuntimeError("That link only works in the browser that opened it (a video player's signed, expiring link), so the server can't download it. "
                                "Use a share link from a file host (Mega, PixelDrain, MediaFire, Dropbox), a video page link, or upload the file.")
-        raise RuntimeError("Couldn't download that link. " + said[-400:])
+        sys.stderr.write("\n".join(tail) + "\n")
+        if re.search(r"Sign in to confirm|not a bot", said):
+            raise RuntimeError("The site asked the server to sign in, so it couldn't download that link. Use another link or upload the file.")
+        if re.search(r"Private video|Video unavailable|removed|not available in your country|geo", said, re.I):
+            raise RuntimeError("That video isn't available to the server (private, removed or region-locked). Use another link or upload the file.")
+        if re.search(r"Unsupported URL", said):
+            raise RuntimeError("That link isn't a video page or a file the server can download. Use a share link from a file host, a video page link, or upload the file.")
+        raise RuntimeError("Couldn't download that link. Check that it opens the film without signing in, or upload the file.")
     return movie_path(pdir)
 
 
@@ -287,12 +328,21 @@ def aria2_download(pdir, url, name, require_video=False):
     proc = subprocess.Popen(["aria2c", "-x", "8", "-s", "8", "-k", "4M", "-c", "--file-allocation=none", "--summary-interval=5",
                              "--console-log-level=warn", "--max-tries=5", "--retry-wait=5", "-d", pdir, "-o", part, url],
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    watched = watch(proc)
     last = 0.0
+    seen = None
     for line in proc.stdout:
         match = re.search(r"\((\d+)%\)", line)
+        # aria2 prints a summary every 5 s even when stuck: only a new percentage counts as progress.
+        if match and match.group(1) != seen:
+            seen = match.group(1)
+            watched["last"] = time.time()
         if match and time.time() - last > 4:
             last = time.time()
             set_status(pdir, message=f"Downloading the movie ({match.group(1)}%)", progress=0.02 + 0.13 * int(match.group(1)) / 100)
+    proc.wait()
+    if watched["killed"]:
+        raise RuntimeError(DOWNLOAD_STALLED)
     target = os.path.join(pdir, part)
     if proc.wait() != 0 or not os.path.exists(target) or os.path.getsize(target) < 1024 * 1024:
         return ""
@@ -309,13 +359,20 @@ def mega_download(pdir, url):
     shutil.rmtree(work, ignore_errors=True)
     os.makedirs(work, exist_ok=True)
     proc = subprocess.Popen(["megadl", "--path", work, url], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    watched = watch(proc)
     last = 0.0
+    seen = None
     for line in proc.stdout:
         match = re.search(r"(\d+(?:\.\d+)?)%", line)
+        if match and match.group(1) != seen:
+            seen = match.group(1)
+            watched["last"] = time.time()
         if match and time.time() - last > 4:
             last = time.time()
             set_status(pdir, message=f"Downloading the movie ({float(match.group(1)):.0f}%)", progress=0.02 + 0.13 * float(match.group(1)) / 100)
-    files = [os.path.join(work, f) for f in os.listdir(work)] if proc.wait() == 0 else []
+    if proc.wait() != 0 and watched["killed"]:
+        raise RuntimeError(DOWNLOAD_STALLED)
+    files = [os.path.join(work, f) for f in os.listdir(work)] if proc.returncode == 0 else []
     files = [f for f in files if os.path.isfile(f)]
     if not files:
         return ""
@@ -477,9 +534,15 @@ def transcribe(movie, pdir, language):
             continue
         lines.extend(chunk)
     if missed == count:
-        raise RuntimeError("Couldn't transcribe the dialogue. Press Retry to try again.")
+        raise RuntimeError("Couldn't transcribe the dialogue. Press Try again.")
+    if missed:
+        # Finished chunks are kept for a retry; the app decides whether the gaps are too big to write from.
+        write_json(os.path.join(pdir, "transcript-missed.json"), {"missed": missed, "count": count})
+        return sorted(lines, key=lambda line: line["start"])
     os.remove(audio)
     shutil.rmtree(chunks, ignore_errors=True)
+    if os.path.exists(os.path.join(pdir, "transcript-missed.json")):
+        os.remove(os.path.join(pdir, "transcript-missed.json"))
     return sorted(lines, key=lambda line: line["start"])
 
 
@@ -528,11 +591,19 @@ def run_analyze(args):
     options = read_json(os.path.join(pdir, "options.json"), {}) or {}
     try:
         movie = download(pdir, options.get("url", ""), options.get("file", ""))
+        if options.get("fetchOnly"):
+            # The film was swept from the worker after its analysis; only the file is needed again.
+            set_status(pdir, stage="fetched", state="done", message="Film ready", progress=1.0)
+            return
         set_status(pdir, stage="probing", message="Reading the film", progress=0.16)
         duration = probe_duration(movie)
         height = probe_height(movie)
+        if not duration:
+            raise RuntimeError("Couldn't read how long this film is. The file may be damaged or incomplete: try another copy.")
         if duration < 300:
             raise RuntimeError("That video is under 5 minutes. Movie to Recap needs a full film or episode.")
+        if duration > 4 * 3600:
+            raise RuntimeError("That video is over 4 hours. Movie to Recap works with one film or episode at a time.")
         transcript = transcribe(movie, pdir, options.get("language", ""))
         scenes = detect_scenes(movie, duration, pdir)
         shots = sample_shots(movie, duration, pdir)
@@ -553,10 +624,11 @@ def run_analyze(args):
             "fileName": file_name(pdir),
             # The film's own title tag, when the release carries one.
             "titleTag": container_title(movie),
+            "transcriptGaps": read_json(os.path.join(pdir, "transcript-missed.json"), None),
         })
         set_status(pdir, stage="analyzed", state="done", message="Analysis ready", progress=1.0)
     except Exception as error:  # noqa: BLE001 - every failure becomes a status the app can show
-        set_status(pdir, state="failed", error=str(error)[:800])
+        set_status(pdir, state="failed", error=plain_error(error, "analyze"))
 
 
 # ---------------------------------------------------------------- render
@@ -973,6 +1045,24 @@ def measure_video(path_):
         return f"measure failed: {error}"
 
 
+def plain_error(error, phase):
+    """What the app shows for a failed run. The raw error and traceback go to the run's log."""
+    import traceback
+    traceback.print_exc(file=sys.stderr)
+    if isinstance(error, subprocess.TimeoutExpired):
+        return ("Reading this film took too long. Try a smaller copy (1080p or lower) or another file." if phase == "analyze"
+                else "Rendering took too long and was stopped. Press Try again.")
+    if isinstance(error, subprocess.CalledProcessError) or str(error).startswith(("ffmpeg failed", "ffprobe failed")):
+        return ("The film couldn't be read all the way through. It may be damaged or in an unusual format: try another copy."
+                if phase == "analyze" else "The video render failed partway. Press Try again; if it fails again, go Back to storyboard and Render.")
+    if isinstance(error, OSError) and getattr(error, "errno", None) == 28:
+        return "The media server ran out of disk space. Press Try again in a few minutes."
+    if isinstance(error, RuntimeError):
+        return str(error)[:400]
+    return ("Something went wrong reading the film. Press Try again." if phase == "analyze"
+            else "Something went wrong rendering the recap. Press Try again.")
+
+
 def run_render(args):
     pdir = project_dir(args.project)
     heartbeat(pdir)
@@ -986,7 +1076,7 @@ def run_render(args):
             outputs.extend(render_format(pdir, movie, plan, fmt, os.path.join(pdir, "audio")))
         set_status(pdir, stage="rendered", state="done", message="Recap ready", progress=1.0, outputs=outputs)
     except Exception as error:  # noqa: BLE001
-        set_status(pdir, state="failed", error=str(error)[:800])
+        set_status(pdir, state="failed", error=plain_error(error, "render"))
 
 
 # ---------------------------------------------------------------- commands
@@ -1064,7 +1154,7 @@ def cmd_fetch(args):
     name = os.path.basename(args.name)
     source = os.path.join(pdir, "render", name)
     if not os.path.isfile(source):
-        return emit({"error": "missing"})
+        return emit({"error": "That rendered file is no longer on the media server. Render the recap again."})
     os.makedirs(args.out, exist_ok=True)
     shutil.copyfile(source, os.path.join(args.out, name))
     emit({"ok": True, "size": os.path.getsize(source)})
@@ -1258,8 +1348,13 @@ def cmd_publish(args):
         os.replace(target + ".part", target)
         os.chmod(target, 0o644)
     if not os.path.isfile(target):
-        return emit({"error": "missing"})
+        return emit({"error": "That rendered file is no longer on the media server. Render the recap again."})
     emit({"ok": True, "path": f"{os.path.basename(args.project)}/{name}", "size": os.path.getsize(target)})
+
+
+def cmd_film(args):
+    """Whether the film is still on the worker (it is swept 4 days after its last use)."""
+    emit({"present": bool(movie_path(project_dir(args.project))) if os.path.isdir(project_dir(args.project)) else False})
 
 
 def cmd_plan_info(args):
@@ -1341,10 +1436,17 @@ def main():
         "transcribe-chunk": cmd_transcribe_chunk,
         "publish": cmd_publish,
         "plan-info": cmd_plan_info,
+        "film": cmd_film,
         "recut": cmd_recut,
     }
     if args.command not in commands:
         return emit({"error": f"unknown command {args.command}"})
+    # Any use of a project keeps it from the 4-day sweep.
+    if PROJECT_ID.match(args.project or "") and os.path.isdir(os.path.join(ROOT, args.project)):
+        try:
+            os.utime(os.path.join(ROOT, args.project))
+        except OSError:
+            pass
     commands[args.command](args)
 
 

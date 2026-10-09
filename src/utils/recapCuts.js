@@ -237,7 +237,7 @@ export function planRecapCuts(input) {
           }
           if (start >= 0) break;
         }
-        if (start < 0) throw new Error("The film is too short for a recap this long with gaps between every cut. Choose a shorter recap.");
+        if (start < 0) throw new Error("The film is too short for a recap this long with gaps between every cut. Go back to the storyboard and rewrite it at a shorter length.");
       }
       // Slide the cut off a scene change that would leave a sub-second flash of another shot.
       const sceneCuts = input.sceneCuts || [];

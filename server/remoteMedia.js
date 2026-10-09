@@ -315,16 +315,20 @@ function remoteChild(command, args, options = {}) {
     finished = true;
     child.exitCode = code;
     child.signalCode = signal;
+    // The error goes in before the streams end: writing after end() throws (and nothing catches it).
+    if (error && !(code === null && !signal)) child.stderr.write(`\n${error}\n`);
     child.stdout.end();
     child.stderr.end();
-    if (error && code === null && !signal) {
-      child.emit("error", Object.assign(new Error(error), { code: "EREMOTE" }));
-      child.emit("close", 1, null);
-      return;
-    }
-    if (error) child.stderr.write?.(`\n${error}\n`);
-    child.emit("exit", code, signal);
-    child.emit("close", code, signal);
+    // Let output already written reach its listeners before "close", as a real child process does.
+    setImmediate(() => {
+      if (error && code === null && !signal) {
+        child.emit("error", Object.assign(new Error(error), { code: "EREMOTE" }));
+        child.emit("close", 1, null);
+        return;
+      }
+      child.emit("exit", code, signal);
+      child.emit("close", code, signal);
+    });
   };
   const onEvent = (event) => {
     if (event.type === "stdout") child.stdout.write(Buffer.from(event.data, "base64"));

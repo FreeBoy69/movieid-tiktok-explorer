@@ -46,7 +46,32 @@ const sleep = (ms, signal) => new Promise((resolve, reject) => {
   const timer = setTimeout(resolve, ms);
   signal?.addEventListener("abort", () => { clearTimeout(timer); reject(signal.reason || new Error("Stopped")); }, { once: true });
 });
+/** The promise, or a 504 with `message` after `ms` (the timer is cleared either way). */
+function withTimeout(promise, ms, message) {
+  let timer;
+  return Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(fail(message, 504)), ms); })]).finally(() => clearTimeout(timer));
+}
 const clip = (value, max) => String(value ?? "").replace(/\s+/g, " ").trim().slice(0, max);
+// Out of credits: the user's AutoYT balance (UsageBlockedError, already worded for them), or the
+// platform's AI account (a provider 402), which the user can't fix and an admin must.
+const creditBlocked = (error) =>
+  error?.name === "UsageBlockedError" || error?.statusCode === 402 || error?.status === 402 ||
+  /\b402\b|insufficient credits|out of credits|used all your AutoYT credits/i.test(String(error?.message || error));
+function creditFailure(error) {
+  if (error?.name === "UsageBlockedError") return error;
+  console.error(`[movie-recap] ADMIN: the AI provider is out of credits: ${error?.message || error}`);
+  return fail("Recaps are paused while we top up our AI service. Your recap is saved: press Try again in a few minutes.", 503);
+}
+/** Lets a running out of credits end the recap instead of being swallowed as a skipped check. */
+const rethrowBlocked = (error) => {
+  if (creditBlocked(error)) throw creditFailure(error);
+};
+// A voice service that answers with an error page instead of audio must not be cached as a line.
+const looksLikeAudio = (bytes) => {
+  if (!bytes || bytes.length < 1024) return false;
+  const head = Buffer.from(bytes).subarray(0, 4).toString("latin1");
+  return head === "RIFF" || head.startsWith("ID3") || head === "OggS" || head === "fLaC" || (bytes[0] === 0xff && (bytes[1] & 0xe0) === 0xe0);
+};
 const clamp = (value, low, high, fallback) => { const n = Number(value); return Number.isFinite(n) ? Math.min(high, Math.max(low, n)) : fallback; };
 const fmtTime = (seconds) => { const s = Math.max(0, Math.round(seconds)); const h = Math.floor(s / 3600); const m = Math.floor((s % 3600) / 60); const r = s % 60; return h ? `${h}:${String(m).padStart(2, "0")}:${String(r).padStart(2, "0")}` : `${m}:${String(r).padStart(2, "0")}`; };
 
@@ -117,12 +142,19 @@ async function activeList() {
   await ensureFile("recaps/active.json", activeFile());
   try { return JSON.parse(await fs.readFile(activeFile(), "utf8")); } catch { return []; }
 }
-async function setActive(userId, id, on) {
-  const list = (await activeList()).filter((entry) => entry.id !== id);
-  if (on) list.push({ userId, id });
-  await fs.mkdir(root(), { recursive: true });
-  await fs.writeFile(activeFile(), JSON.stringify(list));
-  if (assetStoreConfigured()) await saveFile("recaps/active.json", activeFile()).catch(() => {});
+// One shared file for every user's recaps: changes go through one at a time, or two recaps starting
+// together would each drop the other's entry and only one would resume after a deploy.
+let activeQueue = Promise.resolve();
+function setActive(userId, id, on) {
+  const change = activeQueue.then(async () => {
+    const list = (await activeList()).filter((entry) => entry.id !== id);
+    if (on) list.push({ userId, id });
+    await fs.mkdir(root(), { recursive: true });
+    await fs.writeFile(activeFile(), JSON.stringify(list));
+    if (assetStoreConfigured()) await saveFile("recaps/active.json", activeFile()).catch(() => {});
+  });
+  activeQueue = change.catch(() => {});
+  return change;
 }
 
 const projects = new Map(); // `${userId}:${id}` -> project, so polling never re-reads storage
@@ -194,7 +226,9 @@ function worker(args, { timeoutMs = 10 * 60 * 1000, signal } = {}) {
         if (value.error) return reject(fail(value.error, 502));
         resolve(value);
       } catch {
-        reject(new Error(`The media worker failed (${code}): ${(err || out).trim().slice(-600)}`));
+        // The raw output (often a Python traceback) is for the logs, not the recap.
+        console.warn(`[movie-recap] worker ${args[0]} exited ${code}: ${(err || out).trim().slice(-1500)}`);
+        reject(fail(code === null ? "The media server took too long to answer. Press Try again." : "The media server hit an error. Press Try again.", 502));
       }
     });
   });
@@ -211,15 +245,59 @@ function report(userId, project, message, progress, extra = {}) {
   return save(userId, project, { message, progress: Math.max(0, Math.min(1, progress)), ...extra });
 }
 
+/** Saves the current message every 2 minutes while a long step reports nothing, so the recap never
+ *  looks stuck (which offers Try again, and a retry re-bills the step). Returns a stop function. */
+function keepAlive(userId, project) {
+  const timer = setInterval(() => void save(userId, project, {}).catch(() => {}), 2 * 60 * 1000);
+  timer.unref?.();
+  return () => clearInterval(timer);
+}
+/** How long the media worker may be unreachable before the recap says so instead of waiting on. */
+const UNREACHABLE_MS = 10 * 60 * 1000;
+const FILM_GONE = /no longer on the media worker\. Analyze it again/;
+
+/** The worker keeps films 4 days after their last use. A storyboard rendered later gets its film
+ *  downloaded again (free: no frames are re-described and the script is kept). */
+async function refetchFilm(userId, project, signal) {
+  await report(userId, project, "Fetching the film again (the media server keeps films for 4 days)", project.progress);
+  const args = await analyzeArgs(userId, project);
+  const at = args.indexOf("--options");
+  args[at + 1] = JSON.stringify({ ...JSON.parse(args[at + 1]), fetchOnly: true });
+  await worker(args, { timeoutMs: 60 * 60 * 1000, signal });
+  await waitForWorker(userId, project, "fetch", { from: project.progress, to: project.progress, signal });
+}
+/** start-render, fetching the film again first when the worker swept it. */
+async function startRender(userId, project, args, signal) {
+  try {
+    return await worker(args, { timeoutMs: 20 * 60 * 1000, signal });
+  } catch (error) {
+    if (signal?.aborted || !FILM_GONE.test(String(error?.message))) throw error;
+    await refetchFilm(userId, project, signal);
+    return worker(args, { timeoutMs: 20 * 60 * 1000, signal });
+  }
+}
+
 const RESUMES = 2;
 /** How long a working recap may go without an update before Try again restarts it. */
 export const STUCK_MS = 10 * 60 * 1000;
 async function waitForWorker(userId, project, phase, { from, to, out, signal, resume = null }) {
   let missing = 0;
   let resumed = 0;
+  let unreachableSince = 0;
   for (;;) {
     await sleep(POLL_MS, signal);
-    const status = await worker(["status", "--project", project.id, ...(out ? ["--out", out] : [])], { timeoutMs: 5 * 60 * 1000, signal }).catch((error) => ({ state: "unreachable", error: error.message }));
+    const status = await worker(["status", "--project", project.id, ...(out ? ["--out", out] : [])], { timeoutMs: 5 * 60 * 1000, signal }).catch((error) => {
+      if (signal?.aborted) throw error;
+      return { state: "unreachable", error: error.message };
+    });
+    if (status.state === "unreachable") {
+      unreachableSince ||= Date.now();
+      if (Date.now() - unreachableSince > UNREACHABLE_MS)
+        throw fail("The media server is offline. Your recap is saved: press Try again when it's back (usually within a few minutes).", 503);
+      if (Date.now() - unreachableSince > 2 * 60 * 1000) await report(userId, project, "Waiting for the media server to come back", project.progress);
+      continue;
+    }
+    unreachableSince = 0;
     if (status.state === "done") return status;
     if (status.state === "failed") throw fail(status.error || "The media worker failed.", 502);
     if (["missing", "stalled"].includes(status.state)) {
@@ -235,13 +313,18 @@ async function waitForWorker(userId, project, phase, { from, to, out, signal, re
       if (++missing > 2) throw fail(phase === "analyze" ? "The media worker stopped analysing this film. Press Try again to pick up where it left off." : "The media worker stopped rendering. Press Try again to pick up where it left off.", 502);
       continue;
     }
-    if (status.state === "unreachable") continue;
     missing = 0;
     await report(userId, project, status.message || project.message, from + (to - from) * Number(status.progress || 0));
   }
 }
 
 async function stageAnalyze(userId, project, signal) {
+  // An upload is stored here rather than in the create request: a 1.5 GB copy there outlasted the proxy.
+  if (project.source.kind === "upload" && !project.remote?.sourceStored && !project.remote?.analyzeStarted) {
+    await report(userId, project, "Saving your upload", 0.005);
+    await persist(userId, project.id, path.join(projectDir(userId, project.id), project.source.file));
+    await save(userId, project, { remote: { ...project.remote, sourceStored: true } });
+  }
   if (!project.remote?.analyzeStarted) {
     await report(userId, project, "Sending the film to the media worker", 0.01);
     await worker(await analyzeArgs(userId, project), { timeoutMs: 60 * 60 * 1000, signal });
@@ -252,6 +335,13 @@ async function stageAnalyze(userId, project, signal) {
   const resume = async () => worker(await analyzeArgs(userId, project), { timeoutMs: 60 * 60 * 1000, signal });
   await waitForWorker(userId, project, "analyze", { from: 0.02, to: 0.45, out, signal, resume });
   const analysis = JSON.parse(await fs.readFile(path.join(out, "analysis.json"), "utf8"));
+  // One missing ten-minute part of the dialogue is a small gap; more would leave the script guessing.
+  // Try again transcribes just the missing parts (the worker keeps the finished ones).
+  const gaps = analysis.transcriptGaps;
+  if (gaps?.missed > 1) {
+    await save(userId, project, { remote: project.remote?.sourceStored ? { sourceStored: true } : {} });
+    throw fail(`Couldn't transcribe ${gaps.missed} of the film's ${gaps.count} ten-minute parts. Press Try again to transcribe them.`, 502);
+  }
   // Where the story runs, so no cut lands on an opening title or the end credits.
   const known = await findStoryBounds(project, analysis, signal);
   analysis.bounds = known.bounds;
@@ -559,7 +649,11 @@ export async function prepareGraphics(userId, project, edit, dir, signal) {
 async function analyzeArgs(userId, project) {
   const args = ["start-analyze", "--project", project.id, "--options", JSON.stringify({ language: project.options.language || "", name: clip(project.source.name, 200) })];
   if (project.source.kind === "link") args.push("--url", project.source.url);
-  else args.push("--file", await restore(userId, project.id, project.source.file));
+  else {
+    const file = await restore(userId, project.id, project.source.file);
+    if (!file) throw fail("The uploaded film is no longer stored (the server restarted before it was saved). Start a new recap and upload it again.", 410);
+    args.push("--file", file);
+  }
   return args;
 }
 
@@ -700,7 +794,7 @@ export async function castReference(characters, signal) {
   const content = [];
   for (const character of characters.filter((c) => c.photo).slice(0, 8)) {
     try {
-      const response = await fetch(character.photo, { signal: signal || AbortSignal.timeout(15000) });
+      const response = await fetch(character.photo, { signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000) });
       if (!response.ok) continue;
       const bytes = Buffer.from(await response.arrayBuffer());
       content.push({ type: "text", text: `${character.name}${character.actor ? ` (played by ${character.actor})` : ""}:` }, { type: "image_url", image_url: { url: `data:image/jpeg;base64,${bytes.toString("base64")}` } });
@@ -723,6 +817,7 @@ async function stageDescribe(userId, project, signal) {
   for (let i = 0; i < names.length; i += perCall) batches.push(names.slice(i, i + perCall));
   const todo = batches.filter((batch) => !batch.every((name) => described[`sheet:${name}`]));
   let finished = batches.length - todo.length;
+  let missed = 0;
   const model = process.env.MOVIE_RECAP_VISION_MODEL || "google/gemini-3.8-flash";
   const describeBatch = async (batch) => {
     const content = [{ type: "text", text: `These are contact sheets from one film. Every tile is a frame, and the white number in its corner is the shot number. For every numbered tile, describe what is on screen in at most 16 words: who, what they do, where, and the mood. ${castContent.length ? "Name a person only when their face clearly matches one of the main characters pictured after these instructions (\"Jax, in a teal jacket, ...\"); anyone else, or anyone you aren't sure of, by look (\"a bearded man in a cap\")." : "Describe people by look (\"the young woman in the red coat\"); do not guess names."} Also tag the shot: "s" is "close" (the subject fills over half the frame), "medium" (a whole person or object, 20-50% of the frame), "wide" (subjects small or far away), or "none" (no clear subject: empty scenery, sky, black); "a" is true when a character or object is visibly doing something; "t" is true when the frame shows a logo, a title card, credits, a sign or caption naming real people, or other on-screen text (not subtitles); "u" is true when the film's own subtitles (lines of dialogue burned into the picture) are visible; "k" is true when it is too dark to read, or so blurred, chaotic, or full of effects that no subject stands out; "g" is true for graphic content (nudity, gore, open wounds, lots of blood); "e" is true when the main character sits at the far left or far right edge of their own tile (the outer sixth), so a vertical crop of the middle would lose them. Return JSON: {"tiles":[{"n":<shot number>,"d":"<description>","s":"close","a":true,"t":false,"u":false,"k":false,"g":false,"e":false}]} covering every tile.` }];
@@ -749,10 +844,12 @@ async function stageDescribe(userId, project, signal) {
       signal.throwIfAborted();
       const batch = queue.shift();
       // One retry: providers sometimes return an empty response for a whole batch.
-      await describeBatch(batch).catch((error) => { if (signal.aborted) throw error; return describeBatch(batch); }).catch((error) => {
+      await describeBatch(batch).catch((error) => { if (signal.aborted) throw error; rethrowBlocked(error); return describeBatch(batch); }).catch((error) => {
         if (signal.aborted) throw error;
+        rethrowBlocked(error);
+        // Left unmarked, so Try again describes it.
         console.warn(`[movie-recap] frame batch skipped: ${error.message}`);
-        for (const name of batch) described[`sheet:${name}`] = 1;
+        missed += 1;
         finished += 1;
       });
       if (finished % 4 === 0 || !queue.length) {
@@ -763,6 +860,9 @@ async function stageDescribe(userId, project, signal) {
   });
   await Promise.all(workers);
   await writeJson(userId, project.id, "descriptions.json", described);
+  // A few unreadable sheets are fine; many would leave the script and the cuts blind to the film.
+  if (missed > Math.max(1, Math.round(batches.length * 0.15)))
+    throw fail(`Couldn't watch ${missed} of ${batches.length} parts of the film (the AI service had trouble). What was watched is saved: press Try again to watch the rest.`, 502);
   // Fill in an opening or credits time the databases and chapters didn't give, from what the frames show.
   const analysis = await readJson(userId, project.id, "analysis.json");
   if (analysis && !analysis.bounds) {
@@ -798,6 +898,7 @@ async function titleFromScreen(userId, project, analysis, described, signal) {
   if (analysis.screenTitle || analysis.titleCheck === TITLE_CHECK) return;
   analysis.screenTitle = await readScreenTitle(analysis, described, (times) => lookAt(userId, project, times, signal, { width: 960 }), { signal }).catch((error) => {
     if (signal.aborted) throw error;
+    rethrowBlocked(error);
     console.warn(`[movie-recap] title card skipped: ${error.message}`);
     return "";
   });
@@ -1126,6 +1227,9 @@ async function stageVoice(userId, project, signal) {
   let done = 0;
   const queue = [...jobs];
   const voiceId = project.options.voiceId;
+  // A slow cloned voice can take minutes on one line with nothing new to report.
+  const stopBeat = keepAlive(userId, project);
+  try {
   // Hosted voices take three lines at once; the local Voicebox models share one CPU server and run out of
   // memory when asked for several at a time, so they get one line at a time.
   const lanes = String(voiceId).startsWith("openrouter:") ? 2 : 1;
@@ -1159,27 +1263,43 @@ async function stageVoice(userId, project, signal) {
           }
         }
         const { audio, extension } = spoken;
+        if (!looksLikeAudio(audio)) throw fail("The voice service sent back something that isn't audio. Press Try again, or pick another voice.", 502);
         const ext = extension === "mp3" ? "mp3" : "wav";
         await fs.writeFile(path.join(dir, `${hash}.${ext}`), audio);
         if (assetStoreConfigured()) await saveFile(storeKey(userId, project.id, `line-${hash}.${ext}`), path.join(dir, `${hash}.${ext}`)).catch((error) => console.warn(`[movie-recap] could not store a line: ${error.message}`));
+        project.lines = [...new Set([...(project.lines || []), `line-${hash}.${ext}`])];
       }
       beat.audio = path.basename(existing || ["wav", "mp3"].map((ext) => path.join(dir, `${hash}.${ext}`)).find((file) => fsSync.existsSync(file)));
       done += 1;
       if (lanes === 1 || done % 5 === 0 || !queue.length) await report(userId, project, `Recording the narration (${done} of ${jobs.length} lines)`, 0.76 + 0.06 * (done / jobs.length));
     }
   }));
+  } finally {
+    stopBeat();
+  }
   // Keep only this script's clips, then trim their silences and set the pace in one worker call.
   const keep = new Set(jobs.map((job) => job.beat.audio));
   for (const name of await fs.readdir(dir)) if (!keep.has(name)) await fs.rm(path.join(dir, name), { force: true });
   await report(userId, project, "Tightening the narration", 0.82);
   const tempo = PACE[project.options.pace] || PACE.brisk;
   const { lengths } = await worker(["tighten", "--out", dir, "--tempo", String(tempo)], { timeoutMs: 15 * 60 * 1000, signal });
+  const raw = new Map();
   for (const { beat } of jobs) {
     const tight = lengths[beat.audio];
+    raw.set(beat, beat.audio);
     beat.audio = tight?.name || beat.audio;
     beat.seconds = Number(tight?.seconds) || 0;
   }
-  if (jobs.some((job) => !(job.beat.seconds > 0))) throw fail("Some narration lines came back empty. Try another voice.", 502);
+  const empty = jobs.filter((job) => !(job.beat.seconds > 0));
+  if (empty.length) {
+    // Forget those recordings so Try again records them afresh instead of reusing a bad file.
+    for (const { beat } of empty) {
+      const name = raw.get(beat);
+      await fs.rm(path.join(dir, name), { force: true });
+      if (assetStoreConfigured()) await removeFile(storeKey(userId, project.id, `line-${name}`)).catch(() => {});
+    }
+    throw fail(`${empty.length} narration ${empty.length === 1 ? "line" : "lines"} came back silent. Press Try again to record ${empty.length === 1 ? "it" : "them"} again, or pick another voice.`, 502);
+  }
   if (project.options.music !== false && !project.music?.file) await generateMusicBed(userId, project, signal);
   await save(userId, project, { stage: "planning" });
 }
@@ -2482,13 +2602,40 @@ export async function checkAiCredits({ request = requestOpenRouter, signal = und
     await request({ kind: "text", model: process.env.MOVIE_RECAP_SCRIPT_MODEL || "google/gemini-3.8-flash", maxTokens: 5, temperature: 0, signal, messages: [{ role: "user", content: "Reply OK." }] });
   } catch (error) {
     if (signal?.aborted) throw error;
-    if (/\b402\b|insufficient credits|out of credits/i.test(String(error?.message || error)))
-      throw fail("OpenRouter is out of credits, so the footage matching and the checks can't run. Add credits at openrouter.ai/settings/credits, then press Try again.", 402);
+    rethrowBlocked(error);
   }
 }
 
 async function stagePlanAndRender(userId, project, signal) {
+  // The tightened narration lives on local disk, which a deploy wipes: record it again from the stored
+  // lines (no new charge) rather than fail on a missing file.
   if (!project.remote?.renderStarted) {
+    const dir = audioDir(userId, project.id);
+    const lines = project.options.formats.flatMap((format) => (project.script?.[format]?.beats || []).map((beat) => beat.audio)).filter(Boolean);
+    if (!lines.length || lines.some((name) => !fsSync.existsSync(path.join(dir, name)))) {
+      await save(userId, project, { stage: "voicing", message: "Restoring the narration" });
+      return;
+    }
+  }
+  // Try again after a failed render starts the render again from the plan already on the worker.
+  if (project.remote?.renderStarted && project.remote?.restartRender) {
+    await report(userId, project, "Starting the render again", 0.85);
+    try {
+      await startRender(userId, project, ["start-render", "--project", project.id], signal);
+      await save(userId, project, { remote: { ...project.remote, restartRender: false } });
+    } catch (error) {
+      if (signal.aborted || !/render plan is no longer/.test(String(error?.message))) throw error;
+      // The worker lost the plan: plan it again.
+      await save(userId, project, { stage: "planning", remote: { ...project.remote, renderStarted: false, restartRender: false } });
+      return;
+    }
+  }
+  if (!project.remote?.renderStarted) {
+    const stopBeat = keepAlive(userId, project);
+    try {
+    // Matching looks at real frames: a film the worker swept must come back first.
+    const film = await worker(["film", "--project", project.id], { timeoutMs: 2 * 60 * 1000, signal }).catch(() => ({ present: true }));
+    if (film.present === false) await refetchFilm(userId, project, signal);
     await checkAiCredits({ signal });
     await report(userId, project, "Matching footage to every line", 0.83);
     const analysis = await readJson(userId, project.id, "analysis.json");
@@ -2504,6 +2651,7 @@ async function stagePlanAndRender(userId, project, signal) {
         await writeJson(userId, project.id, "analysis.json", analysis);
       } catch (error) {
         if (signal.aborted) throw error;
+        rethrowBlocked(error);
         console.warn(`[movie-recap] shot detection skipped: ${error.message}`);
       }
     }
@@ -2513,10 +2661,21 @@ async function stagePlanAndRender(userId, project, signal) {
     // Lines placed by what they say before any footage is matched: covers scripts written before the
     // check and lines changed on the storyboard.
     await save(userId, project, { script: placeScript(project.script, analysis, described) });
-    const first = buildRecapPlan(project, analysis);
-    let matches = await matchCutsToFrames(project, analysis, described, first.edit, { signal });
-    let { plan, stats, edit } = buildRecapPlan(project, analysis, matches);
+    // Matching and the checks are paid AI steps: a retry or re-render with the same script and settings
+    // reuses what they found instead of paying for them again.
+    const cacheKey = crypto.createHash("sha1").update(JSON.stringify([project.script, project.options, analysis.shotCuts?.length || 0])).digest("hex");
+    const cached = await readJson(userId, project.id, "plan-cache.json", null);
+    const reuse = cached?.key === cacheKey ? cached : null;
     const look = (times) => lookAt(userId, project, times, signal);
+    let plan, stats, edit, matches;
+    if (reuse?.final) {
+      await report(userId, project, "Reusing the footage already matched to every line", 0.834);
+      ({ plan, stats, edit, matches } = reuse.final);
+    } else {
+    const first = buildRecapPlan(project, analysis);
+    matches = reuse?.matches || (await matchCutsToFrames(project, analysis, described, first.edit, { signal }));
+    if (!reuse?.matches) await writeJson(userId, project.id, "plan-cache.json", { key: cacheKey, matches });
+    ({ plan, stats, edit } = buildRecapPlan(project, analysis, matches));
     await report(userId, project, "Checking no credits or titles made it in", 0.831);
     try {
       const fixed = await fixTextCuts(project, analysis, { plan, stats, edit }, matches, { look, signal });
@@ -2524,6 +2683,7 @@ async function stagePlanAndRender(userId, project, signal) {
       matches = fixed.matches;
     } catch (error) {
       if (signal.aborted) throw error;
+      rethrowBlocked(error);
       console.warn(`[movie-recap] credits check skipped: ${error.message}`);
     }
     await report(userId, project, "Looking at every cut next to its narration", 0.8315);
@@ -2533,6 +2693,7 @@ async function stagePlanAndRender(userId, project, signal) {
       matches = checked.matches;
     } catch (error) {
       if (signal.aborted) throw error;
+      rethrowBlocked(error);
       console.warn(`[movie-recap] visual match check skipped: ${error.message}`);
     }
     await report(userId, project, "Checking for jump cuts", 0.832);
@@ -2543,6 +2704,7 @@ async function stagePlanAndRender(userId, project, signal) {
       matches = fixed.matches;
     } catch (error) {
       if (signal.aborted) throw error;
+      rethrowBlocked(error);
       console.warn(`[movie-recap] jump-cut check skipped: ${error.message}`);
     }
     // The opening: Jev ranks the clips as a hook; an intro plays the top four or five, a recap without one
@@ -2551,6 +2713,7 @@ async function stagePlanAndRender(userId, project, signal) {
       await report(userId, project, "Choosing the opening shots", 0.8335);
       const order = await rankCaptivating(project, analysis, described, edit.long, { look, signal }).catch((error) => {
         if (signal.aborted) throw error;
+        rethrowBlocked(error);
         console.warn(`[movie-recap] hook ranking skipped: ${error.message}`);
         return null;
       });
@@ -2563,11 +2726,14 @@ async function stagePlanAndRender(userId, project, signal) {
         ({ plan, stats, edit } = await centreShortCuts(project, analysis, described, { plan, stats, edit }, matches, { look, signal }));
       } catch (error) {
         if (signal.aborted) throw error;
+        rethrowBlocked(error);
         // Without the check the Short still renders, cropped to the middle of the frame.
         console.warn(`[movie-recap] centring check skipped: ${error.message}`);
       }
     }
     plan = markSubtitledCuts(plan, analysis, described);
+    await writeJson(userId, project.id, "plan-cache.json", { key: cacheKey, matches, final: { plan, stats, edit, matches } });
+    }
     const work = await scratch(userId, project.id, "render");
     const audio = path.join(work, "audio");
     await fs.mkdir(audio, { recursive: true });
@@ -2579,6 +2745,7 @@ async function stagePlanAndRender(userId, project, signal) {
     if (plan.formats.long && project.options.graphics !== false) {
       const graphics = await prepareGraphics(userId, project, edit.long, path.join(audio, "graphics"), signal).catch((error) => {
         if (signal.aborted) throw error;
+        rethrowBlocked(error);
         console.warn(`[movie-recap] motion graphics skipped: ${error.message}`);
         return null;
       });
@@ -2596,11 +2763,14 @@ async function stagePlanAndRender(userId, project, signal) {
     await fs.writeFile(path.join(work, "plan.json"), JSON.stringify(plan));
     await save(userId, project, { stats, edit, stage: "rendering" });
     await report(userId, project, "Sending the edit to the media worker", 0.84);
-    await worker(["start-render", "--project", project.id, "--plan", path.join(work, "plan.json"), "--audio-dir", audio], { timeoutMs: 20 * 60 * 1000, signal });
+    await startRender(userId, project, ["start-render", "--project", project.id, "--plan", path.join(work, "plan.json"), "--audio-dir", audio], signal);
     await fs.rm(work, { recursive: true, force: true });
-    await save(userId, project, { remote: { ...project.remote, renderStarted: true } });
+    await save(userId, project, { remote: { ...project.remote, renderStarted: true, restartRender: false } });
+    } finally {
+      stopBeat();
+    }
   }
-  const resume = () => worker(["start-render", "--project", project.id], { timeoutMs: 20 * 60 * 1000, signal });
+  const resume = () => startRender(userId, project, ["start-render", "--project", project.id], signal);
   const status = await waitForWorker(userId, project, "render", { from: 0.85, to: 0.97, signal, resume });
   await save(userId, project, { stage: "finishing", rendered: status.outputs || [] });
 }
@@ -2678,7 +2848,17 @@ async function stageFinish(userId, project, signal) {
   // The finished video and the edit's picture track are hundreds of MB: they stay on the media worker
   // and are served from there (server/vpsMedia.js). The hosted app has 512 MB with /tmp in RAM, and
   // pulling a 10-minute recap's files into it crashed it into a restart loop.
-  const onWorker = mediaAvailable();
+  let onWorker = mediaAvailable();
+  // After a restart the media server re-registers within about a minute. On the hosted app, never fall
+  // back to pulling finished videos into its memory: wait for it, then say so.
+  if (!onWorker && assetStoreConfigured()) {
+    await report(userId, project, "Waiting for the media server to reconnect", 0.97);
+    for (let waited = 0; waited < 3 * 60 * 1000 && !onWorker; waited += 10000) {
+      await sleep(10000, signal);
+      onWorker = mediaAvailable();
+    }
+    if (!onWorker) throw fail("The media server is reconnecting. Your recap is rendered and saved: press Try again in a minute.", 503);
+  }
   for (const output of project.rendered || []) {
     const label = output.format === "short" ? "Short" : "long recap";
     await report(userId, project, output.kind === "final" ? `Delivering the ${label}` : `Preparing the ${label} for Vibe Edit`, 0.97);
@@ -2726,6 +2906,7 @@ async function stageFinish(userId, project, signal) {
         maybe.forEach((i, n) => confirmed.has(n) && jumps.add(i));
       } catch (error) {
         if (signal.aborted) throw error;
+        rethrowBlocked(error);
         console.warn(`[movie-recap] jump-cut look skipped: ${error.message}`);
       }
     }
@@ -2773,19 +2954,39 @@ function start(userId, id) {
         else break;
       }
     } catch (error) {
-      if (project) {
+      // A retry, a re-render or a delete replaced this run: the new owner decides what the recap says.
+      if (project && running.get(id) === controller) {
         const stopped = controller.signal.aborted;
+        if (!stopped) console.warn(`[movie-recap] ${id} failed at ${project.stage}: ${error?.stack || error}`);
         await save(userId, project, {
           status: stopped ? "cancelled" : "failed",
-          error: stopped ? "Stopped" : publicMessage(error instanceof Error ? error.message : String(error)),
+          error: stopped ? "Stopped" : recapErrorMessage(error, project.stage),
           message: "",
         }).catch(() => {});
       }
     } finally {
-      running.delete(id);
-      await setActive(userId, id, false).catch(() => {});
+      if (running.get(id) === controller) {
+        running.delete(id);
+        await setActive(userId, id, false).catch(() => {});
+      }
     }
   });
+}
+
+/** The error a recap shows: plain language for the failures that otherwise surface as system text. */
+export function recapErrorMessage(error, stage = "") {
+  const raw = String(error instanceof Error ? error.message : error || "");
+  if (error?.name === "UsageBlockedError") return raw;
+  if (/ENOENT|no such file or directory/i.test(raw))
+    return stage === "planning" || stage === "rendering" ? "A working file went missing (the server restarted). Press Try again: nothing you paid for is lost." : "A working file went missing (the server restarted). Press Try again.";
+  if (/ENOSPC|no space left/i.test(raw)) return "The server ran out of disk space. Press Try again in a few minutes.";
+  if (/Unexpected token|in JSON at position|JSON\.parse|is not valid JSON/i.test(raw)) return "The AI service sent back an unreadable answer. Press Try again.";
+  if (/^No (long beats|intro|lines|tiles)\b/i.test(raw)) return "The AI couldn't write this part of the recap. Press Try again.";
+  if (/fetch failed|ECONNRESET|ETIMEDOUT|socket hang up|network/i.test(raw)) return "A connection dropped. Press Try again.";
+  if (/aborted|timed? ?out|TimeoutError/i.test(raw)) return "A step took too long and was stopped. Press Try again.";
+  if (/<html|<!doctype|cloudflare/i.test(raw)) return "A service the recap uses is down right now. Press Try again in a few minutes.";
+  if (/Traceback|\.py", line|Error: .*\n\s+at /.test(raw) || raw.length > 400) return "Something went wrong. Press Try again.";
+  return publicMessage(raw);
 }
 
 function summary(project) {
@@ -2797,10 +2998,28 @@ function summary(project) {
 }
 
 // ---------- Routes ----------
+/** Uploads that never became a recap (the page was closed after uploading) are removed after a day. */
+async function sweepUploads() {
+  const cutoff = Date.now() - 24 * 3600 * 1000;
+  for (const user of await fs.readdir(root()).catch(() => [])) {
+    for (const id of await fs.readdir(path.join(root(), user)).catch(() => [])) {
+      if (!ID.test(id)) continue;
+      const dir = path.join(root(), user, id);
+      const names = await fs.readdir(dir).catch(() => []);
+      if (names.includes("project.json") || !names.some((name) => name.startsWith("source."))) continue;
+      const stat = await fs.stat(dir).catch(() => null);
+      if (stat && stat.mtimeMs < cutoff) await fs.rm(dir, { recursive: true, force: true });
+    }
+  }
+}
+
 export function configureMovieRecap(dependencies) {
   deps = dependencies;
   // Resume whatever was mid-pipeline when the app last stopped (deploys restart it).
   setTimeout(async () => {
+    await sweepUploads().catch(() => {});
+    // The media server re-registers about a minute after a restart: resume once it has (or after 3 minutes).
+    for (let waited = 0; waited < 3 * 60 * 1000 && !mediaAvailable(); waited += 10000) await sleep(10000);
     for (const entry of await activeList().catch(() => [])) {
       try {
         const project = await load(entry.userId, entry.id);
@@ -2867,8 +3086,30 @@ export function registerMovieRecap(app) {
   }));
 
   // Streams a film straight to disk (no body buffering) for recaps from a local file.
+  /** Why this user can't start a recap now, checked before a long upload as well as on create. */
+  async function startBlocker(userId, voiceId = "") {
+    if (!openRouterConfigured()) return { message: "Recaps aren't set up on this server yet.", status: 503 };
+    if (voiceId && deps.voiceAllowed && !(await deps.voiceAllowed(userId, voiceId))) return { message: "That voice isn't available. Pick another voice.", status: 403 };
+    let busy = 0;
+    for (const other of await index(userId)) {
+      try {
+        const p = await load(userId, other);
+        if (p.status === "working" || p.status === "queued") busy += 1;
+      } catch {}
+    }
+    if (busy >= 2) return { message: "Two recaps are already in progress. Wait for one to finish.", status: 429 };
+    return null;
+  }
+  app.get("/api/recaps/can-start", route(async (req, res, userId) => {
+    const blocked = await startBlocker(userId, clip(req.query.voiceId, 200));
+    res.json(blocked ? { ok: false, error: blocked.message } : { ok: true });
+  }));
+
   app.post("/api/recaps/uploads", route(async (req, res, userId) => {
     const name = clip(decodeURIComponent(String(req.headers["x-file-name"] || "movie.mp4")), 120);
+    // Say no before the file is sent, not after 1.5 GB of it.
+    const blocked = await startBlocker(userId, clip(decodeURIComponent(String(req.headers["x-voice-id"] || "")), 200));
+    if (blocked) throw fail(blocked.message, blocked.status);
     const ext = (path.extname(name).toLowerCase().match(/^\.(mp4|mov|mkv|webm|m4v|avi)$/) || [])[1];
     if (!ext) throw fail("Upload an MP4, MOV, MKV, WebM, M4V, or AVI file.");
     const declared = Number(req.headers["content-length"] || 0);
@@ -2899,7 +3140,8 @@ export function registerMovieRecap(app) {
     if (!formats.length) throw fail("Choose a long recap, a Short, or both.");
     const voiceId = clip(body.voiceId, 200);
     if (!voiceId) throw fail("Choose a narration voice.");
-    if (deps.voiceAllowed && !(await deps.voiceAllowed(userId, voiceId))) throw fail("That voice isn't available. Pick another voice.", 403);
+    const blocked = await startBlocker(userId, voiceId);
+    if (blocked) throw fail(blocked.message, blocked.status);
     let source;
     let id;
     if (body.upload) {
@@ -2916,11 +3158,6 @@ export function registerMovieRecap(app) {
       id = `rcp_${crypto.randomBytes(12).toString("hex")}`;
       source = { kind: "link", url: parsed.href, name: parsed.hostname.replace(/^www\./, "") };
     }
-    const active = [];
-    for (const other of await index(userId)) {
-      try { const p = await load(userId, other); if (p.status === "working") active.push(p); } catch {}
-    }
-    if (active.length >= 2) throw fail("Two recaps are already in progress. Wait for one to finish.", 429);
     const transforms = body.transforms || {};
     const now = new Date().toISOString();
     const project = {
@@ -2951,7 +3188,6 @@ export function registerMovieRecap(app) {
       createdAt: now,
       updatedAt: now,
     };
-    if (source.kind === "upload") await persist(userId, id, path.join(projectDir(userId, id), source.file));
     await save(userId, project);
     (await index(userId)).unshift(id);
     await saveIndex(userId);
@@ -3008,8 +3244,16 @@ export function registerMovieRecap(app) {
       transcript: { fullText: beats.map((beat) => beat.text).join(" ") },
       ...(project.film?.year ? { year: project.film.year } : {}),
     };
-    const meta = await withUsageUser(userId, "tools:movie-recap-post", () => deps.postMetadata(userId, accountId, movie));
-    res.json({ draft: { title: clip(meta.title, 150), description: String(meta.description || "").slice(0, 4500), tags: (meta.tags || []).slice(0, 15).map((t) => clip(t, 60)) } });
+    // One draft per format and channel for this script: reopening the post window doesn't pay again.
+    // `fresh` asks for a new one.
+    const draftKey = `${format}:${accountId}:${crypto.createHash("sha1").update(movie.transcript.fullText).digest("hex").slice(0, 12)}`;
+    const kept = project.postDrafts?.[draftKey];
+    if (kept && !req.body?.fresh) return res.json({ draft: kept });
+    const meta = await withUsageUser(userId, "tools:movie-recap-post", () =>
+      withTimeout(deps.postMetadata(userId, accountId, movie), 3 * 60 * 1000, "Writing the post's title and description took too long. Try again."));
+    const draft = { title: clip(meta.title, 150), description: String(meta.description || "").slice(0, 4500), tags: (meta.tags || []).slice(0, 15).map((t) => clip(t, 60)) };
+    await save(userId, project, { postDrafts: { ...(project.postDrafts || {}), [draftKey]: draft } });
+    res.json({ draft });
   }));
 
   /** The image the finished page shows for a format: the film's first still for the long recap, the
@@ -3168,7 +3412,9 @@ export function registerMovieRecap(app) {
     }
     running.get(project.id)?.abort(new Error("Restarting"));
     running.delete(project.id);
-    await save(userId, project, { status: "queued", error: "", message: "Retrying", remote: project.stage === "analyzing" ? {} : project.remote });
+    // A render that failed on the worker is started again there; otherwise the run picks up where it is.
+    const remote = project.stage === "analyzing" ? (project.remote?.sourceStored ? { sourceStored: true } : {}) : { ...project.remote, ...(project.stage === "rendering" && project.remote?.renderStarted ? { restartRender: true } : {}) };
+    await save(userId, project, { status: "queued", error: "", message: "Retrying", remote });
     start(userId, project.id);
     res.status(202).json({ recap: summary(project) });
   }));
@@ -3181,6 +3427,8 @@ export function registerMovieRecap(app) {
     if (project.status === "working" || project.status === "queued") throw fail("This recap is working. Stop it or go back to the storyboard first.", 409);
     running.get(project.id)?.abort(new Error("Rewriting"));
     running.delete(project.id);
+    // A recap too long for its film is rewritten shorter.
+    if (req.body?.longMinutes !== undefined) project.options.longMinutes = clamp(req.body.longMinutes, ...RECAP_LIMITS.longMinutes, project.options.longMinutes);
     await save(userId, project, { stage: "writing", status: "queued", error: "", message: "Writing the script again", progress: 0.7, remote: { ...project.remote, renderStarted: false } });
     start(userId, project.id);
     res.status(202).json({ recap: summary(project) });
@@ -3209,13 +3457,15 @@ export function registerMovieRecap(app) {
   app.delete("/api/recaps/:id", route(async (req, res, userId) => {
     const project = await load(userId, req.params.id);
     running.get(project.id)?.abort(new Error("Deleted"));
+    // Dropped from running, so the aborted run's catch doesn't write project.json back.
+    running.delete(project.id);
     void worker(["cleanup", "--project", project.id], { timeoutMs: 2 * 60 * 1000 }).catch(() => null);
     const list = await index(userId);
     const at = list.indexOf(project.id);
     if (at >= 0) list.splice(at, 1);
     await saveIndex(userId);
     projects.delete(`${userId}:${project.id}`);
-    for (const name of ["project.json", "analysis.json", "descriptions.json", "sheets.json", "sheets.pack", ...(project.outputs || []).map((o) => o.file), project.source.file].filter(Boolean))
+    for (const name of ["project.json", "analysis.json", "descriptions.json", "sheets.json", "sheets.pack", ...(project.outputs || []).map((o) => o.file), project.source.file, project.music?.file, ...(project.lines || [])].filter(Boolean))
       await removeFile(storeKey(userId, project.id, name)).catch(() => {});
     // The stored narration lines.
     for (const format of project.options.formats) for (const beat of project.script?.[format]?.beats || []) for (const ext of ["wav", "mp3"])
@@ -3227,6 +3477,27 @@ export function registerMovieRecap(app) {
   // "Find a better shot": an editor flags one cut of a finished recap (with an optional note), and the AI
   // picks a better frame for the words spoken over it, from nearby in the film (in order for a long recap);
   // the media worker cuts that shot with the same look, and Vibe Edit swaps it in.
+  // Finding or ranking shots takes minutes: with `async`, the request returns a job id at once and the
+  // editor polls it, instead of holding one request open past the proxy's limit.
+  const shotJobs = new Map(); // job id -> { userId, recapId, status, result, error, at }
+  function shotJob(userId, recapId, run) {
+    const id = `job_${crypto.randomBytes(8).toString("hex")}`;
+    const job = { userId, recapId, status: "working", result: null, error: "", at: Date.now() };
+    shotJobs.set(id, job);
+    for (const [key, old] of shotJobs) if (Date.now() - old.at > 60 * 60 * 1000) shotJobs.delete(key);
+    withTimeout(run(), 20 * 60 * 1000, "Finding a shot took too long. Try again.").then(
+      (result) => Object.assign(job, { status: "done", result }),
+      (error) => Object.assign(job, { status: "failed", error: error?.statusCode ? error.message : recapErrorMessage(error) }),
+    );
+    return id;
+  }
+  app.get("/api/recaps/:id/jobs/:job", route(async (req, res, userId) => {
+    const job = shotJobs.get(String(req.params.job));
+    if (!job || job.userId !== userId || job.recapId !== req.params.id) throw fail("That request is no longer available. Try again.", 404);
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ status: job.status, ...(job.status === "done" ? { result: job.result } : {}), ...(job.status === "failed" ? { error: job.error } : {}) });
+  }));
+
   app.post("/api/recaps/:id/recut", route(async (req, res, userId) => {
     const project = await load(userId, req.params.id);
     const format = req.body?.format === "short" ? "short" : "long";
@@ -3236,14 +3507,15 @@ export function registerMovieRecap(app) {
     if (!edit?.cuts?.[index]) throw fail("That shot isn't part of this recap.", 404);
     if (!mediaAvailable()) throw fail("The media server is reconnecting. Try again in a minute.", 503);
     const chosen = Number(req.body?.t);
-    const result = await withUsageUser(userId, "tools:movie-recap", async () => {
+    const run = () => withUsageUser(userId, "tools:movie-recap", async () => {
       if (!Number.isFinite(chosen)) return findBetterShot(userId, project, format, index, note);
       const analysis = await readJson(userId, project.id, "analysis.json");
       const { start, end } = storyRange(analysis);
       if (chosen < start || chosen > end) throw fail("That moment is outside the film's story.", 400);
       return { asset: await cutShotAt(userId, project, format, index, chosen), frame: { t: chosen } };
     });
-    res.json(result);
+    if (req.body?.async) return res.status(202).json({ job: shotJob(userId, project.id, run) });
+    res.json(await run());
   }));
 
   // The best shots for one cut's narration, ranked and classed by Jev, for an editor to choose from.
@@ -3252,7 +3524,9 @@ export function registerMovieRecap(app) {
     const format = req.body?.format === "short" ? "short" : "long";
     const index = Math.round(Number(req.body?.index));
     if (!project.edit?.[format]?.cuts?.[index]) throw fail("That shot isn't part of this recap.", 404);
-    res.json(await withUsageUser(userId, "tools:movie-recap", () => rankShotsForCut(userId, project, format, index, clip(req.body?.note, 400))));
+    const run = () => withUsageUser(userId, "tools:movie-recap", () => rankShotsForCut(userId, project, format, index, clip(req.body?.note, 400)));
+    if (req.body?.async) return res.status(202).json({ job: shotJob(userId, project.id, run) });
+    res.json(await run());
   }));
 
   // The Vibe Edit picture track of a recap, kept on the media worker.

@@ -48,7 +48,7 @@ import {
   listSources,
   saveSources,
   searchFilmSources,
-  backToStoryboard, cancelRecap, clock, correctNames, rewriteScript, setPostThumbnail, draftPost, followRecapPost, postChannels, postRecap, setIntro, type PostChannel, createRecap, deleteRecap, getRecap, listRecaps, parseClock, renderRecap, retryRecap, saveScript, shotTile, spokenSeconds,
+  backToStoryboard, cancelRecap, recapStartBlocker, clock, correctNames, rewriteScript, setPostThumbnail, draftPost, followRecapPost, postChannels, postRecap, setIntro, type PostChannel, createRecap, deleteRecap, getRecap, listRecaps, parseClock, renderRecap, retryRecap, saveScript, shotTile, spokenSeconds,
   uploadFilm, type Recap, type RecapBeat, type RecapFormat, type RecapPace, type RecapScript, type RecapTone, type RecapTransforms,
 } from "./recapApi";
 import "./MovieRecap.css";
@@ -265,6 +265,7 @@ function NewRecapPanel({ onCreated, onError }: { onCreated: (recap: Recap) => vo
   const [voicesLoading, setVoicesLoading] = useState(true);
   const [voiceId, setVoiceId] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const uploadAbort = useRef<AbortController | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -297,8 +298,12 @@ function NewRecapPanel({ onCreated, onError }: { onCreated: (recap: Recap) => vo
     try {
       let upload: { upload: string; name: string } | null = null;
       if (mode === "upload" && file) {
+        // Refused before the file is sent, not after.
+        const blocked = await recapStartBlocker(voiceId);
+        if (blocked) throw new Error(blocked);
         setUploadShare(0);
-        upload = await uploadFilm(file, setUploadShare);
+        uploadAbort.current = new AbortController();
+        upload = await uploadFilm(file, setUploadShare, uploadAbort.current.signal, voiceId);
       }
       const recap = await createRecap({
         ...(upload ? { upload: upload.upload, uploadName: upload.name, title: file?.name.replace(/\.[^.]+$/, "") } : { url: url.trim() }),
@@ -309,8 +314,9 @@ function NewRecapPanel({ onCreated, onError }: { onCreated: (recap: Recap) => vo
       try { window.localStorage.setItem("autoyt-recap-channel", channelName.trim()); } catch {}
       onCreated(recap);
     } catch (err) {
-      onError(err instanceof Error ? err.message : "Couldn't start the recap");
+      if (!(err instanceof Error && err.message === "Upload cancelled")) onError(err instanceof Error ? err.message : "Couldn't start the recap");
     } finally {
+      uploadAbort.current = null;
       setSubmitting(false);
       setUploadShare(null);
     }
@@ -351,13 +357,18 @@ function NewRecapPanel({ onCreated, onError }: { onCreated: (recap: Recap) => vo
             onFiles={([next]) => pick(next)}
             onError={onError}
             title="Drop the film here"
-            hint="MP4, MOV, MKV, or WebM up to 1.5 GB"
+            hint="MP4, MOV, MKV, WebM, M4V, or AVI up to 1.5 GB · one film or episode, 5 minutes to 4 hours"
             file={file}
             progress={uploadShare}
             onClear={() => setFile(null)}
             icon={file ? <Film size={18} /> : undefined}
           />
         )}
+        {uploadShare !== null && mode === "upload" ? (
+          <button type="button" className="ui-btn is-ghost" onClick={() => uploadAbort.current?.abort()}>
+            Cancel upload
+          </button>
+        ) : null}
       </div>
 
       <div className="mr-pair">
@@ -546,7 +557,7 @@ function RecapView({ id, onBack, onError }: { id: string; onBack: () => void; on
   const [recap, setRecap] = useState<Recap | null>(null);
   const [missing, setMissing] = useState(false);
 
-  const [offline, setOffline] = useState(false);
+  const [offline, setOffline] = useState<boolean | "signed-out">(false);
   const load = useCallback(async () => {
     try {
       const next = await getRecap(id);
@@ -557,6 +568,7 @@ function RecapView({ id, onBack, onError }: { id: string; onBack: () => void; on
       // Only a real "not found" means the recap is gone. A restart or a network blip (502, timeout) keeps
       // what is on screen and tries again: one failed poll during a deploy once showed a live recap as deleted.
       if (err instanceof RecapApiError && err.status === 404) setMissing(true);
+      else if (err instanceof RecapApiError && err.status === 401) setOffline("signed-out");
       else setOffline(true);
       return null;
     }
@@ -623,7 +635,11 @@ function RecapView({ id, onBack, onError }: { id: string; onBack: () => void; on
 
   return (
     <div className="mr-view">
-      {offline ? <p className="mr-offline" role="status">Reconnecting to the server. Your recap keeps going on its own.</p> : null}
+      {offline === "signed-out" ? (
+        <p className="mr-offline" role="status">You've been signed out. Sign in again to follow this recap; it keeps going on its own.</p>
+      ) : offline ? (
+        <p className="mr-offline" role="status">Reconnecting to the server. Your recap keeps going on its own.</p>
+      ) : null}
       <RecapBar
         title={recap.title}
         onBack={onBack}
@@ -810,7 +826,8 @@ function Working({ recap, onRetry }: { recap: Recap; onRetry: () => void }) {
   // The server's clock, so timers don't drift with this computer's.
   const offset = useMemo(() => (recap.serverNow ? recap.serverNow - Date.now() : 0), [recap.serverNow]);
   const serverNow = now + offset;
-  const stuck = recap.status === "working" && serverNow - Date.parse(recap.updatedAt) > STUCK_MS;
+  // A queued recap that never started (its run was lost to a restart) is stuck too.
+  const stuck = (recap.status === "working" || recap.status === "queued") && serverNow - Date.parse(recap.updatedAt) > STUCK_MS;
   const clock = recap.clock;
   const queued = recap.status !== "working";
   const step = stepAt(recap.progress);
@@ -962,11 +979,12 @@ function ScriptReview({ recap, onChange, onRender, onError }: { recap: Recap; on
     }
   };
   const [rewriting, setRewriting] = useState(false);
+  const [rewriteMinutes, setRewriteMinutes] = useState(recap.options.longMinutes);
   const rewrite = async () => {
     if (!(await confirm({ title: "Write the script again?", body: "A new script from the film replaces the current one, your edits included.", confirmLabel: "Rewrite script", danger: true }))) return;
     setRewriting(true);
     try {
-      onChange(await rewriteScript(recap.id));
+      onChange(await rewriteScript(recap.id, rewriteMinutes !== recap.options.longMinutes ? rewriteMinutes : undefined));
     } catch (error) {
       onError(error instanceof Error ? error.message : "Couldn't write the script again");
       setRewriting(false);
@@ -1128,6 +1146,19 @@ function ScriptReview({ recap, onChange, onRender, onError }: { recap: Recap; on
             {naming ? <Loader2 size={15} className="ui-spin" aria-hidden="true" /> : <Users size={15} aria-hidden="true" />}Correct character names
           </button>
           {namesNote ? <p className="mt-note">{namesNote}</p> : null}
+          {recap.options.formats.includes("long") ? (
+            <label className="mt-field">
+              <span className="mt-label">Length of a new script</span>
+              {/* A recap too long for its film is rewritten shorter. */}
+              <select value={rewriteMinutes} onChange={(e) => setRewriteMinutes(Number(e.target.value))}>
+                {[10, 11, 12, 13, 14, 15, 16, 17].map((minutes) => (
+                  <option key={minutes} value={minutes}>
+                    {minutes} minutes{minutes === recap.options.longMinutes ? " (current)" : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
           <button type="button" className="mt-secondary" disabled={rewriting} onClick={() => void rewrite()} title="A new script from the same analysis: the opening told shot by shot from what the film shows">
             {rewriting ? <Loader2 size={15} className="ui-spin" aria-hidden="true" /> : <PenLine size={15} aria-hidden="true" />}Write the script again
           </button>
