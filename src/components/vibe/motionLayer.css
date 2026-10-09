@@ -1,0 +1,52 @@
+/* Motion graphics in Vibe Edit: the live layer in the player and its part of the inspector. */
+.ve-motion-layer { display: block; background: transparent; }
+.ve-motion { display: grid; gap: 14px; }
+.ve-motion .ve-hint { display: flex; align-items: flex-start; gap: 6px; }
+.ve-motion .ve-hint svg { flex: none; margin-top: 2px; color: var(--ve-accent-text, var(--ve-accent)); }
+.ve-motion-fields { display: grid; gap: 12px; }
+.ve-motion-picked { display: flex; min-width: 0; align-items: baseline; justify-content: space-between; gap: 10px; }
+.ve-motion-picked strong { overflow: hidden; color: var(--ve-text); font-size: 13.5px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.ve-motion-field { display: grid; gap: 6px; color: var(--ve-text); font-size: 12.5px; }
+.ve-motion-field > span:first-child { display: flex; justify-content: space-between; color: var(--ve-muted); font-size: 12px; font-weight: 600; }
+.ve-motion-field em { color: var(--ve-text); font-style: normal; font-variant-numeric: tabular-nums; }
+.ve-motion-field textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--ve-line-strong); border-radius: 9px; background: var(--ve-sunken); color: var(--ve-text); font: inherit; font-size: 13px; resize: vertical; }
+.ve-motion-field input[type="range"] { width: 100%; accent-color: var(--ve-accent); }
+.ve-motion-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.ve-motion-row label { display: inline-flex; align-items: center; gap: 6px; color: var(--ve-muted); font-size: 12px; font-weight: 600; }
+.ve-motion-row input[type="number"] { width: 74px; height: 30px; padding: 0 8px; border: 1px solid var(--ve-line-strong); border-radius: 8px; background: var(--ve-sunken); color: var(--ve-text); font: 500 12.5px/1 var(--ve-mono, ui-monospace, monospace); }
+.ve-link { display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: none; color: var(--ve-muted); font: inherit; font-size: 12px; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.ve-link:hover { color: var(--ve-text); }
+.ve-motion-list { display: grid; gap: 2px; }
+.ve-motion-list > span { margin-bottom: 4px; color: var(--ve-muted); font-size: 12px; font-weight: 600; }
+.ve-motion-list button { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 6px 8px; border: 0; border-radius: 8px; background: transparent; color: var(--ve-text); font: inherit; font-size: 12.5px; text-align: left; cursor: pointer; }
+.ve-motion-list button:hover, .ve-motion-list button.is-on { background: var(--ve-raised); }
+.ve-motion-list small { color: var(--ve-faint); font: 500 11px/1 var(--ve-mono, ui-monospace, monospace); }
+
+/* The viewer's transport: start/back/play/forward/end, loop, speed, and volume, plus scrub hover time and markers. */
+.ve-transport { display: inline-flex; align-items: center; gap: 2px; }
+.ve-transport .ve-viewer-play { margin: 0 6px; }
+.ve-speed { display: inline-flex; height: 30px; align-items: center; gap: 4px; padding: 0 4px 0 8px; border-radius: 8px; color: rgb(236 234 227 / 0.72); }
+.ve-speed:hover { background: rgb(255 255 255 / 0.08); color: #eceae3; }
+.ve-speed select { height: 28px; padding: 0 4px; border: 0; background: transparent; color: inherit; font: 600 12px/1 var(--ve-mono, ui-monospace, monospace); cursor: pointer; appearance: none; }
+.ve-speed select option { color: #111; }
+.ve-volume { display: inline-flex; align-items: center; gap: 4px; }
+.ve-volume input[type="range"] { width: 72px; height: 16px; margin: 0; appearance: none; background: transparent; cursor: pointer; }
+.ve-volume input[type="range"]::-webkit-slider-runnable-track { height: 3px; border-radius: 99px; background: linear-gradient(90deg, #eceae3 var(--ve-vol), rgb(255 255 255 / 0.18) var(--ve-vol)); }
+.ve-volume input[type="range"]::-moz-range-track { height: 3px; border-radius: 99px; background: rgb(255 255 255 / 0.18); }
+.ve-volume input[type="range"]::-webkit-slider-thumb { width: 11px; height: 11px; margin-top: -4px; appearance: none; border-radius: 50%; background: #f4f2ec; }
+.ve-scrub-mark { position: absolute; top: 2px; width: 2px; height: 12px; margin-left: -1px; border-radius: 1px; background: var(--ve-accent); opacity: 0.85; pointer-events: none; }
+.ve-scrub-tip { position: absolute; bottom: 20px; padding: 3px 7px; border-radius: 6px; background: rgb(12 13 15 / 0.92); color: #eceae3; font: 600 11.5px/1.2 var(--ve-mono, ui-monospace, monospace); white-space: nowrap; transform: translateX(-50%); pointer-events: none; box-shadow: 0 6px 18px -8px rgb(0 0 0 / 0.6); }
+/* The bar sizes to the player, not the window: extras fold away as the player narrows. */
+.ve-viewer { container-type: inline-size; }
+.ve-viewer .ve-viewer-bar { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }
+.ve-viewer .ve-viewer-tools { justify-content: flex-end; min-width: 0; }
+@container (max-width: 880px) {
+  .ve-volume input[type="range"] { display: none; }
+  .ve-viewer-meta { visibility: hidden; }
+}
+@container (max-width: 700px) {
+  .ve-speed, .ve-transport .ve-tool:first-child, .ve-transport .ve-tool:last-child { display: none; }
+}
+@container (max-width: 520px) {
+  .ve-viewer-tools .ve-tool:not(:last-child), .ve-volume { display: none; }
+}

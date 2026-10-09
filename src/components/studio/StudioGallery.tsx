@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 import { AudioPlayer } from "../AudioPlayer";
 import { MotionPreview } from "./MotionPreview";
-import { MotionEditor } from "./MotionEditor";
+import { writeDeepLink } from "../../utils/tiktokRoute";
 import { type Asset, elapsed, type Generation, type Output, timeAgo } from "./studioShared";
 import { VideoPlayer } from "../VideoPlayer";
 import { toast } from "../../utils/toast";
@@ -89,7 +89,20 @@ function details(item: Generation, modelName: string, now: number) {
 const isEditableMotion = (item: Generation) =>
   ["promo", "explainer", "vibe-motion"].includes(item.tab) && !["queued", "running", "failed", "cancelled"].includes(item.status) && !item.rendering &&
   (Boolean(item.tab !== "vibe-motion" && item.source?.file) || (item.outputs || []).some((o) => /\.html$/i.test(o.file)));
-const openMotionEditor = (item: Generation) => window.dispatchEvent(new CustomEvent("autoyt:edit-motion", { detail: { id: item.id, title: item.prompt?.slice(0, 80) || "Motion graphic" } }));
+/** Opens the graphic in Vibe Edit, the one editor: its own edit, built the first time and reopened as it was left. */
+async function openInVibeEdit(item: Generation) {
+  const opening = toast.info("Opening it in Vibe Edit…", { duration: 0 });
+  try {
+    const response = await fetch(`/api/studio/generations/${encodeURIComponent(item.id)}/vibe-edit`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "It couldn't be opened in Vibe Edit");
+    writeDeepLink({ view: "vibe-edit", projectId: data.projectId });
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : "It couldn't be opened in Vibe Edit");
+  } finally {
+    toast.dismiss(opening);
+  }
+}
 /** Something changed a generation outside the studio's own requests: the studio reloads its history. */
 export const announceStudioChange = () => window.dispatchEvent(new Event("autoyt:studio-changed"));
 
@@ -112,7 +125,7 @@ function Actions({ item, output, handlers, onClose }: { item: Generation; output
         <button type="button" className="ui-icon-btn cs-icon" aria-label="Use in Lip Sync" title="Use in Lip Sync" onClick={act(() => handlers.onSend("lipsync", "audioFile", output))}><Mic className="h-3.5 w-3.5" /></button>
       ) : null}
       {output && isEditableMotion(item) ? (
-        <button type="button" className="ui-icon-btn cs-icon" aria-label="Edit in the player" title="Edit in the player" onClick={act(() => { onClose?.(); openMotionEditor(item); })}><MousePointer2 className="h-3.5 w-3.5" /></button>
+        <button type="button" className="ui-icon-btn cs-icon" aria-label="Edit in Vibe Edit" title="Edit in Vibe Edit: click any part of it in the player" onClick={act(() => { onClose?.(); void openInVibeEdit(item); })}><MousePointer2 className="h-3.5 w-3.5" /></button>
       ) : null}
       {output && item.tab === "vibe-motion" && kind === "html" ? (
         <button type="button" className="ui-icon-btn cs-icon" aria-label="Revise this motion graphic" title="Revise" onClick={act(() => { onClose?.(); handlers.onRevise(output.file); })}><PenLine className="h-3.5 w-3.5" /></button>
@@ -246,12 +259,6 @@ function StatusTile({ item, handlers, now }: { item: Generation; handlers: Galle
 
 export function StudioGallery({ items, now, handlers, extraAudio = [] }: { items: Generation[]; now: number; handlers: GalleryHandlers; extraAudio?: Array<{ id: string; title: string; meta: string; url: string; onLipSync: () => void }> }) {
   const tiles = useMemo(() => galleryTiles(items), [items]);
-  const [editing, setEditing] = useState<{ id: string; title: string } | null>(null);
-  useEffect(() => {
-    const onEdit = (event: Event) => setEditing((event as CustomEvent<{ id: string; title: string }>).detail);
-    window.addEventListener("autoyt:edit-motion", onEdit);
-    return () => window.removeEventListener("autoyt:edit-motion", onEdit);
-  }, []);
   const viewable = tiles.filter((tile): tile is Extract<Tile, { kind: "media" }> => tile.kind === "media");
   const [open, setOpen] = useState<string | null>(handlers.routeGenerationId || null);
   useEffect(() => setOpen(handlers.routeGenerationId || null), [handlers.routeGenerationId]);
@@ -275,7 +282,6 @@ export function StudioGallery({ items, now, handlers, extraAudio = [] }: { items
   const index = viewable.findIndex((tile) => tile.key === open || tile.item.id === open);
   return (
     <>
-      {editing ? <MotionEditor source={{ generationId: editing.id }} title={editing.title} onClose={() => setEditing(null)} onSaved={announceStudioChange} /> : null}
       <div className="cs-masonry">
         {extraAudio.map((clip) => (
           <div key={clip.id} className="cs-tile cs-tile-audio">

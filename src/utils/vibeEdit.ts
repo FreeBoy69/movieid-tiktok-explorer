@@ -34,7 +34,19 @@ export interface VibeAsset {
   remote?: string;
   /** A motion graphic (a title, card, or overlay) rendered from HTML: the clip is its video, and this is what
    *  the motion editor reopens to change it. `edits` is its edits layer (src/utils/videoGraphics.js). */
-  motion?: { html: string; seconds: number; width: number; height: number; edits?: Record<string, unknown>; kind?: string; vars?: Record<string, string> };
+  motion?: {
+    html: string;
+    seconds: number;
+    width: number;
+    height: number;
+    edits?: Record<string, unknown>;
+    kind?: string;
+    vars?: Record<string, string>;
+    /** How it's filmed: a HyperFrames title template (with vars), a seek(t) film (Promo, Explainer), or HyperFrames HTML (Vibe Motion). */
+    engine?: "title" | "promo" | "html";
+    /** Edited since it was last filmed: the export films it again first. */
+    dirty?: boolean;
+  };
 }
 
 /** A picture on a video track. Track 0 is the base sequence; higher tracks
@@ -163,7 +175,7 @@ export interface VibeProject {
   look?: string;
   /** Where the edit came from, which decides its extra tools: a recap finds better shots for its cuts, a Create
    *  Video project regenerates its scenes, a film episode re-renders its scenes; its export becomes their video. */
-  source?: { kind: "recap"; recapId: string; format: "long" | "short" } | { kind: "create-video"; projectId: string } | { kind: "drama"; episodeId: string; seriesId?: string };
+  source?: { kind: "recap"; recapId: string; format: "long" | "short" } | { kind: "create-video"; projectId: string } | { kind: "drama"; episodeId: string; seriesId?: string } | { kind: "studio"; generationId: string; tab: string };
   createdAt: number;
   updatedAt: number;
 }

@@ -20,10 +20,11 @@ import {
   VIBE_ASPECTS,
   type VibeAspect,
   type VibeAsset,
+  type VibeClip,
 } from "../../utils/vibeEdit";
 import { SOUND_PRESETS } from "../../utils/vibeSound.js";
-import { editMotionTitle, findBetterShot, rankShots, type RankedShot, importAudioUrl, importLink, uploadMedia } from "./api";
-import { MotionEditor } from "../studio/MotionEditor";
+import { findBetterShot, rankShots, type RankedShot, importAudioUrl, importLink, uploadMedia } from "./api";
+import { MotionInspector } from "./motionLayer";
 import { addAndPlace, addMotionTitle, generate, generateCaptions, getVoices, placeMusic, readVoicePref, resolveVoice, voiceover, writeVoicePref } from "./commands";
 import { captionStyle, loadCaptionFont, resolveCaptionStyleId } from "./overlay";
 import CaptionStylePicker from "../CaptionStylePicker";
@@ -749,20 +750,11 @@ function ProjectProps() {
   );
 }
 
-/** A motion title on the timeline reopens in the player editor: move, resize, reword, recolour, retime. */
-function MotionGraphicEdit({ asset }: { asset: VibeAsset }) {
-  const [open, setOpen] = useState(false);
-  const motion = asset.motion!;
-  const aspect = motion.width && motion.height ? `${motion.width}:${motion.height}` : vibe.get().project.aspect;
-  const save = async (edits: Record<string, unknown>) => {
-    const made = await withTask("Filming the edited title", () => editMotionTitle(motion.html, motion.vars, edits));
-    vibe.commit((p) => ({ ...p, assets: p.assets.map((a) => (a.id === asset.id ? { ...a, url: made.url, file: made.file, motion: { ...motion, edits: made.edits } } : a)), updatedAt: Date.now() }));
-  };
+/** A motion graphic on the timeline is edited right in the player: its parts, here. */
+function MotionGraphicEdit({ clip, asset }: { clip: VibeClip; asset: VibeAsset }) {
   return (
     <Group title="Motion graphic">
-      <p className="ve-hint">Click any part of it in its player to move, resize, reword, or recolour it, or choose when it shows.</p>
-      <button type="button" className="ui-btn is-sm" onClick={() => setOpen(true)}><MousePointer2 size={14} />Edit graphic</button>
-      {open ? <MotionEditor source={{ document: { html: motion.html, aspect, edits: motion.edits as Record<string, never>, vars: motion.vars }, save }} title={asset.name} onClose={() => setOpen(false)} onSaved={() => undefined} /> : null}
+      <MotionInspector clip={clip} asset={asset} />
     </Group>
   );
 }
@@ -856,7 +848,7 @@ export function Inspector() {
         {clip && recapCut(project, clip.id) != null ? (
           <BetterShot clipId={clip.id} note={clip.note || ""} flagged={Boolean(clip.flagged)} set={set} />
         ) : null}
-        {clip && asset?.motion ? <MotionGraphicEdit asset={asset} /> : null}
+        {clip && asset?.motion ? <MotionGraphicEdit clip={clip} asset={asset} /> : null}
         {clip ? (
           <>
           <Group title="Picture">

@@ -310,7 +310,7 @@ export const DOCS: DocPage[] = [
         id: "captions-voices-export",
         title: "Captions, voices, and export",
         blocks: [
-          { p: "Choose from 35 caption styles, generate voiceover in dozens of voices with direction, add stock B-roll that matches what's being said, and animated titles. Give each clip a camera move (push, pull, or pan) and an entrance (fade, flash, glitch, or zoom), and the whole edit a look. Double-click into a motion title with **Edit graphic** to move, resize, reword, or recolour any part of it. **Export** renders the finished video." },
+          { p: "Choose from 35 caption styles, generate voiceover in dozens of voices with direction, add stock B-roll that matches what's being said, and animated titles. Give each clip a camera move (push, pull, or pan) and an entrance (fade, flash, glitch, or zoom), and the whole edit a look. Motion graphics are live in the player: click any part of one to select it, drag to move it, and use the inspector to reword, recolour, resize, or change when it's on screen. Your changes are filmed when you export. **Export** renders the finished video." },
           { p: "Vibe Edit is the one editor in AutoYT: Create Video and Create Film open their videos in it too, and their exports become those projects' videos." },
         ],
       },
@@ -349,7 +349,7 @@ export const DOCS: DocPage[] = [
         blocks: [
           { list: ["**Marketing Studio:** turn a product photo into an ad, with a presenter if you like.", "**Promo Studio:** launch videos in motion graphics.", "**Explainer Studio:** narrated product walkthroughs in your voice."] },
           { h3: "Editing motion graphics" },
-          { p: "Promo films, explainers, and Vibe Motion graphics can be edited right in their player: choose **Edit in the player** on a result, then click any text, shape, or picture. Drag it to move it, drag its corner to resize it, and change its words, colour, or when it's on screen. **Save and render** makes the new video; your edits stay with the graphic, so you can come back and change them." },
+          { p: "Promo films, explainers, and Vibe Motion graphics open in Vibe Edit: choose **Edit in Vibe Edit** on a result to open it in the full editor, with the player, timeline, and Juel chat. Click any text, shape, or picture in the player and drag it to move it, or use the inspector to change its words, colour, size, or when it's on screen. **Export** films the changes and saves the new video back to the studio; your edits stay with the graphic, so you can come back and change them." },
         ],
       },
       {

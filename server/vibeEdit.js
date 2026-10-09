@@ -14,7 +14,8 @@ import path from "node:path";
 import { assetStoreConfigured, ensureFile, saveFile } from "./assetStore.js";
 import { signedMediaUrl } from "./vpsMedia.js";
 import { buildRenderArgs, overlayConcatList, renderDuration } from "./vibeEditRender.js";
-import { hyperframesAvailable, hyperframesKit, renderHyperframesProject } from "./hyperframesRenderer.js";
+import { hyperframesAvailable, hyperframesKit, renderHyperframesHtml, renderHyperframesProject } from "./hyperframesRenderer.js";
+import { promoRendererAvailable, renderPromo } from "./promoRenderer.js";
 import { normalizeOverlay, OVERLAY_FONTS, OVERLAY_KINDS, overlayTemplate } from "../src/utils/videoOverlays.js";
 import { cleanMotionEdits, withMotionEdits } from "../src/utils/videoGraphics.js";
 import { downloadStockClip, generateStockSearchTerms, searchStockVideos, stockCredit, stockFootageCapability } from "./stockFootage.js";
@@ -590,14 +591,40 @@ async function renderTitleHtml(userId, html, vars) {
   }
 }
 
-/** A motion title edited in the player (moved, resized, recoloured, reworded, retimed), filmed again. */
+/** A motion graphic edited in the player (moved, resized, recoloured, reworded, retimed), filmed again: a title
+ *  through HyperFrames with its words, a Promo or Explainer film through the promo renderer, a Vibe Motion graphic
+ *  through HyperFrames. */
 async function editMotionTitle(userId, body) {
-  if (!hyperframesAvailable()) throw fail("Motion titles need the render worker, which isn't available right now", 503);
+  const engine = ["promo", "html"].includes(body?.engine) ? body.engine : "title";
   const html = String(body?.html || "");
-  if (!/data-composition-id=/.test(html) || html.length > 200000) throw fail("That title can't be edited");
-  const vars = body?.vars && typeof body.vars === "object" ? Object.fromEntries(Object.entries(body.vars).slice(0, 30).map(([k, v]) => [String(k).slice(0, 40), String(v ?? "").slice(0, 400)])) : {};
+  if (html.length > 400000 || !/<html[\s>]/i.test(html)) throw fail("That graphic can't be filmed");
   const edits = cleanMotionEdits(body?.edits);
-  return { ...(await renderTitleHtml(userId, withMotionEdits(html, edits), vars)), edits };
+  const edited = withMotionEdits(html, edits);
+  if (engine === "title") {
+    if (!hyperframesAvailable()) throw fail("Motion titles need the render worker, which isn't available right now", 503);
+    if (!/data-composition-id=/.test(html)) throw fail("That title can't be edited");
+    const vars = body?.vars && typeof body.vars === "object" ? Object.fromEntries(Object.entries(body.vars).slice(0, 30).map(([k, v]) => [String(k).slice(0, 40), String(v ?? "").slice(0, 400)])) : {};
+    return { ...(await renderTitleHtml(userId, edited, vars)), edits };
+  }
+  const width = Math.min(3840, Math.max(320, Math.round(Number(body?.width) || 1920)));
+  const height = Math.min(3840, Math.max(320, Math.round(Number(body?.height) || 1080)));
+  const seconds = Math.min(600, Math.max(1, Number(body?.seconds) || 10));
+  const work = await fs.mkdtemp(path.join(os.tmpdir(), "vibe-motion-"));
+  try {
+    const output = path.join(work, "graphic.mp4");
+    if (engine === "promo") {
+      if (!promoRendererAvailable()) throw fail("Films need the render worker, which isn't available right now", 503);
+      await renderPromo({ html: edited, width, height, duration: seconds, output, signal: AbortSignal.timeout(20 * 60 * 1000) });
+    } else {
+      if (!hyperframesAvailable()) throw fail("Motion graphics need the render worker, which isn't available right now", 503);
+      await renderHyperframesHtml({ html: edited, output, width, height, fps: 30, duration: seconds });
+    }
+    const name = `${newId("gen-motion")}.mp4`;
+    await writeOwned(userId, name, await fs.readFile(output));
+    return { url: fileUrl(name), file: name, edits };
+  } finally {
+    await fs.rm(work, { recursive: true, force: true }).catch(() => {});
+  }
 }
 
 // ---------- Music import ----------

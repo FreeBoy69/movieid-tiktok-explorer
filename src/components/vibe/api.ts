@@ -139,9 +139,13 @@ export async function exportToSource(project: VibeProject, file: string): Promis
   if (!file || !source || source.kind === "recap") return "";
   const url = source.kind === "create-video"
     ? `/api/maker/projects/${encodeURIComponent(source.projectId)}/vibe-edit/export`
-    : `/api/drama/episodes/${encodeURIComponent(source.episodeId)}/vibe-edit/export`;
-  await post(url, { file }, "Couldn't save the export to its project");
-  return source.kind === "create-video" ? "Saved as the Create Video project's video" : "Saved as the episode's final cut";
+    : source.kind === "drama"
+      ? `/api/drama/episodes/${encodeURIComponent(source.episodeId)}/vibe-edit/export`
+      : `/api/studio/generations/${encodeURIComponent(source.generationId)}/vibe-edit/export`;
+  // A studio graphic also keeps the edits made to it, so its own document (and Revise) stay in step.
+  const motion = source.kind === "studio" ? project.assets.find((a) => a.motion)?.motion : undefined;
+  await post(url, { file, ...(motion ? { edits: motion.edits || {} } : {}) }, "Couldn't save the export to its project");
+  return source.kind === "create-video" ? "Saved as the Create Video project's video" : source.kind === "drama" ? "Saved as the episode's final cut" : "Saved back to the studio";
 }
 
 export interface RenderJob {
@@ -238,6 +242,10 @@ export async function findBetterShot(recapId: string, format: "long" | "short", 
 /** A HyperFrames motion title: WebM with alpha to preview, ProRes to export. */
 export const renderMotionTitle = (kind: string, vars: Record<string, string>, look: string, aspect: string) =>
   post<{ url: string; file: string; seconds: number; width: number; height: number; html?: string; kind?: string; vars?: Record<string, string> }>("/api/vibe-edit/motion", { kind, vars, look, aspect }, "Couldn't animate that title");
-/** Films a motion title again with the edits made to it in its player. */
-export const editMotionTitle = (html: string, vars: Record<string, string> | undefined, edits: Record<string, unknown>) =>
-  post<{ url: string; file: string; edits: Record<string, unknown> }>("/api/vibe-edit/motion/edit", { html, vars, edits }, "Couldn't film the edited title");
+/** Films a motion graphic again with the edits made to it in the player. */
+export const filmMotion = (motion: NonNullable<VibeAsset["motion"]>) =>
+  post<{ url: string; file: string; edits: Record<string, unknown> }>(
+    "/api/vibe-edit/motion/edit",
+    { engine: motion.engine || "title", html: motion.html, vars: motion.vars, edits: motion.edits || {}, seconds: motion.seconds, width: motion.width, height: motion.height },
+    "Couldn't film the edited graphic",
+  );

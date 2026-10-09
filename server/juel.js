@@ -284,6 +284,8 @@ export const JUEL_ROUTES = {
   "POST /api/saved/tiktok-post-analyses": ["research", "change", "Saves a movie-ID analysis result for a TikTok post."],
   "POST /api/studio/generations": ["studio", "paid", "Starts a new Creator Studio generation such as an image, video, audio, design, or explainer."],
   "POST /api/studio/generations/:id/design": ["studio", "change", "Saves your edited HTML back into an Editable Design generation."],
+  "POST /api/studio/generations/:id/vibe-edit": ["studio", "change", "Opens a Promo, Explainer, or Vibe Motion graphic in Vibe Edit (its own edit, reopened as it was left; {rebuild: true} starts over). Returns {projectId}."],
+  "POST /api/studio/generations/:id/vibe-edit/export": ["studio", "change", "Makes a Vibe Edit export (gen-vibe-….mp4) the generation's video and saves the edits into its document (file, edits)."],
   "GET /api/studio/generations/:id/motion": ["studio", "read", "Reads a Promo, Explainer, or Vibe Motion graphic's document and the edits made to it in its player."],
   "POST /api/studio/generations/:id/motion": ["studio", "change", "Saves edits to a motion graphic's elements (moved, resized, recoloured, reworded, or timed; body {edits: {selectorPath: {dx, dy, scale, text, color, hidden, from, to}}}) and re-renders a film."],
   "POST /api/studio/generations/:id/export": ["studio", "paid", "Renders a motion graphic, promo, or explainer generation to MP4 or GIF."],

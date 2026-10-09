@@ -8,7 +8,7 @@ import { toast } from "../../utils/toast";
 import { writeDeepLink } from "../../utils/tiktokRoute";
 import { loadVoiceProfiles } from "../../utils/voiceProfiles";
 import { compactTracks, deleteItems, duplicateItems, editPoints, isLocked, emptyProject, formatTime, frameSize, moveItems, normalizeProject, projectDuration, rippleDeleteItems, splitAt, toggleMarker, trimToTime, VIBE_ASPECTS, type VibeAspect } from "../../utils/vibeEdit";
-import { deleteProject, exportToSource, getRender, listProjects, loadProject, saveProject, startRender, stopRender, type ProjectSummary, type RenderJob } from "./api";
+import { deleteProject, exportToSource, filmMotion, getRender, listProjects, loadProject, saveProject, startRender, stopRender, type ProjectSummary, type RenderJob } from "./api";
 import { getVoices, runActions, setVoices } from "./commands";
 import { JuelPanel, provideJuelContext, type JuelPageTools } from "../JuelPanel";
 import { summarizeProject, VIBE_ACTIONS } from "../../utils/vibeEditActions";
@@ -146,7 +146,7 @@ function ExportMenu() {
   const project = useVibe((s) => s.project);
   const [open, setOpen] = useState(false);
   const [job, setJob] = useState<RenderJob | null>(null);
-  const [phase, setPhase] = useState<"" | "frames" | "render">("");
+  const [phase, setPhase] = useState<"" | "motion" | "frames" | "render">("");
   const [progress, setProgress] = useState(0);
   const box = useRef<HTMLDivElement>(null);
   const duration = projectDuration(project);
@@ -185,11 +185,19 @@ function ExportMenu() {
   const start = async () => {
     try {
       setJob(null);
-      setPhase("frames");
       setProgress(0);
-      const { blank, frames } = await renderOverlayFrames(project, w, h, duration, (k) => setProgress(k * 0.15));
+      // Motion graphics changed in the player are filmed again first, so the export has the changes.
+      const changed = vibe.get().project.assets.filter((a) => a.motion?.dirty);
+      if (changed.length) setPhase("motion");
+      for (const asset of changed) {
+        const made = await filmMotion(asset.motion!);
+        vibe.commit((p) => ({ ...p, assets: p.assets.map((a) => (a.id === asset.id && a.motion ? { ...a, url: made.url, file: made.file, motion: { ...a.motion, dirty: false } } : a)), updatedAt: Date.now() }));
+      }
+      const current = vibe.get().project;
+      setPhase("frames");
+      const { blank, frames } = await renderOverlayFrames(current, w, h, duration, (k) => setProgress(k * 0.15));
       setPhase("render");
-      const render = await startRender(project, [{ blank: true, png: blank }, ...frames]);
+      const render = await startRender(current, [{ blank: true, png: blank }, ...frames]);
       setJob(render);
     } catch (e) {
       setPhase("");
@@ -227,7 +235,7 @@ function ExportMenu() {
               <Progress
                 label="Export progress"
                 value={Math.max(0.03, phase === "frames" ? progress : 0.15 + (job?.progress || 0) * 0.85)}
-                message={phase === "frames" ? "Drawing captions and titles…" : "Rendering on the server. You can keep editing; this edit is what exports."}
+                message={phase === "motion" ? "Filming your motion graphic changes…" : phase === "frames" ? "Drawing captions and titles…" : "Rendering on the server. You can keep editing; this edit is what exports."}
               />
               {job?.status === "running" ? (
                 <button type="button" className="ui-btn is-sm is-ghost" onClick={() => void stopRender(job.id).then(() => setJob({ ...job, status: "stopped" }))}>

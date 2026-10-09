@@ -26,6 +26,7 @@ import { recordingFrames, runExplainerFilm, runExplainerPlan } from "./explainer
 import { compactDesignHtml, DESIGN_CANVASES, designHtmlMessages, designPlanMessages, designSettings, extractDesignDocument, extractJsonObject, imageSize, inlineDesignAssets, listDesignLayers, normalizeDesignPlan, sanitizeDesignHtml, validateDesignHtml } from "./editableDesign.js";
 import { STUDIO_PERSONAS } from "./juel.js";
 import { cleanMotionEdits, readMotionEdits, stripMotionEdits, withMotionEdits } from "../src/utils/videoGraphics.js";
+import { loadVibeProject, saveVibeProject } from "./vibeEdit.js";
 import { EXPLAINER_ASPECTS, EXPLAINER_LENGTHS, EXPLAINER_MAX_SECONDS, EXPLAINER_MAX_WORDS, findExplainerTemplate, normalizeExplainerScript, scriptWords } from "../src/utils/explainerPresets.js";
 
 const API = "https://openrouter.ai/api/v1";
@@ -2008,6 +2009,76 @@ export function registerCreatorStudio(app, express) {
       saved = await update(userId, item.id, { outputs: [next, ...(item.outputs || []).filter((output) => output.file !== current.file)] });
     }
     res.json({ generation: saved, edits });
+  }));
+
+  // A Promo, Explainer, or Vibe Motion graphic opens in Vibe Edit, the one editor: the graphic plays live in its
+  // player (click its parts to change them), with its sound, Juel, and the timeline. The edit is kept with the
+  // generation and reopened as it was left; its export comes back here.
+  app.post("/api/studio/generations/:id/vibe-edit", route(async (req, res, userId) => {
+    const item = (await history(userId)).find((entry) => entry.id === req.params.id);
+    if (!item || !["promo", "explainer", "vibe-motion"].includes(item.tab)) throw fail("Motion graphic not found", 404);
+    const existing = item.vibeProjectId && !req.body?.rebuild ? await loadVibeProject(userId, item.vibeProjectId).catch(() => null) : null;
+    if (existing) return res.json({ projectId: existing.id });
+    const htmlOutput = item.outputs?.find((output) => extOf(output.file) === "html");
+    const current = item.tab === "vibe-motion" ? htmlOutput : item.source || htmlOutput;
+    if (!current?.file) throw fail("Finish generating it first");
+    const html = await fs.readFile(await readableFile(userId, current.file), "utf8");
+    const video = item.outputs?.find((output) => extOf(output.file) === "mp4");
+    const film = item.tab !== "vibe-motion";
+    const aspect = String((item.tab === "explainer" ? item.film?.aspect : item.settings?.aspectRatio) || "16:9");
+    const [width, height] = (film ? PROMO_STAGES[aspect] : MOTION_STAGES[aspect]) || [1920, 1080];
+    const seconds = Math.max(1, Number(item.tab === "explainer" ? item.film?.duration : item.settings?.duration) || 10);
+    const r = (n) => Math.round(n * 1000) / 1000;
+    const assets = [{
+      id: "graphic", kind: "video", name: String(item.prompt || "Motion graphic").slice(0, 60) || "Motion graphic",
+      url: (video || current).url, ...(video ? { file: video.file } : {}), duration: seconds, width, height, origin: "generated",
+      // Edits made before carry over; without a rendered video yet, the export films it first.
+      motion: { html: stripMotionEdits(html), seconds, width, height, edits: readMotionEdits(html), engine: film ? "promo" : "html", ...(video ? {} : { dirty: true }) },
+    }];
+    const audio = [];
+    const sound = item.tab === "explainer" ? item.soundtrack : item.tab === "promo" ? video : null;
+    if (sound?.file) {
+      assets.push({ id: "sound", kind: "audio", name: item.tab === "explainer" ? "Narration and music" : "Music", url: sound.url, file: sound.file, duration: seconds, origin: item.tab === "explainer" ? "voiceover" : "music" });
+      audio.push({ id: "soundtrack", assetId: "sound", lane: 0, start: 0, in: 0, out: r(seconds), volume: 1, name: item.tab === "explainer" ? "Narration" : "Music" });
+    }
+    const now = Date.now();
+    const doc = {
+      version: 1, id: `vp_${crypto.randomBytes(6).toString("hex")}`, name: String(item.prompt || "Motion graphic").slice(0, 120) || "Motion graphic",
+      aspect: ["16:9", "9:16", "1:1", "4:5", "21:9"].includes(aspect) ? aspect : "16:9", background: "#000000",
+      source: { kind: "studio", generationId: item.id, tab: item.tab },
+      assets, clips: [{ id: "graphic", assetId: "graphic", track: 0, start: 0, in: 0, out: r(seconds), fit: "fit", muted: true }], audio, texts: [],
+      captions: { cues: [], show: false, style: "clean", wordHighlight: true }, createdAt: now, updatedAt: now,
+    };
+    await saveVibeProject(userId, doc);
+    await update(userId, item.id, { vibeProjectId: doc.id });
+    res.json({ projectId: doc.id });
+  }));
+
+  // An export from that edit becomes the generation's video, and the edits go into its own document so Revise
+  // and the next edit start from them.
+  app.post("/api/studio/generations/:id/vibe-edit/export", route(async (req, res, userId) => {
+    const item = (await history(userId)).find((entry) => entry.id === req.params.id);
+    if (!item || !["promo", "explainer", "vibe-motion"].includes(item.tab)) throw fail("Motion graphic not found", 404);
+    const file = String(req.body?.file || "");
+    if (!/^gen-vibe-[A-Za-z0-9_-]+\.mp4$/.test(file)) throw fail("That export can't be used");
+    await readableFile(userId, file);
+    const video = { file, url: studioFileUrl(file), type: MIME.mp4 };
+    const htmlOutput = item.outputs?.find((output) => extOf(output.file) === "html");
+    const current = item.tab === "vibe-motion" ? htmlOutput : item.source || htmlOutput;
+    let next = current;
+    if (current?.file && req.body?.edits && typeof req.body.edits === "object") {
+      const html = await fs.readFile(await readableFile(userId, current.file), "utf8");
+      const name = `${newId("gen")}.html`;
+      const target = userFile(userId, name);
+      await fs.mkdir(path.dirname(target), { recursive: true });
+      await fs.writeFile(target, withMotionEdits(html, req.body.edits));
+      await persist(userId, target);
+      next = { file: name, url: studioFileUrl(name), type: MIME.html };
+    }
+    const outputs = item.tab === "vibe-motion"
+      ? [video, ...(next ? [next] : []), ...(item.outputs || []).filter((o) => !["html", "mp4"].includes(extOf(o.file)))]
+      : [video, ...(item.outputs || []).filter((o) => !["html", "mp4"].includes(extOf(o.file)))];
+    res.json({ generation: await update(userId, item.id, { outputs, ...(item.tab !== "vibe-motion" && next ? { source: next } : {}), notice: "" }) });
   }));
 
   app.get("/api/studio/generations/:id/motion", route(async (req, res, userId) => {

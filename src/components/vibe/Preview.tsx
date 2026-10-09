@@ -3,10 +3,11 @@
 // store's playhead, advanced by requestAnimationFrame) drives every element;
 // elements are nudged back into sync when they drift.
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
-import { Grid3x3, Maximize2, Minimize2, Pause, Play } from "lucide-react";
+import { FastForward, Gauge, Grid3x3, Maximize2, Minimize2, Pause, Play, Repeat, Rewind, SkipBack, SkipForward, Volume1, Volume2, VolumeX } from "lucide-react";
 import { assetById, clipEnd, formatTimecode, frameSize, parseTimecode, projectDuration, trackState, updateItem, VIBE_ASPECTS, type VibeProject } from "../../utils/vibeEdit";
 import { gradeFilter } from "../../utils/vibeAutoEdit";
 import { lookCss, motionTransform, transitionStyle } from "../../utils/videoLooks.js";
+import { MotionLayer, setMotionPick, useMotionPick } from "./motionLayer";
 import { buildSoundChain } from "../../utils/vibeSound.js";
 import { drawOverlay, textBox } from "./overlay";
 import { gestureKey, useVibe, vibe } from "./store";
@@ -134,6 +135,11 @@ export function Preview() {
   const groups = useMemo(() => groupByChain(clips, chains, playhead), [clips, chains, playhead]);
   const soundGroups = useMemo(() => groupByChain(audio, soundChains, playhead), [audio, soundChains, playhead]);
   const selection = useVibe((s) => s.selection);
+  // A picked part of a motion graphic belongs to its clip: selecting anything else lets it go.
+  const motionPick = useMotionPick();
+  useEffect(() => {
+    if (motionPick && !selection.includes(motionPick.clipId)) setMotionPick(null);
+  }, [selection, motionPick]);
   const [guides, setGuides] = useState(() => {
     try {
       return window.localStorage.getItem("vibe-edit-guides") === "1";
@@ -142,6 +148,16 @@ export function Preview() {
     }
   });
   const [stageW, setStageW] = useState(0);
+  // The viewer's own playback: speed, loop, and volume (preview only; the export plays at 1x with every level as set).
+  const [rate, setRate] = useState(() => readPref("vibe-edit-rate", 1, (v) => [0.25, 0.5, 1, 1.5, 2].includes(v)));
+  const [loop, setLoop] = useState(() => readPref("vibe-edit-loop", 0, (v) => v === 0 || v === 1) === 1);
+  const [volume, setVolume] = useState(() => readPref("vibe-edit-volume", 1, (v) => v >= 0 && v <= 1));
+  const [muted, setMuted] = useState(() => readPref("vibe-edit-muted", 0, (v) => v === 0 || v === 1) === 1);
+  useEffect(() => writePref("vibe-edit-rate", rate), [rate]);
+  useEffect(() => writePref("vibe-edit-loop", loop ? 1 : 0), [loop]);
+  useEffect(() => writePref("vibe-edit-volume", volume), [volume]);
+  useEffect(() => writePref("vibe-edit-muted", muted ? 1 : 0), [muted]);
+  const master = muted ? 0 : volume;
   const media = useRef(new Map<string, HTMLMediaElement>());
   const canvas = useRef<HTMLCanvasElement>(null);
   const viewer = useRef<HTMLDivElement>(null);
@@ -180,12 +196,21 @@ export function Preview() {
     if (!playing) return;
     void audioCtx?.resume();
     let raf = 0;
-    const startWall = performance.now();
-    const startTime = vibe.get().playhead;
+    let startWall = performance.now();
+    let startTime = vibe.get().playhead;
     const end = projectDuration(vibe.get().project);
+    if (startTime >= end - 0.02) startTime = 0;
     const tick = () => {
-      const t = startTime + (performance.now() - startWall) / 1000;
+      const t = startTime + ((performance.now() - startWall) / 1000) * rate;
       if (t >= end) {
+        if (loop && end > 0.1) {
+          // Round again from the top.
+          startWall = performance.now();
+          startTime = 0;
+          vibe.seek(0);
+          raf = requestAnimationFrame(tick);
+          return;
+        }
         vibe.seek(end);
         vibe.play(false);
         return;
@@ -195,7 +220,7 @@ export function Preview() {
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [playing]);
+  }, [playing, rate, loop]);
 
   // Sync every mounted element to the playhead.
   useEffect(() => {
@@ -214,7 +239,8 @@ export function Preview() {
         if (playhead < start && Math.abs(el.currentTime - inPoint) > 0.05 && el.readyState > 0) el.currentTime = inPoint;
         return;
       }
-      const gainValue = Math.max(0, volume) * (ducks ? 1 : duck);
+      const gainValue = Math.max(0, volume) * (ducks ? 1 : duck) * master;
+      if (el.playbackRate !== rate) el.playbackRate = rate;
       if (playing) {
         const r = route(el, preset);
         if (r?.ctx.state === "suspended") void r.ctx.resume();
@@ -240,7 +266,7 @@ export function Preview() {
       const c = group.current;
       sync(group.key, c.start, c.in, group.end, laneOn(c.lane) && !group.gap ? c.volume : 0, c.duck !== undefined, c.preset);
     }
-  }, [playhead, playing, groups, soundGroups, project]);
+  }, [playhead, playing, groups, soundGroups, project, master, rate]);
 
   // Pause everything when playback stops or the editor unmounts.
   useEffect(() => () => media.current.forEach((el) => el.pause()), []);
@@ -342,6 +368,10 @@ export function Preview() {
             ...(entrance.scale ? { scale: entrance.scale } : {}),
             ...(filters ? { filter: filters } : {}),
           };
+          // A motion graphic plays live: click its parts to change them.
+          if (a.motion) {
+            return <MotionLayer key={key} clip={c} asset={a} local={Math.max(0, playhead - c.start + c.in)} style={style} interactive={shown && !trackState(project, `v${c.track}`).locked} />;
+          }
           return a.kind === "image" ? (
             <img key={key} className="ve-layer" src={a.url} alt="" style={style} draggable={false} />
           ) : (
@@ -422,21 +452,37 @@ export function Preview() {
         ) : null}
       </div>
     </div>
-      <label className="ve-scrub" style={{ "--ve-scrub": `${total > 0 ? Math.min(100, (playhead / total) * 100) : 0}%` } as CSSProperties}>
-        <span className="ve-sr">Playhead</span>
-        <input type="range" min={0} max={Math.max(total, 0.01)} step={1 / 30} value={Math.min(playhead, total)} onChange={(e) => vibe.seek(Number(e.target.value))} disabled={total <= 0} />
-      </label>
+      <Scrub playhead={playhead} total={total} markers={project.markers || []} />
       <div className="ve-viewer-bar">
         <span className="ve-viewer-meta">
           {VIBE_ASPECTS.find((a) => a.id === project.aspect)?.label} · {w}×{h} · 30 fps
         </span>
         <span className="ve-viewer-tc">
-          <button type="button" className="ve-viewer-play" onClick={() => vibe.play(!playing)} disabled={total <= 0} aria-label={playing ? "Pause" : "Play"} title={playing ? "Pause (Space)" : "Play (Space)"}>
-            {playing ? <Pause size={16} fill="currentColor" /> : <Play size={16} fill="currentColor" />}
-          </button>
+          <span className="ve-transport" role="group" aria-label="Transport">
+            <button type="button" className="ve-tool" onClick={() => vibe.seek(0)} disabled={total <= 0} aria-label="Go to start" title="Go to start (Home)"><SkipBack size={15} /></button>
+            <button type="button" className="ve-tool" onClick={() => vibe.seek(Math.max(0, playhead - 5))} disabled={total <= 0} aria-label="Back 5 seconds" title="Back 5 seconds"><Rewind size={15} /></button>
+            <button type="button" className="ve-viewer-play" onClick={() => vibe.play(!playing)} disabled={total <= 0} aria-label={playing ? "Pause" : "Play"} title={playing ? "Pause (Space)" : "Play (Space)"}>
+              {playing ? <Pause size={16} fill="currentColor" /> : <Play size={16} fill="currentColor" />}
+            </button>
+            <button type="button" className="ve-tool" onClick={() => vibe.seek(Math.min(total, playhead + 5))} disabled={total <= 0} aria-label="Forward 5 seconds" title="Forward 5 seconds"><FastForward size={15} /></button>
+            <button type="button" className="ve-tool" onClick={() => vibe.seek(total)} disabled={total <= 0} aria-label="Go to end" title="Go to end (End)"><SkipForward size={15} /></button>
+          </span>
           <Timecode playhead={playhead} total={total} />
         </span>
         <span className="ve-viewer-tools">
+          <button type="button" className={`ve-tool${loop ? " is-on" : ""}`} onClick={() => setLoop((l) => !l)} aria-pressed={loop} aria-label="Loop" title={loop ? "Looping: plays again from the start" : "Loop"}><Repeat size={15} /></button>
+          <label className="ve-speed" title="Playback speed (preview only)">
+            <Gauge size={14} aria-hidden="true" />
+            <select value={rate} onChange={(e) => setRate(Number(e.target.value))} aria-label="Playback speed">
+              {[0.25, 0.5, 1, 1.5, 2].map((r) => <option key={r} value={r}>{r}×</option>)}
+            </select>
+          </label>
+          <span className="ve-volume">
+            <button type="button" className="ve-tool" onClick={() => setMuted((m) => !m)} aria-label={muted ? "Unmute" : "Mute"} title={muted ? "Unmute" : "Mute"}>
+              {muted || volume === 0 ? <VolumeX size={15} /> : volume < 0.5 ? <Volume1 size={15} /> : <Volume2 size={15} />}
+            </button>
+            <input type="range" min={0} max={1} step={0.01} value={muted ? 0 : volume} onChange={(e) => { setVolume(Number(e.target.value)); setMuted(false); }} aria-label="Preview volume" style={{ "--ve-vol": `${(muted ? 0 : volume) * 100}%` } as CSSProperties} />
+          </span>
           <button type="button" className={`ve-tool${guides ? " is-on" : ""}`} onClick={toggleGuides} aria-pressed={guides} aria-label="Safe zones and thirds" title="Safe zones and thirds">
             <Grid3x3 size={15} />
           </button>
@@ -446,6 +492,46 @@ export function Preview() {
         </span>
       </div>
     </div>
+  );
+}
+
+// Viewer preferences kept in this browser.
+function readPref(key: string, fallback: number, ok: (v: number) => boolean) {
+  try {
+    const v = Number(window.localStorage.getItem(key));
+    return window.localStorage.getItem(key) !== null && Number.isFinite(v) && ok(v) ? v : fallback;
+  } catch {
+    return fallback;
+  }
+}
+function writePref(key: string, value: number) {
+  try {
+    window.localStorage.setItem(key, String(value));
+  } catch {
+    // Preference only.
+  }
+}
+
+/** The scrub bar: drag to move, hover to see the time there, marker ticks along it. */
+function Scrub({ playhead, total, markers }: { playhead: number; total: number; markers: Array<{ id: string; time: number; label?: string }> }) {
+  const [hover, setHover] = useState<{ x: number; t: number } | null>(null);
+  const pct = (t: number) => `${total > 0 ? Math.min(100, Math.max(0, (t / total) * 100)) : 0}%`;
+  return (
+    <label
+      className="ve-scrub"
+      style={{ "--ve-scrub": pct(playhead) } as CSSProperties}
+      onPointerMove={(e) => {
+        const box = (e.currentTarget.querySelector("input") as HTMLInputElement).getBoundingClientRect();
+        const k = Math.min(1, Math.max(0, (e.clientX - box.left) / box.width));
+        setHover({ x: e.clientX - e.currentTarget.getBoundingClientRect().left, t: k * total });
+      }}
+      onPointerLeave={() => setHover(null)}
+    >
+      <span className="ve-sr">Playhead</span>
+      <input type="range" min={0} max={Math.max(total, 0.01)} step={1 / 30} value={Math.min(playhead, total)} onChange={(e) => vibe.seek(Number(e.target.value))} disabled={total <= 0} />
+      {markers.map((m) => <i key={m.id} className="ve-scrub-mark" style={{ left: `calc(22px + (100% - 44px) * ${total > 0 ? Math.min(1, m.time / total) : 0})` }} title={m.label || formatTimecode(m.time)} aria-hidden="true" />)}
+      {hover && total > 0 ? <span className="ve-scrub-tip" style={{ left: hover.x }} aria-hidden="true">{formatTimecode(hover.t)}</span> : null}
+    </label>
   );
 }
 
