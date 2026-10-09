@@ -154,6 +154,23 @@ type Job = {
   error?: string;
   createdAt: number;
 };
+/** A Niche Finder search. It asks with `wait: false`, so the server answers before the hosting proxy gives
+ *  up on a long search, and asks again while the server says it's still searching. */
+async function discoveryApi(url: string, body: Record<string, unknown>, signal: AbortSignal) {
+  const started = Date.now();
+  for (;;) {
+    const data = await creatorApi(url, { ...body, wait: false }, undefined, { signal });
+    if (!data?.pending) return data;
+    if (Date.now() - started > 4 * 60 * 1000) throw new Error("YouTube is slow right now. Try again in a moment; the results are still loading.");
+    await new Promise<void>((resolve, reject) => {
+      const timer = window.setTimeout(resolve, Number(data.retryAfterMs) || 2500);
+      signal.addEventListener("abort", () => {
+        window.clearTimeout(timer);
+        reject(new DOMException("Aborted", "AbortError"));
+      }, { once: true });
+    });
+  }
+}
 export async function creatorApi(url: string, body?: unknown, method?: string, options: { signal?: AbortSignal } = {}) {
   const response = await fetch(url, {
     method: method || (body === undefined ? "GET" : "POST"),
@@ -1733,7 +1750,7 @@ function Discovery({
     setFailed("");
     onError("");
     try {
-      const data = await creatorApi(
+      const data = await discoveryApi(
         "/api/maker/discover",
         {
           accountId,
@@ -1744,8 +1761,7 @@ function Discovery({
           regionCode: nextFilters.region,
           filters: nextFilters,
         },
-        undefined,
-        { signal },
+        signal,
       );
       if (id !== requestId.current) return false;
       if (link) writeDeepLink({ view: "discover", discoveryQuery: value });
@@ -1816,11 +1832,10 @@ function Discovery({
     onError("");
     try {
       const titles = (c.videos?.length ? c.videos : [c.bestVideo, c.recentVideo]).filter(Boolean).map((v: any) => v.title);
-      const data = await creatorApi(
+      const data = await discoveryApi(
         "/api/maker/similar",
         { accountId, channel: { id: c.id, title: c.title, niche: c.niche, titles }, filters: nextFilters },
-        undefined,
-        { signal },
+        signal,
       );
       if (id !== requestId.current) return;
       setResult(data);

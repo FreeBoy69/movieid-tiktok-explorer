@@ -103,6 +103,7 @@ describe("creator workspace API contracts", () => {
   let radarInput: any = null;
   let radarVideos: any[] = [];
   let radarError: any = null;
+  let radarDelay = 0;
   let unavailable = "";
   let resolved: any = null;
   let youtubeImpl: (path: string, params: any) => Promise<any> = async () => ({ items: [] });
@@ -249,11 +250,13 @@ describe("creator workspace API contracts", () => {
       styles: async () => [],
       radar: async (input: any) => {
         radarInput = input;
+        if (radarDelay) await new Promise((resolve) => setTimeout(resolve, radarDelay));
         if (radarError) throw radarError;
         return { videos: radarVideos };
       },
       youtube: (path: string, params: any) => youtubeImpl(path, params),
       youtubeUnavailable: () => unavailable,
+      discoveryAnswerMs: 40,
       resolveChannel: async (input: any) => {
         resolved = input;
         return { channelId: "UCpasted", sourceUrl: input.sourceUrl };
@@ -449,6 +452,32 @@ describe("creator workspace API contracts", () => {
       const response = await request("/api/maker/discover", { method: "POST", body: JSON.stringify({ accountId: "a1", query: "space facts" }) });
       expect(response.status).toBe(503);
       expect(radarInput).toBeNull();
+    });
+
+    it("answers a slow search with 202 pending when asked not to wait, then hands over the same run", async () => {
+      radarDelay = 120;
+      radarVideos = [{ id: "s1", channelId: "c9", channelTitle: "Slow Facts", viewCount: 5000 }];
+      const body = JSON.stringify({ accountId: "a1", query: "slow facts", wait: false });
+      const first = await request("/api/maker/discover", { method: "POST", body });
+      expect(first.status).toBe(202);
+      expect(await first.json()).toMatchObject({ pending: true });
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      const second = await request("/api/maker/discover", { method: "POST", body });
+      expect(second.status).toBe(200);
+      expect((await second.json()).channels?.length).toBeGreaterThan(0);
+      radarDelay = 0;
+    });
+
+    it("reports a slow search's failure once, to the next ask", async () => {
+      radarDelay = 80;
+      radarError = Object.assign(new Error("YouTube search is unavailable right now. Try again in a minute."), { searchUnavailable: true, statusCode: 503 });
+      const body = JSON.stringify({ accountId: "a1", query: "doomed facts", wait: false });
+      expect((await request("/api/maker/discover", { method: "POST", body })).status).toBe(202);
+      await new Promise((resolve) => setTimeout(resolve, 120));
+      const failed = await request("/api/maker/discover", { method: "POST", body });
+      expect(failed.status).toBe(503);
+      radarDelay = 0;
+      radarError = null;
     });
 
     it("works without a connected channel", async () => {

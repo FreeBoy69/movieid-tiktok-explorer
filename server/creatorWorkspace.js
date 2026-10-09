@@ -4617,13 +4617,43 @@ export function registerCreatorWorkspace(app) {
     return { channels, reranked: true };
   };
   const publicResult = ({ complete, ...result }) => result;
+  // The hosting proxy closes a request after about a minute, longer than a big search can take. A page
+  // that asks with `wait: false` hears back within DISCOVERY_ANSWER_MS: the result, or 202 {pending}
+  // while the search carries on; asking again picks the same run up. A finished run is handed to the
+  // next ask (then forgotten), so a failure is reported once and Try again starts afresh.
+  const discoveryAnswerMs = () => dependencies.discoveryAnswerMs ?? 25000;
+  const discoveryRuns = new Map();
+  const answerDiscovery = async (req, res, session, run) => {
+    const { wait, ...asked } = req.body || {};
+    const key = JSON.stringify([session?.user?.id || "", req.path, asked]);
+    let entry = discoveryRuns.get(key);
+    if (!entry) {
+      entry = { promise: run(), settled: false };
+      discoveryRuns.set(key, entry);
+      const forget = () => {
+        entry.settled = true;
+        setTimeout(() => discoveryRuns.get(key) === entry && discoveryRuns.delete(key), 120000).unref?.();
+      };
+      entry.promise.then(forget, forget);
+    }
+    const take = () => discoveryRuns.get(key) === entry && discoveryRuns.delete(key);
+    if (wait !== false) return res.json(await entry.promise.finally(take));
+    let timer;
+    const pending = new Promise((resolve) => {
+      timer = setTimeout(() => resolve(discoveryRuns), discoveryAnswerMs());
+    });
+    const out = await Promise.race([entry.promise, pending]).finally(() => clearTimeout(timer));
+    if (out === discoveryRuns) return res.status(202).json({ pending: true, retryAfterMs: 2500 });
+    take();
+    res.json(out);
+  };
   // Every video is already in `videos`; each ranked channel carries a three-video preview (for Juel
   // and the API) instead of a second copy of them all.
   const previewChannels = (channels = []) => channels.map((channel) => ({ ...channel, videos: (channel.videos || []).slice(0, 3) }));
 
   app.post(
     "/api/maker/discover",
-    route(async (req, res, session) => {
+    route((req, res, session) => answerDiscovery(req, res, session, async () => {
       const a = await optionalAccount(req, session),
         input = req.body || {};
       const deadline = Date.now() + DISCOVERY_DEADLINE_MS - 5000;
@@ -4666,8 +4696,8 @@ export function registerCreatorWorkspace(app) {
         throw discoveryFailure(error);
       }
       const { channels, reranked } = await rankChannels(result, input.filters || {}, key, input);
-      res.json({ ...publicResult(result), channels: previewChannels(channels), reranked, sampledAt: Date.now() });
-    }),
+      return { ...publicResult(result), channels: previewChannels(channels), reranked, sampledAt: Date.now() };
+    })),
   );
   app.get(
     "/api/maker/collections",
@@ -4744,7 +4774,7 @@ export function registerCreatorWorkspace(app) {
   );
   app.post(
     "/api/maker/similar",
-    route(async (req, res, session) => {
+    route((req, res, session) => answerDiscovery(req, res, session, async () => {
       const a = await optionalAccount(req, session),
         input = req.body || {},
         channel = input.channel || {};
@@ -4774,14 +4804,14 @@ export function registerCreatorWorkspace(app) {
       const videos = (result.videos || []).filter(
         (video) => video.channelId && video.channelId !== channel.id,
       );
-      res.json({
+      return {
         ...publicResult(result),
         videos,
         query,
         channels: previewChannels(rankDiscoveryChannels(videos, input.filters)),
         sampledAt: Date.now(),
-      });
-    }),
+      };
+    })),
   );
   app.get(
     "/api/maker/projects/:id/storage",
