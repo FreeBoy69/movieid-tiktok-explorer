@@ -384,6 +384,7 @@ export const JUEL_EXCLUDED = {
   "GET /api/voicebox/audio/:id": "audio stream for a media player",
   "GET /api/voicebox/profiles/:id/preview": "audio stream for a media player",
   "GET /api/voicebox/status": "health check",
+  "GET /api/recaps/source/:token/:name": "signed download link for the media worker",
   "GET /internal/exec/:id/events": "internal worker endpoint",
   "GET /internal/exec/:id/input": "internal worker endpoint",
   "GET /internal/exec/claim": "internal worker endpoint",

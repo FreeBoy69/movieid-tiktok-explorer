@@ -121,6 +121,71 @@ export async function saveFile(key, file) {
       await request("/storage/remove", { body: { bucket: BUCKET, path: objectName(key, `${previous.nonce}.${i}`, secret) } }).catch(() => {});
   return manifest;
 }
+/** Saves a stream (an upload) under `key` part by part as it arrives, in the same format as saveFile: the
+ *  whole file never sits in memory or on the app's RAM disk. Throws a 413 past `maxBytes`; parts already
+ *  stored are removed when the stream fails. */
+export async function saveStream(key, readable, { maxBytes = Infinity } = {}) {
+  const { secret } = config();
+  const hash = crypto.createHash("sha256");
+  const nonce = crypto.randomBytes(6).toString("hex");
+  let size = 0,
+    parts = 0,
+    pending = [],
+    pendingBytes = 0;
+  const flush = async () => {
+    const part = Buffer.concat(pending, pendingBytes);
+    pending = [];
+    pendingBytes = 0;
+    hash.update(part);
+    await put(objectName(key, `${nonce}.${parts}`, secret), sealBytes(part, secret));
+    parts++;
+  };
+  try {
+    // Awaiting each part pauses the stream, so an upload goes no faster than storage takes it.
+    for await (const chunk of readable) {
+      size += chunk.length;
+      if (size > maxBytes) throw Object.assign(new Error("The file is too large"), { statusCode: 413 });
+      for (let offset = 0; offset < chunk.length; ) {
+        const take = Math.min(PART_BYTES - pendingBytes, chunk.length - offset);
+        pending.push(chunk.subarray(offset, offset + take));
+        pendingBytes += take;
+        offset += take;
+        if (pendingBytes === PART_BYTES) await flush();
+      }
+    }
+    if (pendingBytes || !parts) await flush();
+  } catch (error) {
+    for (let i = 0; i < parts; i++)
+      await request("/storage/remove", { body: { bucket: BUCKET, path: objectName(key, `${nonce}.${i}`, secret) } }).catch(() => {});
+    throw error;
+  }
+  const manifest = { key, bytes: size, parts, nonce, sha256: hash.digest("hex"), savedAt: Date.now() };
+  await put(objectName(key, "m", secret), sealBytes(Buffer.from(JSON.stringify(manifest)), secret));
+  return manifest;
+}
+
+/** A stored file's size, or null when the store doesn't have it. */
+export async function storedSize(key) {
+  const manifest = await readManifest(key).catch(() => null);
+  return manifest ? manifest.bytes : null;
+}
+
+/** Yields bytes `start` to `end` (inclusive) of a stored file, one decrypted part at a time. */
+export async function* readStoredRange(key, start = 0, end = Infinity) {
+  const { secret } = config();
+  const manifest = await readManifest(key);
+  if (!manifest) throw Object.assign(new Error("Stored file not found"), { statusCode: 404 });
+  const last = Math.min(end, manifest.bytes - 1);
+  for (let i = Math.floor(start / PART_BYTES); i < manifest.parts && i * PART_BYTES <= last; i++) {
+    const sealed = await get(objectName(key, `${manifest.nonce}.${i}`, secret));
+    if (!sealed) throw new Error(`Stored file is missing part ${i + 1} of ${manifest.parts}`);
+    const part = openBytes(sealed, secret);
+    const from = Math.max(0, start - i * PART_BYTES);
+    const to = Math.min(part.length, last - i * PART_BYTES + 1);
+    if (to > from) yield part.subarray(from, to);
+  }
+}
+
 async function readManifest(key) {
   const { secret } = config();
   const sealed = await get(objectName(key, "m", secret));

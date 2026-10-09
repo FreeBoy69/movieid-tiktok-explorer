@@ -14,7 +14,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { openRouterConfigured, requestOpenRouter } from "../src/utils/openRouterClient.js";
 import { withUsageUser } from "../src/utils/usageMeter.js";
-import { assetStoreConfigured, ensureFile, removeFile, saveFile } from "./assetStore.js";
+import { assetStoreConfigured, ensureFile, readStoredRange, removeFile, saveFile, saveStream, storedSize } from "./assetStore.js";
 import { musicCapability, publicMessage, streamOpenRouterAudio } from "./creatorWorkspace.js";
 import { planRecapCuts } from "../src/utils/recapCuts.js";
 import { judgeVideo, parseMeasurements } from "./videoQa.js";
@@ -614,13 +614,21 @@ export async function prepareGraphics(userId, project, edit, dir, signal) {
   const last = edit.beats.at(-1);
   const duration = last ? last.start + last.seconds : 0;
   const plan = planRecapGraphics({ captions: edit.captions, duration, movie, filmTitle: project.options.filmTitle || "", channelName: project.options.channelName });
-  if (plan.events.some((event) => event.type === "name")) {
+  // The name-card check is a paid vision call per name: a re-render of the same edit reuses its answer.
+  const namesKey = crypto.createHash("sha1").update(JSON.stringify([plan.events.filter((e) => e.type === "name"), edit.cuts.map((c) => [c.start, c.at, c.duration])])).digest("hex");
+  const namesCache = await readJson(userId, project.id, "name-cards.json", null);
+  if (namesCache?.key === namesKey) plan.events = [...plan.events.filter((e) => e.type !== "name"), ...namesCache.cards].sort((a, b) => a.start - b.start);
+  else if (plan.events.some((event) => event.type === "name")) {
+    let checked = true;
     plan.events = await placeNameCards(plan.events, edit, movie?.characters || [], (times) => lookAt(userId, project, times, signal), { signal }).catch((error) => {
       if (signal?.aborted) throw error;
       console.warn(`[movie-recap] name-card check skipped: ${error.message}`);
       // Unchecked, a card could name someone who isn't there: leave them out.
+      checked = false;
       return plan.events.filter((event) => event.type !== "name");
     });
+    // Only a finished check is kept; a failed one is tried again on the next render.
+    if (checked) await writeJson(userId, project.id, "name-cards.json", { key: namesKey, cards: plan.events.filter((e) => e.type === "name") });
   }
   if (!plan.events.length && !plan.watermark) return null;
   await fs.mkdir(path.join(dir, "fonts"), { recursive: true });
@@ -646,10 +654,37 @@ export async function prepareGraphics(userId, project, edit, dir, signal) {
   };
 }
 
+// An upload stored in object storage reaches the media worker as a link: the worker downloads it like any
+// film link, and the app streams it from storage one part at a time (no copy on its RAM disk).
+const sourceSecret = () => crypto.createHash("sha256").update(`autoyt-recap-source:${process.env.AUTH_SECRET || process.env.SESSION_SECRET || ""}`).digest();
+export function signedSourceUrl(userId, id, file, { ttl = 12 * 3600, base = process.env.APP_URL || "", now = Date.now() } = {}) {
+  if (!base || !(process.env.AUTH_SECRET || process.env.SESSION_SECRET)) return "";
+  const token = Buffer.from(JSON.stringify({ u: userKey(userId), i: id, f: file, e: Math.floor(now / 1000) + ttl })).toString("base64url");
+  const mac = crypto.createHmac("sha256", sourceSecret()).update(token).digest("base64url");
+  return `${String(base).replace(/\/+$/, "")}/api/recaps/source/${token}.${mac}/${file}`;
+}
+export function readSourceToken(value, now = Date.now()) {
+  const [token, mac] = String(value || "").split(".");
+  if (!token || !mac) return null;
+  const want = crypto.createHmac("sha256", sourceSecret()).update(token).digest();
+  const got = Buffer.from(mac, "base64url");
+  if (got.length !== want.length || !crypto.timingSafeEqual(got, want)) return null;
+  try {
+    const data = JSON.parse(Buffer.from(token, "base64url").toString("utf8"));
+    return data.e * 1000 > now && /^[a-f0-9]{24}$/.test(data.u) && ID.test(data.i) && /^source\.[a-z0-9]{2,4}$/.test(data.f) ? data : null;
+  } catch {
+    return null;
+  }
+}
+
 async function analyzeArgs(userId, project) {
   const args = ["start-analyze", "--project", project.id, "--options", JSON.stringify({ language: project.options.language || "", name: clip(project.source.name, 200) })];
   if (project.source.kind === "link") args.push("--url", project.source.url);
-  else {
+  else if (project.source.stored && signedSourceUrl(userId, project.id, project.source.file)) {
+    if ((await storedSize(storeKey(userId, project.id, project.source.file))) === null)
+      throw fail("The uploaded film is no longer stored. Start a new recap and upload it again.", 410);
+    args.push("--url", signedSourceUrl(userId, project.id, project.source.file));
+  } else {
     const file = await restore(userId, project.id, project.source.file);
     if (!file) throw fail("The uploaded film is no longer stored (the server restarted before it was saved). Start a new recap and upload it again.", 410);
     args.push("--file", file);
@@ -3006,9 +3041,12 @@ async function sweepUploads() {
       if (!ID.test(id)) continue;
       const dir = path.join(root(), user, id);
       const names = await fs.readdir(dir).catch(() => []);
-      if (names.includes("project.json") || !names.some((name) => name.startsWith("source."))) continue;
+      if (names.includes("project.json") || !names.some((name) => name.startsWith("source.") || name === "upload.json")) continue;
       const stat = await fs.stat(dir).catch(() => null);
-      if (stat && stat.mtimeMs < cutoff) await fs.rm(dir, { recursive: true, force: true });
+      if (!stat || stat.mtimeMs >= cutoff) continue;
+      const note = JSON.parse(await fs.readFile(path.join(dir, "upload.json"), "utf8").catch(() => "null"));
+      if (note?.stored && assetStoreConfigured()) await removeFile(`recaps/${user}/${id}/${note.file}`).catch(() => {});
+      await fs.rm(dir, { recursive: true, force: true });
     }
   }
 }
@@ -3086,6 +3124,38 @@ export function registerMovieRecap(app) {
   }));
 
   // Streams a film straight to disk (no body buffering) for recaps from a local file.
+  // The media worker downloads a stored upload from here (see signedSourceUrl), with ranges for aria2.
+  // (Express answers HEAD through a GET route.)
+  app.get("/api/recaps/source/:token/:name", async (req, res) => {
+    try {
+      const token = readSourceToken(req.params.token);
+      if (!token || token.f !== req.params.name) return res.status(403).json({ error: "This link has expired." });
+      const key = `recaps/${token.u}/${token.i}/${token.f}`;
+      const size = await storedSize(key);
+      if (size === null) return res.status(404).json({ error: "Not found" });
+      const range = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range || ""));
+      let start = 0,
+        end = size - 1;
+      if (range && (range[1] || range[2])) {
+        start = range[1] ? Number(range[1]) : Math.max(0, size - Number(range[2]));
+        end = range[1] && range[2] ? Math.min(size - 1, Number(range[2])) : size - 1;
+        if (start > end || start >= size) return res.status(416).set("Content-Range", `bytes */${size}`).end();
+        res.status(206).set("Content-Range", `bytes ${start}-${end}/${size}`);
+      }
+      res.set({ "Content-Type": "application/octet-stream", "Content-Length": String(end - start + 1), "Accept-Ranges": "bytes", "Cache-Control": "no-store" });
+      if (req.method === "HEAD") return res.end();
+      for await (const part of readStoredRange(key, start, end)) {
+        if (!res.write(part)) await new Promise((resolve) => res.once("drain", resolve));
+        if (res.destroyed) return;
+      }
+      res.end();
+    } catch (error) {
+      console.warn(`[movie-recap] source stream failed: ${error.message}`);
+      if (!res.headersSent) res.status(error.statusCode || 500).json({ error: "Couldn't read the upload" });
+      else res.destroy(error);
+    }
+  });
+
   /** Why this user can't start a recap now, checked before a long upload as well as on create. */
   async function startBlocker(userId, voiceId = "") {
     if (!openRouterConfigured()) return { message: "Recaps aren't set up on this server yet.", status: 503 };
@@ -3118,6 +3188,14 @@ export function registerMovieRecap(app) {
     const dir = projectDir(userId, id);
     await fs.mkdir(dir, { recursive: true });
     const file = `source.${ext}`;
+    if (assetStoreConfigured()) {
+      // Straight into object storage as it arrives; only a note of it is kept here.
+      const manifest = await saveStream(storeKey(userId, id, file), req, { maxBytes: MAX_UPLOAD }).catch((error) => {
+        throw error.statusCode === 413 ? fail("Files up to 1.5 GB can be uploaded. Paste a link for larger films.", 413) : fail("The upload was interrupted. Check your connection and try again.", 502);
+      });
+      await fs.writeFile(path.join(dir, "upload.json"), JSON.stringify({ file, size: manifest.bytes, stored: true }));
+      return res.json({ upload: id, name, size: manifest.bytes });
+    }
     let size = 0;
     await new Promise((resolve, reject) => {
       const out = fsSync.createWriteStream(path.join(dir, file));
@@ -3147,9 +3225,10 @@ export function registerMovieRecap(app) {
     if (body.upload) {
       id = String(body.upload);
       if (!ID.test(id)) throw fail("That upload is no longer available.");
-      const file = (await fs.readdir(projectDir(userId, id)).catch(() => [])).find((name) => name.startsWith("source."));
+      const note = JSON.parse(await fs.readFile(path.join(projectDir(userId, id), "upload.json"), "utf8").catch(() => "null"));
+      const file = note?.file || (await fs.readdir(projectDir(userId, id)).catch(() => [])).find((name) => name.startsWith("source."));
       if (!file) throw fail("That upload is no longer available. Upload it again.");
-      source = { kind: "upload", file, name: clip(body.uploadName, 120) || file };
+      source = { kind: "upload", file, name: clip(body.uploadName, 120) || file, ...(note?.stored ? { stored: true } : {}) };
     } else {
       const url = String(body.url || "").trim();
       let parsed;
@@ -3184,7 +3263,7 @@ export function registerMovieRecap(app) {
         captions: body.captions !== false,
         transforms: { zoom: transforms.zoom !== false, zoomPct: zoomPercent(transforms.zoomPct, transforms.zoom === false ? 0 : 10), pan: transforms.pan !== false, color: transforms.color !== false, mirror: transforms.mirror === true, speed: transforms.speed === true },
       },
-      remote: {},
+      remote: source.stored ? { sourceStored: true } : {},
       createdAt: now,
       updatedAt: now,
     };

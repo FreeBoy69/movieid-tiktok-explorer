@@ -202,6 +202,13 @@ def download(pdir, url, file_path):
         os.replace(target + ".part", target)
         return target
     set_status(pdir, stage="downloading", message="Downloading the movie", progress=0.02)
+    # An upload kept in the app's storage: a plain file link the app streams part by part. Two connections,
+    # so the app (512 MB of memory) decrypts at most two parts at a time.
+    if "/api/recaps/source/" in url:
+        got = aria2_download(pdir, url, os.path.basename(urllib.parse.urlparse(url).path), connections=2) or direct_download(pdir, url)
+        if got:
+            return got
+        raise RuntimeError("Couldn't fetch your upload from the app. Press Try again.")
     # File-host share pages (your own uploads on PixelDrain, MediaFire, Dropbox, Mega) resolve to the file
     # itself and come down with aria2 (parallel connections, resume); video pages go to yt-dlp.
     host = resolve_file_host(url)
@@ -310,7 +317,7 @@ def resolve_file_host(url):
     return None
 
 
-def aria2_download(pdir, url, name, require_video=False):
+def aria2_download(pdir, url, name, require_video=False, connections=8):
     """A file link with aria2: 8 connections, resumable. Returns the movie path or ""."""
     if not shutil.which("aria2c"):
         return ""
@@ -325,7 +332,7 @@ def aria2_download(pdir, url, name, require_video=False):
                 return ""
         ext = ".mp4" if ext not in VIDEO_EXTS else ext
     part = f"movie{ext}.part"
-    proc = subprocess.Popen(["aria2c", "-x", "8", "-s", "8", "-k", "4M", "-c", "--file-allocation=none", "--summary-interval=5",
+    proc = subprocess.Popen(["aria2c", "-x", str(connections), "-s", str(connections), "-k", "4M", "-c", "--file-allocation=none", "--summary-interval=5",
                              "--console-log-level=warn", "--max-tries=5", "--retry-wait=5", "-d", pdir, "-o", part, url],
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     watched = watch(proc)
