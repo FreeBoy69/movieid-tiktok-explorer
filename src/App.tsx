@@ -26,7 +26,7 @@ import { useChannels } from "./components/useChannels";
 import { toast } from "./utils/toast";
 import type { MainTab as MovieAnalysisTab } from "./components/MovieAnalysisTabs";
 import { handOffRemakeUpload } from "./components/AgentRemake";
-import { SignInDialog } from "./components/GuestToolView";
+import { GuestToolView, SignInDialog } from "./components/GuestToolView";
 import { AppHeader } from "./components/AppHeader";
 import { SiteNotice } from "./components/AccountServices";
 import type { NavTarget } from "./utils/appNavigation";
@@ -795,6 +795,11 @@ function WorkspaceApp() {
                   initialReturnTo={routeLink.view === "compile" ? routeLink.returnTo : undefined}
                   routeKey={`${routeLink.view}:${routeLink.compileMode || ""}:${routeLink.compileQuery || ""}:${routeLink.compileCount || ""}:${routeLink.compileLoaded || ""}:${routeLink.compileSort || ""}:${routeLink.compileClipId || ""}:${routeLink.returnTo || ""}`}
                 />
+              </PageView>
+            ) : isGuest && activeView === "automation" ? (
+              // Agents need an account: visitors see what they do and sign in, not a failing workspace.
+              <PageView key="guest-automation">
+                <GuestToolView view="automation" theme={channelTheme} onBack={() => handleNavigate({ view: "tools" })} onUse={() => setSignInOpen(true)} />
               </PageView>
             ) : activeView === "automation" ? (
               <PageView key="automation-view" className="h-full min-h-0 overflow-hidden">

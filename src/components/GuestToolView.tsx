@@ -23,6 +23,7 @@ const PROMPTS: Record<string, string> = {
   audio: "Describe the music you want to make...",
   discover: "Search a niche...",
   youtube: "Search a topic or channel...",
+  automation: "Describe the channel you want an agent to run...",
   tiktok: "Paste a TikTok link or search a creator...",
   downloader: "Paste a video link...",
   rewriter: "Paste a transcript or script...",
