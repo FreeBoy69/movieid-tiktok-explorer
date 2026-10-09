@@ -59,6 +59,7 @@ import { assertStageReady, STAGE_DEPENDENCIES, stageInput } from "./src/utils/cr
 import { PRODUCTION_PLAYBOOKS, PRODUCTION_PROFILES } from "./src/utils/productionProfiles.js";
 import { evaluateCreatorQuality, summarizeQuality } from "./src/utils/productionQuality.js";
 import { configureCreatorWorkspace, initializeCreatorWorkspace, registerCreatorWorkspace, creatorBackgroundProcesses, enqueueCreatorStage } from "./server/creatorWorkspace.js";
+import { youtubeLinkTarget } from "./server/nicheDiscovery.js";
 import { configureCreatorStudio, registerCreatorStudio, safePublicFetch, studioDocs } from "./server/creatorStudio.js";
 import { juelApiAuth, registerJuel } from "./server/juel.js";
 import { resolveTikTokSource } from "./server/tiktokSource.js";
@@ -17999,12 +18000,28 @@ function backgroundYouTubeSearchAllowed() {
 function youtubeQuotaError() {
     return Object.assign(new Error("YouTube search quota for today is used up. It resets at midnight Pacific time."), { quotaExceeded: true });
 }
+// The project's whole daily quota (every endpoint, not just search) once YouTube says it's spent.
+const youtubeDataQuota = { exhaustedUntil: 0 };
+/** Search is down (both the web route and yt-dlp failed), as opposed to out of quota. */
+function youtubeSearchUnavailableError() {
+    return Object.assign(new Error("YouTube search is unavailable right now. Try again in a minute."), { searchUnavailable: true, statusCode: 503 });
+}
+/** Why YouTube data can't be fetched at all right now ("" when it can): no key, or the day's quota spent. */
+function youtubeDataUnavailable() {
+    if (!youtubeApiKey())
+        return "YouTube data isn't set up on the server yet.";
+    if (Date.now() < youtubeDataQuota.exhaustedUntil)
+        return "YouTube data is unavailable right now: today's quota is used up. It resets at midnight Pacific time.";
+    return "";
+}
 async function fetchYouTubeJson(pathName, params = {}) {
     const key = youtubeApiKey();
     if (!key) {
-        throw new Error("YOUTUBE_API_KEY is not configured. Add it to .env.local.");
+        throw Object.assign(new Error("YOUTUBE_API_KEY is not configured. Add it to .env.local."), { youtubeUnavailable: true });
     }
     const isSearch = pathName.replace(/^\/+/, "") === "search";
+    if (Date.now() < youtubeDataQuota.exhaustedUntil)
+        throw Object.assign(new Error("YouTube's daily quota is used up. It resets at midnight Pacific time."), { quotaExceeded: true, youtubeUnavailable: true });
     if (isSearch) {
         if (youtubeSearchQuotaExhausted())
             throw youtubeQuotaError();
@@ -18024,7 +18041,10 @@ async function fetchYouTubeJson(pathName, params = {}) {
         if ([403, 429].includes(response.status) && /quota/i.test(message)) {
             if (isSearch)
                 youtubeSearchQuota.exhaustedUntil = nextPacificMidnightMs();
-            throw Object.assign(new Error(message), { quotaExceeded: true });
+            // Outside search (1 unit calls), a quota error means the project's whole day is spent.
+            else
+                youtubeDataQuota.exhaustedUntil = nextPacificMidnightMs();
+            throw Object.assign(new Error(message), { quotaExceeded: true, youtubeUnavailable: !isSearch });
         }
         throw new Error(message);
     }
@@ -18051,9 +18071,14 @@ async function searchYouTubeWebVideoIds(query, limit = 20, params = "EgIQAQ==") 
         }),
         signal: AbortSignal.timeout(15000),
     });
+    // A rate limit, a refusal, or a consent/bot-check page means this host is blocked for now.
+    if ([403, 429].includes(response.status) || /consent\.youtube|google\.com\/sorry/i.test(response.url || ""))
+        throw Object.assign(new Error(`YouTube web search was blocked (${response.status})`), { blocked: true });
     if (!response.ok)
         throw new Error(`YouTube web search failed (${response.status})`);
-    const data = await response.json();
+    const data = await response.json().catch(() => null);
+    if (!data || typeof data !== "object" || !data.contents)
+        throw Object.assign(new Error("YouTube web search returned a bot check instead of results"), { blocked: true });
     const ids = [];
     const walk = (node) => {
         if (ids.length >= limit || !node || typeof node !== "object")
@@ -18074,7 +18099,24 @@ async function searchYouTubeWebVideoIds(query, limit = 20, params = "EgIQAQ==") 
 }
 // The same search through yt-dlp: a youtube.com URL, so remote media runs it on the
 // YouTube worker (the VPS), whose IP YouTube doesn't bot-check like the app host's.
+// At most four yt-dlp searches at once; the rest wait their turn.
+const ytDlpSearchSlots = { running: 0, waiting: [] };
+async function withYtDlpSearchSlot(run) {
+    if (ytDlpSearchSlots.running >= 4)
+        await new Promise((resolve) => ytDlpSearchSlots.waiting.push(resolve));
+    ytDlpSearchSlots.running += 1;
+    try {
+        return await run();
+    }
+    finally {
+        ytDlpSearchSlots.running -= 1;
+        ytDlpSearchSlots.waiting.shift()?.();
+    }
+}
 function searchYouTubeVideoIdsWithYtDlp(query, limit = 20, params = "EgIQAQ==") {
+    return withYtDlpSearchSlot(() => runYtDlpSearch(query, limit, params));
+}
+function runYtDlpSearch(query, limit, params) {
     const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}&sp=${encodeURIComponent(params)}`;
     const python = resolvePythonExecutable("-m").cmd;
     return new Promise((resolve, reject) => {
@@ -18106,24 +18148,34 @@ function searchYouTubeVideoIdsWithYtDlp(query, limit = 20, params = "EgIQAQ==") 
         });
     });
 }
-// Web search from this host first; when YouTube answers with nothing (a bot check on
-// the host IP), the same search runs through yt-dlp on the YouTube worker.
+// Web search from this host first; when YouTube blocks it (a rate limit or a bot check on
+// the host IP), the same search runs through yt-dlp on the YouTube worker. Returns the ids and
+// whether any route answered, so a search with no hits isn't mistaken for an outage.
 let youtubeWebSearchBlockedUntil = 0;
 async function searchYouTubeVideoIdsAnyRoute(query, limit, params) {
+    let answered = false;
     if (Date.now() >= youtubeWebSearchBlockedUntil) {
-        const direct = await searchYouTubeWebVideoIds(query, limit, params).catch((error) => {
+        try {
+            const direct = await searchYouTubeWebVideoIds(query, limit, params);
+            if (direct.length)
+                return { ids: direct, ok: true };
+            // No hits: a real empty search, or a soft bot check. yt-dlp on the worker tells them apart.
+            answered = true;
+        }
+        catch (error) {
             console.warn("YouTube web search failed:", query, error instanceof Error ? error.message : error);
-            return [];
-        });
-        if (direct.length)
-            return direct;
-        // Skip the direct route for a while rather than waiting on it for every lane.
-        youtubeWebSearchBlockedUntil = Date.now() + 30 * 60 * 1000;
+            // Only a real block skips the direct route for a while; a one-off failure doesn't.
+            if (error?.blocked)
+                youtubeWebSearchBlockedUntil = Date.now() + 30 * 60 * 1000;
+        }
     }
-    return searchYouTubeVideoIdsWithYtDlp(query, limit, params).catch((error) => {
+    try {
+        return { ids: await searchYouTubeVideoIdsWithYtDlp(query, limit, params), ok: true };
+    }
+    catch (error) {
         console.warn("YouTube yt-dlp search failed:", query, error instanceof Error ? error.message : error);
-        return [];
-    });
+        return { ids: [], ok: answered };
+    }
 }
 async function fetchYouTubeDiscoveryJson(account, pathName, params = {}) {
     if (youtubeApiKey())
@@ -18497,11 +18549,14 @@ async function getYouTubeSearchRadar(n) {
     if (searches.some((search) => search.quotaExceeded)) {
         // Data API search quota is spent: find candidates through web search, then
         // apply the date and length filters locally after enrichment.
-        const webIds = (await Promise.all(searchQueries.flatMap((query) => webSearchLanes(publishedAfterDays).map((lane) => searchYouTubeVideoIdsAnyRoute(query, 20, lane))))).flat();
+        const lanes = await Promise.all(searchQueries.flatMap((query) => webSearchLanes(publishedAfterDays).map((lane) => searchYouTubeVideoIdsAnyRoute(query, 20, lane))));
+        const webIds = lanes.flatMap((lane) => lane.ids);
         usedWebSearch = webIds.length > 0;
         ids = Array.from(new Set([...ids, ...webIds])).slice(0, 150);
-        if (!ids.length)
-            throw youtubeQuotaError();
+        // Every route failed: search is down, whatever the quota says. A search that answered
+        // with no hits falls through to an empty result.
+        if (!ids.length && !lanes.some((lane) => lane.ok))
+            throw youtubeSearchUnavailableError();
     }
     if (!ids.length) {
         return {
@@ -20173,22 +20228,27 @@ async function resolveYouTubeChannelReference(source = {}, account = null) {
     if (directId)
         return { channelId: directId, sourceUrl: sourceUrl || `https://www.youtube.com/channel/${directId}` };
     let handle = String(source.handle || "").replace(/^@/, "").trim();
+    let legacyUser = "";
     if (!handle && sourceUrl) {
-        try {
-            const url = new URL(sourceUrl);
-            const parts = url.pathname.split("/").filter(Boolean);
-            const channelIndex = parts.findIndex((part) => part.toLowerCase() === "channel");
-            if (channelIndex >= 0 && parts[channelIndex + 1])
-                return { channelId: parts[channelIndex + 1], sourceUrl };
-            const atPart = parts.find((part) => part.startsWith("@"));
-            if (atPart)
-                handle = atPart.replace(/^@/, "");
-            else if (parts[0])
-                handle = parts[0].replace(/^c\//i, "").replace(/^user\//i, "");
+        const link = youtubeLinkTarget(sourceUrl);
+        if (link.channelId)
+            return { channelId: link.channelId, sourceUrl };
+        if (link.videoId) {
+            // A video link: the channel is whoever uploaded it.
+            const video = await fetchYouTubeDiscoveryJson(account, "videos", { part: "snippet", id: link.videoId, maxResults: 1 });
+            const channelId = video.items?.[0]?.snippet?.channelId || "";
+            if (!channelId)
+                throw new Error("Could not find the channel for that YouTube video.");
+            return { channelId, sourceUrl: `https://www.youtube.com/channel/${channelId}` };
         }
-        catch {
-            handle = sourceUrl.replace(/^@/, "");
-        }
+        handle = link.handle;
+        legacyUser = link.user;
+    }
+    if (legacyUser) {
+        const byUser = await fetchYouTubeDiscoveryJson(account, "channels", { part: "snippet", forUsername: legacyUser, maxResults: 1 }).catch(() => ({ items: [] }));
+        if (byUser.items?.[0]?.id)
+            return { channelId: byUser.items[0].id, sourceUrl };
+        handle = legacyUser;
     }
     if (!handle)
         throw new Error("A YouTube channel URL, handle, or channel ID is required.");
@@ -21056,7 +21116,7 @@ async function startServer() {
         next();
     });
     configureCreatorWorkspace({ runPsql, sqlString, jsonbLiteral, getProject: getCreatorProject, updateProject: updateCreatorProject, createProject: createCreatorProject, listProjects: listCreatorProjects, cloneVoice: createDramaVoiceClone,
-        session: getSessionRecord, account: usableYouTubeAccount, styles: listChannelStyles, radar: getYouTubeRadar, youtube: fetchYouTubeJson, faceless: facelessSignals, text: generateRewriteText,
+        session: getSessionRecord, account: usableYouTubeAccount, styles: listChannelStyles, radar: getYouTubeRadar, youtube: fetchYouTubeJson, faceless: facelessSignals, resolveChannel: (input) => resolveYouTubeChannelReference(input, null), youtubeUnavailable: youtubeDataUnavailable, text: generateRewriteText,
         narrate: generateVoiceStudioNarration, transcribe: transcribeMediaFileWithSegments, separateStems: (sourcePath, workspace) => separateVoiceStudioStems(sourcePath, workspace), learnStyle: learnNarrationStyle, buildStyle: buildChannelStyleProfile,
         projectAccount: async (userId, projectId) => { const accountId = await runPsql(`SELECT youtube_account_id FROM creator_projects WHERE id=${sqlString(projectId)} AND user_id=${sqlString(userId)};`); return usableYouTubeAccount(userId, accountId.trim()); },
         voiceJob: loadVoiceStudioJob,

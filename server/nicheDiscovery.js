@@ -3,6 +3,9 @@
 // best and newest video, upload rate, first upload, language, likely monetization).
 
 const CACHE_MS = 6 * 3600 * 1000;
+// A partial or empty result (a niche whose search failed, channel lookups that failed) is kept
+// only briefly, so a hiccup doesn't stick for hours.
+const SHORT_CACHE_MS = 5 * 60 * 1000;
 
 // Faceless niches the no-search feed draws from, four at a time.
 const FEED_NICHES = [
@@ -15,16 +18,48 @@ export function feedNiches(shuffle = 0) {
   return [0, 1, 2, 3].map((i) => FEED_NICHES[(start + i) % FEED_NICHES.length]);
 }
 const cache = new Map();
+const inflight = new Map();
 
-/** Memoizes a discovery result for a few hours: YouTube search quota is scarce. */
-export async function cachedDiscovery(key, load) {
+/**
+ * Memoizes a discovery result: complete results for a few hours (YouTube search quota is
+ * scarce), partial ones for five minutes. Identical requests in flight share one load, and a
+ * failed load is never kept. `complete(value)` says whether a result is whole.
+ * @template T
+ * @param {string} key
+ * @param {() => Promise<T>} load
+ * @param {{ complete?: (value: T) => boolean }} [options]
+ * @returns {Promise<T>}
+ */
+export async function cachedDiscovery(key, load, { complete = () => true } = {}) {
   const hit = cache.get(key);
-  if (hit && Date.now() - hit.at < CACHE_MS) return hit.value;
-  const value = await load();
-  cache.set(key, { at: Date.now(), value });
-  if (cache.size > 120) cache.delete(cache.keys().next().value);
-  return value;
+  if (hit && Date.now() - hit.at < hit.ttl) return hit.value;
+  const running = inflight.get(key);
+  if (running) return running;
+  const promise = (async () => {
+    try {
+      const value = await load();
+      cache.set(key, { at: Date.now(), ttl: complete(value) ? CACHE_MS : SHORT_CACHE_MS, value });
+      if (cache.size > 120) cache.delete(cache.keys().next().value);
+      return value;
+    } finally {
+      inflight.delete(key);
+    }
+  })();
+  inflight.set(key, promise);
+  return promise;
 }
+
+/** Forget every cached result (tests). */
+export function clearDiscoveryCache() {
+  cache.clear();
+  inflight.clear();
+}
+
+/** Whether channel lookups worked for a result: at least one video carries its channel's details. */
+export const hasChannelDetails = (videos = []) => videos.some((video) => Boolean(video.channelPublishedAt) || video.channelVideoCount !== undefined);
+
+// YouTube's auto-generated "Artist - Topic" music channels aren't creators.
+const isTopicChannel = (title) => / - Topic$/.test(String(title || ""));
 
 const language = (value) => String(value || "").trim().toLowerCase().slice(0, 2);
 const isoSeconds = (iso) => {
@@ -56,17 +91,21 @@ function likelyMonetized(subscribers, uploads) {
  * returns { score, hits }. Channels that can't be read keep their search hits.
  * @param {any[]} hits
  * `vision(request)` (requestOpenRouter) looks at thumbnails to decide whether each channel is faceless.
- * @param {{ youtube?: (path: string, params: Record<string, unknown>) => Promise<any>, faceless?: (title: string, description: string, channel: string) => { score: number, hits?: string[] }, vision?: ((request: any) => Promise<{ value: any }>) | null, limit?: number, uploads?: number }} [options]
+ * `deadline` (epoch ms) is when the request must answer: the vision check is skipped when it's close.
+ * @param {{ youtube?: (path: string, params: Record<string, unknown>) => Promise<any>, faceless?: (title: string, description: string, channel: string) => { score: number, hits?: string[] }, vision?: ((request: any) => Promise<{ value: any }>) | null, limit?: number, uploads?: number, deadline?: number }} [options]
  */
-export async function enrichDiscoveryChannels(hits = [], { youtube, faceless, vision, limit = 40, uploads = 15 } = {}) {
+export async function enrichDiscoveryChannels(hits = [], { youtube, faceless, vision, limit = 40, uploads = 15, deadline = 0 } = {}) {
   const byChannel = new Map();
   for (const video of hits) {
     if (!video.channelId) continue;
     if (!byChannel.has(video.channelId)) byChannel.set(video.channelId, []);
     byChannel.get(video.channelId).push(video);
   }
-  const ids = [...byChannel.keys()].slice(0, limit);
-  if (!ids.length || !youtube) return hits;
+  const allIds = [...byChannel.keys()];
+  const ids = allIds.slice(0, limit);
+  // Search hits a channel left them; a Topic channel's hits are dropped like its uploads.
+  const rawHits = (id) => (byChannel.get(id) || []).filter((video) => video.id && !isTopicChannel(video.channelTitle));
+  if (!ids.length || !youtube) return hits.filter((video) => !isTopicChannel(video.channelTitle));
 
   const channels = new Map();
   for (let i = 0; i < ids.length; i += 50) {
@@ -74,7 +113,10 @@ export async function enrichDiscoveryChannels(hits = [], { youtube, faceless, vi
     for (const item of data.items || []) channels.set(item.id, item);
   }
   const playlists = await inBatches(ids, 8, async (id) => {
-    const playlistId = channels.get(id)?.contentDetails?.relatedPlaylists?.uploads || `UU${id.slice(2)}`;
+    // A channel the lookup didn't return keeps its search hits; its uploads aren't worth a call.
+    const channel = channels.get(id);
+    if (!channel) return [id, []];
+    const playlistId = channel.contentDetails?.relatedPlaylists?.uploads || `UU${id.slice(2)}`;
     const data = await youtube("playlistItems", { part: "contentDetails", playlistId, maxResults: uploads }).catch(() => ({ items: [] }));
     return [id, (data.items || []).map((item) => item.contentDetails?.videoId).filter(Boolean)];
   });
@@ -92,10 +134,9 @@ export async function enrichDiscoveryChannels(hits = [], { youtube, faceless, vi
     const found = byChannel.get(id);
     const channel = channels.get(id);
     const items = list.map((videoId) => details.get(videoId)).filter(Boolean);
-    // YouTube's auto-generated "Artist - Topic" music channels aren't creators.
-    if (/ - Topic$/.test(channel?.snippet?.title || "")) continue;
+    if (isTopicChannel(channel?.snippet?.title)) continue;
     if (!channel || !items.length) {
-      out.push(...found);
+      out.push(...rawHits(id));
       continue;
     }
     const snippet = channel.snippet || {};
@@ -150,8 +191,11 @@ export async function enrichDiscoveryChannels(hits = [], { youtube, faceless, vi
         facelessScore,
       });
   }
-  // What the thumbnails show beats what the titles suggest.
-  const judged = await judgeFaceless(looks, vision);
+  // Channels past the limit still show, as their search hits.
+  for (const id of allIds.slice(limit)) out.push(...rawHits(id));
+  // What the thumbnails show beats what the titles suggest; skipped when the request is nearly out of time.
+  const left = deadline ? deadline - Date.now() : 60000;
+  const judged = await judgeFaceless(looks, left >= 20000 ? vision : null, Math.min(60000, left - 5000));
   for (const video of out) {
     const verdict = judged.get(video.channelId);
     if (verdict) Object.assign(video, verdict);
@@ -168,7 +212,7 @@ A channel is NOT faceless when a real person presents on camera as its host: tal
 A channel IS faceless when no recurring real presenter is shown: voiceover over stock or archival footage, AI images or AI video, animation or cartoons (including animated characters and mascots), gameplay, screen recordings, text, hands-only crafting, or nature and ambience. Strangers in stock photos, film stills, AI-generated people and historical figures do not make a channel non-faceless.
 Judge every channel. Return JSON only: {"channels":[{"id":"channel id","faceless":true,"confidence":0-100,"reason":"under 12 words, what you see"}]}`;
 
-async function judgeFaceless(looks, vision) {
+async function judgeFaceless(looks, vision, timeoutMs = 60000) {
   const result = new Map();
   const pending = [];
   for (const look of looks) {
@@ -187,13 +231,15 @@ async function judgeFaceless(looks, vision) {
         content.push({ type: "text", text: `Channel ${look.id}: "${look.title}". Recent titles: ${look.titles.map((t) => `"${t}"`).join("; ")}. Thumbnails:` });
         for (const videoId of look.videoIds) content.push({ type: "image_url", image_url: { url: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg` } });
       }
-      const { value } = await vision({ kind: "vision", json: true, temperature: 0, maxTokens: 1500, timeoutMs: 60000, messages: [{ role: "user", content }] });
+      const { value } = await vision({ kind: "vision", json: true, temperature: 0, maxTokens: 1500, timeoutMs, messages: [{ role: "user", content }] });
       for (const item of Array.isArray(value?.channels) ? value.channels : []) {
         if (!batch.some((look) => look.id === item?.id) || typeof item.faceless !== "boolean") continue;
-        const confidence = Math.max(0, Math.min(100, Number(item.confidence) || 70));
-        // Faceless channels score 50 to 100 and on-camera channels 0 to 50, by confidence.
+        // A missing confidence reads as fairly sure; a stated 0 stays 0.
+        const confidence = Number.isFinite(Number(item.confidence)) && item.confidence !== null && item.confidence !== "" ? Math.max(0, Math.min(100, Number(item.confidence))) : 70;
+        // Faceless verdicts score 49 to 99 and on-camera ones 0 to 49, by confidence: a sure-faceless call clears 50.
         const verdict = {
-          facelessScore: Math.round(item.faceless ? 50 + confidence / 2 : 50 - confidence / 2),
+          // 0 confidence lands just under the line either way: unsure is not faceless.
+          facelessScore: Math.round(Math.max(0, item.faceless ? 49 + confidence / 2 : 49 - confidence / 2)),
           facelessReason: String(item.reason || "").slice(0, 120),
           facelessSource: "thumbnails",
         };
@@ -216,11 +262,45 @@ function channelFaceless(channelTitle, titles, faceless) {
   const signals = new Set();
   if (faceless) for (const title of [channelTitle, ...titles]) for (const hit of faceless(title, "", "").hits || []) signals.add(hit);
   const personal = titles.filter((title) => PERSONAL.test(title)).length / titles.length;
-  return Math.round(Math.max(0, Math.min(100, 55 + Math.min(30, signals.size * 6) - personal * 70)));
+  // Starts just under the faceless line: titles alone need a narration signal to count as faceless.
+  return Math.round(Math.max(0, Math.min(100, 45 + Math.min(40, signals.size * 8) - personal * 70)));
 }
 
 function mostCommon(values) {
   const counts = new Map();
   for (const v of values) counts.set(v, (counts.get(v) || 0) + 1);
   return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || "";
+}
+
+/** What a pasted YouTube link points at: a channel id, a video id, a handle, or a legacy /user/ name. */
+export function youtubeLinkTarget(sourceUrl) {
+    const text = String(sourceUrl || "").trim();
+    let url;
+    try {
+        url = new URL(/^https?:\/\//i.test(text) ? text : `https://${text}`);
+    }
+    catch {
+        return { handle: text.replace(/^@/, "") };
+    }
+    const host = url.hostname.replace(/^(www|m|music)\./i, "").toLowerCase();
+    const parts = url.pathname.split("/").filter(Boolean);
+    const first = (parts[0] || "").toLowerCase();
+    if (host === "youtu.be" && /^[\w-]{11}$/.test(parts[0] || ""))
+        return { videoId: parts[0] };
+    if (url.searchParams.get("v") && /^[\w-]{11}$/.test(url.searchParams.get("v")))
+        return { videoId: url.searchParams.get("v") };
+    if (["shorts", "live", "embed", "v"].includes(first) && /^[\w-]{11}$/.test(parts[1] || ""))
+        return { videoId: parts[1] };
+    if (first === "channel" && parts[1])
+        return { channelId: parts[1] };
+    if (first === "user" && parts[1])
+        return { user: decodeURIComponent(parts[1]) };
+    if (first === "c" && parts[1])
+        return { handle: decodeURIComponent(parts[1]) };
+    const at = parts.find((part) => part.startsWith("@"));
+    if (at)
+        return { handle: decodeURIComponent(at.slice(1)) };
+    if (host.endsWith("youtube.com") && parts[0] && !["watch", "results", "playlist", "feed"].includes(first))
+        return { handle: decodeURIComponent(parts[0]) };
+    return {};
 }

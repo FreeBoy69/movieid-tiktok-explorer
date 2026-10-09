@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { enrichDiscoveryChannels } from "./nicheDiscovery.js";
+import { cachedDiscovery, clearDiscoveryCache, enrichDiscoveryChannels, hasChannelDetails, youtubeLinkTarget } from "./nicheDiscovery.js";
 import { rankDiscoveryChannels } from "../src/utils/creatorPipeline.js";
 
 const day = 86400000;
@@ -66,12 +66,91 @@ describe("enrichDiscoveryChannels", () => {
     const images = request.messages[0].content.filter((part: any) => part.type === "image_url");
     expect(images.map((part: any) => part.image_url.url)).toContain("https://i.ytimg.com/vi/a/mqdefault.jpg");
     const [channel] = rankDiscoveryChannels(videos, {});
-    expect(channel).toMatchObject({ facelessScore: 5, facelessSource: "thumbnails", facelessReason: "Host on camera in every thumbnail" });
+    expect(channel).toMatchObject({ facelessScore: 4, facelessSource: "thumbnails", facelessReason: "Host on camera in every thumbnail" });
   });
 
   it("keeps search hits when the Data API isn't available", async () => {
     const hits = [{ id: "x", channelId: "UC1" }];
-    expect(await enrichDiscoveryChannels(hits, {})).toBe(hits);
+    expect(await enrichDiscoveryChannels(hits, {})).toEqual(hits);
+  });
+
+  it("keeps Topic channels out of fallback hits and shows channels past the limit as their hits", async () => {
+    const youtube = async (path: string, params: any) => {
+      if (path === "channels") return { items: [] };
+      return { items: [] };
+    };
+    const calls: string[] = [];
+    const counted = async (path: string, params: any) => { calls.push(path); return youtube(path, params); };
+    const hits = [
+      { id: "t1", channelId: "UCtopic", channelTitle: "Some Artist - Topic" },
+      { id: "h1", channelId: "UCa", channelTitle: "A" },
+      { id: "h2", channelId: "UCb", channelTitle: "B" },
+    ];
+    const out = await enrichDiscoveryChannels(hits, { youtube: counted, limit: 1 });
+    // No channel came back, so no upload playlists were fetched; the hits stand in, past the limit too.
+    expect(calls).toEqual(["channels"]);
+    expect(out.map((v: any) => v.id).sort()).toEqual(["h1", "h2"]);
+  });
+
+  it("scores faceless thresholds honestly: titles alone start under the line, a 0-confidence verdict stays unsure", async () => {
+    const titlesOnly = await enrichDiscoveryChannels([{ id: "b", channelId: "UCnew", channelTitle: "Night Tales" }], { youtube: fakeYouTube([]), faceless: () => ({ score: 0, hits: [] }) });
+    expect(titlesOnly[0].facelessScore).toBeLessThan(50);
+    const unsure = await enrichDiscoveryChannels([{ id: "b", channelId: "UCzero", channelTitle: "Zero" }], {
+      youtube: async (path: string, params: any) => {
+        const data: any = await fakeYouTube([])(path, params);
+        if (path === "channels") data.items[0].id = "UCzero";
+        return data;
+      },
+      vision: async () => ({ value: { channels: [{ id: "UCzero", faceless: false, confidence: 0, reason: "can't tell" }] } }),
+    });
+    expect(unsure[0].facelessScore).toBe(49);
+  });
+});
+
+describe("cachedDiscovery", () => {
+  it("shares one load between identical requests, and never keeps a failure", async () => {
+    clearDiscoveryCache();
+    let loads = 0;
+    const load = async () => { loads += 1; await new Promise((r) => setTimeout(r, 5)); return { n: loads }; };
+    const [a, b] = await Promise.all([cachedDiscovery("k1", load), cachedDiscovery("k1", load)]);
+    expect(loads).toBe(1);
+    expect(a).toBe(b);
+    await expect(cachedDiscovery("k2", async () => { throw new Error("down"); })).rejects.toThrow("down");
+    expect(await cachedDiscovery("k2", async () => "up")).toBe("up");
+  });
+
+  it("keeps a partial result only for minutes", async () => {
+    clearDiscoveryCache();
+    const realNow = Date.now;
+    const start = realNow();
+    try {
+      Date.now = () => start;
+      await cachedDiscovery("partial", async () => ({ ok: false }), { complete: (v: any) => v.ok });
+      await cachedDiscovery("whole", async () => ({ ok: true }), { complete: (v: any) => v.ok });
+      Date.now = () => start + 10 * 60 * 1000;
+      expect(await cachedDiscovery("partial", async () => ({ ok: true, fresh: true }), { complete: (v: any) => v.ok })).toEqual({ ok: true, fresh: true });
+      expect(await cachedDiscovery("whole", async () => ({ ok: true, fresh: true }), { complete: (v: any) => v.ok })).toEqual({ ok: true });
+    } finally {
+      Date.now = realNow;
+    }
+  });
+
+  it("tells channel details from raw hits", () => {
+    expect(hasChannelDetails([{ id: "x", channelId: "UC1" }])).toBe(false);
+    expect(hasChannelDetails([{ id: "x", channelId: "UC1", channelVideoCount: 0 }])).toBe(true);
+  });
+});
+
+describe("youtubeLinkTarget", () => {
+  it("reads every kind of pasted YouTube link", () => {
+    expect(youtubeLinkTarget("https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=10")).toEqual({ videoId: "dQw4w9WgXcQ" });
+    expect(youtubeLinkTarget("https://youtu.be/dQw4w9WgXcQ")).toEqual({ videoId: "dQw4w9WgXcQ" });
+    expect(youtubeLinkTarget("youtube.com/shorts/dQw4w9WgXcQ")).toEqual({ videoId: "dQw4w9WgXcQ" });
+    expect(youtubeLinkTarget("https://m.youtube.com/channel/UCabc123")).toEqual({ channelId: "UCabc123" });
+    expect(youtubeLinkTarget("https://www.youtube.com/@NightTales/videos")).toEqual({ handle: "NightTales" });
+    expect(youtubeLinkTarget("https://www.youtube.com/c/NightTales")).toEqual({ handle: "NightTales" });
+    expect(youtubeLinkTarget("https://www.youtube.com/user/nighttales")).toEqual({ user: "nighttales" });
+    expect(youtubeLinkTarget("https://www.youtube.com/NightTales")).toEqual({ handle: "NightTales" });
   });
 });
 

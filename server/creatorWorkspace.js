@@ -33,7 +33,7 @@ import { sceneMove, zoompanFilter } from "../src/utils/sceneMotion.js";
 import { ensureFile, markSaved, removeFile, saveDirectory, saveFile } from "./assetStore.js";
 import { registerDramaSeries } from "./dramaSeries.js";
 import { streamZip } from "./zipStream.js";
-import { cachedDiscovery, enrichDiscoveryChannels, feedNiches } from "./nicheDiscovery.js";
+import { cachedDiscovery, enrichDiscoveryChannels, feedNiches, hasChannelDetails } from "./nicheDiscovery.js";
 import { makerPrices } from "./makerPrices.js";
 import { registerDramaProduction } from "./dramaProduction.js";
 import { DRAMA_SCRIPT_SCHEMA, DRAMA_SERIES_SOURCE, episodeContext, normalizeDramaStoryBible } from "../src/utils/dramaTemplates.js";
@@ -4560,52 +4560,106 @@ export function registerCreatorWorkspace(app) {
       });
     }),
   );
+  // ---------- Niche Finder ----------
+  // It reads public YouTube data, so a connected channel is optional.
+  const optionalAccount = (req, session) => account(req, session).catch(() => null);
+  // Provider faults reach the page as a short, honest 503; Google's own wording stays in the log.
+  const discoveryFailure = (error) => {
+    if (error?.statusCode && error.statusCode < 500) return error;
+    const message = String(error?.message || error || "");
+    if (/^(Could not resolve|Could not find the channel|A YouTube channel URL|YouTube channel not found)/.test(message)) return fail(message, 404);
+    console.warn("[niche-finder]", message);
+    if (error?.searchUnavailable) return fail("YouTube search is unavailable right now. Try again in a minute.", 503);
+    if (error?.statusCode === 503 || error?.statusCode === 504) return error;
+    if (error?.quotaExceeded && !error?.youtubeUnavailable)
+      return fail("YouTube search quota for today is used up. It resets at midnight Pacific time. Pasting a channel link still works.", 503);
+    return fail("YouTube data is unavailable right now. Try again in a minute.", 503);
+  };
+  // A request answers within this; slow work keeps going and fills the cache for the next try.
+  const DISCOVERY_DEADLINE_MS = 90000;
+  const withinDeadline = (work) => {
+    let timer;
+    return Promise.race([
+      work,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(fail("YouTube is slow right now. Try again in a moment; the results are still loading.", 504)), DISCOVERY_DEADLINE_MS);
+      }),
+    ]).finally(() => clearTimeout(timer));
+  };
+  const youtubeReady = () => {
+    const reason = dependencies.youtubeUnavailable?.();
+    if (reason) throw fail(reason, 503);
+  };
+  // Search hits carry descriptions and tags the page never shows.
+  const slimVideos = (videos = []) => videos.map(({ description, tags, descriptionExcerpt, transcript, ...video }) => video);
+  const enrichOptions = (deadline, extra = {}) => ({ youtube: dependencies.youtube, faceless: dependencies.faceless, vision: openRouterConfigured() ? requestOpenRouter : null, deadline, ...extra });
+  const isYouTubeLink = (value) => /^(https?:\/\/)?((www|m|music)\.)?(youtube\.com|youtu\.be)\//i.test(String(value || "").trim());
+  // Jev weighs fit and repeatable breakouts, but only for the "Discovery" sort that shows its order.
+  const rankChannels = async (result, filters = {}, cacheKey, input = {}) => {
+    const rerank = filters.sort === "score" || input.rerank === true;
+    if (!rerank) return rankDiscoveryChannels(result.videos, filters);
+    const ranked = rankDiscoveryChannels(result.videos, { ...filters, sort: "score" });
+    return cachedDiscovery(JSON.stringify(["rerank", cacheKey, filters]), () => rerankWithJev(ranked, {
+      context: { niche: String(input.niche || input.query || (result.niches || []).join(", ")).slice(0, 160), filters },
+      rubric: "Prioritize competitor channels with a clear fit to the requested niche, several recent breakout videos, and promising performance relative to channel size. Prefer credible repeatable evidence over a single lifetime-view outlier.",
+      describe: (channel) => ({
+        title: String(channel.title || "").slice(0, 140),
+        niche: String(channel.niche || "").slice(0, 100),
+        subscribers: Number.isFinite(Number(channel.subscribers)) && channel.subscribers !== null ? Number(channel.subscribers) : null,
+        medianViews: Number(channel.medianViews || 0),
+        recentVideos: [...(channel.videos || [])]
+          .sort((a, b) => Date.parse(b.publishedAt || "") - Date.parse(a.publishedAt || ""))
+          .slice(0, 4)
+          .map((video) => ({ title: String(video.title || "").slice(0, 120), views: Number(video.viewCount || 0), viewsPerHour: Number(video.viewsPerHour || 0), publishedAt: video.publishedAt || "" })),
+        score: Number(channel.score || 0),
+      }),
+    }), { complete: () => result.complete !== false });
+  };
+  const publicResult = ({ complete, ...result }) => result;
+
   app.post(
     "/api/maker/discover",
     route(async (req, res, session) => {
-      const a = await account(req, session),
+      const a = await optionalAccount(req, session),
         input = req.body || {};
-      let result;
-      if (/^https?:\/\/(www\.)?(youtube\.com|youtu\.be)\//i.test(String(input.query || ""))) {
-        const style = await dependencies.buildStyle({sourceUrl:input.query},a);
-        const channel = style.profile.sourceChannel;
-        result = { videos: style.profile.topVideos.map(video=>({...video,channelId:channel.id,channelTitle:channel.title,channelUrl:channel.url,channelThumbnailUrl:channel.thumbnailUrl,subscriberCount:channel.subscriberCount})), competitors:[] };
-      } else {
-        // No search term: a feed across several faceless niches. `shuffle` picks another set.
-        const query = String(input.query || "").trim();
-        const queries = query ? [query] : feedNiches(Number(input.shuffle) || 0);
-        const key = JSON.stringify(["discover", queries, input.publishedAfterDays, input.duration, input.regionCode]);
-        result = await cachedDiscovery(key, async () => {
-          const scans = await Promise.allSettled(
-            queries.map((niche) => dependencies.radar({ ...input, query: niche, accountId: a.id, maxResults: query ? 120 : 60, webSearch: true })),
-          );
-          const found = scans.filter((scan) => scan.status === "fulfilled").map((scan) => scan.value);
-          if (!found.length) throw scans[0].reason;
-          const seen = new Set();
-          const videos = found.flatMap((radar) => radar.videos || []).filter((video) => !seen.has(video.id) && seen.add(video.id));
-          return {
-            query,
-            niches: queries,
-            videos: await enrichDiscoveryChannels(videos, { youtube: dependencies.youtube, faceless: dependencies.faceless, vision: openRouterConfigured() ? requestOpenRouter : null, limit: query ? 40 : 60 }),
-          };
-        });
+      const deadline = Date.now() + DISCOVERY_DEADLINE_MS - 5000;
+      const query = String(input.query || "").trim();
+      let result, key;
+      try {
+        if (isYouTubeLink(query)) {
+          // A pasted channel or video link: that one channel, judged on its uploads like any other.
+          // No search: resolving the link and reading uploads cost a few quota units.
+          youtubeReady();
+          const ref = await withinDeadline(dependencies.resolveChannel({ sourceUrl: query }));
+          key = JSON.stringify(["channel", ref.channelId]);
+          result = await withinDeadline(cachedDiscovery(key, async () => {
+            const videos = await enrichDiscoveryChannels([{ channelId: ref.channelId, discoveryScore: 0 }], enrichOptions(deadline, { limit: 1, uploads: 30 }));
+            return { query, niches: [], pasted: ref.channelId, videos: slimVideos(videos), complete: hasChannelDetails(videos) };
+          }, { complete: (value) => value.complete && value.videos.length > 0 }));
+          if (!result.videos.length) throw fail("That channel has no public videos to look at.", 404);
+        } else {
+          // No search term: a feed across several faceless niches. `shuffle` picks another set.
+          const queries = query ? [query] : feedNiches(Number(input.shuffle) || 0);
+          key = JSON.stringify(["discover", queries, input.publishedAfterDays, input.duration, input.regionCode]);
+          result = await withinDeadline(cachedDiscovery(key, async () => {
+            youtubeReady();
+            const scans = await Promise.allSettled(
+              queries.map((niche) => dependencies.radar({ ...input, query: niche, accountId: a?.id || "", maxResults: query ? 120 : 60, webSearch: true })),
+            );
+            const found = scans.filter((scan) => scan.status === "fulfilled").map((scan) => scan.value);
+            if (!found.length) throw scans[0].reason;
+            const seen = new Set();
+            const videos = found.flatMap((radar) => radar.videos || []).filter((video) => !seen.has(video.id) && seen.add(video.id));
+            const enriched = await enrichDiscoveryChannels(videos, enrichOptions(deadline, { limit: query ? 40 : 60 }));
+            // Whole only when every niche's search worked and the channel lookups did too.
+            return { query, niches: queries, videos: slimVideos(enriched), complete: found.length === queries.length && hasChannelDetails(enriched) };
+          }, { complete: (value) => value.complete && value.videos.length > 0 }));
+        }
+      } catch (error) {
+        throw discoveryFailure(error);
       }
-      const channels = await rerankWithJev(rankDiscoveryChannels(result.videos, input.filters), {
-        context: { niche: String(input.niche || input.query || (result.niches || []).join(", ")).slice(0, 160), filters: input.filters || {} },
-        rubric: "Prioritize competitor channels with a clear fit to the requested niche, several recent breakout videos, and promising performance relative to channel size. Prefer credible repeatable evidence over a single lifetime-view outlier.",
-        describe: (channel) => ({
-          title: String(channel.title || channel.channelTitle || channel.name || "").slice(0, 140),
-          niche: String(channel.niche || "").slice(0, 100),
-          subscribers: Number(channel.subscriberCount || 0),
-          recentVideos: (channel.recentVideos || channel.videos || []).slice(0, 4).map((video) => ({ title: String(video.title || "").slice(0, 120), views: Number(video.viewCount || 0), viewsPerHour: Number(video.viewsPerHour || 0), publishedAt: video.publishedAt || "" })),
-          score: Number(channel.score || channel.discoveryScore || 0),
-        }),
-      });
-      res.json({
-        ...result,
-        channels,
-        sampledAt: Date.now(),
-      });
+      const channels = await rankChannels(result, input.filters || {}, key, input);
+      res.json({ ...publicResult(result), channels, sampledAt: Date.now() });
     }),
   );
   app.get(
@@ -4684,29 +4738,37 @@ export function registerCreatorWorkspace(app) {
   app.post(
     "/api/maker/similar",
     route(async (req, res, session) => {
-      const a = await account(req, session),
+      const a = await optionalAccount(req, session),
         input = req.body || {},
         channel = input.channel || {};
       const query = similarChannelQuery(channel);
       if (!query) throw fail("This channel has no titles or niche to compare");
+      const deadline = Date.now() + DISCOVERY_DEADLINE_MS - 5000;
       const options = {
         query,
-        accountId: a.id,
+        accountId: a?.id || "",
         maxResults: 120,
         webSearch: true,
         publishedAfterDays: input.filters?.days || 90,
         duration: input.filters?.duration || "any",
         regionCode: input.filters?.region || "US",
       };
-      const result = await cachedDiscovery(JSON.stringify(["similar", query, options.publishedAfterDays, options.duration, options.regionCode]), async () => {
-        const radar = await dependencies.radar(options);
-        return { ...radar, videos: await enrichDiscoveryChannels(radar.videos, { youtube: dependencies.youtube, faceless: dependencies.faceless, vision: openRouterConfigured() ? requestOpenRouter : null }) };
-      });
+      let result;
+      try {
+        result = await withinDeadline(cachedDiscovery(JSON.stringify(["similar", query, options.publishedAfterDays, options.duration, options.regionCode]), async () => {
+          youtubeReady();
+          const radar = await dependencies.radar(options);
+          const videos = await enrichDiscoveryChannels(radar.videos, enrichOptions(deadline));
+          return { ...radar, videos: slimVideos(videos), complete: hasChannelDetails(videos) };
+        }, { complete: (value) => value.complete && value.videos.length > 0 }));
+      } catch (error) {
+        throw discoveryFailure(error);
+      }
       const videos = (result.videos || []).filter(
         (video) => video.channelId && video.channelId !== channel.id,
       );
       res.json({
-        ...result,
+        ...publicResult(result),
         videos,
         query,
         channels: rankDiscoveryChannels(videos, input.filters),

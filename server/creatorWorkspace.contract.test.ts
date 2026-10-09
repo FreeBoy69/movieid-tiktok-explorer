@@ -4,7 +4,17 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { createServer } from "node:http";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { clearDiscoveryCache } from "./nicheDiscovery.js";
+
+// Jev's reranker, recorded: what each channel looked like to it.
+const jevCalls: any[] = [];
+vi.mock("../src/utils/jevDecision.js", () => ({
+  rerankWithJev: async (items: any[], options: any) => {
+    jevCalls.push({ items, described: items.map((item) => options.describe(item)) });
+    return items;
+  },
+}));
 import {
   animationCapability,
   sceneClipSeconds,
@@ -92,6 +102,10 @@ describe("creator workspace API contracts", () => {
   let server: ReturnType<typeof createServer> | null = null;
   let radarInput: any = null;
   let radarVideos: any[] = [];
+  let radarError: any = null;
+  let unavailable = "";
+  let resolved: any = null;
+  let youtubeImpl: (path: string, params: any) => Promise<any> = async () => ({ items: [] });
   let transcript: any = null;
 
   beforeEach(async () => {
@@ -235,7 +249,14 @@ describe("creator workspace API contracts", () => {
       styles: async () => [],
       radar: async (input: any) => {
         radarInput = input;
+        if (radarError) throw radarError;
         return { videos: radarVideos };
+      },
+      youtube: (path: string, params: any) => youtubeImpl(path, params),
+      youtubeUnavailable: () => unavailable,
+      resolveChannel: async (input: any) => {
+        resolved = input;
+        return { channelId: "UCpasted", sourceUrl: input.sourceUrl };
       },
       text: async () => "{}",
       narrate: async () => null,
@@ -397,6 +418,76 @@ describe("creator workspace API contracts", () => {
     expect(radarInput.query).toMatch(/^true crime/);
     expect(radarInput.query).toMatch(/heist|fbi/);
     expect(body.videos.map((video: any) => video.channelId)).toEqual(["other"]);
+  });
+
+  describe("Niche Finder errors and pasted links", () => {
+    beforeEach(() => {
+      clearDiscoveryCache();
+      radarInput = null;
+      radarError = null;
+      unavailable = "";
+      jevCalls.length = 0;
+      youtubeImpl = async () => ({ items: [] });
+    });
+
+    it("says search is unavailable, not out of quota, when YouTube search is down", async () => {
+      radarError = Object.assign(new Error("YouTube search is unavailable right now. Try again in a minute."), { searchUnavailable: true, statusCode: 503 });
+      const down = await request("/api/maker/discover", { method: "POST", body: JSON.stringify({ accountId: "a1", query: "space facts" }) });
+      expect(down.status).toBe(503);
+      expect((await down.json()).error).toMatch(/unavailable right now/);
+      clearDiscoveryCache();
+      radarError = Object.assign(new Error("quotaExceeded: The request cannot be completed because you have exceeded your quota."), { quotaExceeded: true });
+      const quota = await request("/api/maker/discover", { method: "POST", body: JSON.stringify({ accountId: "a1", query: "space facts" }) });
+      expect(quota.status).toBe(503);
+      const body = await quota.json();
+      expect(body.error).toMatch(/quota for today is used up/);
+      expect(body.error).not.toMatch(/exceeded your quota/);
+    });
+
+    it("answers fast with a friendly 503 when YouTube data isn't available at all", async () => {
+      unavailable = "YouTube data isn't set up on the server yet.";
+      const response = await request("/api/maker/discover", { method: "POST", body: JSON.stringify({ accountId: "a1", query: "space facts" }) });
+      expect(response.status).toBe(503);
+      expect(radarInput).toBeNull();
+    });
+
+    it("works without a connected channel", async () => {
+      radarVideos = [{ id: "f1", channelId: "c1", channelTitle: "Night Tales", viewCount: 9000 }];
+      const response = await request("/api/maker/discover", { method: "POST", body: JSON.stringify({ query: "night tales" }) });
+      expect(response.status).toBe(200);
+    });
+
+    it("reads a pasted link as that channel, judged on its uploads, with hidden subscribers left unknown", async () => {
+      youtubeImpl = async (path: string, params: any) => {
+        if (path === "channels") return { items: [{ id: "UCpasted", snippet: { title: "Pasted", publishedAt: "2024-01-01T00:00:00Z" }, statistics: { hiddenSubscriberCount: true, videoCount: "2" }, contentDetails: { relatedPlaylists: { uploads: "UUpasted" } } }] };
+        if (path === "playlistItems") return { items: [{ contentDetails: { videoId: "p1" } }, { contentDetails: { videoId: "p2" } }] };
+        if (path === "videos") return { items: params.id.split(",").map((id: string) => ({ id, snippet: { title: "Story " + id, publishedAt: "2026-09-01T00:00:00Z" }, statistics: { viewCount: "5000" }, contentDetails: { duration: "PT12M" } })) };
+        return { items: [] };
+      };
+      const response = await request("/api/maker/discover", { method: "POST", body: JSON.stringify({ accountId: "a1", query: "https://www.youtube.com/watch?v=dQw4w9WgXcQ" }) });
+      const body = await response.json();
+      expect(response.status).toBe(200);
+      expect(resolved.sourceUrl).toContain("watch?v=dQw4w9WgXcQ");
+      expect(body.pasted).toBe("UCpasted");
+      expect(body.videos).toHaveLength(2);
+      expect(body.videos[0]).toMatchObject({ channelId: "UCpasted", subscriberCount: null, channelVideoCount: 2 });
+      expect(body.videos[0].facelessScore).not.toBeUndefined();
+    });
+
+    it("reranks only for the Discovery sort, telling Jev each channel's real subscribers", async () => {
+      radarVideos = [
+        { id: "v1", channelId: "c1", channelTitle: "One", viewCount: 9000, subscriberCount: 12000, publishedAt: "2026-09-01T00:00:00Z", discoveryScore: 60 },
+        { id: "v2", channelId: "c2", channelTitle: "Two", viewCount: 4000, subscriberCount: 3000, publishedAt: "2026-09-05T00:00:00Z", discoveryScore: 40 },
+      ];
+      await request("/api/maker/discover", { method: "POST", body: JSON.stringify({ accountId: "a1", query: "space facts", filters: { sort: "created" } }) });
+      expect(jevCalls).toHaveLength(0);
+      await request("/api/maker/discover", { method: "POST", body: JSON.stringify({ accountId: "a1", query: "space facts", filters: { sort: "score" } }) });
+      expect(jevCalls).toHaveLength(1);
+      expect(jevCalls[0].described.map((d: any) => d.subscribers).sort()).toEqual([12000, 3000].sort());
+      // The reranked order is cached with the result.
+      await request("/api/maker/discover", { method: "POST", body: JSON.stringify({ accountId: "a1", query: "space facts", filters: { sort: "score" } }) });
+      expect(jevCalls).toHaveLength(1);
+    });
   });
 
   it("loads a niche feed when the search is empty", async () => {
