@@ -1406,6 +1406,24 @@ function PruneModal({
 }
 
 /* Niche Finder */
+// What a saved search keeps: every video (the page ranks from them) and the server's channel order,
+// without the channels' own video previews. A collection holds at most about 1 MB, so a very large
+// search keeps the selected channels' videos plus the busiest channels' until it fits.
+const COLLECTION_BYTES = 900_000;
+function storedResult(result: any, keep: string[] = []) {
+  const slim = { ...result, channels: (result?.channels || []).map((channel: any) => ({ id: channel.id })) };
+  if (JSON.stringify(slim).length <= COLLECTION_BYTES) return slim;
+  const order = [...keep, ...slim.channels.map((channel: any) => channel.id)];
+  const counts = new Map<string, number>();
+  for (const video of slim.videos || []) counts.set(video.channelId, (counts.get(video.channelId) || 0) + 1);
+  const ids = [...new Set([...order, ...counts.keys()])];
+  for (let n = ids.length; n > 1; n = Math.floor(n * 0.75)) {
+    const allowed = new Set(ids.slice(0, n));
+    const trimmed = { ...slim, videos: (slim.videos || []).filter((video: any) => allowed.has(video.channelId)) };
+    if (JSON.stringify(trimmed).length <= COLLECTION_BYTES) return trimmed;
+  }
+  return { ...slim, videos: (slim.videos || []).filter((video: any) => keep.includes(video.channelId)) };
+}
 // Niches left out by default: music and kids content, reuploads, and niches that game the algorithm.
 const DEFAULT_EXCLUDED = ["music", "song", "lofi", "movies", "breastfeeding", "lingerie", "transparent", "transparency", "clean", "haul", "kids", "gaming", "tv", "compilation", "bodycam", "dashcam"];
 // Every filter switched off. Removing a chip sets that filter back to this value.
@@ -1687,7 +1705,7 @@ function Discovery({
   useEffect(() => {
     if (result)
       try {
-        sessionStorage.setItem(cacheKey, JSON.stringify({ result, filters, search: shownQuery, selected, shuffle }));
+        sessionStorage.setItem(cacheKey, JSON.stringify({ result: storedResult(result), filters, search: shownQuery, selected, shuffle }));
       } catch {}
   }, [result, filters, shownQuery, selected, shuffle]);
   // Back and forward: the address names a search the page isn't showing, so run it.
@@ -2188,7 +2206,7 @@ function Discovery({
                   await creatorApi("/api/maker/collections", {
                     accountId,
                     name: (shownQuery || `Niche feed: ${(result.niches || []).join(", ")}`).slice(0, 120),
-                    data: { result, filters, search: shownQuery, selected },
+                    data: { result: storedResult(result, selected), filters, search: shownQuery, selected },
                   });
                   await loadCollections();
                   setTab("saved");

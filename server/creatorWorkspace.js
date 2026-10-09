@@ -4617,6 +4617,9 @@ export function registerCreatorWorkspace(app) {
     return { channels, reranked: true };
   };
   const publicResult = ({ complete, ...result }) => result;
+  // Every video is already in `videos`; each ranked channel carries a three-video preview (for Juel
+  // and the API) instead of a second copy of them all.
+  const previewChannels = (channels = []) => channels.map((channel) => ({ ...channel, videos: (channel.videos || []).slice(0, 3) }));
 
   app.post(
     "/api/maker/discover",
@@ -4663,7 +4666,7 @@ export function registerCreatorWorkspace(app) {
         throw discoveryFailure(error);
       }
       const { channels, reranked } = await rankChannels(result, input.filters || {}, key, input);
-      res.json({ ...publicResult(result), channels, reranked, sampledAt: Date.now() });
+      res.json({ ...publicResult(result), channels: previewChannels(channels), reranked, sampledAt: Date.now() });
     }),
   );
   app.get(
@@ -4775,7 +4778,7 @@ export function registerCreatorWorkspace(app) {
         ...publicResult(result),
         videos,
         query,
-        channels: rankDiscoveryChannels(videos, input.filters),
+        channels: previewChannels(rankDiscoveryChannels(videos, input.filters)),
         sampledAt: Date.now(),
       });
     }),

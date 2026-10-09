@@ -493,6 +493,13 @@ describe("creator workspace API contracts", () => {
     });
   });
 
+  it("sends every video once, with a three-video preview on each channel", async () => {
+    radarVideos = Array.from({ length: 6 }, (_, i) => ({ id: `p${i}`, channelId: "c9", channelTitle: "Night Tales", viewCount: 1000 * (i + 1), subscriberCount: 5000, publishedAt: `2026-09-0${i + 1}T00:00:00Z`, discoveryScore: 50 }));
+    const body = await (await request("/api/maker/discover", { method: "POST", body: JSON.stringify({ accountId: "a1", query: "preview test" }) })).json();
+    expect(body.videos).toHaveLength(6);
+    expect(body.channels[0].videos.length).toBeLessThanOrEqual(3);
+  });
+
   it("loads a niche feed when the search is empty", async () => {
     radarVideos = [{ id: "f1", channelId: "c1", channelTitle: "Night Tales", viewCount: 9000 }];
     const response = await request("/api/maker/discover", { method: "POST", body: JSON.stringify({ accountId: "a1", query: "", shuffle: 7 }) });
