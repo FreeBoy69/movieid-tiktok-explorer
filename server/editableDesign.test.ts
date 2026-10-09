@@ -60,6 +60,13 @@ describe("editable design", () => {
     expect(extractDesignDocument(`Here you go:\n\`\`\`html\n${dirty}\n\`\`\``)).toBe(dirty);
   });
 
+  it("removes a stripped element's contents and closing tag, not just its opening tag", () => {
+    const clean = sanitizeDesignHtml(poster('<button>Buy now</button><iframe src="x">fallback</iframe><textarea>notes</textarea><p data-layer-id="a">kept</p>'));
+    expect(clean).not.toMatch(/Buy now|fallback|notes|<\/button|<\/iframe|<\/textarea/);
+    expect(clean).toContain('<p data-layer-id="a">kept</p>');
+    expect(sanitizeDesignHtml('<head><meta charset="utf-8"><meta name="x"></head>')).toBe('<head><meta charset="utf-8"></head>');
+  });
+
   it("validates the canvas and repairs duplicate layer ids", () => {
     const ok = validateDesignHtml(poster('<p data-layer-id="a">x</p><p data-layer-id="a">y</p>'), "3:4");
     expect(ok.ok).toBe(true);

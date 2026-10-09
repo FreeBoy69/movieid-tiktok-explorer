@@ -188,7 +188,7 @@ export function sanitizeDesignHtml(html) {
   let out = String(html || "");
   out = out.replace(/<!--[\s\S]*?-->/g, "");
   out = out.replace(/<script\b[\s\S]*?<\/script\s*>/gi, "").replace(/<script\b[^>]*\/?>/gi, "");
-  out = out.replace(/<(?:link|meta|base|iframe|frame|object|embed|applet|form|input|button|textarea|select|video|audio|source|track|canvas)\b[^>]*>(?:[\s\S]*?<\/\1\s*>)?/gi, (tag) => (/^<meta\b[^>]*charset/i.test(tag) ? tag : ""));
+  out = out.replace(/<(link|meta|base|iframe|frame|object|embed|applet|form|input|button|textarea|select|video|audio|source|track|canvas)\b[^>]*>(?:[\s\S]*?<\/\1\s*>)?/gi, (tag) => (/^<meta\b[^>]*charset/i.test(tag) ? tag : ""));
   out = out.replace(/\s(?:on[a-z]+|srcdoc|formaction|xlink:href)\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, "");
   out = out.replace(/(\s(?:href|src|poster|background)\s*=\s*["']?)\s*(?:javascript|vbscript|data:text\/html)[^"'\s>]*/gi, "$1#");
   out = out.replace(/@import[^;]*;?/gi, "");
