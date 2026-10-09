@@ -16,6 +16,7 @@ import {
   youtubeVideoId,
   configureCreatorWorkspace,
   extractStyleFrames,
+  generate,
   registerCreatorWorkspace,
   similarChannelQuery,
   safeStyleVideoUrl,
@@ -91,6 +92,7 @@ describe("creator workspace API contracts", () => {
   let server: ReturnType<typeof createServer> | null = null;
   let radarInput: any = null;
   let radarVideos: any[] = [];
+  let transcript: any = null;
 
   beforeEach(async () => {
     projects = new Map([
@@ -179,6 +181,8 @@ describe("creator workspace API contracts", () => {
         }
         return "";
       }
+      // Job progress updates are fire-and-forget.
+      if (/UPDATE creator_stage_jobs SET message=/i.test(sql)) return "";
       throw new Error(`Unexpected SQL in creator contract test: ${sql}`);
     };
 
@@ -235,7 +239,7 @@ describe("creator workspace API contracts", () => {
       },
       text: async () => "{}",
       narrate: async () => null,
-      transcribe: async () => null,
+      transcribe: async () => transcript,
       learnStyle: async () => null,
       buildStyle: async () => null,
       projectAccount: async () => ({ id: "a1" }),
@@ -417,6 +421,21 @@ describe("creator workspace API contracts", () => {
     afterEach(() => {
       delete process.env.CREATOR_ASSETS_DIR;
       fs.rmSync(root, { recursive: true, force: true });
+    });
+
+    it("voices an uploaded recording by transcribing it, and drafts the script from it", async () => {
+      fs.mkdirSync(path.join(root, "p1"), { recursive: true });
+      fs.writeFileSync(path.join(root, "p1", "abc-narration.wav"), Buffer.alloc(64));
+      transcript = { text: "Rome fell slowly.", segments: [{ start: 0, end: 2, text: "Rome fell slowly." }] };
+      const project: any = {
+        id: "p1",
+        metadata: { settings: {}, narrationUpload: { asset: "/api/maker/projects/p1/assets/abc-narration.wav", duration: 2, name: "take 1.m4a" } },
+        outputs: { title: { current: "Why Rome Fell" } },
+      };
+      const output = await generate(project, { id: "job_test", stage: "voiceover", payload: { action: "upload" } } as any, new AbortController().signal);
+      expect(output).toMatchObject({ asset: project.metadata.narrationUpload.asset, duration: 2, uploaded: true, name: "take 1.m4a", scriptFromNarration: "Rome fell slowly." });
+      const scripted = await generate({ ...project, outputs: { ...project.outputs, script: { draft: "Rome fell slowly." } } }, { id: "job_test2", stage: "voiceover", payload: { action: "upload" } } as any, new AbortController().signal);
+      expect(scripted.scriptFromNarration).toBeUndefined();
     });
 
     it("stores an uploaded thumbnail reference and selects it", async () => {

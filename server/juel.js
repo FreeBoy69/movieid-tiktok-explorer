@@ -257,6 +257,7 @@ export const JUEL_ROUTES = {
   "POST /api/maker/projects/:id/reference-assets": ["producer", "change", "Uploads a base64 reference image to a Create Video project."],
   "POST /api/maker/projects/:id/soundtrack": ["producer", "change", "Imports a licensed base64 music file as the project's soundtrack."],
   "POST /api/maker/projects/:id/soundtrack-source": ["producer", "change", "Uploads or clears an audio/video file whose track becomes the project's audio source."],
+  "POST /api/maker/projects/:id/narration-upload": ["producer", "change", "Uploads the creator's own narration recording (or clears it) and transcribes it as the voiceover; with no script, the transcript becomes the script."],
   "POST /api/maker/projects/:id/soundtrack-url": ["producer", "change", "Imports licensed music from a URL as the project's soundtrack."],
   "POST /api/maker/projects/:id/studio": ["producer", "change", "Attaches a finished studio voice job's video, narration, captions, and scenes to a project."],
   "POST /api/maker/projects/:id/thumbnail-reference": ["producer", "change", "Sets a thumbnail reference image from an upload or a YouTube video link."],

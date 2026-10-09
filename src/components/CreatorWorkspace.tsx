@@ -1047,13 +1047,25 @@ function Projects({
     [picker, setPicker] = useState(false),
     [confirm, setConfirm] = useState<{ project: CreatorProject; status: string } | null>(null),
     [pruning, setPruning] = useState<CreatorProject | null>(null),
+    [freeMedia, setFreeMedia] = useState(false),
     [editing, setEditing] = useState<CreatorProject | null>(null);
-  async function mutate(p: CreatorProject, status: string) {
+  async function mutate(p: CreatorProject, status: string, free = false) {
     setConfirm(null);
     try {
+      let version = p.version || 1;
+      // Freeing media keeps the text, voiceover and thumbnail; images, clips and renders go.
+      if (free) {
+        const data = await creatorApi(`/api/maker/projects/${p.id}/prune`, {
+          accountId,
+          confirmed: true,
+          categories: ["workspace", "renders", "clips", "images"],
+          expectedVersion: version,
+        });
+        version = data.project?.version || version;
+      }
       await creatorApi(
         `/api/maker/projects/${p.id}`,
-        { status, accountId, expectedVersion: p.version || 1 },
+        { status, accountId, expectedVersion: version },
         "PATCH",
       );
       await refresh();
@@ -1078,15 +1090,15 @@ function Projects({
         p.title.toLowerCase().includes(query.toLowerCase()),
     )
     .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
-  const kept = (p: CreatorProject) =>
+  const kept = (p: CreatorProject, free = false) =>
     [
       "Title, script, and description",
       p.outputs?.voiceover?.asset && "Voiceover audio and transcript",
       p.outputs?.soundtrack?.asset && "Soundtrack and license credit",
-      p.outputs?.visualPlan?.scenes?.length &&
+      !free && p.outputs?.visualPlan?.scenes?.length &&
         `${p.outputs.visualPlan.scenes.filter((s: any) => s.asset).length} scene images`,
       p.outputs?.thumbnail?.asset && "Thumbnail variants",
-      p.outputs?.review?.asset && "Rendered video and export bundle",
+      !free && p.outputs?.review?.asset && "Rendered video and export bundle",
     ].filter(Boolean) as string[];
   return (
     <div className="maker-scroll">
@@ -1233,7 +1245,7 @@ function Projects({
               </button>
               <button
                 className={confirm.status === "deleted" ? "maker-destructive" : "maker-primary"}
-                onClick={() => void mutate(confirm.project, confirm.status)}
+                onClick={() => void mutate(confirm.project, confirm.status, confirm.status === "archived" && freeMedia)}
               >
                 {confirm.status === "deleted" ? "Delete project" : "Archive project"}
               </button>
@@ -1247,15 +1259,23 @@ function Projects({
             </p>
           ) : (
             <>
-              <p>Archiving hides the project from your active list. Nothing is deleted:</p>
+              <p>{freeMedia ? "Archiving hides the project from your active list and frees its storage. These stay:" : "Archiving hides the project from your active list. Nothing is deleted:"}</p>
               <ul className="maker-kept">
-                {kept(confirm.project).map((item) => (
+                {kept(confirm.project, freeMedia).map((item) => (
                   <li key={item}>
                     <Check size={14} />
                     {item}
                   </li>
                 ))}
               </ul>
+              <Switch
+                className="maker-switch-row"
+                compact
+                checked={freeMedia}
+                onChange={setFreeMedia}
+                label="Also free its storage"
+                description="Removes scene images, animated clips, rendered videos and working files. The title, script, description, voiceover and thumbnail stay, and images can be generated again."
+              />
             </>
           )}
         </Modal>
@@ -3075,6 +3095,14 @@ function ArtDirectionPanel({ value, onChange }: { value: VisualBible; onChange: 
   );
 }
 
+type MakerPrices = { imageUsd: number | null; video: Record<string, { name: string; usdPerSecond: number | null; durations: number[] }> };
+// The clip length a scene animates at: the model's shortest supported length that covers the
+// scene (the same rule the server uses), or 4 to 10 seconds when the model's lengths are unknown.
+function clipSecondsFor(durations: number[], length: number) {
+  const want = Math.max(1, Math.ceil(Number(length) || 0));
+  if (durations.length) return durations.find((d) => d >= want) ?? durations[durations.length - 1];
+  return Math.min(10, Math.max(4, want));
+}
 /* Visual segments: split the narration at sentence breaks and give each part its own settings. */
 const QUALITY_OPTIONS: Array<[string, string]> = [
   ["standard", "Standard · 1K"],
@@ -3082,7 +3110,7 @@ const QUALITY_OPTIONS: Array<[string, string]> = [
   ["ultra", "Ultra · 4K"],
 ];
 /** Delivery format, visual playbook, and image quality: one control set wherever a project sets them. */
-function DeliverySettings({ settings, editSetting }: { settings: any; editSetting: (patch: Record<string, unknown>) => void }) {
+function DeliverySettings({ settings, editSetting, imageCredits }: { settings: any; editSetting: (patch: Record<string, unknown>) => void; imageCredits?: number }) {
   const profileId = settings.productionProfile || PRODUCTION_PROFILES.find((item) => item.aspect === settings.aspect)?.id || "youtube-landscape";
   const playbookId = settings.productionPlaybook || "clean-professional";
   return (
@@ -3113,6 +3141,7 @@ function DeliverySettings({ settings, editSetting }: { settings: any; editSettin
             </button>
           ))}
         </div>
+        {imageCredits ? <small>~{Math.ceil(imageCredits).toLocaleString()} credits an image at any quality</small> : null}
       </div>
     </>
   );
@@ -3682,6 +3711,10 @@ function ProjectEditor({
     [voiceError, setVoiceError] = useState(""),
     [voicesLoading, setVoicesLoading] = useState(true),
     [styleName, setStyleName] = useState(""),
+    [channelStyles, setChannelStyles] = useState<ChannelStyle[]>([]),
+    [scriptText, setScriptText] = useState<string | null>(null),
+    [titleText, setTitleText] = useState<string | null>(null),
+    narrationInput = useRef<HTMLInputElement | null>(null),
     [confirm, setConfirm] = useState<any>(null),
     [cardScene, setCardScene] = useState(""),
     [overlayScene, setOverlayScene] = useState(""),
@@ -3710,6 +3743,7 @@ function ProjectEditor({
     [advanced, setAdvanced] = useState(false),
     [copied, setCopied] = useState(false),
     [animation, setAnimation] = useState<{ available: boolean; reason: string; model: string; models?: string[]; provider?: string } | null>(null),
+    [prices, setPrices] = useState<MakerPrices | null>(null),
     [music, setMusic] = useState<{ available: boolean; reason: string; model: string; provider: string } | null>(null),
     [media, setMedia] = useState<{ available: boolean; reason: string } | null>(null),
     [stock, setStock] = useState<{ available: boolean; reason: string; providers?: string[] } | null>(null),
@@ -3719,7 +3753,7 @@ function ProjectEditor({
     [thumbMode, setThumbMode] = useState<"channel" | "reference" | "scratch" | "">(""),
     [animOptions, setAnimOptions] = useState<{ model: string; fixedCamera: boolean }>({ model: "", fixedCamera: false }),
     [imaging, setImaging] = useState<{ available: boolean; reason: string; model: string } | null>(null),
-    [billingPricing, setBillingPricing] = useState<{ flatTokens: Record<string, number>; tokensPerCredit: number }>({ flatTokens: { image: 60000, video: 750000, speech: 3000, music: 150000, default: 10000 }, tokensPerCredit: 100 });
+    [billingPricing, setBillingPricing] = useState<{ flatTokens: Record<string, number>; tokensPerCredit: number; tokensPerUsd?: number }>({ flatTokens: { image: 60000, video: 750000, speech: 3000, music: 150000, default: 10000 }, tokensPerCredit: 100 });
   const timelineAudio = useRef<HTMLAudioElement>(null);
   // A found-footage style template locks the camera by default.
   useEffect(() => {
@@ -3822,6 +3856,7 @@ function ProjectEditor({
       .then((data) => {
         if (!active) return;
         setAnimation(data.animation || null);
+        setPrices(data.prices || null);
         setImaging(data.images || null);
         setMusic(data.music || null);
         setMedia(data.media || null);
@@ -3831,7 +3866,7 @@ function ProjectEditor({
     void fetch("/api/billing/me", { cache: "no-store" })
       .then((response) => response.ok ? response.json() : null)
       .then((data) => {
-        if (data?.pricing?.flatTokens) setBillingPricing({ flatTokens: data.pricing.flatTokens, tokensPerCredit: Number(data.pricing.tokensPerCredit) || 100 });
+        if (data?.pricing?.flatTokens) setBillingPricing({ flatTokens: data.pricing.flatTokens, tokensPerCredit: Number(data.pricing.tokensPerCredit) || 100, tokensPerUsd: Number(data.pricing.tokensPerUsd) || undefined });
       })
       .catch(() => {});
     return () => {
@@ -3847,11 +3882,48 @@ function ProjectEditor({
     void loadArtStyles().catch(() => {});
   }, [accountId]);
   useEffect(() => {
-    if (!project?.styleId) return;
     void creatorApi(`/api/channel-styles?accountId=${encodeURIComponent(accountId)}`)
-      .then((data) => setStyleName((data.styles || []).find((s: ChannelStyle) => s.id === project.styleId)?.name || ""))
+      .then((data) => {
+        setChannelStyles(data.styles || []);
+        setStyleName((data.styles || []).find((s: ChannelStyle) => s.id === project?.styleId)?.name || "");
+      })
       .catch(() => {});
-  }, [project?.styleId]);
+  }, [project?.styleId, accountId]);
+  // Saves one change outside the current stage's draft (the style, the title, or the
+  // script from another tab), against the latest project version.
+  async function patchProject(change: Record<string, unknown>) {
+    if (dirty && !(await save())) return false;
+    setBusy(true);
+    try {
+      const latest = await creatorApi(`/api/maker/projects/${id}`);
+      const data = await creatorApi(`/api/maker/projects/${id}`, { ...change, accountId, expectedVersion: latest.project.version || 1 }, "PATCH");
+      setProject(data.project);
+      return true;
+    } catch (e) {
+      onError((e as Error).message);
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function uploadNarration(file: File | null) {
+    if (dirty && !(await save())) return;
+    if (file && file.size > 70 * 1024 * 1024) return onError("Choose an audio or video file smaller than 70 MB");
+    setBusy(true);
+    try {
+      const data = await creatorApi(`/api/maker/projects/${id}/narration-upload`, {
+        ...(file ? { media: await readFile(file), name: file.name } : { clear: true }),
+        accountId,
+        expectedVersion: project?.version || 1,
+      });
+      setProject(data.project);
+      if (data.job) setJobs((items) => [data.job, ...items.filter((j) => j.id !== data.job.id)]);
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
   useEffect(() => {
     if (!dirtyRef.current && project) {
       setDraft(
@@ -4326,25 +4398,32 @@ function ProjectEditor({
           : output
             ? againLabel
             : firstLabel;
+  // Credits a paid step will cost. Billing charges each call at the provider's price,
+  // so images and animation are quoted from those prices; the flat rates are the fallback.
   const estimatedCredits = (action = confirm?.action) => {
     if (currentStage === "review" || action === "stock") return 0;
     const flat = billingPricing.flatTokens || {};
+    const perUsd = Number(billingPricing.tokensPerUsd) || 0;
     let operation = "default";
     let units = 1;
-    if (action === "images") {
+    if (action === "images" || action === "thumbnailVariants") {
+      const count = action === "thumbnailVariants" ? Math.max(1, thumbCount) : confirm?.sceneId ? 1 : Math.max(1, missingImages);
+      if (prices?.imageUsd && perUsd) return tokensToCredits(prices.imageUsd * perUsd * count);
       operation = "image";
-      units = confirm?.sceneId ? 1 : Math.max(1, missingImages);
-    } else if (action === "thumbnailVariants") {
-      operation = "image";
-      units = Math.max(1, thumbCount);
+      units = count;
     } else if (action === "animate") {
+      const model = animOptions.model || animation?.model || "";
+      const rate = prices?.video?.[model]?.usdPerSecond;
+      if (rate && perUsd) return tokensToCredits(rate * perUsd * animateSeconds(model));
       operation = "video";
-      units = Math.max(1, toAnimate);
+      units = Math.max(1, animateTargets().length);
     } else if (action === "music") {
       operation = "music";
       units = Math.max(1, normalizeMusicSegments(draft.segments, Number(project.outputs.soundtrackSource?.duration || voiceover?.duration || 0)).filter((part: any) => !part.muted).length);
     } else if (currentStage === "voiceover") {
+      // Speech is billed per 1,000 characters of script.
       operation = "speech";
+      units = Math.max(1, Math.ceil(String(project.outputs.script?.draft || "").length / 1000));
     }
     return tokensToCredits(Number(flat[operation] ?? flat.default ?? 0) * units);
   };
@@ -4361,6 +4440,13 @@ function ProjectEditor({
   const missingImages = scenes.filter((s) => !s.asset).length;
   const stockMode = Boolean(stock?.available) && ["stock", "mixed"].includes(settings.visualSource);
   const toAnimate = scenes.filter((s) => s.animate && s.asset && !s.clip).length;
+  const unanimated = scenes.filter((s) => s.asset && !s.clip).length;
+  const imageCredits = prices?.imageUsd && billingPricing.tokensPerUsd ? tokensToCredits(prices.imageUsd * billingPricing.tokensPerUsd) : 0;
+  const animateTargets = () =>
+    confirm?.sceneId ? scenes.filter((scene) => scene.id === confirm.sceneId) : scenes.filter((scene) => scene.animate && scene.asset && !scene.clip);
+  // Seconds of video the targets come to: each clip is the model's shortest length that covers its scene.
+  const animateSeconds = (model: string) =>
+    animateTargets().reduce((sum, scene) => sum + clipSecondsFor(prices?.video?.[model]?.durations || [], Number(scene.end) - Number(scene.start)), 0);
   sceneKeys.current = (event: KeyboardEvent) => {
     if (event.key === "Escape") return closeSceneEditor();
     if ((event.target as HTMLElement)?.closest?.("input, textarea, select")) return;
@@ -4665,7 +4751,7 @@ function ProjectEditor({
                   </Disclosure>
                   <Disclosure label="Visuals" summary={`${settings.aspect || "16:9"} · ${settings.visualStyle || "no style set"}`}>
                     <div className="maker-grid-2">
-                      <DeliverySettings settings={settings} editSetting={editSetting} />
+                      <DeliverySettings settings={settings} editSetting={editSetting} imageCredits={imageCredits} />
                       <label className="maker-field">
                         Visual style
                         <input value={settings.visualStyle || ""} placeholder="Cinematic, hand-drawn, documentary…" onChange={(e) => editSetting({ visualStyle: e.target.value })} />
@@ -4828,7 +4914,24 @@ function ProjectEditor({
                   {stageNotices}
                   <div className="maker-readonly">
                     <span>Title</span>
-                    <strong>{project.outputs.title?.current || "No title yet"}</strong>
+                    {/* Editable until a script exists; after that a new title belongs on the Title tab, since it makes the script stale. */}
+                    {project.outputs.title && !String(project.outputs.script?.draft || draft.draft || "").trim() ? (
+                      <input
+                        className="maker-title-inline"
+                        aria-label="Video title"
+                        value={titleText ?? project.outputs.title.current ?? ""}
+                        onChange={(e) => setTitleText(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+                        onBlur={() => {
+                          const next = (titleText ?? "").trim();
+                          setTitleText(null);
+                          if (next && next !== project.outputs.title?.current)
+                            void patchProject({ outputStage: "title", output: { ...project.outputs.title, current: next } });
+                        }}
+                      />
+                    ) : (
+                      <strong>{project.outputs.title?.current || "No title yet"}</strong>
+                    )}
                     {project.outputs.title?.concept && <p>{project.outputs.title.concept}</p>}
                     {project.outputs.title?.blueprint?.scriptFormat?.hook && (
                       <small className="maker-follows">
@@ -4857,6 +4960,18 @@ function ProjectEditor({
                   <Switch className="maker-switch-row" compact checked={Boolean(settings.research)} onChange={(on) => editSetting({ research: on })} label="Web research" description="Pull citable sources into the script. May take longer." />
                   <Disclosure label="Show options" summary={`${styleName || "no style"} · ${settings.wordCount ?? 600} words`}>
                     <div className="maker-grid-2">
+                      <label className="maker-field maker-span">
+                        Style
+                        <select value={project.styleId || ""} disabled={busy} onChange={(e) => void patchProject({ styleId: e.target.value })}>
+                          <option value="">No style</option>
+                          {channelStyles.map((style) => (
+                            <option key={style.id} value={style.id}>
+                              {style.name}
+                            </option>
+                          ))}
+                        </select>
+                        <small>The script follows this style's tone and structure.</small>
+                      </label>
                       <label className="maker-field">
                         Target word count
                         <input type="number" min={100} max={5000} step={50} value={settings.wordCount ?? 600} onChange={(e) => editSetting({ wordCount: Number(e.target.value) })} />
@@ -4982,8 +5097,56 @@ function ProjectEditor({
                 {genHead()}
                 <div className="maker-gen-body maker-stack">
                   {stageNotices}
-                  <Disclosure label="Show script" summary={`${wordCount(project.outputs.script?.draft)} words`}>
-                    <p className="maker-script-preview">{project.outputs.script?.draft || "No script yet."}</p>
+                  <div className="maker-narration-source">
+                    <div>
+                      <strong>{output?.uploaded ? `Using your recording: ${output.name || "narration"}` : "Have your own recording?"}</strong>
+                      <small>
+                        {output?.uploaded
+                          ? "It was transcribed to time the scenes. Generate below to replace it with an AI voice."
+                          : "Upload audio or video of your narration instead of generating a voice. It's transcribed to time the scenes, and becomes the script if you don't have one."}
+                      </small>
+                    </div>
+                    <button className="maker-outline" disabled={busy || active} onClick={() => narrationInput.current?.click()}>
+                      <Upload size={15} />
+                      {output?.uploaded ? "Replace recording" : "Upload narration"}
+                    </button>
+                    <input
+                      ref={narrationInput}
+                      type="file"
+                      accept="audio/*,video/*"
+                      hidden
+                      onChange={(e) => {
+                        const file = e.target.files?.[0] || null;
+                        e.target.value = "";
+                        if (file) void uploadNarration(file);
+                      }}
+                    />
+                  </div>
+                  <Disclosure label="Edit script" summary={`${wordCount(project.outputs.script?.draft)} words`}>
+                    <textarea
+                      aria-label="Narration script"
+                      className="maker-script-editor"
+                      value={scriptText ?? project.outputs.script?.draft ?? ""}
+                      placeholder="Paste or write the narration to voice"
+                      onChange={(e) => setScriptText(e.target.value)}
+                    />
+                    {scriptText !== null && scriptText !== (project.outputs.script?.draft || "") && (
+                      <div className="maker-actions">
+                        <button className="maker-outline" onClick={() => setScriptText(null)}>
+                          Discard
+                        </button>
+                        <button
+                          className="maker-primary"
+                          disabled={busy}
+                          onClick={async () => {
+                            if (await patchProject({ outputStage: "script", output: { ...(project.outputs.script || {}), draft: scriptText } })) setScriptText(null);
+                          }}
+                        >
+                          <Save size={15} />
+                          Save script
+                        </button>
+                      </div>
+                    )}
                   </Disclosure>
                   <div className="maker-grid-3">
                     {voiceSelect}
@@ -4994,6 +5157,10 @@ function ProjectEditor({
                     <label className="maker-field">
                       Pronunciation
                       <input value={settings.pronunciation || ""} placeholder="Names, acronyms" onChange={(e) => editSetting({ pronunciation: e.target.value })} />
+                    </label>
+                    <label className="maker-field maker-span">
+                      Voice direction
+                      <input value={settings.narrationStyle || ""} placeholder="Calm documentary, slow and warm" onChange={(e) => editSetting({ narrationStyle: e.target.value.slice(0, 200) })} />
                     </label>
                   </div>
                   {isDialogueProject(settings, project.outputs.script?.draft || "") ? (() => {
@@ -5321,7 +5488,7 @@ function ProjectEditor({
                     )}
                     {visualTab === "output" && (
                       <div className="maker-visual-settings" role="tabpanel" aria-label="Output">
-                        <DeliverySettings settings={settings} editSetting={editSetting} />
+                        <DeliverySettings settings={settings} editSetting={editSetting} imageCredits={imageCredits} />
                         <div className="maker-field">
                           <span>Safe prompts</span>
                           <Switch className="maker-switch-row" compact checked={Boolean(settings.safePrompts)} onChange={(on) => editSetting({ safePrompts: on })} label={settings.safePrompts ? "On · no gore, logos, or real people" : "Off"} />
@@ -5442,12 +5609,25 @@ function ProjectEditor({
                           </button>
                         ) : (
                           <>
-                            {toAnimate > 0 && (
+                            {toAnimate > 0 ? (
                               <button className="maker-outline" disabled={busy} onClick={() => setConfirm({ action: "animate", confirmed: true })}>
                                 <Sparkles size={15} />
                                 Animate {toAnimate}
                               </button>
-                            )}
+                            ) : unanimated > 0 && animation?.available ? (
+                              <button
+                                className="maker-outline"
+                                disabled={busy}
+                                title="Turn every still image into a video clip"
+                                onClick={() => {
+                                  edit({ scenes: scenes.map((scene) => (scene.asset && !scene.clip ? { ...scene, animate: true } : scene)) });
+                                  setConfirm({ action: "animate", confirmed: true });
+                                }}
+                              >
+                                <Sparkles size={15} />
+                                Animate all {unanimated}
+                              </button>
+                            ) : null}
                             {view === "edit" ? (
                               <>
                                 {stockMode && missingImages > 0 && (
@@ -5476,6 +5656,17 @@ function ProjectEditor({
                                   >
                                     <Layers size={15} />
                                     {scenes.some((scene: any) => scene.overlays?.some((overlay: any) => !overlay.manual)) ? "Redo overlays" : "Add overlays"}
+                                  </button>
+                                )}
+                                {missingImages > 1 && !scenes.some((scene) => scene.asset) && (
+                                  <button
+                                    className="maker-outline"
+                                    disabled={busy}
+                                    title="Make the first scene's image to check the style before generating the rest"
+                                    onClick={() => setConfirm({ action: "images", sceneId: scenes.find((scene) => !scene.asset)?.id, confirmed: true })}
+                                  >
+                                    <Eye size={15} />
+                                    Preview 1 image
                                   </button>
                                 )}
                                 {missingImages > 0 && (
@@ -5517,6 +5708,17 @@ function ProjectEditor({
                                   >
                                     <Layers size={15} />
                                     {scenes.some((scene: any) => scene.overlays?.some((overlay: any) => !overlay.manual)) ? "Redo overlays" : "Add overlays"}
+                                  </button>
+                                )}
+                                {missingImages > 1 && !scenes.some((scene) => scene.asset) && (
+                                  <button
+                                    className="maker-outline"
+                                    disabled={busy}
+                                    title="Make the first scene's image to check the style before generating the rest"
+                                    onClick={() => setConfirm({ action: "images", sceneId: scenes.find((scene) => !scene.asset)?.id, confirmed: true })}
+                                  >
+                                    <Eye size={15} />
+                                    Preview 1 image
                                   </button>
                                 )}
                                 {missingImages > 0 && (
@@ -6439,24 +6641,28 @@ function ProjectEditor({
           }
         >
           {(() => {
-            const animateTargets = confirm.sceneId ? scenes.filter((scene) => scene.id === confirm.sceneId) : scenes.filter((scene) => scene.animate && scene.asset && !scene.clip);
-            const clipSeconds = animateTargets.reduce((sum, scene) => sum + Math.min(10, Math.max(4, Math.round(scene.end - scene.start))), 0);
+            const targets = animateTargets();
+            const clipSeconds = animateSeconds(animOptions.model || animation?.model || "");
             const musicParts = normalizeMusicSegments(draft.segments, Number(project.metadata.soundtrackSource?.duration || voiceover?.duration || 0));
             const musicSeconds = Number(project.metadata.soundtrackSource?.duration || voiceover?.duration || 0);
             if (confirm.action === "animate")
               return (
                 <div className="maker-stack">
                   <p>
-                    {animateTargets.length} image-to-video {animateTargets.length === 1 ? "request" : "requests"}, about {clipSeconds}s of video in total, billed per second. A retry resumes the same job instead of paying twice. Needs about {Math.round(animateTargets.length * 8)} MB of storage.
+                    {targets.length} image-to-video {targets.length === 1 ? "clip" : "clips"}, about {clipSeconds}s of video in total, billed per second of video. A retry resumes the same job instead of paying twice. Needs about {Math.round(targets.length * 8)} MB of storage.
                   </p>
                   <label className="maker-field">
                     Animation model
                     <select value={animOptions.model || animation?.model || ""} onChange={(e) => setAnimOptions({ ...animOptions, model: e.target.value })}>
-                      {(animation?.models?.length ? animation.models : [animation?.model || ""]).map((model) => (
-                        <option key={model} value={model}>
-                          {model}
-                        </option>
-                      ))}
+                      {(animation?.models?.length ? animation.models : [animation?.model || ""]).map((model) => {
+                        const price = prices?.video?.[model];
+                        const perSecond = price?.usdPerSecond && billingPricing.tokensPerUsd ? tokensToCredits(price.usdPerSecond * billingPricing.tokensPerUsd) : 0;
+                        return (
+                          <option key={model} value={model}>
+                            {[price?.name || model, model === animation?.model ? "default" : "", perSecond ? `~${Math.ceil(perSecond).toLocaleString()} credits a second` : ""].filter(Boolean).join(" · ")}
+                          </option>
+                        );
+                      })}
                     </select>
                   </label>
                   <Switch className="maker-tile-switch" checked={animOptions.fixedCamera} onChange={(on) => setAnimOptions({ ...animOptions, fixedCamera: on })} label="Fixed camera" description="Only the subjects move. The frame stays locked, with no pans or zooms." />

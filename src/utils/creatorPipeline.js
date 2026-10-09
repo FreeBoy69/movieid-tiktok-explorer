@@ -156,11 +156,17 @@ export function assertStageReady(project, stage) {
   if (["script", "thumbnail"].includes(stage) && !project.outputs?.title?.current?.trim()) throw new Error("Save a selected title first");
   // Scoring an uploaded video needs only its audio, not a script.
   const scoringUpload = stage === "soundtrack" && project.metadata?.soundtrackSource?.asset;
-  for (const dependency of scoringUpload ? [] : STAGE_DEPENDENCIES[stage]) {
+  // A description can be written from the title while the script is still being written.
+  const hasScript = Boolean(project.outputs?.script?.draft?.trim());
+  const describingFromTitle = stage === "seo" && !hasScript && Boolean(project.outputs?.title?.current?.trim());
+  // Uploaded narration is transcribed, so it needs no script.
+  const narrationUpload = stage === "voiceover" && Boolean(project.metadata?.narrationUpload?.asset);
+  for (const dependency of scoringUpload || describingFromTitle || narrationUpload ? [] : STAGE_DEPENDENCIES[stage]) {
     if (!project.outputs?.[dependency] || project.outputs[dependency].stale)
       throw new Error(`Finish ${dependency} first`);
   }
-  if (stage === "voiceover" && !project.outputs?.script?.draft?.trim())
+  if (stage === "seo" && !hasScript && !describingFromTitle) throw new Error("Save a selected title first");
+  if (stage === "voiceover" && !hasScript && !narrationUpload)
     throw new Error("Save a narration script first");
   if (
     stage === "review" &&

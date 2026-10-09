@@ -5450,3 +5450,46 @@
 .maker-filter-form .maker-chips {
   margin-top: 10px;
 }
+
+/* Voiceover: use your own recording */
+.maker-narration-source {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px dashed var(--mk-line-strong);
+  border-radius: var(--mk-radius);
+  background: var(--mk-sunken);
+}
+.maker-narration-source > div {
+  display: grid;
+  gap: 2px;
+  min-width: min(100%, 260px);
+  flex: 1;
+}
+.maker-narration-source strong {
+  font-size: 14px;
+}
+.maker-narration-source small {
+  color: var(--mk-muted);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+/* Script tab: the title stays editable until a script exists */
+.maker-readonly .maker-title-inline {
+  width: 100%;
+  padding: 6px 0;
+  border: 0;
+  border-bottom: 1px solid var(--mk-line);
+  border-radius: 0;
+  background: none;
+  color: var(--mk-text);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 650;
+}
+.maker-readonly .maker-title-inline:hover {
+  border-bottom-color: var(--mk-line-strong);
+}

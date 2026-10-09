@@ -439,3 +439,21 @@ describe("fast-paced scene cuts", () => {
     expect(semanticScenes(segments, 12, 12)).toHaveLength(1);
   });
 });
+
+describe("stages that start early", () => {
+  const base = { status: "active", metadata: {}, outputs: { title: { current: "Why Rome Fell" } } };
+
+  it("writes a description from the title before the script exists", () => {
+    expect(() => assertStageReady(base, "seo")).not.toThrow();
+    expect(() => assertStageReady({ ...base, outputs: {} }, "seo")).toThrow();
+  });
+
+  it("still waits for a stale script once one exists", () => {
+    expect(() => assertStageReady({ ...base, outputs: { ...base.outputs, script: { draft: "Rome fell.", stale: true } } }, "seo")).toThrow(/script/);
+  });
+
+  it("voices an uploaded recording without a script", () => {
+    expect(() => assertStageReady(base, "voiceover")).toThrow(/script/);
+    expect(() => assertStageReady({ ...base, metadata: { narrationUpload: { asset: "/a.wav", duration: 30 } } }, "voiceover")).not.toThrow();
+  });
+});
