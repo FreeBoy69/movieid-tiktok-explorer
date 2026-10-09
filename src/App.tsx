@@ -9,6 +9,7 @@ import {
 } from "react";
 import { useDropzone } from "react-dropzone";
 import { motion, AnimatePresence } from "motion/react";
+import { PageView } from "./components/PageView";
 import {
   Upload,
   Film,
@@ -623,19 +624,23 @@ function WorkspaceApp() {
           <AnimatePresence mode="wait">
             {activeView === "docs" ? (
               // Public: the docs read the same signed in or not.
-              <motion.div key="docs-view" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="h-full min-h-0 overflow-hidden">
+              <PageView key="docs-view" revealKey={routeLink.view === "docs" ? routeLink.docsPage || "home" : ""} className="h-full min-h-0 overflow-hidden">
                 <PageBoundary theme={channelTheme} resetKey={routeLink.view === "docs" ? routeLink.docsPage || "home" : ""}>
                   <Suspense fallback={<BrandLoader label="Opening the docs" theme={channelTheme} />}>
                     <DocsPage page={routeLink.view === "docs" ? routeLink.docsPage : undefined} signedIn={!isGuest} onSignIn={() => setSignInOpen(true)} />
                   </Suspense>
                 </PageBoundary>
-              </motion.div>
+              </PageView>
             ) : isGuest && activeView === "account" ? (
-              <ToolsHub theme={channelTheme} signedIn={false} onSignIn={() => setSignInOpen(true)} onOpen={handleNavSelect} onNavigate={handleNavigate} />
+              <PageView key="guest-tools">
+                <ToolsHub theme={channelTheme} signedIn={false} onSignIn={() => setSignInOpen(true)} onOpen={handleNavSelect} onNavigate={handleNavigate} />
+              </PageView>
             ) : ["discover", "projects", "create", "styles", "drama"].includes(activeView) ? (
-              <CreatorWorkspace key="creator-workspace" route={routeLink} accountId={auth?.activeAccount?.id} theme={channelTheme} />
+              <PageView key="creator-workspace" className="flex h-full min-h-0 flex-1 flex-col" revealKey={`${routeLink.view}:${(routeLink as { projectId?: string }).projectId || ""}`}>
+                <CreatorWorkspace route={routeLink} accountId={auth?.activeAccount?.id} theme={channelTheme} />
+              </PageView>
             ) : activeView === "studio" ? (
-              <motion.div key="studio-view" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="h-full min-h-0 overflow-hidden">
+              <PageView key="studio-view" revealKey={routeLink.view === "studio" ? routeLink.studioTab || "" : ""} className="h-full min-h-0 overflow-hidden">
                 <CreatorStudio
                   theme={channelTheme}
                   tab={routeLink.view === "studio" ? routeLink.studioTab : undefined}
@@ -646,41 +651,38 @@ function WorkspaceApp() {
                     setRouteLink(link);
                   }}
                 />
-              </motion.div>
+              </PageView>
             ) : activeView === "products" ? (
-              <motion.div key="digital-products" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="h-full min-h-0 overflow-hidden">
+              <PageView key="digital-products" className="h-full min-h-0 overflow-hidden">
                 <DigitalProductMaker theme={channelTheme} initialProductId={routeLink.productId} initialTab={routeLink.productTab} />
-              </motion.div>
+              </PageView>
             ) : activeView === "vibe-edit" ? (
-              <motion.div key="vibe-edit" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="h-full min-h-0 overflow-hidden">
+              <PageView key="vibe-edit" cascade={false} className="h-full min-h-0 overflow-hidden">
                 <PageBoundary theme={channelTheme} resetKey={routeLink.view === "vibe-edit" ? routeLink.projectId || "home" : ""}>
                   <Suspense fallback={<BrandLoader label="Opening Vibe Edit" theme={channelTheme} />}>
                     <VibeEdit theme={channelTheme} projectId={routeLink.view === "vibe-edit" ? routeLink.projectId : undefined} />
                   </Suspense>
                 </PageBoundary>
-              </motion.div>
+              </PageView>
             ) : activeView === "all-tools" ? (
-              <motion.div key="all-tools-view" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              <PageView key="all-tools-view">
                 <ToolsPage onNavigate={handleNavigate} />
-              </motion.div>
+              </PageView>
             ) : activeView === "tools" ? (
-              <motion.div key="tools-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+              <PageView key="tools-view">
                 <ToolsHub theme={channelTheme} signedIn={!isGuest} onSignIn={() => setSignInOpen(true)} onOpen={handleNavSelect} onNavigate={handleNavigate} />
-              </motion.div>
+              </PageView>
             ) : activeView === "tool" && routeLink.view === "tool" && routeLink.toolId ? (
-              <motion.div key={`tool-${routeLink.toolId}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="h-full min-h-0 overflow-hidden">
+              <PageView key={`tool-${routeLink.toolId}`} className="h-full min-h-0 overflow-hidden">
                 <ToolPage toolId={routeLink.toolId} theme={channelTheme} onNavigate={handleNavigate} />
-              </motion.div>
+              </PageView>
             ) : activeView === "downloader" ? (
-              <motion.div key="downloader-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full min-h-0 overflow-hidden">
+              <PageView key="downloader-view" className="h-full min-h-0 overflow-hidden">
                 <VideoDownloader theme={channelTheme} />
-              </motion.div>
+              </PageView>
             ) : activeView === "movie" ? (
-              <motion.div
+              <PageView
                 key="movie-view"
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
                 className={cn(
                   "h-full min-h-0",
                   movieState.status === "done" ? "overflow-hidden p-0" : "overflow-y-auto p-4 md:p-6 lg:p-8",
@@ -751,9 +753,9 @@ function WorkspaceApp() {
                     ) : null}
                   </AnimatePresence>
                 </div>
-              </motion.div>
+              </PageView>
             ) : activeView === "tiktok" ? (
-              <motion.div key="tiktok-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full min-h-0 overflow-hidden">
+              <PageView key="tiktok-view" className="h-full min-h-0 overflow-hidden">
                 <TikTokExplorer
                   onAnalyzeVideo={handleMovieIdentification}
                   initialUrl={routeLink.view === "tiktok" ? routeLink.url : undefined}
@@ -770,17 +772,17 @@ function WorkspaceApp() {
                   theme={channelTheme}
                   auth={auth}
                 />
-              </motion.div>
+              </PageView>
             ) : activeView === "youtube" ? (
-              <motion.div key="youtube-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full min-h-0 overflow-hidden">
+              <PageView key="youtube-view" className="h-full min-h-0 overflow-hidden">
                 <YouTubeRadar />
-              </motion.div>
+              </PageView>
             ) : activeView === "niches" ? (
-              <motion.div key="niches-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full min-h-0 overflow-y-auto p-4 md:p-6">
+              <PageView key="niches-view" className="h-full min-h-0 overflow-y-auto p-4 md:p-6">
                 <NicheLibrary initialPath={routeLink.view === "niches" ? routeLink.nichePath : undefined} />
-              </motion.div>
+              </PageView>
             ) : activeView === "feed" || activeView === "channels" ? (
-              <motion.div key={`${activeView}-view`} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className={cn(activeView === "channels" && channelDetailOpen ? "h-full min-h-0" : "")}>
+              <PageView key={`${activeView}-view`} className={cn(activeView === "channels" && channelDetailOpen ? "h-full min-h-0" : "")}>
                 <ChannelManagement
                   auth={auth}
                   onAuthRefresh={refreshAuth}
@@ -789,9 +791,9 @@ function WorkspaceApp() {
                   theme={channelTheme}
                   onDetailChange={setChannelDetailOpen}
                 />
-              </motion.div>
+              </PageView>
             ) : activeView === "compile" ? (
-              <motion.div key="compile-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full min-h-0 overflow-hidden">
+              <PageView key="compile-view" className="h-full min-h-0 overflow-hidden">
                 <CompilationStudio
                   auth={auth}
                   initialMode={routeLink.view === "compile" ? routeLink.compileMode : undefined}
@@ -803,9 +805,9 @@ function WorkspaceApp() {
                   initialReturnTo={routeLink.view === "compile" ? routeLink.returnTo : undefined}
                   routeKey={`${routeLink.view}:${routeLink.compileMode || ""}:${routeLink.compileQuery || ""}:${routeLink.compileCount || ""}:${routeLink.compileLoaded || ""}:${routeLink.compileSort || ""}:${routeLink.compileClipId || ""}:${routeLink.returnTo || ""}`}
                 />
-              </motion.div>
+              </PageView>
             ) : activeView === "automation" ? (
-              <motion.div key="automation-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full min-h-0 overflow-hidden">
+              <PageView key="automation-view" className="h-full min-h-0 overflow-hidden">
                 <AutomationAgents
                   auth={auth}
                   initialSlug={routeLink.view === "automation" ? routeLink.slug : undefined}
@@ -815,13 +817,13 @@ function WorkspaceApp() {
                   chatSidebarHost={agentChatSidebarHost}
                   theme={channelTheme}
                 />
-              </motion.div>
+              </PageView>
             ) : activeView === "voiceover" ? null : activeView === "rewriter" ? (
-              <motion.div key="rewriter-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full min-h-0 overflow-hidden">
+              <PageView key="rewriter-view" className="h-full min-h-0 overflow-hidden">
                 <RewriterEngine initialTranscript={rewriterInput} phases={rewriterPhases} onBack={() => switchView("movie")} />
-              </motion.div>
+              </PageView>
             ) : activeView === "account" ? (
-              <motion.div key="account-view" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="h-full min-h-0 overflow-hidden">
+              <PageView key="account-view" className="h-full min-h-0 overflow-hidden">
                 <AccountPage
                   auth={session}
                   theme={channelTheme}
@@ -831,22 +833,22 @@ function WorkspaceApp() {
                   onThemeChange={setChannelTheme}
                   onLogout={() => void logout()}
                 />
-              </motion.div>
+              </PageView>
             ) : activeView === "prompts" ? (
-              <motion.div key="prompts-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full min-h-0 overflow-hidden">
+              <PageView key="prompts-view" className="h-full min-h-0 overflow-hidden">
                 <PromptLibrary theme={channelTheme} />
-              </motion.div>
+              </PageView>
             ) : activeView === "tts" ? (
-              <motion.div key="tts-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="h-full min-h-0 overflow-hidden">
+              <PageView key="tts-view" className="h-full min-h-0 overflow-hidden">
                 {/* The studio's --cs-* colours live on .cstudio, as on /studio/audio. */}
                 <div className="cstudio" data-theme={channelTheme}>
                   <TextToSpeechStudio theme={channelTheme} initialText={ttsInput} />
                 </div>
-              </motion.div>
+              </PageView>
             ) : (
-              <motion.div key="fallback-view" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+              <PageView key="fallback-view">
                 <div className="p-8 text-center text-[var(--ui-text)]/40">View not found</div>
-              </motion.div>
+              </PageView>
             )}
           </AnimatePresence>
           </Suspense>
