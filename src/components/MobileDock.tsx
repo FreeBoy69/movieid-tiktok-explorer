@@ -166,6 +166,43 @@ export function MobileDock({ view, studioTab, toolId, onNavigate, hidden }: { vi
     };
   }, [shown, native]);
 
+  // The bar floats, so whatever scrolls down behind it gets room at its end: the page itself
+  // on simple pages, or the panel that scrolls inside full-height pages (studios, tools).
+  useEffect(() => {
+    if (!shown) return;
+    let timer = 0;
+    const tag = () => {
+      const main = document.querySelector<HTMLElement>("main");
+      if (!main) return;
+      const reach = window.innerHeight - 140;
+      const wanted = new Set<HTMLElement>();
+      for (const el of [main, ...main.querySelectorAll<HTMLElement>("*")]) {
+        if (el.closest(".mdock-slot, [role=dialog]")) continue;
+        const overflow = getComputedStyle(el).overflowY;
+        if (overflow !== "auto" && overflow !== "scroll") continue;
+        const rect = el.getBoundingClientRect();
+        if (rect.height > 160 && rect.bottom >= reach) wanted.add(el);
+      }
+      document.querySelectorAll<HTMLElement>(".mdock-pad").forEach((el) => !wanted.has(el) && el.classList.remove("mdock-pad"));
+      wanted.forEach((el) => el.classList.add("mdock-pad"));
+    };
+    const schedule = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(tag, 250);
+    };
+    schedule();
+    const observer = new MutationObserver(schedule);
+    const main = document.querySelector("main");
+    if (main) observer.observe(main, { childList: true, subtree: true });
+    window.addEventListener("resize", schedule);
+    return () => {
+      window.clearTimeout(timer);
+      observer.disconnect();
+      window.removeEventListener("resize", schedule);
+      document.querySelectorAll(".mdock-pad").forEach((el) => el.classList.remove("mdock-pad"));
+    };
+  }, [shown, view, studioTab, toolId]);
+
   if (!shown) return null;
 
   const go = (target: NavTarget) => {

@@ -19,11 +19,11 @@
 .mdock-slot > * { pointer-events: auto; }
 @media (max-width: 760px) {
   .mdock-slot { display: block; }
-  /* Room at the end of every page so the floating bar never covers the last content. */
-  html[data-mobile-dock] .workspace-content { padding-bottom: calc(96px + env(safe-area-inset-bottom)) !important; }
+  /* Room at the end of whatever scrolls behind the floating bar (tagged by MobileDock). */
+  html[data-mobile-dock] .mdock-pad { padding-bottom: calc(96px + env(safe-area-inset-bottom)) !important; scroll-padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
 }
 .mdock-slot[data-native] { display: block; }
-html[data-mobile-dock="native"] .workspace-content { padding-bottom: calc(96px + env(safe-area-inset-bottom)) !important; }
+html[data-mobile-dock="native"] .mdock-pad { padding-bottom: calc(96px + env(safe-area-inset-bottom)) !important; scroll-padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
 
 /* ---------- Bar ---------- */
 .mdock {
