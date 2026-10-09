@@ -986,7 +986,7 @@ ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.up
     if (/^\/start\s+\S+/.test(text)) {
       const code = text.split(/\s+/)[1];
       const pending = (state.codes || []).find((item) => item.code === code && item.expiresAt > Date.now());
-      if (!pending) return sendText(state, chatId, "That link has expired. Open the admin console and press Link Telegram again.");
+      if (!pending) return sendText(state, chatId, "That link has expired. On autoyt.cc, open Account, then Telegram, and press Link Telegram again.");
       const sessionId = await deps.createAuthSession(pending.userId);
       const from = message.from || {};
       link = { chatId, userId: pending.userId, email: pending.email, name: pending.name || "", telegramName: [from.first_name, from.last_name].filter(Boolean).join(" ") || from.username || "", sessionId, agentId: "", conversationId: "", linkedAt: new Date().toISOString() };
@@ -995,7 +995,7 @@ ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.up
       await saveTelegramState(state, pending.email);
       return sendText(state, chatId, `Linked to ${pending.email}. Message me anything you'd type in the AutoYT agent chat. Voice notes work too.\n\n/agents switch agent · /new fresh chat · /stop cancel · /help`);
     }
-    if (!link) return sendText(state, chatId, "This is a private AutoYT bot. An admin links it from the AutoYT admin console.");
+    if (!link) return sendText(state, chatId, "This chat isn’t linked to an AutoYT account yet. On autoyt.cc, open Account, then Telegram, and press Link Telegram.");
     if (await userStatus(link.userId) === "suspended") return sendText(state, chatId, "This AutoYT account is suspended, so the bot is paused for it. Contact support from autoyt.cc.");
 
     if (callback) {

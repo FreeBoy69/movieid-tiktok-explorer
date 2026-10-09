@@ -298,7 +298,7 @@ describe("telegram bridge", () => {
     await post({ update_id: 1, message: { chat: { id: 7, type: "private" }, text: "hi" } }, "wrong-secret");
     await post({ update_id: 2, message: { chat: { id: 7, type: "private" }, text: "hi" } });
     await until(() => sent.some((call) => call.method === "sendMessage" && call.body.chat_id === 7));
-    expect(sent.find((call) => call.body.chat_id === 7)!.body.text).toContain("private AutoYT bot");
+    expect(sent.find((call) => call.body.chat_id === 7)!.body.text).toContain("linked to an AutoYT account yet");
 
     await post({ update_id: 3, message: { chat, from: { first_name: "Wei" }, text: `/start ${code}` } });
     await until(() => sent.some((call) => String(call.body.text || "").startsWith("Linked to owner@example.com")));
@@ -330,7 +330,7 @@ describe("telegram bridge", () => {
     await until(() => sent.some((call) => call.body.chat_id === 77 && String(call.body.text || "").startsWith("You said: status please")));
     expect(await (await fetch(`${base}/api/account/telegram`, { method: "DELETE", headers: asUser })).json()).toMatchObject({ linked: null });
     await post({ update_id: 7, message: { chat: { id: 77, type: "private" }, text: "still there?" } });
-    await until(() => sent.some((call) => call.body.chat_id === 77 && String(call.body.text || "").includes("private AutoYT bot")));
+    await until(() => sent.some((call) => call.body.chat_id === 77 && String(call.body.text || "").includes("linked to an AutoYT account yet")));
 
     const status = await (await fetch(`${base}/api/admin/telegram`, { headers: asAdmin })).json();
     expect(status.links).toEqual([expect.objectContaining({ chatId: "42", email: "owner@example.com", telegramName: "Wei", mine: true })]);
