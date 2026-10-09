@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import  { ArrowLeft, CircleCheck, Info, Loader2, Megaphone, Plus, TriangleAlert, Wallet, X } from "lucide-react";
+import { ArrowLeft, CircleCheck, Info, Loader2, Megaphone, Plus, TriangleAlert, Wallet, X } from "lucide-react";
 import { toast } from "../utils/toast";
 import { tokensToCredits } from "../utils/credits";
 import { chooseLingbasePack, chooseLingbasePlan, continueLingbaseCheckout, openLingbasePortal, syncLingbasePayments, type CheckoutSession } from "../utils/lingbasePayments";

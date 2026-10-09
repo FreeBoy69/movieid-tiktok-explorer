@@ -4,7 +4,7 @@
 // Vibe Edit with every cut, narration line, and caption on the timeline, ready to tweak and export.
 import { PickerDialog } from "../SourcePicker";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import  {
+import {
   AlertCircle,
   ArrowLeft,
   ArrowRight,

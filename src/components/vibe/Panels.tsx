@@ -1,7 +1,7 @@
 // The left-panel tools: media library, voice, captions, titles, music, and
 // generation, plus the inspector for whatever is selected.
-import  { useEffect, useState, type ReactNode } from "react";
-import  { AudioLines, Captions, Film, Flag, Image as ImageIcon, Link2, Loader2, Mic, Music2, Plus, Sparkles, Trash2, Type, Upload, Wand2 } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
+import { AudioLines, Captions, Film, Flag, Image as ImageIcon, Link2, Loader2, Mic, Music2, Plus, Sparkles, Trash2, Type, Upload, Wand2 } from "lucide-react";
 import { VoicePicker } from "../VoicePicker";
 import { toast } from "../../utils/toast";
 import {

@@ -10,7 +10,7 @@ import {
 import { useDropzone } from "react-dropzone";
 import { motion, AnimatePresence } from "motion/react";
 import { PageView } from "./components/PageView";
-import  {
+import {
   Upload,
   Film,
   ExternalLink,
@@ -18,7 +18,7 @@ import  {
   Trash2,
 } from "lucide-react";
 import { identifyMovie } from "./services/gemini";
-import  { AuthSessionPayload, ExtractionState, MovieResult } from "./types";
+import { AuthSessionPayload, ExtractionState, MovieResult } from "./types";
 import { cn } from "./lib/utils";
 import { PickerDialog } from "./components/SourcePicker";
 import { PlatformGrid, socialPlatform } from "./components/SocialPlatforms";

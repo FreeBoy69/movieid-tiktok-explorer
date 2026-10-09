@@ -2,7 +2,7 @@ import { AgentRemake } from "./AgentRemake";
 import { DEFAULT_AGENT_REMAKE, MAX_REMAKE_FACES, normalizeAgentRemake, remakeBlocker } from "../utils/agentRemake.js";
 import { loadVoiceProfiles, type VoiceProfile } from "../utils/voiceProfiles";
 import { VoicePicker } from "./VoicePicker";
-import  {
+import {
   AlertCircle,
   Activity,
   AudioLines,
@@ -51,7 +51,7 @@ import  {
   UserRound,
   WandSparkles,
 } from "lucide-react";
-import  { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AuthSessionPayload,
   AgentLearningProfile,
@@ -80,7 +80,7 @@ import { connectHref, PlatformGrid, PlatformIcon, socialPlatform } from "./Socia
 import { CompilationStudio } from "./CompilationStudio";
 import { openBackgroundProcessCenter } from "./BackgroundProcessCenter";
 import { agentUploadMedia, buildAgentAnalyticsViz, readAgentUploadMetric } from "../utils/agentAnalyticsViz";
-import  { PerformanceReportView, type AgentPerformanceReport } from "./AgentStructuredContent";
+import { PerformanceReportView, type AgentPerformanceReport } from "./AgentStructuredContent";
 import { MovieAnalysisTabs } from "./MovieAnalysisTabs";
 import { JuelDock, JuelPanel, onJuelChange, provideJuelContext } from "./JuelPanel";
 import { SourcePicker, type SourceOption } from "./SourcePicker";
@@ -89,7 +89,7 @@ import { scheduleHourFromUtcLabel } from "../utils/automationDecisionPolicy.js";
 import "./AutomationAgents.css";
 import { type PlaylistMode, PlaylistControl, SCHEDULED_VISIBILITY_OPTIONS, VisibilityControl } from "./YouTubePublishForm";
 import { choose, confirm, Dialog } from "./ui/Dialog";
-import  { EmptyState, Notice as SharedNotice, Switch } from "./ui/controls";
+import { EmptyState, Notice as SharedNotice, Switch } from "./ui/controls";
 import { OrientationPicker } from "./OrientationPicker";
 import { BrandLoader } from "./BrandLoader";
 

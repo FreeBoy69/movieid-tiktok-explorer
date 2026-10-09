@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import  { Loader2, Sparkles, Star, Undo2, X } from "lucide-react";
+import { Loader2, Sparkles, Star, Undo2, X } from "lucide-react";
 import { categoryLabel, listPrompts, setFavorite, suggestPrompts, type LibraryPrompt, type PromptCategoryId } from "../utils/promptLibrary";
 import { useErrorToast } from "../utils/toast";
 import { SearchField } from "./ui/controls";

@@ -2,7 +2,7 @@
 // the script, Pixabay hand-off, your own file, and one-at-a-time previews.
 // Voiceover Studio, Create Video and Vibe Edit each decide what "Use" does.
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import  { AudioLines, Check, ExternalLink, Loader2, Upload } from "lucide-react";
+import { AudioLines, Check, ExternalLink, Loader2, Upload } from "lucide-react";
 import { inferMusicMood, pixabayMusicSearchUrl } from "../utils/royaltyFreeMusic.js";
 import { TrackPreviewButton } from "./ScenePlayback";
 import { useErrorToast } from "../utils/toast";

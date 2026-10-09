@@ -3,7 +3,7 @@
 // with a music bed (server/promoStudio.js). Shares Marketing Studio's styles.
 import { StudioLayout } from "../StudioLayout";
 import { useEffect, useMemo, useRef, useState } from "react";
-import  { ArrowLeft, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, ExternalLink, Film, Link2, Loader2, Music, Palette, Play, RectangleHorizontal, Shapes, SlidersHorizontal, X, Zap } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, ExternalLink, Film, Link2, Loader2, Music, Palette, Play, RectangleHorizontal, Shapes, SlidersHorizontal, X, Zap } from "lucide-react";
 import { PROMO_ASPECTS, PROMO_DURATIONS, PROMO_SUBJECTS, PROMO_TEMPLATES, findPromoSubject, findPromoTemplate, promoPreview } from "../../utils/promoPresets";
 import { PROMO_STYLES, PROMO_STYLE_SPRITE, findPromoStyle, promoStyleTile } from "../../utils/promoStyles";
 import { AspectPicker, type Asset, type Catalog, Choice, type Generation, GenerationUnavailable, readJson, ReferenceTray, Segment, Toggle, usePopover } from "./studioShared";
