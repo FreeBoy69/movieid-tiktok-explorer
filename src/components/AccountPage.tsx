@@ -450,7 +450,7 @@ function TelegramSection() {
     <>
       <Panel
         title="Talk to your agent from Telegram"
-        description="Send the bot anything you'd type in the agent chat: ask for a report, change a setting, start a run, research a niche. Voice notes work too. Replies are saved to your agent's chat here."
+        description="Message Juel, your AutoYT agent, from Telegram: make videos, images and recaps, edit, research, check your channels, or run your automation agents. Send voice notes, pictures, videos and audio files too. Replies show up in Juel's chat here."
         action={data.linked ? <span className="acp-status is-active">Linked</span> : null}
       >
         {!data.available ? (

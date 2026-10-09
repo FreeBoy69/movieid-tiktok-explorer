@@ -2,7 +2,7 @@
 import http from "node:http";
 import express from "express";
 import { afterEach, describe, expect, it } from "vitest";
-import { createAdminConsole, DEFAULT_SETTINGS, telegramActionPath, telegramChunks, telegramReplyText, featureFromRequest, normalizeSettings, parseAdminEmails, planEconomics, planPrice, priceUsage, roleCan } from "./adminConsole.js";
+import { createAdminConsole, DEFAULT_SETTINGS, juelReplyText, telegramChunks, featureFromRequest, normalizeSettings, parseAdminEmails, planEconomics, planPrice, priceUsage, roleCan } from "./adminConsole.js";
 import { catalogEntry, matchModel, resolveModelRate } from "./providerPrices.js";
 import { guardUsage, installUsageHandlers, meterUsage, runWithUsageContext, UsageBlockedError, withUsageUser } from "../src/utils/usageMeter.js";
 
@@ -220,14 +220,15 @@ describe("admin routes", () => {
 });
 
 describe("telegram bridge", () => {
-  it("splits long replies on line breaks and maps navigation buttons to website paths", () => {
+  it("splits long replies on line breaks and folds Juel's reports into the text", () => {
     const chunks = telegramChunks(`${"a".repeat(30)}\n${"b".repeat(30)}`, 40);
     expect(chunks).toEqual(["a".repeat(30), "b".repeat(30)]);
-    expect(telegramActionPath({ type: "agent_tab", payload: { tab: "runs" } }, "recaps")).toBe("/agent/recaps/runs");
-    expect(telegramActionPath({ type: "navigate", payload: { view: "projects", projectId: "prj_1", projectStage: "script" } })).toBe("/projects/prj_1/script");
-    expect(telegramActionPath({ type: "run_candidate", payload: {} })).toBe("");
-    expect(telegramReplyText({ reply: "Views are up.", presentation: { title: "Weekly", summary: "Up 20%" }, cards: [{ label: "30d views", value: "12K" }] }))
-      .toBe("Views are up.\n\n📊 Weekly\nUp 20%\n\n• 30d views: 12K");
+    expect(juelReplyText({ content: "Views are up.", attachments: [
+      { kind: "report", title: "Weekly", cards: [{ label: "30d views", value: "12K" }] },
+      { kind: "generation", id: "g1", tab: "image", prompt: "a cat" },
+      { kind: "media", items: [{ type: "image", url: "/x.png", label: "x" }] },
+    ] }, ["You're out of credits."]))
+      .toBe("Views are up.\n\n📊 Weekly\n• 30d views: 12K\n\n🎨 Started your image generation. I'll send it here when it's ready.\n\n⚠️ You're out of credits.");
   });
 
   let server: http.Server | null = null;
@@ -240,7 +241,7 @@ describe("telegram bridge", () => {
     expect(check()).toBeTruthy();
   };
 
-  it("links an admin's chat and runs their messages through the website's agent chat", async () => {
+  it("links a chat and runs its messages through Juel, with pictures and videos both ways", async () => {
     const settings = new Map<string, string>();
     const runPsql = async (sql: string) => {
       const write = sql.match(/INSERT INTO app_settings \(key, value, updated_by, updated_at\) VALUES \('telegram', '(.*)'::jsonb/s);
@@ -252,34 +253,43 @@ describe("telegram bridge", () => {
     let botMessage = 0;
     const fakeFetch = async (url: string, init: any = {}) => {
       if (!String(url).startsWith("https://api.telegram.org/")) return fetch(url, init);
+      if (String(url).startsWith("https://api.telegram.org/file/")) return new Response(Buffer.from("jpegbytes"), { headers: { "content-type": "image/jpeg" } });
       const method = String(url).split("/").pop()!;
-      const body = init.body ? JSON.parse(init.body) : {};
+      const body = init.body instanceof FormData
+        ? Object.fromEntries([...init.body.entries()].map(([k, v]) => [k, typeof v === "string" ? v : `<file ${(v as File).size}>`]))
+        : init.body ? JSON.parse(init.body) : {};
       sent.push({ method, body });
-      const result = method === "getMe" ? { username: "autoyt_bot", first_name: "AutoYT" } : method === "sendMessage" ? { message_id: ++botMessage } : true;
+      const result = method === "getMe" ? { username: "autoyt_bot", first_name: "AutoYT" } : method === "sendMessage" ? { message_id: ++botMessage } : method === "getFile" ? { file_path: "photos/p1.jpg" } : true;
       return new Response(JSON.stringify({ ok: true, result }));
     };
-    const saved: any[] = [];
+    const juelCalls: any[] = [];
     let chatCookie = "";
+    let uploadType = "";
     const app = express();
     const admin = createAdminConsole({
       runPsql, sqlString: (v: unknown) => `'${String(v ?? "").replace(/'/g, "''")}'`, jsonbLiteral: (v: unknown) => `'${JSON.stringify(v)}'::jsonb`,
       session: async (req: express.Request) => (req.get("x-user") === "2" ? { id: "ses_2", user: { id: "usr_2", email: "member@example.com", name: "Member" } } : req.get("x-user") ? { id: "ses_1", user: { id: "usr_1", email: "owner@example.com", name: "Owner" } } : null),
       env: { ADMIN_EMAILS: "owner@example.com", APP_URL: "https://autoyt.test" }, priceCatalog: null, fetch: fakeFetch,
-      createAuthSession: async () => "ses_tg", signedValue: (v: string) => `signed.${v}`, selfUrl: () => base,
+      createAuthSession: async () => "ses_tg", signedValue: (v: string) => `signed.${v}`, selfUrl: () => base, generationPollMs: 5,
     });
     app.use(express.json());
     admin.register(app);
-    app.get("/api/automation/agents", (_req, res) => res.json({ agents: [{ id: "agt_1", slug: "recaps", name: "Recaps", settings: {} }] }));
-    app.get("/api/automation/agents/:id/chats", (_req, res) => res.json({ chats: saved.length ? [saved[saved.length - 1]] : [] }));
-    app.put("/api/automation/agents/:id/chats/:chatId", (req, res) => {
-      saved.push({ id: req.params.chatId, ...req.body });
-      res.json({ chat: req.body });
-    });
-    app.post("/api/automation/agents/:id/chat", (req, res) => {
+    app.post("/api/juel/chat", (req, res) => {
       chatCookie = String(req.headers.cookie || "");
+      juelCalls.push(req.body);
       res.setHeader("Content-Type", "application/x-ndjson");
-      res.write(`${JSON.stringify({ type: "progress", message: "Reading agent context" })}\n`);
-      res.end(`${JSON.stringify({ type: "result", data: { reply: `You said: ${req.body.messages.at(-1).content}`, actions: [{ type: "run_candidate", label: "Run candidate", payload: {} }, { type: "agent_tab", label: "Open runs", payload: { tab: "runs" } }] } })}\n`);
+      res.write(`${JSON.stringify({ type: "step", specialist: "studio", text: "Making a picture" })}\n`);
+      const assistant = { role: "assistant", content: `You said: ${req.body.message.split("\n")[0]}`, attachments: [
+        { kind: "media", items: [{ type: "image", url: "/api/studio/files/gen-1.png", label: "Poster" }] },
+        { kind: "generation", id: "gen_9", tab: "image", prompt: "a cat" },
+      ] };
+      res.end(`${JSON.stringify({ type: "done", thread: { id: "jt_1", messages: [{ role: "user", content: req.body.message }, assistant] } })}\n`);
+    });
+    app.get("/api/studio/files/:name", (_req, res) => res.type("image/png").send(Buffer.from("pngbytes")));
+    app.get("/api/studio/generations", (_req, res) => res.json({ generations: [{ id: "gen_9", tab: "image", status: "done", outputs: [{ url: "/api/studio/files/gen-9.png", type: "image/png" }] }] }));
+    app.post("/api/studio/uploads", express.raw({ type: () => true }), (req, res) => {
+      uploadType = String(req.headers["content-type"] || "");
+      res.json({ file: "up-1.jpg", url: "/api/studio/files/up-1.jpg", type: uploadType });
     });
     server = http.createServer(app).listen(0);
     await new Promise((resolve) => server!.once("listening", resolve));
@@ -306,18 +316,33 @@ describe("telegram bridge", () => {
     await post({ update_id: 4, message: { chat, text: "how are my views" } });
     await until(() => sent.some((call) => String(call.body.text || "").startsWith("You said: how are my views")));
     const reply = sent.find((call) => String(call.body.text || "").startsWith("You said:"))!.body;
-    expect(reply.reply_markup.inline_keyboard).toEqual([
-      [{ text: "Run candidate", callback_data: expect.stringMatching(/^a:[0-9a-f]{12}$/) }],
-      [{ text: "Open runs", url: "https://autoyt.test/agent/recaps/runs" }],
-    ]);
+    expect(reply.text).toContain("🎨 Started your image generation");
     expect(chatCookie).toBe("movieid_session=signed.ses_tg");
-    await until(() => saved.at(-1)?.messages?.length === 2);
-    expect(saved.at(-1).messages.map((m: any) => [m.role, m.content])).toEqual([["user", "how are my views"], ["assistant", "You said: how are my views"]]);
+    expect(juelCalls[0]).toMatchObject({ message: "how are my views", context: { surface: "telegram" } });
+    expect(juelCalls[0].threadId).toBeUndefined();
+    // The picture Juel showed, and the generation once it's done, arrive as photos.
+    await until(() => sent.filter((call) => call.method === "sendPhoto").length >= 2);
+    expect(sent.filter((call) => call.method === "sendPhoto").map((call) => call.body)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ chat_id: "42", caption: "Poster", photo: "<file 8>" }),
+      expect.objectContaining({ chat_id: "42", caption: "a cat", photo: "<file 8>" }),
+    ]));
+
+    // A photo from the chat is uploaded as the user and handed to Juel in the same thread.
+    await post({ update_id: 8, message: { chat, caption: "make this a poster", photo: [{ file_id: "small", file_size: 10 }, { file_id: "p1", file_size: 100 }] } });
+    await until(() => juelCalls.length === 2);
+    expect(uploadType).toBe("image/jpeg");
+    expect(juelCalls[1]).toMatchObject({ threadId: "jt_1", message: "make this a poster\n\n[Attached image: /api/studio/files/up-1.jpg]" });
+    await post({ update_id: 9, message: { chat, document: { file_id: "d1", mime_type: "application/pdf", file_size: 100 } } });
+    await until(() => sent.some((call) => String(call.body.text || "").startsWith("I can take pictures, videos and audio files")));
+    await post({ update_id: 10, message: { chat, text: "/agents" } });
+    await until(() => sent.some((call) => String(call.body.text || "").startsWith("No need to pick")));
+    await post({ update_id: 11, message: { chat, text: "/new" } });
+    await until(() => sent.some((call) => call.body.text === "Started a new chat."));
 
     // A repeated delivery of the same update is ignored.
     await post({ update_id: 4, message: { chat, text: "how are my views" } });
     await new Promise((resolve) => setTimeout(resolve, 100));
-    expect(sent.filter((call) => String(call.body.text || "").startsWith("You said:"))).toHaveLength(1);
+    expect(sent.filter((call) => String(call.body.text || "").startsWith("You said: how are my views"))).toHaveLength(1);
 
     // Any signed-in user can link their own chat from Account settings; the bot then acts as them.
     const asUser = { "x-user": "2", "content-type": "application/json" };

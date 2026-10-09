@@ -240,33 +240,23 @@ export function telegramChunks(text, limit = TELEGRAM_TEXT_LIMIT) {
 }
 
 // Website path for the buttons that only navigate: Telegram opens them as links.
-export function telegramActionPath(action = {}, agentSlug = "") {
-  const payload = action.payload || {};
-  if (action.type === "agent_tab") return agentSlug ? `/agent/${encodeURIComponent(agentSlug)}/${payload.tab || "overview"}` : "/agent";
-  if (action.type !== "navigate") return "";
-  const view = String(payload.view || "");
-  if (["projects", "create", "styles"].includes(view) && payload.projectId) return `/projects/${encodeURIComponent(payload.projectId)}/${encodeURIComponent(payload.projectStage || "brief")}`;
-  if (view === "discover" && payload.query) return `/discover?q=${encodeURIComponent(payload.query)}`;
-  if (view === "tiktok") return payload.section === "saved" ? "/tiktok/saved" : "/tiktok";
-  if (view === "automation") return agentSlug ? `/agent/${encodeURIComponent(agentSlug)}/overview` : "/agent";
-  if (view === "tts") return "/studio/audio";
-  if (view === "tools") return "/";
-  return view ? `/${view}` : "";
-}
-
-// The reply as plain text: Telegram can't show the website's HTML reports, so their
-// title, summary and stat cards are folded into the message.
-export function telegramReplyText(data = {}) {
-  const parts = [String(data.reply || "").trim() || "Done."];
-  const presentation = data.presentation && typeof data.presentation === "object" ? data.presentation : null;
-  if (presentation?.title || presentation?.summary) {
-    const summary = String(presentation.summary || "").trim();
-    parts.push([presentation.title ? `📊 ${presentation.title}` : "", summary && summary !== parts[0] ? summary : ""].filter(Boolean).join("\n"));
+// Juel's answer as plain Telegram text: its reply, then any report folded in as lines,
+// studio jobs it started, and credit notes. Pictures and videos are sent separately.
+export function juelReplyText(message = {}, notes = []) {
+  const parts = [String(message.content || "").trim() || "Done."];
+  for (const a of Array.isArray(message.attachments) ? message.attachments : []) {
+    if (a?.kind === "report") {
+      const cards = (a.cards || []).filter((c) => c?.label).map((c) => `• ${c.label}: ${c.value ?? ""}`);
+      parts.push([a.title ? `📊 ${a.title}` : "", ...cards].filter(Boolean).join("\n"));
+    } else if (a?.kind === "operator") {
+      const p = a.presentation || {};
+      const cards = ((p.cards && p.cards.length ? p.cards : a.cards) || []).filter((c) => c?.label).map((c) => `• ${c.label}: ${c.value ?? ""}`);
+      parts.push([p.title ? `📊 ${p.title}` : "", ...cards].filter(Boolean).join("\n"));
+    } else if (a?.kind === "generation") {
+      parts.push(`🎨 Started ${a.tab ? `your ${a.tab} generation` : "a generation"}. I'll send it here when it's ready.`);
+    }
   }
-  const cards = (Array.isArray(data.cards) ? data.cards : []).filter((card) => card?.label);
-  if (cards.length) parts.push(cards.map((card) => `• ${card.label}: ${card.value ?? ""}`).join("\n"));
-  const tools = (Array.isArray(data.toolResults) ? data.toolResults : []).filter((tool) => tool?.title && tool?.summary);
-  for (const tool of tools.slice(0, 4)) parts.push(`${tool.error ? "⚠️" : "🔧"} ${tool.title}\n${tool.summary}`);
+  for (const note of notes) if (note) parts.push(`⚠️ ${note}`);
   return parts.filter(Boolean).join("\n\n");
 }
 
@@ -742,7 +732,8 @@ WHERE user_id = ${sqlString(user.id)} AND (lingbase_user_id = '' OR lingbase_use
   // the bot token, the webhook secret, pending link codes and the linked chats. Each
   // link holds an app session for its admin, so messages from that chat call the
   // website's own routes over loopback and behave exactly like typing on autoyt.cc.
-  const telegramActions = new Map(); // short id -> { chatId, action, agentId, at }
+  const telegramWatching = new Set(); // studio generation ids a chat is waiting on
+  const generationPollMs = Number(deps.generationPollMs || 8000);
   const telegramTurns = new Map(); // chatId -> AbortController of the running turn
   const telegramSeen = new Map(); // update_id -> at, Telegram retries deliveries
   const fetchImpl = deps.fetch || fetch;
@@ -803,50 +794,72 @@ ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.up
     return data;
   }
 
-  function rememberAction(chatId, agentId, action) {
-    const now = Date.now();
-    for (const [key, value] of telegramActions) if (now - value.at > 24 * 3600 * 1000) telegramActions.delete(key);
-    const id = crypto.randomBytes(6).toString("hex");
-    telegramActions.set(id, { chatId: String(chatId), agentId, action, at: now });
-    return id;
-  }
-  function keyboardFor(state, link, agent, actions = [], { openChat = false } = {}) {
-    const rows = [];
-    for (const action of actions.slice(0, 8)) {
-      const path = telegramActionPath(action, agent.slug || agent.id);
-      rows.push([path ? { text: action.label, url: `${appUrlOf(state)}${path}` } : { text: action.label, callback_data: `a:${rememberAction(link.chatId, agent.id, action)}` }]);
-    }
-    if (openChat) rows.push([{ text: "Open full report on AutoYT", url: `${appUrlOf(state)}/agent/${encodeURIComponent(agent.slug || agent.id)}/chat` }]);
-    return rows.length ? { inline_keyboard: rows } : undefined;
-  }
   async function sendText(state, chatId, text, replyMarkup) {
     const chunks = telegramChunks(text);
     for (let i = 0; i < chunks.length; i++)
       await tg(state.botToken, "sendMessage", { chat_id: chatId, text: chunks[i], disable_web_page_preview: true, ...(i === chunks.length - 1 && replyMarkup ? { reply_markup: replyMarkup } : {}) });
   }
 
-  async function currentAgent(state, link) {
-    const { agents = [] } = await asUserJson(link, "GET", "/api/automation/agents");
-    const agent = agents.find((item) => item.id === link.agentId) || agents[0] || null;
-    if (agent && agent.id !== link.agentId) {
-      link.agentId = agent.id;
-      link.conversationId = "";
-      await updateLink(link.chatId, { agentId: agent.id, conversationId: "" });
-    }
-    return { agent, agents };
+  // Telegram's multipart upload, for pictures, videos and sounds.
+  async function tgUpload(token, method, form) {
+    const response = await fetchImpl(`https://api.telegram.org/bot${token}/${method}`, { method: "POST", body: form });
+    const data = await response.json().catch(() => ({}));
+    if (!data.ok) throw adminError(`Telegram ${method}: ${data.description || response.status}`, 502);
+    return data.result;
   }
-  async function appendToChat(link, agent, messages) {
-    const { chats = [] } = await asUserJson(link, "GET", `/api/automation/agents/${encodeURIComponent(agent.id)}/chats`);
-    const stored = chats.find((chat) => chat.id === link.conversationId);
-    const thread = [...(stored?.messages || []), ...messages];
-    await asUserJson(link, "PUT", `/api/automation/agents/${encodeURIComponent(agent.id)}/chats/${encodeURIComponent(link.conversationId)}`, { body: { title: stored?.title || "", messages: thread } });
-    return thread;
-  }
-  const messageId = () => `tg_${crypto.randomBytes(8).toString("hex")}`;
 
-  // One chat turn: the same request the website's chat box sends, with its progress
-  // lines shown by editing a status message, then the reply saved to the agent's chat
-  // history so it also appears on autoyt.cc.
+  // A picture, video or sound Juel produced, downloaded as the user (studio files need their
+  // session) and sent into the chat. Too big for Telegram, or unreadable: a link instead.
+  async function sendMediaItem(state, link, item) {
+    const url = String(item.url || "");
+    const absolute = url.startsWith("/") ? `${appUrlOf(state)}${url}` : url;
+    const label = String(item.label || "").slice(0, 900);
+    try {
+      const response = url.startsWith("/") ? await asUser(link, "GET", url) : await fetchImpl(url);
+      if (!response.ok) throw new Error(`download ${response.status}`);
+      const bytes = Buffer.from(await response.arrayBuffer());
+      const type = String(response.headers.get("content-type") || "").split(";")[0];
+      const kind = item.type || (type.startsWith("image/") ? "image" : type.startsWith("video/") ? "video" : "audio");
+      // Bots can send photos up to 10 MB and other files up to 50 MB.
+      const asPhoto = kind === "image" && bytes.length <= 10 * 1024 * 1024;
+      if (bytes.length > 49 * 1024 * 1024) throw new Error("too big");
+      const [method, field] = asPhoto ? ["sendPhoto", "photo"] : kind === "video" ? ["sendVideo", "video"] : kind === "audio" ? ["sendAudio", "audio"] : ["sendDocument", "document"];
+      const form = new FormData();
+      form.append("chat_id", String(link.chatId));
+      if (label) form.append("caption", label);
+      form.append(field, new Blob([bytes], { type: type || "application/octet-stream" }), url.split("?")[0].split("/").pop() || "file");
+      await tgUpload(state.botToken, method, form);
+    } catch {
+      await sendText(state, link.chatId, `${label || "Your file"}: ${absolute}`).catch(() => {});
+    }
+  }
+
+  // A studio job Juel started finishes after the reply; poll it and send what it made.
+  async function watchGeneration(state, link, attachment) {
+    if (!attachment?.id || telegramWatching.has(attachment.id)) return;
+    telegramWatching.add(attachment.id);
+    try {
+      const deadline = Date.now() + 25 * 60 * 1000;
+      while (Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, generationPollMs));
+        const { generations = [] } = await asUserJson(link, "GET", `/api/studio/generations?tab=${encodeURIComponent(attachment.tab || "")}`).catch(() => ({}));
+        const item = generations.find((g) => g.id === attachment.id);
+        if (!item) continue;
+        if (item.status === "failed") return sendText(state, link.chatId, `⚠️ The ${attachment.tab || "studio"} generation failed${item.error ? `: ${item.error}` : "."}`);
+        if (item.status !== "done") continue;
+        const media = (item.outputs || []).filter((o) => /^(image|video|audio)\//.test(String(o.type || "")) && o.url).slice(0, 4);
+        if (!media.length) return sendText(state, link.chatId, `✅ Your ${attachment.tab || "studio"} result is ready on AutoYT.`, { inline_keyboard: [[{ text: "Open in AutoYT", url: `${appUrlOf(state)}/studio/${encodeURIComponent(attachment.tab || "image")}` }]] });
+        for (const output of media) await sendMediaItem(state, link, { url: output.url, type: String(output.type).split("/")[0], label: attachment.prompt || "" });
+        return;
+      }
+      await sendText(state, link.chatId, `⏳ The ${attachment.tab || "studio"} generation is still running. It'll be on AutoYT when it's done.`);
+    } finally {
+      telegramWatching.delete(attachment.id);
+    }
+  }
+
+  // Juel, the one AutoYT agent, answers the bot exactly as it answers the panel on the site:
+  // the same specialists, credits and thread (the chat shows up in Juel's history on AutoYT).
   async function telegramTurn(state, link, text) {
     const chatId = link.chatId;
     if (telegramTurns.has(String(chatId))) return sendText(state, chatId, "I'm still working on your last message. Send /stop to cancel it.");
@@ -855,57 +868,51 @@ ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.up
     let statusId = null;
     const typing = setInterval(() => tg(state.botToken, "sendChatAction", { chat_id: chatId, action: "typing" }).catch(() => {}), 4500);
     try {
-      const { agent } = await currentAgent(state, link);
-      if (!agent) return await sendText(state, chatId, "You don't have an agent yet. Create one on AutoYT first, then message me again.", { inline_keyboard: [[{ text: "Create an agent", url: `${appUrlOf(state)}/agent` }]] });
-      if (!link.conversationId) {
-        link.conversationId = messageId();
-        await updateLink(chatId, { conversationId: link.conversationId });
-      }
       void tg(state.botToken, "sendChatAction", { chat_id: chatId, action: "typing" }).catch(() => {});
-      const userMessage = { id: messageId(), role: "user", content: text, timestamp: Date.now() };
-      const thread = await appendToChat(link, agent, [userMessage]);
-      statusId = (await tg(state.botToken, "sendMessage", { chat_id: chatId, text: `⏳ ${agent.name}: working…` }).catch(() => null))?.message_id || null;
-      const response = await asUser(link, "POST", `/api/automation/agents/${encodeURIComponent(agent.id)}/chat`, {
+      statusId = (await tg(state.botToken, "sendMessage", { chat_id: chatId, text: "⏳ Juel is on it…" }).catch(() => null))?.message_id || null;
+      const response = await asUser(link, "POST", "/api/juel/chat", {
         accept: "application/x-ndjson",
         signal: controller.signal,
-        body: { conversationId: link.conversationId, messages: thread.slice(-16).map(({ role, content }) => ({ role, content })) },
+        body: { message: text, ...(link.juelThreadId ? { threadId: link.juelThreadId } : {}), context: { surface: "telegram", label: "Telegram" } },
       });
-      let data = null;
       if (!(response.headers.get("content-type") || "").includes("ndjson")) {
         const body = await response.json().catch(() => ({}));
-        if (!response.ok) throw adminError(body.error || `The agent failed (${response.status})`, response.status);
-        data = body;
-      } else {
-        let buffer = "";
-        let editedAt = 0;
-        const decoder = new TextDecoder();
-        for await (const chunk of response.body) {
-          buffer += decoder.decode(chunk, { stream: true });
-          let newline;
-          while ((newline = buffer.indexOf("\n")) >= 0) {
-            const line = buffer.slice(0, newline).trim();
-            buffer = buffer.slice(newline + 1);
-            if (!line) continue;
-            const event = JSON.parse(line);
-            if (event.type === "error") throw adminError(event.error || "The agent failed.", 503);
-            if (event.type === "result") data = event.data;
-            if (event.type === "progress" && statusId && Date.now() - editedAt > 1500) {
-              editedAt = Date.now();
-              void tg(state.botToken, "editMessageText", { chat_id: chatId, message_id: statusId, text: `⏳ ${event.message}…` }).catch(() => {});
-            }
+        throw adminError(body.error || `Juel couldn't answer (${response.status})`, response.status);
+      }
+      let thread = null;
+      const notes = [];
+      let buffer = "";
+      let editedAt = 0;
+      const decoder = new TextDecoder();
+      for await (const chunk of response.body) {
+        buffer += decoder.decode(chunk, { stream: true });
+        let newline;
+        while ((newline = buffer.indexOf("\n")) >= 0) {
+          const line = buffer.slice(0, newline).trim();
+          buffer = buffer.slice(newline + 1);
+          if (!line) continue;
+          const event = JSON.parse(line);
+          if (event.type === "done") thread = event.thread;
+          else if (event.type === "credits" && event.message) notes.push(String(event.message));
+          else if (event.type === "step" && statusId && Date.now() - editedAt > 1500) {
+            editedAt = Date.now();
+            void tg(state.botToken, "editMessageText", { chat_id: chatId, message_id: statusId, text: `⏳ ${event.text}…` }).catch(() => {});
           }
         }
       }
-      if (!data) throw adminError("The agent stopped before answering.", 503);
-      const reply = String(data.reply || "").replace(/\n\nNot applied: [\s\S]*$/, "").trim() || String(data.reply || "");
-      await appendToChat(link, agent, [{
-        id: messageId(), role: "assistant", content: reply, timestamp: Date.now(),
-        format: data.format === "report" ? "report" : "text", html: data.html || "", cards: data.cards, presentation: data.presentation,
-        actions: data.actions, blocks: data.blocks, applied: data.applied, unapplied: data.unapplied, engine: data.engine,
-      }]).catch((error) => console.warn("[telegram] could not save the reply to chat history:", error instanceof Error ? error.message : error));
+      if (!thread) throw adminError("Juel stopped before answering.", 503);
+      if (thread.id && thread.id !== link.juelThreadId) {
+        link.juelThreadId = thread.id;
+        await updateLink(chatId, { juelThreadId: thread.id });
+      }
+      const last = (thread.messages || [])[thread.messages.length - 1] || {};
       if (statusId) await tg(state.botToken, "deleteMessage", { chat_id: chatId, message_id: statusId }).catch(() => {});
       statusId = null;
-      await sendText(state, chatId, telegramReplyText(data), keyboardFor(state, link, agent, data.actions || [], { openChat: Boolean(data.html) }));
+      const attachments = Array.isArray(last.attachments) ? last.attachments : [];
+      const rich = attachments.some((a) => a?.kind === "report" || a?.kind === "operator");
+      await sendText(state, chatId, juelReplyText(last, notes), rich ? { inline_keyboard: [[{ text: "Open in AutoYT", url: appUrlOf(state) }]] } : undefined);
+      for (const a of attachments) if (a?.kind === "media") for (const item of (a.items || []).slice(0, 6)) await sendMediaItem(state, link, item);
+      for (const a of attachments) if (a?.kind === "generation") void watchGeneration(state, link, a).catch(() => {});
     } catch (error) {
       const stopped = controller.signal.aborted;
       const message = stopped ? "Stopped." : error instanceof Error ? error.message : "Something went wrong.";
@@ -917,50 +924,23 @@ ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.up
     }
   }
 
-  // A tapped button does what clicking it in the website chat does.
-  async function telegramButton(state, link, entry) {
-    const { action, agentId } = entry;
-    const { agents = [] } = await asUserJson(link, "GET", "/api/automation/agents");
-    const agent = agents.find((item) => item.id === agentId);
-    if (!agent) return sendText(state, link.chatId, "That agent no longer exists.");
-    if (action.type === "internal_tool") {
-      const payload = action.payload || {};
-      return telegramTurn(state, link, `Run ${payload.tool || action.label} internally${payload.query ? ` for ${payload.query}` : ""}${payload.url ? ` ${payload.url}` : ""}`);
-    }
-    const base = `/api/automation/agents/${encodeURIComponent(agent.id)}`;
-    let note = "";
-    if (action.type === "run_candidate") {
-      await asUserJson(link, "POST", `${base}/run`, { body: {} });
-      note = "Candidate run started through the normal automation pipeline.";
-    } else if (action.type === "stop_candidate") {
-      await asUserJson(link, "POST", `${base}/stop`, { body: {} });
-      note = "Stop requested. The candidate will exit after its current safe step, before publishing begins.";
-    } else if (action.type === "run_compilation") {
-      const s = agent.settings || {};
-      const queued = await asUserJson(link, "POST", `${base}/run-compilation`, { body: {
-        minMinutes: s.compilationMinMinutes, maxMinutes: s.compilationMaxMinutes, maxClips: s.compilationMaxClips,
-        title: s.compilationTitle, description: s.compilationDescription, layout: s.compilationLayout,
-        playlistId: s.targetPlaylistMode === "existing" ? s.targetPlaylistId : "",
-        createPlaylistTitle: s.targetPlaylistMode === "create" ? s.targetPlaylistTitle : "",
-        categoryId: s.categoryId, madeForKids: s.madeForKids === true,
-      } });
-      const jobId = String(queued.job?.id || "");
-      note = `Compilation queued${jobId ? ` as ${jobId.slice(0, 8)}` : ""}. It will continue in the background.`;
-    } else if (action.type === "performance_check") {
-      const result = await asUserJson(link, "POST", "/api/automation/performance/check", { body: {} });
-      const n = Number(result.refreshed || 0);
-      note = `Refreshed ${n} upload${n === 1 ? "" : "s"} from the connected platforms${Number(result.failed || 0) ? `; ${result.failed} could not be refreshed` : ""}.`;
-    } else if (action.type === "creator_stage") {
-      // Tapping is the approval for paid media work, same as the website button.
-      const { projectId, projectStage, mediaAction } = action.payload || {};
-      await asUserJson(link, "POST", `/api/maker/projects/${encodeURIComponent(projectId)}/jobs/${encodeURIComponent(projectStage)}`, { body: { confirmed: true, accountId: agent.youtubeAccountId, ...(mediaAction ? { action: mediaAction } : {}) } });
-      note = `${String(action.label).replace(/^Approve\s+/i, "")} is queued. It isn't finished yet; ask me for project status.`;
-    } else {
-      note = "Refreshed.";
-    }
-    if (link.conversationId && agent.id === link.agentId)
-      await appendToChat(link, agent, [{ id: messageId(), role: "assistant", content: note, timestamp: Date.now() }]).catch(() => {});
-    await sendText(state, link.chatId, `✅ ${note}`);
+  // Pictures, videos and sound files sent to the bot go into the user's AutoYT files (the same
+  // upload the site uses), and Juel gets the message with the file attached.
+  const TELEGRAM_UPLOAD_TYPES = { "image/jpeg": "image", "image/png": "image", "image/webp": "image", "video/mp4": "video", "video/quicktime": "video", "video/webm": "video", "audio/mpeg": "audio", "audio/mp4": "audio", "audio/x-m4a": "audio", "audio/ogg": "audio", "audio/wav": "audio", "audio/x-wav": "audio" };
+  async function telegramMediaIn(state, link, message) {
+    const photo = Array.isArray(message.photo) && message.photo.length ? message.photo[message.photo.length - 1] : null;
+    const media = photo ? { ...photo, mime_type: "image/jpeg" } : message.video || message.animation || message.audio || message.document;
+    const type = String(media?.mime_type || (message.video || message.animation ? "video/mp4" : "")).toLowerCase();
+    const kind = TELEGRAM_UPLOAD_TYPES[type];
+    if (!kind) return sendText(state, link.chatId, "I can take pictures, videos and audio files (JPEG, PNG, WebP, MP4, MOV, WebM, MP3, M4A, OGG, WAV). For anything else, send a link.");
+    // Telegram lets bots download files up to 20 MB.
+    if (Number(media.file_size || 0) > 20 * 1024 * 1024) return sendText(state, link.chatId, "Telegram only lets bots fetch files up to 20 MB. Send a link to the file instead.");
+    const file = await tg(state.botToken, "getFile", { file_id: media.file_id });
+    const download = await fetchImpl(`https://api.telegram.org/file/bot${state.botToken}/${file.file_path}`);
+    if (!download.ok) throw adminError("Couldn't download that file from Telegram.", 502);
+    const uploaded = await asUserJson(link, "POST", "/api/studio/uploads", { raw: Buffer.from(await download.arrayBuffer()), contentType: type });
+    const caption = String(message.caption || "").trim();
+    return telegramTurn(state, link, `${caption || `Here's ${kind === "image" ? "a picture" : kind === "video" ? "a video" : "an audio file"}.`}\n\n[Attached ${kind}: ${uploaded.url}]`);
   }
 
   async function telegramVoice(state, link, fileId) {
@@ -993,42 +973,32 @@ ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.up
       state.links = [...(state.links || []).filter((item) => String(item.chatId) !== String(chatId)), link];
       state.codes = (state.codes || []).filter((item) => item.code !== code);
       await saveTelegramState(state, pending.email);
-      return sendText(state, chatId, `Linked to ${pending.email}. Message me anything you'd type in the AutoYT agent chat. Voice notes work too.\n\n/agents switch agent · /new fresh chat · /stop cancel · /help`);
+      return sendText(state, chatId, `Linked to ${pending.email}. I'm Juel: ask me anything you'd ask on AutoYT. Voice notes, pictures, videos and audio files work too.\n\n/new fresh chat · /stop cancel · /help`);
     }
     if (!link) return sendText(state, chatId, "This chat isn’t linked to an AutoYT account yet. On autoyt.cc, open Account, then Telegram, and press Link Telegram.");
     if (await userStatus(link.userId) === "suspended") return sendText(state, chatId, "This AutoYT account is suspended, so the bot is paused for it. Contact support from autoyt.cc.");
 
     if (callback) {
+      // Buttons from before Juel answered here; ask again instead.
       void tg(state.botToken, "answerCallbackQuery", { callback_query_id: callback.id }).catch(() => {});
-      const [kind, id] = String(callback.data || "").split(":");
-      const entry = telegramActions.get(id);
-      if (!entry || entry.chatId !== String(chatId)) return sendText(state, chatId, "That button has expired. Ask me again.");
-      if (kind === "u") {
-        await updateLink(chatId, { agentId: entry.agentId, conversationId: "" });
-        return sendText(state, chatId, `Now talking to ${entry.action.label}. New chat started.`);
-      }
-      return telegramButton(state, link, entry);
+      return sendText(state, chatId, "That button has expired. Ask me again.");
     }
-    if (message?.voice || message?.audio) return telegramVoice(state, link, (message.voice || message.audio).file_id);
-    if (!text) return sendText(state, chatId, "Send text or a voice note.");
+    if (message?.voice) return telegramVoice(state, link, message.voice.file_id);
+    if (message?.photo || message?.video || message?.animation || message?.audio || message?.document) return telegramMediaIn(state, link, message);
+    if (!text) return sendText(state, chatId, "Send a message, a voice note, or a picture, video or audio file.");
     if (/^\/(start|help)\b/.test(text))
-      return sendText(state, chatId, "Message me anything you'd type in the AutoYT agent chat: reports, settings changes, runs, research.\n\n/agents switch agent\n/new start a fresh chat\n/stop cancel the running reply");
+      return sendText(state, chatId, "I'm Juel, your AutoYT agent. Ask me anything you'd ask on autoyt.cc: make a video, image or recap, edit, research a niche, check your channels, run or change an automation agent. Send voice notes, pictures, videos or audio files too.\n\n/new start a fresh chat\n/stop cancel the running reply");
     if (/^\/stop\b/.test(text)) {
       const running = telegramTurns.get(String(chatId));
       if (!running) return sendText(state, chatId, "Nothing is running.");
       return running.abort();
     }
     if (/^\/new\b/.test(text)) {
-      await updateLink(chatId, { conversationId: "" });
+      await updateLink(chatId, { juelThreadId: "" });
       return sendText(state, chatId, "Started a new chat.");
     }
-    if (/^\/agents\b/.test(text)) {
-      const { agent, agents } = await currentAgent(state, link);
-      if (!agents.length) return sendText(state, chatId, "You don't have any agents yet.");
-      return sendText(state, chatId, `Talking to ${agent?.name || "—"}. Pick another:`, {
-        inline_keyboard: agents.slice(0, 20).map((item) => [{ text: `${item.id === agent?.id ? "✓ " : ""}${item.name}`, callback_data: `u:${rememberAction(chatId, item.id, { label: item.name })}` }]),
-      });
-    }
+    if (/^\/agents\b/.test(text))
+      return sendText(state, chatId, "No need to pick: I work across all your automation agents. Name the one you mean, like \"run my recaps agent\".");
     return telegramTurn(state, link, text);
   }
 
@@ -2112,7 +2082,6 @@ FROM creator_stage_jobs j LEFT JOIN app_users u ON u.id = j.user_id LEFT JOIN cr
       const webhookSecret = crypto.randomBytes(24).toString("hex");
       await tg(botToken, "setWebhook", { url: `${appUrl}/api/telegram/webhook`, secret_token: webhookSecret, allowed_updates: ["message", "callback_query"], drop_pending_updates: true });
       await tg(botToken, "setMyCommands", { commands: [
-        { command: "agents", description: "Switch agent" },
         { command: "new", description: "Start a fresh chat" },
         { command: "stop", description: "Cancel the running reply" },
         { command: "help", description: "What I can do" },
