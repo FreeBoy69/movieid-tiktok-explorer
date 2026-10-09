@@ -1823,7 +1823,8 @@ function Discovery({
   // Days, length and region change what YouTube is asked, so they search again, in the feed
   // too; while showing similar channels, the similar lookup runs again with them.
   function applyFilters(next: Filters) {
-    const serverChanged = SERVER_FILTERS.some((key) => next[key] !== filters[key]);
+    // Switching to "Discovery" asks the server for its ranked order (cached, so it's quick).
+    const serverChanged = SERVER_FILTERS.some((key) => next[key] !== filters[key]) || (next.sort === "score" && filters.sort !== "score" && !result?.reranked);
     setFilters(next);
     setFilterOpen(false);
     if (!serverChanged || !result) return;
@@ -1837,7 +1838,7 @@ function Discovery({
   // size) don't hide it.
   const ranked = rankDiscoveryChannels(result?.videos || [], result?.pasted ? { sort: filters.sort } : filters);
   const serverOrder = new Map<string, number>((result?.channels || []).map((c: any, i: number) => [c.id, i]));
-  const channels = filters.sort === "score" && serverOrder.size
+  const channels = filters.sort === "score" && result?.reranked && serverOrder.size
     ? [...ranked].sort((a: any, b: any) => (serverOrder.get(a.id) ?? 1e6) - (serverOrder.get(b.id) ?? 1e6))
     : ranked;
   const visible = channels.slice(0, shown);
@@ -2005,7 +2006,7 @@ function Discovery({
             <select
               aria-label="Sort channels"
               value={filters.sort}
-              onChange={(e) => setFilters({ ...filters, sort: e.target.value })}
+              onChange={(e) => applyFilters({ ...filters, sort: e.target.value })}
             >
               {[
                 ["created", "Recency (newest channel)"],
@@ -2123,6 +2124,7 @@ function Discovery({
                 {channels.length} {channels.length === 1 ? "channel" : "channels"}
                 {!result.query && result.niches?.length ? ` across ${result.niches.join(", ")}` : ""} · {result.videos?.length || 0} videos analyzed
                 {result.sampledAt ? ` · sampled ${new Date(result.sampledAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : ""}
+                {(ranked as { hiddenSubscribersExcluded?: number }).hiddenSubscribersExcluded ? ` · ${(ranked as { hiddenSubscribersExcluded?: number }).hiddenSubscribersExcluded} left out for hiding their subscriber count` : ""}
               </span>
               <span>Faceless and monetized are estimates</span>
             </div>

@@ -18348,6 +18348,7 @@ function buildYouTubeRadarVideos(videos, channelMap, query) {
             likeCount,
             commentCount,
             subscriberCount,
+            ...(channelStats.hiddenSubscriberCount ? { subscribersHidden: true } : {}),
             viewsPerHour,
             ...scores,
             facelessScore: face.score,

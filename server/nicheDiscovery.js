@@ -56,7 +56,7 @@ export function clearDiscoveryCache() {
 }
 
 /** Whether channel lookups worked for a result: at least one video carries its channel's details. */
-export const hasChannelDetails = (videos = []) => videos.some((video) => Boolean(video.channelPublishedAt) || video.channelVideoCount !== undefined);
+export const hasChannelDetails = (videos = []) => videos.some((video) => video.enriched === true);
 
 // YouTube's auto-generated "Artist - Topic" music channels aren't creators.
 const isTopicChannel = (title) => / - Topic$/.test(String(title || ""));
@@ -104,7 +104,7 @@ export async function enrichDiscoveryChannels(hits = [], { youtube, faceless, vi
   const allIds = [...byChannel.keys()];
   const ids = allIds.slice(0, limit);
   // Search hits a channel left them; a Topic channel's hits are dropped like its uploads.
-  const rawHits = (id) => (byChannel.get(id) || []).filter((video) => video.id && !isTopicChannel(video.channelTitle));
+  const rawHits = (id) => (byChannel.get(id) || []).filter((video) => video.id && !isTopicChannel(video.channelTitle)).map((video) => (video.subscribersHidden ? { ...video, subscriberCount: null } : video));
   if (!ids.length || !youtube) return hits.filter((video) => !isTopicChannel(video.channelTitle));
 
   const channels = new Map();
@@ -189,6 +189,7 @@ export async function enrichDiscoveryChannels(hits = [], { youtube, faceless, vi
         niche: hit.niche || "",
         discoveryScore,
         facelessScore,
+        enriched: true,
       });
   }
   // Channels past the limit still show, as their search hits.
@@ -199,6 +200,7 @@ export async function enrichDiscoveryChannels(hits = [], { youtube, faceless, vi
   for (const video of out) {
     const verdict = judged.get(video.channelId);
     if (verdict) Object.assign(video, verdict);
+    else if (!(Number(video.facelessScore) >= 50)) video.facelessScore = null;
   }
   return out;
 }

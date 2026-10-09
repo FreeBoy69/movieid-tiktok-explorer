@@ -93,8 +93,16 @@ describe("enrichDiscoveryChannels", () => {
   });
 
   it("scores faceless thresholds honestly: titles alone start under the line, a 0-confidence verdict stays unsure", async () => {
-    const titlesOnly = await enrichDiscoveryChannels([{ id: "b", channelId: "UCnew", channelTitle: "Night Tales" }], { youtube: fakeYouTube([]), faceless: () => ({ score: 0, hits: [] }) });
-    expect(titlesOnly[0].facelessScore).toBeLessThan(50);
+    // No thumbnail verdict: weak title evidence is "unknown" (the default filter keeps it), clear narration counts.
+    const fresh = (id: string) => async (path: string, params: any) => {
+      const data: any = await fakeYouTube([])(path, params);
+      if (path === "channels") data.items[0].id = id;
+      return data;
+    };
+    const titlesOnly = await enrichDiscoveryChannels([{ id: "b", channelId: "UCplain", channelTitle: "Night Tales" }], { youtube: fresh("UCplain"), faceless: () => ({ score: 0, hits: [] }) });
+    expect(titlesOnly[0].facelessScore).toBeNull();
+    const narrated = await enrichDiscoveryChannels([{ id: "b", channelId: "UCtold", channelTitle: "Night Tales" }], { youtube: fresh("UCtold"), faceless: () => ({ score: 0, hits: ["story", "explained"] }) });
+    expect(narrated[0].facelessScore).toBeGreaterThanOrEqual(50);
     const unsure = await enrichDiscoveryChannels([{ id: "b", channelId: "UCzero", channelTitle: "Zero" }], {
       youtube: async (path: string, params: any) => {
         const data: any = await fakeYouTube([])(path, params);
@@ -137,7 +145,9 @@ describe("cachedDiscovery", () => {
 
   it("tells channel details from raw hits", () => {
     expect(hasChannelDetails([{ id: "x", channelId: "UC1" }])).toBe(false);
-    expect(hasChannelDetails([{ id: "x", channelId: "UC1", channelVideoCount: 0 }])).toBe(true);
+    // Search hits carry channel fields too; only videos the channel lookup enriched count.
+    expect(hasChannelDetails([{ id: "x", channelId: "UC1", channelVideoCount: 0, channelPublishedAt: "2020-01-01" }])).toBe(false);
+    expect(hasChannelDetails([{ id: "x", channelId: "UC1", enriched: true }])).toBe(true);
   });
 });
 

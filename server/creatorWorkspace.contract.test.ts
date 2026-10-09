@@ -479,10 +479,13 @@ describe("creator workspace API contracts", () => {
         { id: "v1", channelId: "c1", channelTitle: "One", viewCount: 9000, subscriberCount: 12000, publishedAt: "2026-09-01T00:00:00Z", discoveryScore: 60 },
         { id: "v2", channelId: "c2", channelTitle: "Two", viewCount: 4000, subscriberCount: 3000, publishedAt: "2026-09-05T00:00:00Z", discoveryScore: 40 },
       ];
-      await request("/api/maker/discover", { method: "POST", body: JSON.stringify({ accountId: "a1", query: "space facts", filters: { sort: "created" } }) });
+      const plain = await request("/api/maker/discover", { method: "POST", body: JSON.stringify({ accountId: "a1", query: "space facts", filters: { sort: "created" } }) });
       expect(jevCalls).toHaveLength(0);
-      await request("/api/maker/discover", { method: "POST", body: JSON.stringify({ accountId: "a1", query: "space facts", filters: { sort: "score" } }) });
+      // The page only uses the server order when it says Jev made it.
+      expect((await plain.json()).reranked).toBe(false);
+      const ranked = await request("/api/maker/discover", { method: "POST", body: JSON.stringify({ accountId: "a1", query: "space facts", filters: { sort: "score" } }) });
       expect(jevCalls).toHaveLength(1);
+      expect((await ranked.json()).reranked).toBe(true);
       expect(jevCalls[0].described.map((d: any) => d.subscribers).sort()).toEqual([12000, 3000].sort());
       // The reranked order is cached with the result.
       await request("/api/maker/discover", { method: "POST", body: JSON.stringify({ accountId: "a1", query: "space facts", filters: { sort: "score" } }) });

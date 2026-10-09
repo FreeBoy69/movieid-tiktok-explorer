@@ -4597,9 +4597,9 @@ export function registerCreatorWorkspace(app) {
   // Jev weighs fit and repeatable breakouts, but only for the "Discovery" sort that shows its order.
   const rankChannels = async (result, filters = {}, cacheKey, input = {}) => {
     const rerank = filters.sort === "score" || input.rerank === true;
-    if (!rerank) return rankDiscoveryChannels(result.videos, filters);
+    if (!rerank) return { channels: rankDiscoveryChannels(result.videos, filters), reranked: false };
     const ranked = rankDiscoveryChannels(result.videos, { ...filters, sort: "score" });
-    return cachedDiscovery(JSON.stringify(["rerank", cacheKey, filters]), () => rerankWithJev(ranked, {
+    const channels = await cachedDiscovery(JSON.stringify(["rerank", cacheKey, filters]), () => rerankWithJev(ranked, {
       context: { niche: String(input.niche || input.query || (result.niches || []).join(", ")).slice(0, 160), filters },
       rubric: "Prioritize competitor channels with a clear fit to the requested niche, several recent breakout videos, and promising performance relative to channel size. Prefer credible repeatable evidence over a single lifetime-view outlier.",
       describe: (channel) => ({
@@ -4614,6 +4614,7 @@ export function registerCreatorWorkspace(app) {
         score: Number(channel.score || 0),
       }),
     }), { complete: () => result.complete !== false });
+    return { channels, reranked: true };
   };
   const publicResult = ({ complete, ...result }) => result;
 
@@ -4630,12 +4631,15 @@ export function registerCreatorWorkspace(app) {
           // A pasted channel or video link: that one channel, judged on its uploads like any other.
           // No search: resolving the link and reading uploads cost a few quota units.
           youtubeReady();
-          const ref = await withinDeadline(dependencies.resolveChannel({ sourceUrl: query }));
-          key = JSON.stringify(["channel", ref.channelId]);
-          result = await withinDeadline(cachedDiscovery(key, async () => {
-            const videos = await enrichDiscoveryChannels([{ channelId: ref.channelId, discoveryScore: 0 }], enrichOptions(deadline, { limit: 1, uploads: 30 }));
-            return { query, niches: [], pasted: ref.channelId, videos: slimVideos(videos), complete: hasChannelDetails(videos) };
-          }, { complete: (value) => value.complete && value.videos.length > 0 }));
+          ({ key, result } = await withinDeadline((async () => {
+            const ref = await dependencies.resolveChannel({ sourceUrl: query });
+            const channelKey = JSON.stringify(["channel", ref.channelId]);
+            const loaded = await cachedDiscovery(channelKey, async () => {
+              const videos = await enrichDiscoveryChannels([{ channelId: ref.channelId, discoveryScore: 0 }], enrichOptions(deadline, { limit: 1, uploads: 30 }));
+              return { query, niches: [], pasted: ref.channelId, videos: slimVideos(videos), complete: hasChannelDetails(videos) };
+            }, { complete: (value) => value.complete && value.videos.length > 0 });
+            return { key: channelKey, result: loaded };
+          })()));
           if (!result.videos.length) throw fail("That channel has no public videos to look at.", 404);
         } else {
           // No search term: a feed across several faceless niches. `shuffle` picks another set.
@@ -4658,8 +4662,8 @@ export function registerCreatorWorkspace(app) {
       } catch (error) {
         throw discoveryFailure(error);
       }
-      const channels = await rankChannels(result, input.filters || {}, key, input);
-      res.json({ ...publicResult(result), channels, sampledAt: Date.now() });
+      const { channels, reranked } = await rankChannels(result, input.filters || {}, key, input);
+      res.json({ ...publicResult(result), channels, reranked, sampledAt: Date.now() });
     }),
   );
   app.get(
