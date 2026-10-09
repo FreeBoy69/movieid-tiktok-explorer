@@ -10,25 +10,15 @@ import {
 import { useDropzone } from "react-dropzone";
 import { motion, AnimatePresence } from "motion/react";
 import { PageView } from "./components/PageView";
-import {
+import  {
   Upload,
   Film,
   ExternalLink,
   Loader2,
-  Youtube,
-  PlusCircle,
-  CheckCircle2,
-  Music,
   Trash2,
-  Instagram,
-  Facebook,
-  Ghost,
-  Pin,
-  Twitter,
-  Linkedin,
 } from "lucide-react";
 import { identifyMovie } from "./services/gemini";
-import { AuthSessionPayload, ConnectedYouTubeAccount, ExtractionState, MovieResult } from "./types";
+import  { AuthSessionPayload, ExtractionState, MovieResult } from "./types";
 import { cn } from "./lib/utils";
 import { PickerDialog } from "./components/SourcePicker";
 import { PlatformGrid, socialPlatform } from "./components/SocialPlatforms";

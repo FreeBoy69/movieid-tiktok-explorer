@@ -3826,7 +3826,6 @@ function ProjectEditor({
     [overlayScene, setOverlayScene] = useState(""),
     [handingOff, setHandingOff] = useState(false),
     [archiveOpen, setArchiveOpen] = useState(false),
-    [playhead, setPlayhead] = useState(0),
     [selectedScene, setSelectedScene] = useState(""),
     // Review's "open the editor" lands here (the stage change can remount this page), via a one-shot flag.
     [visualView, setVisualView] = useState<"settings" | "cast" | "scenes" | "edit" | "">(() => {
@@ -4125,13 +4124,18 @@ function ProjectEditor({
     }
   }
   async function openInVibeEdit() {
-    if (dirty && !(await save())) return;
-    // The project's own edit lives in the Visuals stage's editor.
+    setHandingOff(true);
     try {
-      sessionStorage.setItem(`maker-open-edit:${id}`, "1");
-    } catch {}
-    setVisualView("edit");
-    await navigate("visualPlan");
+      if (dirty && !(await save())) return;
+      // The project's own edit lives in the Visuals stage's editor.
+      try {
+        sessionStorage.setItem(`maker-open-edit:${id}`, "1");
+      } catch {}
+      setVisualView("edit");
+      await navigate("visualPlan");
+    } finally {
+      setHandingOff(false);
+    }
   }
   async function runQualityReview() {
     if (dirty && !(await save())) return;
@@ -4579,10 +4583,7 @@ function ProjectEditor({
     setSelectedScene(sceneId);
     if (sceneEditor) writeDeepLink({ view: "projects", projectId: id, projectStage: stage, sceneId });
     const scene = scenes.find((item) => item.id === sceneId);
-    if (scene) {
-      setPlayhead(scene.start);
-      if (timelineAudio.current) timelineAudio.current.currentTime = scene.start;
-    }
+    if (scene && timelineAudio.current) timelineAudio.current.currentTime = scene.start;
   };
   const openSceneEditor = (sceneId: string) => {
     selectScene(sceneId);

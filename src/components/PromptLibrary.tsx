@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, ChevronDown, ChevronLeft, ChevronRight, Clapperboard, Copy, Film, ExternalLink, Loader2, Plus, Search, Sparkles, Star, Trash2, X } from "lucide-react";
+import  { Check, ChevronDown, ChevronLeft, ChevronRight, Clapperboard, Copy, Film, ExternalLink, Loader2, Plus, Sparkles, Star, Trash2, X } from "lucide-react";
 import {
   CATEGORIES,
   categoryLabel,

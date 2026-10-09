@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Activity, ArrowRight, LayoutGrid, ChevronDown, ChevronRight, Film, LifeBuoy, Loader2, LogOut, Menu, Moon, Search, Sun, Trash2, Users } from "lucide-react";
+import  { Activity, ArrowRight, LayoutGrid, ChevronDown, ChevronRight, LifeBuoy, Loader2, LogOut, Menu, Moon, Search, Sun, Trash2, Users } from "lucide-react";
 import { BillingOnboarding, BillingReturnVerifier, DeleteAccountDialog, SupportDialog, TokenSummary } from "./AccountServices";
-import { ALL_NAV_ENTRIES, CREATE_HOME_ENTRY, isCurrentEntry, MENU_ONLY_NAV_IDS, PRIMARY_NAV_CHILDREN, PRIMARY_NAV_ENTRIES, TOOL_NAV_GROUPS, type NavEntry, type NavGroup, type NavTarget } from "../utils/appNavigation";
+import  { ALL_NAV_ENTRIES, CREATE_HOME_ENTRY, isCurrentEntry, MENU_ONLY_NAV_IDS, PRIMARY_NAV_CHILDREN, PRIMARY_NAV_ENTRIES, TOOL_NAV_GROUPS, type NavEntry, type NavTarget } from "../utils/appNavigation";
 import type { MainView, StudioTab, ToolId } from "../utils/tiktokRoute";
 import { JuelButton } from "./JuelPanel";
 import "./AppHeader.css";

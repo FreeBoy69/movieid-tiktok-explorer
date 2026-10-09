@@ -4,9 +4,33 @@
 // Vibe Edit with every cut, narration line, and caption on the timeline, ready to tweak and export.
 import { PickerDialog } from "../SourcePicker";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  AlertCircle, ArrowLeft, ArrowRight, Check, Clapperboard, Download, ExternalLink, Film, Link2, Loader2, Plus,
-  Music, Projector, RotateCcw, Search, ShieldCheck, Sparkles, Square, Trash2, Undo2, Upload, Users, WandSparkles, X, Youtube, PenLine, Image as ImageIcon } from "lucide-react";
+import  {
+  AlertCircle,
+  ArrowLeft,
+  ArrowRight,
+  Check,
+  Clapperboard,
+  Download,
+  ExternalLink,
+  Film,
+  Link2,
+  Loader2,
+  Plus,
+  Projector,
+  RotateCcw,
+  Search,
+  ShieldCheck,
+  Sparkles,
+  Square,
+  Trash2,
+  Undo2,
+  Upload,
+  Users,
+  WandSparkles,
+  X,
+  PenLine,
+  Image as ImageIcon,
+} from "lucide-react";
 import { toast, useErrorToast } from "../../utils/toast";
 import { isVoiceReady, loadVoiceProfiles, type VoiceProfile } from "../../utils/voiceProfiles";
 import { writeDeepLink } from "../../utils/tiktokRoute";

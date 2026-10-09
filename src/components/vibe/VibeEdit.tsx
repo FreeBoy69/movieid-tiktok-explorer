@@ -3,7 +3,7 @@
 // your edits; the editor is a full-screen workspace: tool rail and panel on
 // the left, preview in the middle, assistant on the right, timeline below.
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { Check, ChevronDown, Clapperboard, CloudOff, Download, Film, Loader2, Plus, SlidersHorizontal, Square, Trash2, Upload, WandSparkles, ChevronLeft, Link2, LayoutGrid, PanelBottom, PanelLeft, PanelLeftClose, PanelLeftOpen, PanelRight, Search, Pencil } from "lucide-react";
+import  { Check, Clapperboard, CloudOff, Download, Film, Loader2, Plus, SlidersHorizontal, Square, Trash2, Upload, WandSparkles, ChevronLeft, Link2, LayoutGrid, PanelBottom, PanelLeft, PanelLeftClose, PanelLeftOpen, PanelRight, Search, Pencil } from "lucide-react";
 import { toast } from "../../utils/toast";
 import { writeDeepLink } from "../../utils/tiktokRoute";
 import { loadVoiceProfiles } from "../../utils/voiceProfiles";

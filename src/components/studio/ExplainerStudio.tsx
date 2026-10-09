@@ -5,20 +5,17 @@
 // timing and rendered (film). Shares Promo Studio's page styles.
 import { StudioLayout } from "../StudioLayout";
 import { type ReactNode, type TextareaHTMLAttributes, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import {
+import  {
   ArrowDown,
   ArrowLeft,
   ArrowUp,
   Clock,
-  FileText,
   Film,
   Link2,
-  ListChecks,
   Loader2,
   Plus,
   Presentation,
   RectangleHorizontal,
-  Sparkles,
   Trash2,
   X,
   Zap,

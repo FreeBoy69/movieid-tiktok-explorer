@@ -104,8 +104,6 @@ async function openInVibeEdit(item: Generation) {
   }
 }
 /** Something changed a generation outside the studio's own requests: the studio reloads its history. */
-export const announceStudioChange = () => window.dispatchEvent(new Event("autoyt:studio-changed"));
-
 function Actions({ item, output, handlers, onClose }: { item: Generation; output?: Output; handlers: GalleryHandlers; onClose?: () => void }) {
   const kind = output ? kindOf(output) : "";
   const act = (fn: () => void) => (event: MouseEvent) => {

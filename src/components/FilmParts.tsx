@@ -136,7 +136,6 @@ export function SongStart({ onReady, onError }: { onReady: (song: Song) => void;
   const [phase, setPhase] = useState<"idle" | "uploading" | "analyzing">("idle");
   const [progress, setProgress] = useState("");
   const [link, setLink] = useState("");
-  const input = useRef<HTMLInputElement>(null);
   const cancelled = useRef(false);
   useEffect(() => {
     // Reset on (re)mount: StrictMode mounts twice, and polling must survive that.

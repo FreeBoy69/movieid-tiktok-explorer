@@ -2,7 +2,7 @@ import { AgentRemake } from "./AgentRemake";
 import { DEFAULT_AGENT_REMAKE, MAX_REMAKE_FACES, normalizeAgentRemake, remakeBlocker } from "../utils/agentRemake.js";
 import { loadVoiceProfiles, type VoiceProfile } from "../utils/voiceProfiles";
 import { VoicePicker } from "./VoicePicker";
-import {
+import  {
   AlertCircle,
   Activity,
   AudioLines,
@@ -17,7 +17,6 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleDollarSign,
-  Clipboard,
   Clock3,
   ExternalLink,
   Eye,
@@ -31,16 +30,10 @@ import {
   MessageCircle,
   MessageSquare,
   Mic,
-  MicOff,
-  Linkedin,
   Navigation,
-  Pencil,
   Play,
-  PanelLeftClose,
-  PanelLeftOpen,
   Plus,
   RefreshCw,
-  Search,
   Scissors,
   Settings2,
   Share2,
@@ -50,22 +43,15 @@ import {
   Table2,
   TrendingUp,
   Trash2,
-  Music2,
-  Pin,
-  Twitter,
   X,
   Youtube,
-  Facebook,
-  Ghost,
-  Instagram,
   Captions,
   Clapperboard,
   Upload,
   UserRound,
   WandSparkles,
 } from "lucide-react";
-import { FormEvent, ReactNode, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import  { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AuthSessionPayload,
   AgentLearningProfile,
@@ -94,13 +80,7 @@ import { connectHref, PlatformGrid, PlatformIcon, socialPlatform } from "./Socia
 import { CompilationStudio } from "./CompilationStudio";
 import { openBackgroundProcessCenter } from "./BackgroundProcessCenter";
 import { agentUploadMedia, buildAgentAnalyticsViz, readAgentUploadMetric } from "../utils/agentAnalyticsViz";
-import {
-  AgentChatBlocks,
-  FormattedChatText,
-  PerformanceReportView,
-  type AgentChatBlock,
-  type AgentPerformanceReport,
-} from "./AgentStructuredContent";
+import  { PerformanceReportView, type AgentPerformanceReport } from "./AgentStructuredContent";
 import { MovieAnalysisTabs } from "./MovieAnalysisTabs";
 import { JuelDock, JuelPanel, onJuelChange, provideJuelContext } from "./JuelPanel";
 import { SourcePicker, type SourceOption } from "./SourcePicker";
@@ -109,7 +89,7 @@ import { scheduleHourFromUtcLabel } from "../utils/automationDecisionPolicy.js";
 import "./AutomationAgents.css";
 import { type PlaylistMode, PlaylistControl, SCHEDULED_VISIBILITY_OPTIONS, VisibilityControl } from "./YouTubePublishForm";
 import { choose, confirm, Dialog } from "./ui/Dialog";
-import { EmptyState, Notice as SharedNotice, SearchField, Switch } from "./ui/controls";
+import  { EmptyState, Notice as SharedNotice, Switch } from "./ui/controls";
 import { OrientationPicker } from "./OrientationPicker";
 import { BrandLoader } from "./BrandLoader";
 
@@ -479,47 +459,6 @@ async function readApiJson(response: Response, fallback: string): Promise<any> {
   return data;
 }
 
-async function readAgentChatResponse(response: Response, onProgress: (message: string) => void): Promise<any> {
-  const contentType = String(response.headers.get("content-type") || "").toLowerCase();
-  if (!contentType.includes("application/x-ndjson")) return readApiJson(response, "Agent chat failed");
-  if (!response.body) throw new Error("Agent chat returned an empty response.");
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let result: any = null;
-
-  const consumeLine = (line: string) => {
-    if (!line.trim()) return;
-    let event: any;
-    try {
-      event = JSON.parse(line);
-    } catch {
-      throw new Error("Agent chat returned an unreadable progress update.");
-    }
-    if (event.type === "progress" && typeof event.message === "string") onProgress(event.message);
-    if (event.type === "result") result = event.data;
-    if (event.type === "error") throw new Error(String(event.error || "Agent chat failed"));
-  };
-
-  try {
-    while (true) {
-      const { value, done } = await reader.read();
-      buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-      for (const line of lines) consumeLine(line);
-      if (done) break;
-    }
-    consumeLine(buffer);
-  } catch (error) {
-    // Release the socket when a mid-stream error line or malformed chunk aborts parsing.
-    await reader.cancel().catch(() => undefined);
-    throw error;
-  }
-  if (!result) throw new Error("Agent chat finished without a response.");
-  return result;
-}
 
 export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUploadId = "", onDetailChange, chatSidebarHost = null, theme = "light" }: { auth: AuthSessionPayload; initialSlug?: string; initialTab?: AutomationTab; initialUploadId?: string; onDetailChange?: (open: boolean) => void; chatSidebarHost?: HTMLElement | null; theme?: "light" | "dark" }) {
   const [accounts, setAccounts] = useState<ConnectedYouTubeAccount[]>(auth.accounts || []);
@@ -1769,7 +1708,6 @@ function ExpandedAgentCard({
   const tab = isDraft ? "setup" : activeTab;
   const isDark = theme === "dark";
   const [navOpen, setNavOpen] = useState(false);
-  const [historyOpen, setHistoryOpen] = useState(false);
   const currentCreateStep = AGENT_CREATE_STEPS[Math.min(createStep, AGENT_CREATE_STEPS.length - 1)];
   const headerSubline = `Step ${Math.min(createStep + 1, AGENT_CREATE_STEPS.length)} of ${AGENT_CREATE_STEPS.length} · ${currentCreateStep.hint}`;
   const tabCounts: Partial<Record<AutomationTab, number>> = { uploads: uploads.length, runs: runs.length };

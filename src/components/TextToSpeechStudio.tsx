@@ -1,24 +1,16 @@
-import React, { FormEvent, useEffect, useRef, useState } from "react";
-import {
+import  { FormEvent, useEffect, useState } from "react";
+import  {
   BookOpen,
   Check,
-  ChevronDown,
-  FileAudio,
   Loader2,
   Mic,
   Pencil,
   Play,
   Plus,
   RefreshCw,
-  RotateCcw,
-  Search,
-  Shuffle,
   Sparkles,
-  Square,
   Trash2,
-  Upload,
   Volume2,
-  X,
 } from "lucide-react";
 import { cn } from "../lib/utils";
 import { toast, useErrorToast } from "../utils/toast";
@@ -397,7 +389,7 @@ function GenerateTab(props: {
   setSelectedGenerationId: (id: string) => void;
   onPlay: (item: Generation) => void;
 }) {
-  const { dark, voices, selectedVoiceId } = props;
+  const { voices, selectedVoiceId } = props;
   const pricing = useStudioPricing();
   const estimatedCredits = fallbackCreditEstimate("speech", pricing, Math.max(1, Math.ceil(props.text.trim().length / 1000)));
   const [rightRailTab, setRightRailTab] = useState<RightRailTab>("settings");
