@@ -85,7 +85,10 @@ function details(item: Generation, modelName: string, now: number) {
 }
 
 // Promo and Explainer films and Vibe Motion graphics can be edited element by element in their own player.
-const isEditableMotion = (item: Generation) => item.status === "done" && !item.rendering && ((item.tab === "promo" || item.tab === "explainer") ? Boolean(item.source) : item.tab === "vibe-motion" && (item.outputs || []).some((o) => o.file.endsWith(".html")));
+// Any finished one with its HTML: the film's source, or (older films that never rendered, and Vibe Motion) the output.
+const isEditableMotion = (item: Generation) =>
+  ["promo", "explainer", "vibe-motion"].includes(item.tab) && !["queued", "running", "failed", "cancelled"].includes(item.status) && !item.rendering &&
+  (Boolean(item.tab !== "vibe-motion" && item.source?.file) || (item.outputs || []).some((o) => /\.html$/i.test(o.file)));
 const openMotionEditor = (item: Generation) => window.dispatchEvent(new CustomEvent("autoyt:edit-motion", { detail: { id: item.id, title: item.prompt?.slice(0, 80) || "Motion graphic" } }));
 /** Something changed a generation outside the studio's own requests: the studio reloads its history. */
 export const announceStudioChange = () => window.dispatchEvent(new Event("autoyt:studio-changed"));

@@ -1983,7 +1983,8 @@ export function registerCreatorStudio(app, express) {
     const item = (await history(userId)).find((entry) => entry.id === req.params.id);
     if (!item || !["promo", "explainer", "vibe-motion"].includes(item.tab)) throw fail("Motion graphic not found", 404);
     const film = item.tab !== "vibe-motion";
-    const current = film ? item.source : item.outputs?.find((output) => extOf(output.file) === "html");
+    const htmlOutput = item.outputs?.find((output) => extOf(output.file) === "html");
+    const current = film ? item.source || htmlOutput : htmlOutput;
     if (!current?.file) throw fail("Finish generating it first");
     if (film && (promoExports.has(`${userId}:${item.id}`) || explainerExports.has(`${userId}:${item.id}`))) throw fail("It's still rendering your last edits. Try again in a moment.", 409);
     const edits = cleanMotionEdits(req.body?.edits);
@@ -2011,7 +2012,8 @@ export function registerCreatorStudio(app, express) {
 
   app.get("/api/studio/generations/:id/motion", route(async (req, res, userId) => {
     const item = (await history(userId)).find((entry) => entry.id === req.params.id);
-    const current = item?.tab === "vibe-motion" ? item.outputs?.find((output) => extOf(output.file) === "html") : item?.source;
+    const htmlOutput = item?.outputs?.find((output) => extOf(output.file) === "html");
+    const current = item?.tab === "vibe-motion" ? htmlOutput : item?.source || htmlOutput;
     if (!current?.file) throw fail("Motion graphic not found", 404);
     const html = await fs.readFile(await readableFile(userId, current.file), "utf8");
     res.json({ html, edits: readMotionEdits(html), aspect: item.film?.aspect || item.settings?.aspectRatio || "16:9", duration: Number(item.film?.duration || item.settings?.duration) || 0 });
