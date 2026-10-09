@@ -26,7 +26,11 @@ export type JuelContext = { surface: string; entityId?: string; label?: string; 
 
 // Motion: the panel rises into place and its parts follow; it sinks away on close. Reduced motion only fades.
 const calm = () => typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-const RISE = "expo.out";
+// A long, even deceleration (no snap at the start); the panel moves on the GPU and is never scaled, so its
+// text doesn't re-render each frame.
+const RISE = "power3.out";
+const GPU = { force3D: true, willChange: "transform, opacity" };
+const DONE = "transform,opacity,visibility,willChange";
 
 const SPECIALIST: Record<string, string> = { automation: "Automation", publisher: "Publisher", recap: "Recap", editor: "Editor", producer: "Producer", studio: "Studio", film: "Film", research: "Research", community: "Community", account: "Account", admin: "Admin" };
 
@@ -185,9 +189,10 @@ export function JuelPanel({ onClose, embedded = false, headStart, leaving = fals
         return;
       }
       gsap.timeline({ defaults: { ease: RISE } })
-        .from(el, { y: 48, autoAlpha: 0, scale: 0.97, transformOrigin: "50% 100%", duration: 0.7, clearProps: "transform,opacity,visibility" })
-        .from(el.querySelectorAll(".juel-head > *"), { y: 10, autoAlpha: 0, duration: 0.5, stagger: 0.035, clearProps: "transform,opacity,visibility" }, 0.12)
-        .from(el.querySelector(".juel-composer"), { y: 22, autoAlpha: 0, duration: 0.6, clearProps: "transform,opacity,visibility" }, 0.18);
+        .from(el, { ...GPU, y: 36, duration: 0.85, clearProps: DONE })
+        .from(el, { autoAlpha: 0, duration: 0.4, ease: "power1.out" }, 0)
+        .from(el.querySelectorAll(".juel-head > *"), { ...GPU, y: 6, autoAlpha: 0, duration: 0.7, stagger: 0.04, clearProps: DONE }, 0.14)
+        .from(el.querySelector(".juel-composer"), { ...GPU, y: 14, autoAlpha: 0, duration: 0.8, clearProps: DONE }, 0.2);
     }, el);
     return () => ctx.revert();
   }, [embedded]);
@@ -200,11 +205,11 @@ export function JuelPanel({ onClose, embedded = false, headStart, leaving = fals
     if (leaving) {
       wasLeaving.current = true;
       gsap.killTweensOf(el);
-      gsap.to(el, calm() ? { autoAlpha: 0, duration: 0.12, onComplete: onLeft } : { y: 28, autoAlpha: 0, scale: 0.98, transformOrigin: "50% 100%", duration: 0.26, ease: "power3.in", onComplete: onLeft });
+      gsap.to(el, calm() ? { autoAlpha: 0, duration: 0.12, onComplete: onLeft } : { ...GPU, y: 24, autoAlpha: 0, duration: 0.34, ease: "power2.inOut", onComplete: onLeft });
     } else if (wasLeaving.current) {
       wasLeaving.current = false;
       gsap.killTweensOf(el);
-      gsap.to(el, { y: 0, autoAlpha: 1, scale: 1, duration: 0.45, ease: RISE, clearProps: "transform,opacity,visibility" });
+      gsap.to(el, { ...GPU, y: 0, autoAlpha: 1, duration: 0.6, ease: RISE, clearProps: DONE });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [leaving, embedded]);
@@ -249,7 +254,7 @@ export function JuelPanel({ onClose, embedded = false, headStart, leaving = fals
   useLayoutEffect(() => {
     const el = root.current?.querySelector(".juel-empty");
     if (!empty || !el || calm()) return;
-    const tween = gsap.from(el.querySelectorAll(":scope > *:not(.juel-starters), .juel-starter"), { y: 14, autoAlpha: 0, duration: 0.6, ease: RISE, stagger: 0.045, delay: embedded ? 0 : 0.16, clearProps: "transform,opacity,visibility" });
+    const tween = gsap.from(el.querySelectorAll(":scope > *:not(.juel-starters), .juel-starter"), { ...GPU, y: 10, autoAlpha: 0, duration: 0.8, ease: RISE, stagger: 0.05, delay: embedded ? 0 : 0.18, clearProps: DONE });
     return () => {
       tween.revert();
     };
@@ -260,14 +265,14 @@ export function JuelPanel({ onClose, embedded = false, headStart, leaving = fals
   const canSend = Boolean(message.trim());
   useEffect(() => {
     if (!canSend || !sendButton.current || calm()) return;
-    gsap.fromTo(sendButton.current, { scale: 0.82 }, { scale: 1, duration: 0.42, ease: "back.out(3)", clearProps: "transform" });
+    gsap.fromTo(sendButton.current, { scale: 0.86 }, { scale: 1, duration: 0.5, ease: "back.out(2)", clearProps: "transform" });
   }, [canSend]);
 
   // A sent message lifts out of the composer into the conversation.
   useLayoutEffect(() => {
     const el = liveBubble.current;
     if (!el || calm()) return;
-    const tween = gsap.from(el, { y: 26, scale: 0.94, autoAlpha: 0, transformOrigin: "100% 100%", duration: 0.5, ease: RISE, clearProps: "transform,opacity,visibility" });
+    const tween = gsap.from(el, { ...GPU, y: 18, autoAlpha: 0, duration: 0.65, ease: RISE, clearProps: DONE });
     return () => {
       tween.kill();
     };
@@ -638,7 +643,7 @@ function Conversations({ context, current, onClose, onPick, onDeleted }: { conte
   const panel = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     if (!panel.current || calm()) return;
-    const tween = gsap.from(panel.current, { y: -10, autoAlpha: 0, duration: 0.35, ease: RISE, clearProps: "transform,opacity,visibility" });
+    const tween = gsap.from(panel.current, { ...GPU, y: -8, autoAlpha: 0, duration: 0.45, ease: RISE, clearProps: DONE });
     return () => {
       tween.kill();
     };
