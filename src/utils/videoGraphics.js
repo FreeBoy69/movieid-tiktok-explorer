@@ -266,11 +266,17 @@ var touched={},original=new WeakMap(),now=0;
 function rootEl(){return document.getElementById("stage")||document.querySelector("[data-composition-id]")||document.body}
 function find(p){try{return rootEl().querySelector(p)}catch(e){return null}}
 function items(){return window.__mgEdits||{}}
-function clear(p){var el=find(p);if(!el)return;["translate","scale","color","visibility"].forEach(function(k){el.style.removeProperty(k)});if(original.has(el)){el.textContent=original.get(el);original.delete(el)}}
+var movers=new WeakMap();
+// A part that sits in a reveal mask (a wrapper hugging it with overflow hidden or a clip-path) would be cut off
+// when moved, so the move and resize go to the outermost such wrapper; its words and colour stay on the part.
+function clips(n){var c=getComputedStyle(n);return /hidden|clip/.test(c.overflow+" "+c.overflowX+" "+c.overflowY)||(c.clipPath&&c.clipPath!=="none")}
+function hugs(n,t){var a=n.getBoundingClientRect(),b=t.getBoundingClientRect();return a.width*a.height<=(n.children.length===1?4:3)*Math.max(1,b.width*b.height)}
+function mover(el){if(movers.has(el))return movers.get(el);var r=rootEl(),t=el;for(;;){var n=t.parentElement;if(!n||n===r||!r.contains(n)||!clips(n)||!hugs(n,t))break;t=n}if(el.getBoundingClientRect().width>0)movers.set(el,t);return t}
+function clear(p){var el=find(p);if(!el)return;var m=mover(el);["translate","scale"].forEach(function(k){m.style.removeProperty(k);el.style.removeProperty(k)});["color","visibility"].forEach(function(k){el.style.removeProperty(k)});if(original.has(el)){el.textContent=original.get(el);original.delete(el)}}
 function apply(t){if(typeof t==="number"&&isFinite(t))now=t;var e=items(),p;for(p in touched)if(!e[p]){clear(p);delete touched[p]}
-for(p in e){var el=find(p),x=e[p];if(!el)continue;touched[p]=1;var s=el.style;
-if(x.dx||x.dy)s.setProperty("translate",(x.dx||0)+"px "+(x.dy||0)+"px","important");else s.removeProperty("translate");
-if(x.scale&&x.scale!==1)s.setProperty("scale",String(x.scale),"important");else s.removeProperty("scale");
+for(p in e){var el=find(p),x=e[p];if(!el)continue;touched[p]=1;var s=el.style,ms=mover(el).style;
+if(x.dx||x.dy)ms.setProperty("translate",(x.dx||0)+"px "+(x.dy||0)+"px","important");else ms.removeProperty("translate");
+if(x.scale&&x.scale!==1)ms.setProperty("scale",String(x.scale),"important");else ms.removeProperty("scale");
 if(x.color)s.setProperty("color",x.color,"important");else s.removeProperty("color");
 var off=x.hidden||(x.from!=null&&now<x.from)||(x.to!=null&&now>x.to);if(off)s.setProperty("visibility","hidden","important");else s.removeProperty("visibility");
 if(typeof x.text==="string"){if(!original.has(el))original.set(el,el.textContent);if(el.textContent!==x.text)el.textContent=x.text}else if(original.has(el)){el.textContent=original.get(el);original.delete(el)}}}
