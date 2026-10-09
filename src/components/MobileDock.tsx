@@ -54,6 +54,7 @@ export const shortLabel = (entry: NavEntry) => SHORT[entry.id] || entry.label.sp
 
 const FALLBACK = ["image", "video", "audio", "title-generator", "thumbnail-maker", "downloader"];
 const QUICK_COUNT = 4;
+const CLOSE_MS = 560;
 
 export function quickToolsFor(view: MainView, studioTab?: StudioTab, toolId?: ToolId): NavEntry[] {
   const here = navEntryFor(view, studioTab, toolId);
@@ -88,7 +89,22 @@ const SECTION_TARGET: Record<Exclude<SectionId, "tools">, NavTarget> = {
 const HIDDEN_VIEWS = new Set<MainView>(["vibe-edit"]);
 
 export function MobileDock({ view, studioTab, toolId, onNavigate, hidden }: { view: MainView; studioTab?: StudioTab; toolId?: ToolId; onNavigate: (target: NavTarget) => void; hidden?: boolean }) {
-  const [trayOpen, setTrayOpen] = useState(false);
+  const [trayOpen, setTrayOpenState] = useState(false);
+  // "closing" plays the reverse of the opening (tools spin out, wedge sweeps back, tray folds into the +).
+  const [closing, setClosing] = useState(false);
+  const closeTimer = useRef(0);
+  const setTrayOpen = (next: boolean | ((open: boolean) => boolean)) => {
+    setTrayOpenState((open) => {
+      const value = typeof next === "function" ? next(open) : next;
+      window.clearTimeout(closeTimer.current);
+      if (open && !value) {
+        setClosing(true);
+        closeTimer.current = window.setTimeout(() => setClosing(false), CLOSE_MS);
+      } else if (value) setClosing(false);
+      return value;
+    });
+  };
+  useEffect(() => () => window.clearTimeout(closeTimer.current), []);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [tilt, setTilt] = useState<"" | "left" | "right">("");
   const root = useRef<HTMLDivElement>(null);
@@ -179,7 +195,7 @@ export function MobileDock({ view, studioTab, toolId, onNavigate, hidden }: { vi
 
   return (
     <div ref={root} className="mdock-slot" data-native={native || undefined}>
-      <div className="mdock-tray" data-open={trayOpen || undefined} aria-hidden={!trayOpen}>
+      <div className="mdock-tray" data-open={trayOpen || undefined} data-closing={closing || undefined} aria-hidden={!trayOpen}>
         <span className="mdock-wedge" aria-hidden="true" />
         <ul className="mdock-quick" role="menu" aria-label="Quick tools for this page">
           {quick.map((entry, index) => (
@@ -197,7 +213,7 @@ export function MobileDock({ view, studioTab, toolId, onNavigate, hidden }: { vi
         {SECTIONS.slice(0, 2).map(tab)}
         <span className="mdock-fab-gap" aria-hidden="true" />
         {SECTIONS.slice(2).map(tab)}
-        <button type="button" className="mdock-fab" data-open={trayOpen || undefined} aria-expanded={trayOpen} aria-label={trayOpen ? "Close quick tools" : "Quick tools for this page"} onClick={() => {
+        <button type="button" className="mdock-fab" data-open={trayOpen || undefined} data-closing={closing || undefined} aria-expanded={trayOpen} aria-label={trayOpen ? "Close quick tools" : "Quick tools for this page"} onClick={() => {
             tapFeedback();
             setTrayOpen((open) => !open);
           }}>

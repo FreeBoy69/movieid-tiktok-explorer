@@ -9,7 +9,7 @@
   z-index: 40;
   display: none;
   flex: none;
-  padding: 20px 12px calc(10px + env(safe-area-inset-bottom));
+  padding: 6px 12px calc(10px + env(safe-area-inset-bottom));
   background: var(--ui-bg);
 }
 @media (max-width: 760px) {
@@ -111,17 +111,11 @@ html[data-theme="dark"] .mdock {
   padding: 0;
   border: 0;
   border-radius: 999px !important;
-  background:
-    radial-gradient(120% 90% at 30% 15%, rgb(255 255 255 / 0.55), transparent 45%),
-    linear-gradient(160deg, #ffe94d 0%, var(--ui-accent) 55%, #e2c200 100%);
-  box-shadow:
-    inset 0 -2px 4px rgb(150 120 0 / 0.25),
-    inset 0 1px 1px rgb(255 255 255 / 0.6),
-    0 12px 22px -8px rgb(201 170 0 / 0.6),
-    0 3px 6px -2px rgb(40 36 20 / 0.2);
+  background: var(--ui-accent);
+  box-shadow: none;
   color: var(--ui-accent-ink);
   cursor: pointer;
-  transition: transform 420ms var(--mdock-spring), box-shadow 200ms ease;
+  transition: transform 420ms var(--mdock-spring);
   -webkit-tap-highlight-color: transparent;
 }
 .mdock-fab:focus { outline: none; }
@@ -133,7 +127,7 @@ html[data-theme="dark"] .mdock {
 .mdock-tray {
   --r: 150px;
   position: absolute;
-  bottom: calc(10px + env(safe-area-inset-bottom) + 62px - 2px);
+  bottom: calc(10px + env(safe-area-inset-bottom) + 66px - 2px);
   left: 50%;
   width: calc(var(--r) * 2);
   height: var(--r);
@@ -217,8 +211,8 @@ html[data-theme="dark"] .mdock {
   height: 40px;
   place-items: center;
   border-radius: 14px;
-  background: linear-gradient(180deg, var(--ui-raised), color-mix(in srgb, var(--ui-chip) 70%, var(--ui-raised)));
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.7), 0 0 0 1px color-mix(in srgb, var(--ui-text) 8%, transparent), 0 6px 12px -8px rgb(40 36 20 / 0.45);
+  background: var(--ui-chip);
+  box-shadow: none;
   transition: transform 200ms var(--mdock-spring), background-color 160ms ease;
 }
 .mdock-quick button:active .mdock-quick-icon { transform: scale(0.88); }
@@ -270,8 +264,39 @@ html[data-theme="dark"] .mdock {
 }
 
 html[data-theme="dark"] .mdock-tray { box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06), 0 -10px 30px -16px rgb(0 0 0 / 0.7); }
-html[data-theme="dark"] .mdock-quick-icon { box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06), 0 0 0 1px rgb(255 255 255 / 0.07), 0 6px 12px -8px rgb(0 0 0 / 0.7); }
 @media (prefers-reduced-motion: reduce) {
   .mdock-pill { transition: none; }
 }
 html[data-theme="dark"] .mdock-pill { background: color-mix(in srgb, var(--ui-accent) 16%, transparent); }
+
+/* ---------- Closing: the opening played in reverse ---------- */
+.mdock-fab[data-closing] { animation: mdock-fab-squeeze 520ms var(--mdock-spring); }
+@keyframes mdock-fab-squeeze {
+  0% { transform: scale(1); }
+  28% { transform: scale(0.78); }
+  100% { transform: scale(1); }
+}
+.mdock-tray[data-closing] {
+  opacity: 1;
+  transform: none;
+  animation: mdock-tray-fold 560ms cubic-bezier(0.5, 0, 0.75, 0) both;
+}
+@keyframes mdock-tray-fold {
+  0%, 45% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(0.18); }
+}
+.mdock-tray[data-closing] .mdock-wedge { animation: mdock-sweep-back 460ms cubic-bezier(0.5, 0, 0.6, 1) both; }
+@keyframes mdock-sweep-back {
+  0% { opacity: 0; transform: rotate(80deg); }
+  20% { opacity: 1; }
+  100% { opacity: 1; transform: rotate(-110deg); }
+}
+.mdock-tray[data-closing] .mdock-quick li {
+  opacity: 0;
+  transform: rotate(-70deg) scale(0.6);
+  transition: opacity 160ms ease calc((var(--n) - 1 - var(--i)) * 45ms), transform 260ms cubic-bezier(0.5, 0, 0.75, 0) calc((var(--n) - 1 - var(--i)) * 45ms);
+}
+@media (prefers-reduced-motion: reduce) {
+  .mdock-fab[data-closing], .mdock-tray[data-closing], .mdock-tray[data-closing] .mdock-wedge { animation: none; }
+  .mdock-tray[data-closing] { opacity: 0; }
+}
