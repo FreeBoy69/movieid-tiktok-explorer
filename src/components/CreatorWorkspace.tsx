@@ -81,7 +81,7 @@ import { lazyPage } from "../utils/lazyPage";
 import { MusicLibrary } from "./MusicLibrary";
 import { MixPreview, ScenePlayButton, SyncedClip, playbackStyle, useScenePlayback, type MixPreviewHandle } from "./ScenePlayback";
 import { VideoPlayer } from "./VideoPlayer";
-import { CharactersStep, type CastSheetState, type Framing } from "./CharactersStep";
+import { CharactersStep, type CastSheetState, type Framing, type StoryObject } from "./CharactersStep";
 import { VoicePicker } from "./VoicePicker";
 import { PromptSuggestions } from "./PromptSuggestions";
 import { toast, useErrorToast } from "../utils/toast";
@@ -3042,6 +3042,7 @@ type VisualBible = {
   consistency: boolean;
   artDirection: { palette: string; lighting: string; camera: string; texture: string; negative: string };
   cast: Array<{ id: string; name: string; role?: string; appearance: string; outfit: string; approvedReferences: string[] }>;
+  objects: StoryObject[];
 };
 const emptyVisualBible = (): VisualBible => ({
   version: 1,
@@ -3049,6 +3050,7 @@ const emptyVisualBible = (): VisualBible => ({
   consistency: true,
   artDirection: { palette: "", lighting: "", camera: "", texture: "", negative: "" },
   cast: [],
+  objects: [],
 });
 // The locked art direction the scene prompts follow; characters have their own step.
 function ArtDirectionPanel({ value, onChange }: { value: VisualBible; onChange: (value: VisualBible) => void }) {
@@ -3699,6 +3701,7 @@ function ProjectEditor({
     }),
     [visualTab, setVisualTab] = useState<"style" | "timing" | "output">("style"),
     [suggesting, setSuggesting] = useState(false),
+    [suggestingObjects, setSuggestingObjects] = useState(false),
     [sceneFilter, setSceneFilter] = useState<"all" | "missing" | "ready" | "failed" | "animated">("all"),
     [boardQuery, setBoardQuery] = useState(""),
     [boardSize, setBoardSize] = useState<BoardSize>(readBoardSize),
@@ -3757,6 +3760,17 @@ function ProjectEditor({
         toast.success(entry.error ? `${name}'s sheets are ready. ${entry.error}` : `${name}'s sheets are ready. Pick one and lock it.`);
       if (before === "running" && entry.status === "failed") toast.error(entry.error || "Try again.", { title: `${name}'s sheets failed` });
       sheetStatus.current[castId] = entry.status || "";
+    }
+    const objectSheets = ((project?.metadata as any)?.objectSheets || {}) as Record<string, CastSheetState>;
+    const objects: any[] = project?.metadata?.settings?.visualBible?.objects || [];
+    for (const [objectId, entry] of Object.entries(objectSheets)) {
+      const key = `object:${objectId}`;
+      const before = sheetStatus.current[key];
+      const name = objects.find((item) => item.id === objectId)?.name || "Object";
+      if (before === "running" && entry.status === "ready")
+        toast.success(entry.error ? `${name}'s sheets are ready. ${entry.error}` : `${name}'s sheets are ready. Pick one and lock it.`);
+      if (before === "running" && entry.status === "failed") toast.error(entry.error || "Try again.", { title: `${name}'s sheets failed` });
+      sheetStatus.current[key] = entry.status || "";
     }
   }, [project]);
   // A stage job that fails is announced once as a toast: when it fails while the
@@ -4063,6 +4077,59 @@ function ProjectEditor({
       setSuggesting(false);
     }
   }
+  // Reads the script and adds the recurring objects it finds to the visual bible.
+  async function suggestObjects() {
+    if (dirty && !(await save())) return;
+    setSuggestingObjects(true);
+    try {
+      const data = await creatorApi(`/api/maker/projects/${id}/objects/suggest`, { accountId });
+      const fresh = await creatorApi(`/api/maker/projects/${id}`);
+      const base = { ...emptyVisualBible(), ...(fresh.project.metadata.settings?.visualBible || {}) } as VisualBible;
+      const added = (data.objects || []).map((item: any) => ({ id: `object-${crypto.randomUUID()}`, approvedReferences: [], ...item }));
+      const next = { ...base, version: (Number(base.version) || 1) + 1, objects: [...(base.objects || []), ...added] };
+      const saved = await creatorApi(
+        `/api/maker/projects/${id}`,
+        { settings: { ...fresh.project.metadata.settings, visualBible: next }, accountId, expectedVersion: fresh.project.version || 1 },
+        "PATCH",
+      );
+      setProject(saved.project);
+      setSettings(structuredClone(saved.project.metadata.settings || {}));
+      setDirty(false);
+      dirtyRef.current = false;
+      toast.success(`Found ${added.length} recurring ${added.length === 1 ? "object" : "objects"} in the script. Check their looks, then generate sheets.`);
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setSuggestingObjects(false);
+    }
+  }
+  async function generateObjectSheets(objectId: string, count: number) {
+    if (dirty && !(await save())) return;
+    try {
+      const data = await creatorApi(`/api/maker/projects/${id}/objects/${encodeURIComponent(objectId)}/sheets`, { count, accountId });
+      setProject(data.project);
+    } catch (e) {
+      onError((e as Error).message);
+    }
+  }
+  async function approveObjectSheet(objectId: string, asset: string) {
+    if (dirty && !(await save())) return;
+    setBusy(true);
+    try {
+      const fresh = await creatorApi(`/api/maker/projects/${id}`);
+      const data = await creatorApi(`/api/maker/projects/${id}/objects/${encodeURIComponent(objectId)}/approve`, { asset, accountId, expectedVersion: fresh.project.version || 1 });
+      setProject(data.project);
+      setSettings(structuredClone(data.project.metadata.settings || {}));
+      setDirty(false);
+      dirtyRef.current = false;
+      const name = (data.project.metadata.settings?.visualBible?.objects || []).find((item: any) => item.id === objectId)?.name || "The object";
+      toast.success(`${name} is locked. Every scene that names it uses this sheet.`);
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
   async function generateCastSheets(castId: string, count: number) {
     if (dirty && !(await save())) return;
     try {
@@ -4238,6 +4305,7 @@ function ProjectEditor({
     ...(settings.visualBible || {}),
     artDirection: { ...emptyVisualBible().artDirection, ...(settings.visualBible?.artDirection || {}) },
     cast: Array.isArray(settings.visualBible?.cast) ? settings.visualBible.cast : [],
+    objects: Array.isArray(settings.visualBible?.objects) ? settings.visualBible.objects : [],
   };
   const paceSeconds = settings.imageCount && voiceDuration ? Math.max(1, voiceDuration / Number(settings.imageCount)) : Number(settings.sceneSeconds) || DEFAULT_SCENE_SECONDS;
   const promptEstimate = voiceDuration
@@ -5320,6 +5388,21 @@ function ProjectEditor({
                     onUpload={(castId, file) => void uploadCastReference(castId, file)}
                     onConsistency={(consistency) => editBible({ consistency })}
                     onFraming={(framing) => editSetting({ framing })}
+                    objects={{
+                      objects: bible.objects,
+                      sheets: (project.metadata as any).objectSheets || {},
+                      suggesting: suggestingObjects,
+                      onSuggest: () => void suggestObjects(),
+                      onAdd: () => editBible({ objects: [...bible.objects, { id: `object-${crypto.randomUUID()}`, name: `Object ${bible.objects.length + 1}`, description: "", approvedReferences: [] }] }),
+                      onEdit: (objectId, patch) => editBible({ objects: bible.objects.map((item) => (item.id === objectId ? { ...item, ...patch } : item)) }),
+                      onRemove: async (objectId) => {
+                        const object = bible.objects.find((item) => item.id === objectId);
+                        if (object?.approvedReferences.length && !(await confirmRemoveCharacter(object.name, "Its locked sheet is removed from this project."))) return;
+                        editBible({ objects: bible.objects.filter((item) => item.id !== objectId) });
+                      },
+                      onSheets: (objectId, count) => void generateObjectSheets(objectId, count),
+                      onApprove: (objectId, asset) => void approveObjectSheet(objectId, asset),
+                    }}
                     onGenerate={() => {
                       setVisualView("scenes");
                       document.querySelector(".maker-scroll")?.scrollTo({ top: 0 });

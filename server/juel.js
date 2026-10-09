@@ -247,6 +247,9 @@ export const JUEL_ROUTES = {
   "POST /api/maker/projects/:id/cast/:castId/approve": ["producer", "change", "Locks a generated character sheet as that cast member's reference image."],
   "POST /api/maker/projects/:id/cast/:castId/sheets": ["producer", "paid", "Generates character reference sheet images for one cast member."],
   "POST /api/maker/projects/:id/cast/suggest": ["producer", "paid", "AI-reads the project script and suggests recurring on-screen characters."],
+  "POST /api/maker/projects/:id/objects/:objectId/approve": ["producer", "change", "Locks a generated object sheet as that recurring object's reference image."],
+  "POST /api/maker/projects/:id/objects/:objectId/sheets": ["producer", "paid", "Generates object reference sheet images (four views) for one recurring object."],
+  "POST /api/maker/projects/:id/objects/suggest": ["producer", "paid", "AI-reads the project script and suggests recurring objects that need a consistent look."],
   "POST /api/maker/projects/:id/duplicate": ["producer", "change", "Duplicates a Create Video project with its text outputs and settings."],
   "POST /api/maker/projects/:id/jobs/:stage": ["producer", "paid", "Starts a Create Video stage job, such as script, voiceover, visuals, thumbnail, or final render."],
   "POST /api/maker/projects/:id/prune": ["producer", "delete", "Permanently removes chosen kinds of files from a Create Video project to free storage."],
@@ -535,6 +538,8 @@ export const JUEL_COSTS = {
   "POST /api/maker/discover": "llm:2",
   "POST /api/maker/projects/:id/cast/:castId/sheets": "image:2",
   "POST /api/maker/projects/:id/cast/suggest": "llm",
+  "POST /api/maker/projects/:id/objects/:objectId/sheets": "image:2",
+  "POST /api/maker/projects/:id/objects/suggest": "llm",
   "POST /api/maker/projects/:id/jobs/:stage": (c, p) => {
     if (p.stage === "voiceover") return "speech";
     if (p.stage === "thumbnail") return `image:${count(c.body?.count || 3, 6)}`;

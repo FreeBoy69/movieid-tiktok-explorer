@@ -1,9 +1,10 @@
 // Create Video → Visuals → Characters: lock every recurring character before the
 // storyboard. A compact cast list on the left; the selected character opens beside
 // it with their sheet, takes, and details. The locked sheet is the identity
-// reference for every scene the character appears in.
+// reference for every scene the character appears in. The Objects tab does the same
+// for recurring props (optional): a locked object sheet goes with every scene that names it.
 import { useEffect, useState } from "react";
-import { Check, ChevronLeft, Clapperboard, Loader2, Lock, Maximize2, Plus, Save, Sparkles, Trash2, Users, WandSparkles } from "lucide-react";
+import { Check, ChevronLeft, Clapperboard, Loader2, Lock, Maximize2, Package, Plus, Save, Sparkles, Trash2, Users, WandSparkles } from "lucide-react";
 import { SheetPhotoButton, SheetViewer, TakeCount } from "./castSheets";
 import { EmptyState, Segmented, Switch } from "./ui/controls";
 import "./CharactersStep.css";
@@ -11,6 +12,18 @@ import "./CharactersStep.css";
 export type CastMember = { id: string; name: string; role?: string; appearance: string; outfit: string; approvedReferences: string[] };
 export type CastSheetState = { status?: string; candidates?: string[]; error?: string; count?: number; startedAt?: number };
 export type Framing = "character" | "cinematic";
+export type StoryObject = { id: string; name: string; description: string; approvedReferences: string[] };
+export type ObjectHandlers = {
+  objects: StoryObject[];
+  sheets: Record<string, CastSheetState>;
+  suggesting: boolean;
+  onSuggest: () => void;
+  onAdd: () => void;
+  onEdit: (id: string, patch: Partial<StoryObject>) => void;
+  onRemove: (id: string) => void;
+  onSheets: (id: string, count: number) => void;
+  onApprove: (id: string, asset: string) => void;
+};
 
 // A run that never reported back (a server restart) stops showing as busy.
 const STALE_MS = 8 * 60 * 1000;
@@ -43,7 +56,9 @@ export function CharactersStep({
   onConsistency,
   onFraming,
   onGenerate,
+  objects,
 }: {
+  objects?: ObjectHandlers;
   cast: CastMember[];
   sheets: Record<string, CastSheetState>;
   consistency: boolean;
@@ -80,6 +95,9 @@ export function CharactersStep({
   }, [cast.length]);
   const needs = consistency && unlocked.length ? `Lock ${unlocked.map((character) => character.name).join(", ")} to continue` : "";
   const blocked = generateBlocked || needs;
+  const [kind, setKind] = useState<"cast" | "objects">("cast");
+  const showObjects = kind === "objects" && Boolean(objects);
+  const lockedObjects = objects ? objects.objects.filter((object) => object.approvedReferences.length).length : 0;
 
   return (
     <div className="chs">
@@ -91,8 +109,16 @@ export function CharactersStep({
         </button>
         <div className="maker-stage-head">
           <div>
-            <h2>Characters</h2>
-            <p>{cast.length ? `${cast.length - unlocked.length} of ${cast.length} locked` : "Lock the people in your story so every scene shows the same faces"}</p>
+            <h2>{showObjects ? "Objects" : "Characters"}</h2>
+            <p>
+              {showObjects
+                ? objects!.objects.length
+                  ? `${lockedObjects} of ${objects!.objects.length} locked · optional`
+                  : "Lock the things that come back in your story so they look the same in every scene"
+                : cast.length
+                  ? `${cast.length - unlocked.length} of ${cast.length} locked`
+                  : "Lock the people in your story so every scene shows the same faces"}
+            </p>
           </div>
           <div className="maker-actions">
             {needs && !generateBlocked ? <span className="chs-needs">{needs}</span> : null}
@@ -115,6 +141,24 @@ export function CharactersStep({
         </div>
       </div>
 
+      {objects ? (
+        <div className="chs-kind">
+          <Segmented
+            label="Recurring"
+            value={kind}
+            onChange={(next) => setKind(next as "cast" | "objects")}
+            options={[
+              { value: "cast", label: `Characters${cast.length ? ` · ${cast.length}` : ""}` },
+              { value: "objects", label: `Objects${objects.objects.length ? ` · ${objects.objects.length}` : ""}` },
+            ]}
+          />
+        </div>
+      ) : null}
+
+      {showObjects ? (
+        <ObjectsPanel {...objects!} busy={busy} />
+      ) : (
+      <>
       <div className="chs-bar">
         <Segmented
           label="Scene framing"
@@ -202,7 +246,250 @@ export function CharactersStep({
             </button>
         </EmptyState>
       )}
+      </>
+      )}
     </div>
+  );
+}
+
+// Object sheets show four views in a 2x2 grid; thumbnails zoom into the front view.
+const objectThumb = (asset: string) => (/-sheet-/.test(asset) ? "is-object" : undefined);
+
+function ObjectsPanel({ objects, sheets, suggesting, busy, onSuggest, onAdd, onEdit, onRemove, onSheets, onApprove }: ObjectHandlers & { busy: boolean }) {
+  const [selectedId, setSelectedId] = useState("");
+  const selected = objects.find((object) => object.id === selectedId) || objects.find((object) => !object.approvedReferences.length) || objects[0];
+  const [known, setKnown] = useState(objects.length);
+  useEffect(() => {
+    if (objects.length > known) setSelectedId(objects[objects.length - 1].id);
+    setKnown(objects.length);
+  }, [objects.length]);
+  if (!objects.length || !selected)
+    return (
+      <EmptyState
+        className="chs-empty"
+        icon={<Package size={22} />}
+        title="Anything that keeps coming back?"
+        body="A letter, a car, an heirloom, a weapon: lock its sheet and it looks the same in every scene that names it. Stories without one can skip this."
+      >
+        <button className="ui-btn is-primary" disabled={busy || suggesting} onClick={onSuggest}>
+          {suggesting ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
+          {suggesting ? "Reading the script" : "Find in script"}
+        </button>
+        <button className="ui-btn" onClick={onAdd}>
+          <Plus size={15} />
+          Add an object
+        </button>
+      </EmptyState>
+    );
+  return (
+    <div className="chs-layout is-objects">
+      <nav className="chs-rail" aria-label="Objects">
+        <ul>
+          {objects.map((object) => {
+            const sheet = sheets[object.id];
+            const thumb = object.approvedReferences[0] || sheet?.candidates?.[0] || "";
+            const running = isRunning(sheet);
+            const state = running ? "busy" : object.approvedReferences.length ? "locked" : "open";
+            return (
+              <li key={object.id}>
+                <button type="button" className="chs-person" aria-current={object.id === selected.id || undefined} onClick={() => setSelectedId(object.id)}>
+                  <span className="chs-face">{thumb ? <img src={thumb} alt="" className={objectThumb(thumb)} /> : <Package size={16} />}</span>
+                  <span className="chs-person-text">
+                    <strong>{object.name || "Unnamed"}</strong>
+                    <small>{state === "busy" ? "Generating…" : state === "locked" ? "Locked" : "Needs a sheet"}</small>
+                  </span>
+                  <span className="chs-state" data-state={state} aria-label={state === "busy" ? "Generating" : state === "locked" ? "Locked" : "Not locked"}>
+                    {state === "busy" ? <Loader2 size={13} className="animate-spin" /> : state === "locked" ? <Lock size={12} /> : null}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+        <div className="chs-rail-actions">
+          <button type="button" className="chs-rail-btn" onClick={onAdd}>
+            <Plus size={15} />
+            Add
+          </button>
+          <button type="button" className="chs-rail-btn" disabled={busy || suggesting} onClick={onSuggest}>
+            {suggesting ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
+            {suggesting ? "Reading…" : "From script"}
+          </button>
+        </div>
+      </nav>
+      <ObjectDetail
+        key={selected.id}
+        object={selected}
+        sheet={sheets[selected.id] || {}}
+        busy={busy}
+        onEdit={(patch) => onEdit(selected.id, patch)}
+        onRemove={() => onRemove(selected.id)}
+        onSheets={(n) => onSheets(selected.id, n)}
+        onApprove={(asset) => onApprove(selected.id, asset)}
+      />
+    </div>
+  );
+}
+
+function ObjectDetail({
+  object,
+  sheet,
+  busy,
+  onEdit,
+  onRemove,
+  onSheets,
+  onApprove,
+}: {
+  object: StoryObject;
+  sheet: CastSheetState;
+  busy: boolean;
+  onEdit: (patch: Partial<StoryObject>) => void;
+  onRemove: () => void;
+  onSheets: (count: number) => void;
+  onApprove: (asset: string) => void;
+}) {
+  const [count, setCount] = useState(2);
+  const [preview, setPreview] = useState("");
+  const locked = object.approvedReferences[0] || "";
+  const candidates = sheet.candidates || [];
+  const running = isRunning(sheet);
+  const shown = preview || locked || candidates[0] || "";
+  const canLock = Boolean(shown && shown !== locked && candidates.includes(shown));
+  const described = Boolean(object.description.trim());
+  const step = locked ? 3 : candidates.length ? 2 : described ? 1 : 0;
+  const gallery = locked && !candidates.includes(locked) ? [locked, ...candidates] : candidates;
+  const [viewing, setViewing] = useState(-1);
+  const thumb = locked || candidates[0] || "";
+
+  return (
+    <section className="chs-detail" aria-label={object.name}>
+      <header className="chs-detail-head">
+        <span className="chs-face is-lg">{thumb ? <img src={thumb} alt="" className={objectThumb(thumb)} /> : <Package size={20} />}</span>
+        <div className="chs-detail-title">
+          <h3>{object.name || "Unnamed object"}</h3>
+          <p>Matched in scenes that name it</p>
+        </div>
+        <span className={`chs-status${locked ? " is-locked" : running ? " is-busy" : ""}`}>
+          {locked ? <Lock size={12} /> : running ? <Loader2 size={12} className="animate-spin" /> : null}
+          {locked ? "Locked" : running ? "Generating" : candidates.length ? "Pick a take" : "Not locked"}
+        </span>
+        <div className="chs-head-actions">
+          <button type="button" className="ui-icon-btn is-bordered is-lg chs-iconbtn is-danger" title={`Remove ${object.name}`} aria-label={`Remove ${object.name}`} onClick={onRemove}>
+            <Trash2 size={16} />
+          </button>
+        </div>
+      </header>
+      <div className="chs-viewer">
+        <div className="chs-stage">
+          {shown ? (
+            <button type="button" className="chs-stage-open" aria-label="View full screen" onClick={() => setViewing(Math.max(0, gallery.indexOf(shown)))}>
+              <img key={shown} src={shown} alt={`${object.name} object sheet`} />
+              <span className="chs-expand" aria-hidden="true">
+                <Maximize2 size={15} />
+              </span>
+            </button>
+          ) : (
+            <span className={`chs-stage-empty${running ? " is-busy" : ""}`}>
+              {running ? <Loader2 size={22} className="animate-spin" /> : <WandSparkles size={22} />}
+              <strong>{running ? `Drawing ${sheet.count || count} ${(sheet.count || count) === 1 ? "take" : "takes"}` : "No sheet yet"}</strong>
+              <small>{running ? "Usually under a minute. Takes appear below as they finish." : "A sheet shows the object from the front, side, and back, plus a close-up of its detail."}</small>
+            </span>
+          )}
+          {shown && shown === locked ? (
+            <em className="ui-badge chs-tag is-locked">
+              <Lock size={12} />
+              Locked
+            </em>
+          ) : null}
+          {canLock ? (
+            <button type="button" className="chs-lock" disabled={busy} onClick={() => onApprove(shown)}>
+              <Check size={15} />
+              Lock this take
+            </button>
+          ) : null}
+        </div>
+        <div className="chs-takes" role="listbox" aria-label="Takes">
+          {candidates.map((asset, index) => (
+            <button
+              key={asset}
+              type="button"
+              role="option"
+              aria-selected={shown === asset}
+              className={asset === locked ? "is-locked" : undefined}
+              title={asset === locked ? "Locked take" : `Take ${candidates.length - index}`}
+              onClick={() => setPreview(asset)}
+              onDoubleClick={() => setViewing(Math.max(0, gallery.indexOf(asset)))}
+            >
+              <img src={asset} alt="" loading="lazy" />
+              <span className="chs-take-num">{candidates.length - index}</span>
+              {asset === locked ? (
+                <span className="chs-take-lock">
+                  <Lock size={10} />
+                </span>
+              ) : null}
+            </button>
+          ))}
+          {running ? (
+            <span className="chs-take-busy" aria-label="Generating">
+              <Loader2 size={14} className="animate-spin" />
+            </span>
+          ) : null}
+          {!candidates.length && !running ? <span className="chs-takes-hint">Takes you generate show up here.</span> : null}
+        </div>
+      </div>
+
+      <div className="chs-form">
+        <ol className="chs-steps" aria-label="Progress">
+          {["Describe", "Generate", "Lock"].map((label, index) => (
+            <li key={label} data-done={step > index || undefined} data-current={step === index || undefined}>
+              <span>{step > index ? <Check size={11} /> : index + 1}</span>
+              {label}
+            </li>
+          ))}
+        </ol>
+        <label className="maker-field">
+          Name
+          <input value={object.name} placeholder="What the script calls it, e.g. the brass compass" onChange={(e) => onEdit({ name: e.target.value })} />
+        </label>
+        <label className="maker-field">
+          Look
+          <textarea rows={4} value={object.description} placeholder="Shape, size, colors, materials, wear, distinctive markings" onChange={(e) => onEdit({ description: e.target.value })} />
+        </label>
+        <div className="chs-generate">
+          <TakeCount value={count} onChange={setCount} />
+          <button
+            type="button"
+            className="ui-btn is-primary is-lg is-block"
+            disabled={busy || running || !described}
+            onClick={() => {
+              setPreview("");
+              onSheets(count);
+            }}
+          >
+            {running ? <Loader2 size={15} className="animate-spin" /> : <WandSparkles size={15} />}
+            {running ? "Generating" : candidates.length ? "Generate more takes" : "Generate object sheet"}
+          </button>
+          {!described ? <small className="chs-hint">Describe how it looks first.</small> : null}
+        </div>
+        {sheet.status === "failed" && sheet.error ? <p className="chs-error">{sheet.error}</p> : null}
+      </div>
+      {viewing >= 0 && gallery.length ? (
+        <SheetViewer
+          noun="object"
+          name={object.name}
+          images={gallery}
+          locked={locked}
+          index={Math.min(viewing, gallery.length - 1)}
+          busy={busy}
+          onIndex={setViewing}
+          onClose={() => setViewing(-1)}
+          onLock={(asset) => {
+            setPreview(asset);
+            onApprove(asset);
+          }}
+        />
+      ) : null}
+    </section>
   );
 }
 

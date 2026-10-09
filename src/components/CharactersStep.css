@@ -21,6 +21,20 @@
   color: var(--mk-muted);
   font-size: 13px;
 }
+/* Characters | Objects: which recurring things the step shows. */
+.chs-kind {
+  margin: 16px 0 0;
+}
+.chs-kind + .chs-layout,
+.chs-kind + .chs-empty {
+  margin-top: 20px;
+}
+/* An object sheet is a 2x2 grid: thumbnails zoom into the front view (top left). */
+.chs-face img.is-object {
+  object-position: 0% 0%;
+  transform: scale(2);
+  transform-origin: 0% 0%;
+}
 
 /* Layout: cast list | detail */
 .chs-layout {

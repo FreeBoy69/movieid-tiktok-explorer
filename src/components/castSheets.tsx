@@ -60,7 +60,9 @@ export function SheetViewer({
   onIndex,
   onClose,
   onLock,
+  noun = "character",
 }: {
+  noun?: string;
   name: string;
   images: string[];
   locked: string;
@@ -87,7 +89,7 @@ export function SheetViewer({
     };
   });
   return createPortal(
-    <div className="chs-lightbox" role="dialog" aria-modal="true" aria-label={`${name} character sheets`} onClick={(e) => e.target === e.currentTarget && onClose()}>
+    <div className="chs-lightbox" role="dialog" aria-modal="true" aria-label={`${name} ${noun} sheets`} onClick={(e) => e.target === e.currentTarget && onClose()}>
       <header className="chs-lb-bar">
         <div>
           <strong>{name}</strong>
@@ -121,7 +123,7 @@ export function SheetViewer({
             <ChevronLeft size={22} />
           </button>
         ) : null}
-        <img key={asset} src={asset} alt={`${name} character sheet`} />
+        <img key={asset} src={asset} alt={`${name} ${noun} sheet`} />
         {images.length > 1 ? (
           <button type="button" className="chs-lb-nav is-next" aria-label="Next take" onClick={() => step(1)}>
             <ChevronRight size={22} />

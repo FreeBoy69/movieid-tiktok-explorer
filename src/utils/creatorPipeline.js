@@ -195,6 +195,20 @@ export function normalizeVisualBible(value = {}) {
     })
     .filter(Boolean)
     .slice(0, 8);
+  // Recurring objects (a locket, a car, a map): each locks a sheet so it looks the same in every scene.
+  const objects = (Array.isArray(value.objects) ? value.objects : [])
+    .map((item, index) => {
+      const id = String(item?.id || `object-${index + 1}`).trim();
+      if (!SAFE_CAST_ID.test(id)) return null;
+      return {
+        id,
+        name: String(item?.name || `Object ${index + 1}`).trim().slice(0, 80),
+        description: String(item?.description || "").trim().slice(0, 600),
+        approvedReferences: [...new Set((Array.isArray(item?.approvedReferences) ? item.approvedReferences : []).map(String))].slice(0, 2),
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 8);
   return {
     version: Math.max(1, Number(value.version) || 1),
     locked: value.locked !== false,
@@ -207,12 +221,27 @@ export function normalizeVisualBible(value = {}) {
       negative: String(value.artDirection?.negative || "").trim().slice(0, 500),
     },
     cast,
+    objects,
   };
+}
+
+const OBJECT_NAME_STOPWORDS = new Set(["the", "a", "an", "of", "and", "old", "new", "his", "her", "their", "my", "our", "your", "its"]);
+/** The recurring objects a scene shows: those its narration or prompt names, by full name or by the
+ *  name's last word ("the compass" matches "Grandfather's Brass Compass"). */
+export function sceneObjects(objects = [], scene = {}) {
+  const text = ` ${[scene.text, scene.prompt].filter(Boolean).join(" ")} `.toLowerCase().replace(/[^a-z0-9]+/g, " ");
+  return objects.filter((object) => {
+    const words = String(object?.name || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().split(" ").filter(Boolean);
+    if (!words.length) return false;
+    if (text.includes(` ${words.join(" ")} `)) return true;
+    const head = [...words].reverse().find((word) => word.length >= 3 && !OBJECT_NAME_STOPWORDS.has(word));
+    return Boolean(head && new RegExp(`\\b${head}(?:es|s)?\\b`).test(text));
+  });
 }
 
 // Provider reference limits are small. Identity and style references are never
 // silently discarded: the caller gets an actionable error before generation.
-export function allocateImageReferences({ identity = [], style = [], composition = [], limit = 4 } = {}) {
+export function allocateImageReferences({ identity = [], style = [], composition = [], objects = [], limit = 4 } = {}) {
   const cap = Math.max(1, Math.min(8, Number(limit) || 4));
   const unique = (items, role) => {
     const seen = new Set();
@@ -223,12 +252,18 @@ export function allocateImageReferences({ identity = [], style = [], composition
   const identities = unique(identity, "identity");
   const styles = unique(style, "style");
   const compositions = unique(composition, "composition");
+  const objectRefs = unique(objects, "object");
   if (identities.length > cap)
     throw new Error(`This scene needs ${identities.length} character references, but the image model supports ${cap}. Reduce the cast in this scene.`);
   if (styles.length && identities.length >= cap)
     throw new Error(`This scene leaves no reference slot for its art style. Reduce the cast below ${cap} characters.`);
   const selected = [...identities];
   if (styles.length) selected.push(styles[0]);
+  // Object sheets take the slots characters and style leave; one that doesn't fit is described in text.
+  for (const item of objectRefs) {
+    if (selected.length >= cap) break;
+    selected.push(item);
+  }
   if (compositions.length && selected.length < cap) selected.push(compositions[0]);
   for (const item of styles.slice(1)) {
     if (selected.length >= cap) break;

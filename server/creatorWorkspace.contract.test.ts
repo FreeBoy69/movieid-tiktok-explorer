@@ -455,6 +455,36 @@ describe("creator workspace API contracts", () => {
       expect(projects.get("p1")!.metadata.settings.thumbnailReference).toBe("");
     });
 
+    it("locks only an object's own generated sheet and keeps it through saves", async () => {
+      const asset = "/api/maker/projects/p1/assets/object-1-sheet-abcd1234.png";
+      const project = projects.get("p1")!;
+      project.metadata = {
+        ...project.metadata,
+        settings: { visualBible: { objects: [{ id: "object-1", name: "Brass Compass", description: "dented brass lid" }] } },
+        objectSheets: { "object-1": { status: "ready", candidates: [asset] } },
+      };
+      const stranger = await request("/api/maker/projects/p1/objects/object-1/approve", {
+        method: "POST",
+        body: JSON.stringify({ accountId: "a1", asset: "/api/maker/projects/p2/assets/x-sheet-1.png", expectedVersion: 1 }),
+      });
+      expect(stranger.status).toBe(400);
+      const locked = await request("/api/maker/projects/p1/objects/object-1/approve", {
+        method: "POST",
+        body: JSON.stringify({ accountId: "a1", asset, expectedVersion: 1 }),
+      });
+      expect(locked.status).toBe(200);
+      const after = projects.get("p1")!;
+      expect(after.metadata.settings.visualBible.objects[0].approvedReferences).toEqual([asset]);
+      expect(after.metadata.referenceAssets).toContain(asset);
+      // An edit from the page keeps the lock, but a sheet that isn't the project's is dropped.
+      const saved = await request("/api/maker/projects/p1", {
+        method: "PATCH",
+        body: JSON.stringify({ accountId: "a1", settings: { visualBible: { objects: [{ id: "object-1", name: "Brass Compass", description: "dented brass lid, initials", approvedReferences: [asset, "/elsewhere.png"] }] } }, expectedVersion: after.version }),
+      });
+      expect(saved.status).toBe(200);
+      expect(projects.get("p1")!.metadata.settings.visualBible.objects[0]).toMatchObject({ description: "dented brass lid, initials", approvedReferences: [asset] });
+    });
+
     it("refuses to switch a project to a style that does not exist", async () => {
       const response = await request("/api/maker/projects/p1", {
         method: "PATCH",

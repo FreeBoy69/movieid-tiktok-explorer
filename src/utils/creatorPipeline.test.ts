@@ -7,6 +7,7 @@ import {
   normalizeVisualSegments,
   normalizeVisualBible,
   rankDiscoveryChannels,
+  sceneObjects,
   segmentImageLimit,
   segmentScenes,
   splitCreatorScene,
@@ -94,6 +95,31 @@ describe("visual consistency references", () => {
       { path: "style-a.jpg", role: "style" },
       { path: "layout.jpg", role: "composition" },
     ]);
+  });
+
+  it("fits object sheets into the slots characters and style leave, before composition", () => {
+    expect(allocateImageReferences({
+      identity: [{ path: "lead.jpg" }],
+      style: ["style.jpg"],
+      composition: ["layout.jpg"],
+      objects: [{ path: "compass.png", objectId: "object-1" }, { path: "map.png", objectId: "object-2" }, { path: "key.png", objectId: "object-3" }],
+      limit: 4,
+    }).map((r: any) => `${r.role}:${r.path}`)).toEqual(["identity:lead.jpg", "style:style.jpg", "object:compass.png", "object:map.png"]);
+  });
+
+  it("keeps recurring objects in the visual bible and finds the ones a scene names", () => {
+    const bible = normalizeVisualBible({ objects: [
+      { id: "object-1", name: "Grandfather's Brass Compass", description: "a dented brass compass", approvedReferences: ["/a.png", "/b.png", "/c.png"] },
+      { id: "object-2", name: "Red Notebook", description: "" },
+      { id: "bad id!", name: "Nope" },
+    ] });
+    expect(bible.objects.map((o: any) => o.id)).toEqual(["object-1", "object-2"]);
+    expect(bible.objects[0].approvedReferences).toEqual(["/a.png", "/b.png"]);
+    const found = (text: string) => sceneObjects(bible.objects, { text }).map((o: any) => o.id);
+    expect(found("She opens the compass and the needle spins.")).toEqual(["object-1"]);
+    expect(found("Two compasses lie on the red notebook.")).toEqual(["object-1", "object-2"]);
+    expect(found("A storm rolls over the harbor.")).toEqual([]);
+    expect(sceneObjects(bible.objects, { text: "", prompt: "close-up of the brass compass" }).map((o: any) => o.id)).toEqual(["object-1"]);
   });
 
   it("fails instead of silently dropping identity or style references", () => {

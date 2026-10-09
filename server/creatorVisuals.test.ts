@@ -77,7 +77,7 @@ describe("image safety recovery", () => {
   });
 });
 
-import { castSheetPrompt } from "./creatorWorkspace.js";
+import { castSheetPrompt, objectSheetPrompt } from "./creatorWorkspace.js";
 import { shotDirection, validateCreatorScenes } from "../src/utils/creatorPipeline.js";
 describe("character-led storyboards", () => {
   it("asks for shot sizes and close character framing only when character-led", async () => {
@@ -117,6 +117,16 @@ describe("character-led storyboards", () => {
     expect(prompt).toContain("Mara, archivist");
     expect(prompt).toContain("IDENTITY REFERENCE");
     expect(prompt).not.toContain("STYLE REFERENCE");
+  });
+
+  it("builds a four-view object sheet prompt with no people", () => {
+    const prompt = objectSheetPrompt({ name: "Brass Compass", description: "dented lid, engraved initials" }, { direction: "watercolor", style: true });
+    expect(prompt).toContain("OBJECT REFERENCE SHEET");
+    expect(prompt).toContain("2x2 grid");
+    expect(prompt).toContain("no people, no hands");
+    expect(prompt).toContain("Object: Brass Compass.");
+    expect(prompt).toContain("Art style: watercolor.");
+    expect(prompt).toContain("STYLE REFERENCE");
   });
 });
 
