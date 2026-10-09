@@ -41,7 +41,7 @@ import { buildHyperframesOverlay, hyperframesAvailable, renderHyperframesHtml } 
 import { hostPromoDocument, promoRendererAvailable, renderPromo } from "./promoRenderer.js";
 import { hyperframesKit, renderHyperframesProject } from "./hyperframesRenderer.js";
 import { normalizeOverlay, normalizeOverlayPlan, OVERLAY_FONTS, OVERLAY_KINDS, overlayBatches, overlaysPlanPrompt, overlayTemplate } from "../src/utils/videoOverlays.js";
-import { adoptStudioMedia, saveVibeProject } from "./vibeEdit.js";
+import { adoptStudioMedia, loadVibeProject, saveVibeProject, studioFilePath } from "./vibeEdit.js";
 import { graphicFontCss, graphicHtml, graphicsPlanPrompt, normalizeGraphic, normalizeGraphicsPlan } from "../src/utils/videoGraphics.js";
 import { findLook, lookFilter, TRANSITION_IDS, transitionFilter, VIDEO_LOOKS } from "../src/utils/videoLooks.js";
 import {
@@ -2850,8 +2850,22 @@ export async function bundleEntries(project, review) {
   return entries;
 }
 /** The Vibe Edit document for a Create Video project (see the /vibe-edit route). */
+// Create Video's still moves as Vibe Edit camera moves.
+const VIBE_MOVES = { in: "push", out: "pull", right: "pan-right", left: "pan-left" };
+const VIBE_SIZES = { "16:9": [1920, 1080], "9:16": [1080, 1920], "1:1": [1080, 1080], "4:5": [1080, 1350], "21:9": [2520, 1080] };
+
+/** What the edit is built from: when this changes, the storyboard has moved on since the edit was made. */
+export function creatorVibeFingerprint(project) {
+  const scenes = project.outputs.visualPlan?.scenes || [];
+  const parts = scenes.map((s) => [s.id, s.start, s.end, s.asset, s.clip, (s.overlays || []).map((o) => o.asset)]);
+  parts.push(project.outputs.voiceover?.asset || "", project.outputs.soundtrack?.asset || "", project.metadata.settings?.musicPolicy || "");
+  return crypto.createHash("sha1").update(JSON.stringify(parts)).digest("hex").slice(0, 16);
+}
+
 export function creatorVibeProject(project, { media, narration, music }) {
   const settings = project.metadata.settings || {};
+  const aspect = VIBE_SIZES[settings.aspect] ? settings.aspect : "16:9";
+  const transition = settings.transition && settings.transition !== "cut" ? settings.transition : undefined;
   const scenes = project.outputs.visualPlan.scenes;
   const voice = project.outputs.voiceover;
   const r = (n) => Math.round(n * 1000) / 1000;
@@ -2867,13 +2881,28 @@ export function creatorVibeProject(project, { media, narration, music }) {
       const seconds = scene.stock?.clipSeconds || length;
       assets.push({ id, kind: "video", name: scene.graphic ? `Card ${i + 1}` : scene.stock ? `Footage ${i + 1}` : `Scene ${i + 1}`, url: clip.url, file: clip.file, duration: Math.max(seconds, length), origin: "generated" });
       const take = Math.min(length, seconds);
-      clips.push({ id: `s${i}c`, assetId: id, track: 0, start: r(at), in: 0, out: r(take), fit: "fill", muted: true });
+      clips.push({ id: `s${i}c`, assetId: id, track: 0, start: r(at), in: 0, out: r(take), fit: "fill", muted: true, ...(transition && i > 0 ? { transition } : {}) });
       at += take;
     }
     if (picture?.file && scene.end - at > 0.05) {
       const id = `scene${i}_still`;
       assets.push({ id, kind: "image", name: `Scene ${i + 1}`, url: picture.url, file: picture.file, origin: "generated" });
-      clips.push({ id: `s${i}i`, assetId: id, track: 0, start: r(at), in: 0, out: r(scene.end - at), fit: "fill" });
+      // A still keeps its storyboard move (the same rotation the classic render uses) and the scene's entrance.
+      const move = scene.motion === "push" ? VIBE_MOVES[sceneMove(i)] : undefined;
+      clips.push({ id: `s${i}i`, assetId: id, track: 0, start: r(at), in: 0, out: r(scene.end - at), fit: "fill", ...(move ? { motion: move } : {}), ...(transition && i > 0 && at === scene.start ? { transition } : {}) });
+    }
+    // Overlays (name tags, places, numbers) ride on the track above, still editable as motion graphics.
+    for (const [k, overlay] of (media.get(scene.id)?.overlays || []).entries()) {
+      const source = (scene.overlays || [])[k];
+      if (!overlay?.file || !source) continue;
+      const id = `scene${i}_ov${k}`;
+      const [width, height] = VIBE_SIZES[aspect];
+      const seconds = Number(source.seconds) || 3;
+      assets.push({
+        id, kind: "video", name: `Overlay: ${Object.values(source.vars || {})[0] || source.kind}`, url: overlay.url, file: overlay.file, duration: seconds, width, height, origin: "generated",
+        ...(OVERLAY_KINDS[source.kind] ? { motion: { html: overlayTemplate(source.kind, { width, height, look: source.look || settings.look || "none" }), seconds, width, height, kind: source.kind, vars: source.vars || {} } } : {}),
+      });
+      clips.push({ id: `s${i}o${k}`, assetId: id, track: 1, start: r(Number(source.start) || scene.start), in: 0, out: r(seconds), fit: "fit", muted: true });
     }
   });
   assets.push({ id: "narration", kind: "audio", name: "Narration", url: narration.url, file: narration.file, duration: voice.duration, origin: "voiceover" });
@@ -2901,14 +2930,16 @@ export function creatorVibeProject(project, { media, narration, music }) {
     version: 1,
     id: `vp_${crypto.randomBytes(6).toString("hex")}`,
     name: String(project.outputs.title?.current || project.title || "Create Video edit").slice(0, 120),
-    aspect: ["16:9", "9:16", "1:1", "4:5"].includes(settings.aspect) ? settings.aspect : "16:9",
+    aspect,
     background: "#000000",
+    ...(settings.look && settings.look !== "none" ? { look: settings.look } : {}),
     source: { kind: "create-video", projectId: project.id },
     assets,
     clips,
     audio,
     texts: [],
-    captions: { cues, show: Boolean(settings.captionStyle && settings.captionStyle !== "none"), style: "clean", wordHighlight: true },
+    // The project's caption style carries over: both editors draw from the same caption catalog.
+    captions: { cues, show: Boolean(settings.captionStyle && settings.captionStyle !== "none"), style: settings.captionStyle && settings.captionStyle !== "none" ? settings.captionStyle : "clean", wordHighlight: true },
     createdAt: now,
     updatedAt: now,
   };
@@ -3801,21 +3832,69 @@ export function registerCreatorWorkspace(app) {
         const ext = path.extname(file).slice(1).toLowerCase().replace("jpeg", "jpg");
         return adoptStudioMedia(userId, file, ext).catch(() => null);
       };
+      // The project's own edit: opened again as it was left, unless asked to rebuild it or refresh its media.
+      const linked = project.metadata.vibeEdit || {};
+      const fingerprint = creatorVibeFingerprint(project);
+      const existing = linked.projectId ? await loadVibeProject(userId, linked.projectId).catch(() => null) : null;
+      const mode = req.body?.rebuild ? "rebuild" : req.body?.refresh ? "refresh" : "open";
+      if (existing && mode === "open") return res.json({ projectId: existing.id, stale: linked.fingerprint !== fingerprint });
       const media = new Map();
       const queue = [...scenes];
       await Promise.all(Array.from({ length: 6 }, async () => {
         for (let scene = queue.shift(); scene; scene = queue.shift()) {
           const picture = await adopt(scene.asset);
           const clip = scene.clip ? await adopt(scene.clip) : null;
-          media.set(scene.id, { picture, clip });
+          const overlays = [];
+          for (const overlay of scene.overlays || []) overlays.push(overlay.asset ? await adopt(overlay.asset) : null);
+          media.set(scene.id, { picture, clip, overlays });
         }
       }));
       const narration = await adopt(voice.asset);
       if (!narration) throw fail("The voiceover file is missing. Make it again.", 409);
       const music = project.outputs.soundtrack?.asset && project.metadata.settings?.musicPolicy !== "none" ? await adopt(project.outputs.soundtrack.asset) : null;
-      const doc = creatorVibeProject(project, { media, narration, music });
+      let doc = creatorVibeProject(project, { media, narration, music });
+      if (existing && mode === "refresh") {
+        // Keep every cut, title, and caption; swap in the new media for assets the storyboard changed, and add
+        // what's new to the media bin.
+        const fresh = new Map(doc.assets.map((asset) => [asset.id, asset]));
+        const kept = existing.assets.map((asset) => (fresh.has(asset.id) ? { ...asset, ...fresh.get(asset.id) } : asset));
+        const added = doc.assets.filter((asset) => !existing.assets.some((a) => a.id === asset.id));
+        doc = { ...existing, assets: [...kept, ...added], updatedAt: Date.now() };
+      } else if (existing) doc = { ...doc, id: existing.id, name: existing.name };
       await saveVibeProject(userId, doc);
-      res.json({ projectId: doc.id });
+      await patchProjectMetadata(userId, project.id, (metadata) => ({ ...metadata, vibeEdit: { projectId: doc.id, fingerprint, builtAt: new Date().toISOString() } }));
+      res.json({ projectId: doc.id, stale: false });
+    }),
+  );
+  // An export from the project's edit becomes the project's video: the Review stage shows it and publishing uses it.
+  app.post(
+    "/api/maker/projects/:id/vibe-edit/export",
+    route(async (req, res, session) => {
+      const { project } = await scopedProject(req, session, req.params.id);
+      const file = String(req.body?.file || "");
+      if (!/^gen-vibe-[A-Za-z0-9_-]+\.mp4$/.test(file)) throw fail("That export can't be used");
+      const source = await studioFilePath(session.user.id, file);
+      if (!source) throw fail("That export is gone. Export it again.", 404);
+      const name = `${crypto.randomUUID()}-edit.mp4`;
+      const target = path.join(directory(project.id), name);
+      await fs.mkdir(directory(project.id), { recursive: true });
+      await fs.copyFile(source, target);
+      await saveFile(storeKey(project.id, name), target).catch(() => {});
+      // Captions for the upload come from the edit's own caption track.
+      const edit = project.metadata.vibeEdit?.projectId ? await loadVibeProject(session.user.id, project.metadata.vibeEdit.projectId).catch(() => null) : null;
+      const cues = edit?.captions?.cues || [];
+      let captions = project.outputs.review?.captions;
+      if (cues.length) {
+        const srtName = `${crypto.randomUUID()}-edit.srt`;
+        const stamp = (t) => { const ms = Math.max(0, Math.round(t * 1000)); const z = (n, w = 2) => String(n).padStart(w, "0"); return `${z(Math.floor(ms / 3600000))}:${z(Math.floor(ms / 60000) % 60)}:${z(Math.floor(ms / 1000) % 60)},${z(ms % 1000, 3)}`; };
+        await fs.writeFile(path.join(directory(project.id), srtName), cues.map((c, k) => `${k + 1}\n${stamp(c.start)} --> ${stamp(c.end)}\n${c.text}\n`).join("\n"));
+        await saveFile(storeKey(project.id, srtName), path.join(directory(project.id), srtName)).catch(() => {});
+        captions = assetUrl(project.id, srtName);
+      }
+      const review = { ...(project.outputs.review || {}), asset: assetUrl(project.id, name), ...(captions ? { captions } : {}), stale: false, editedIn: "vibe-edit", exportedAt: new Date().toISOString() };
+      res.json({
+        project: await dependencies.updateProject(session.user.id, project.id, { outputs: { review }, accountId: project.accountId, expectedVersion: project.version || 1 }),
+      });
     }),
   );
   app.post(

@@ -873,7 +873,7 @@ export function Inspector() {
             />
             <Slider label="Punch-in" value={clip.zoom || 1} display={`${Math.round((clip.zoom || 1) * 100)}%`} min={1} max={1.5} step={0.01} onChange={(v) => set({ zoom: v > 1.004 ? v : null })} />
             <label className="ve-prop-row">
-              <span>Camera move</span>
+              <span>Move</span>
               <select className="ui-select" value={clip.motion || "none"} onChange={(e) => set({ motion: e.target.value === "none" ? null : e.target.value })}>
                 {VIDEO_MOTIONS.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
               </select>

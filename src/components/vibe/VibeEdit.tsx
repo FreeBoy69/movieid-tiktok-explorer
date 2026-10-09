@@ -8,7 +8,7 @@ import { toast } from "../../utils/toast";
 import { writeDeepLink } from "../../utils/tiktokRoute";
 import { loadVoiceProfiles } from "../../utils/voiceProfiles";
 import { compactTracks, deleteItems, duplicateItems, editPoints, isLocked, emptyProject, formatTime, frameSize, moveItems, normalizeProject, projectDuration, rippleDeleteItems, splitAt, toggleMarker, trimToTime, VIBE_ASPECTS, type VibeAspect } from "../../utils/vibeEdit";
-import { deleteProject, getRender, listProjects, loadProject, saveProject, startRender, stopRender, type ProjectSummary, type RenderJob } from "./api";
+import { deleteProject, exportToSource, getRender, listProjects, loadProject, saveProject, startRender, stopRender, type ProjectSummary, type RenderJob } from "./api";
 import { getVoices, runActions, setVoices } from "./commands";
 import { JuelPanel, provideJuelContext, type JuelPageTools } from "../JuelPanel";
 import { summarizeProject, VIBE_ACTIONS } from "../../utils/vibeEditActions";
@@ -168,7 +168,9 @@ function ExportMenu() {
         setProgress(next.progress);
         if (next.status === "completed") {
           setPhase("");
-          toast.success("Your video is ready.");
+          // An edit made for a Create Video project or a film episode hands its export back to it.
+          const saved = next.file ? await exportToSource(vibe.get().project, next.file).catch((e) => { toast.error((e as Error).message); return ""; }) : "";
+          toast.success(saved ? `Your video is ready. ${saved}.` : "Your video is ready.");
         } else if (next.status !== "running") {
           setPhase("");
           if (next.status === "failed") toast.error(next.error || "The export failed.");
@@ -339,7 +341,7 @@ function Cover({ cover }: { cover?: ProjectSummary["cover"] }) {
   );
 }
 
-function Sidebar({ open, onToggle, onAll, onOpenEdit, onNew, children }: { open: boolean; onToggle: () => void; onAll: () => void; onOpenEdit: (id: string) => void; onNew: () => void; children: ReactNode }) {
+function Sidebar({ open, onToggle, onAll, onOpenEdit, onNew, embedded = false, children }: { open: boolean; onToggle: () => void; onAll: () => void; onOpenEdit: (id: string) => void; onNew: () => void; embedded?: boolean; children: ReactNode }) {
   const currentId = useVibe((s) => s.project.id);
   const currentName = useVibe((s) => s.project.name);
   const [edits, setEdits] = useState<ProjectSummary[] | null>(null);
@@ -368,6 +370,19 @@ function Sidebar({ open, onToggle, onAll, onOpenEdit, onNew, children }: { open:
   const current = (edits || []).find((e) => e.id === currentId);
   const showCurrent = !q || currentName.toLowerCase().includes(q);
 
+  // Inside another page (Create Video, Create Film) the edit belongs to that page: only the tools show.
+  if (embedded) {
+    return (
+      <nav className={`ve-nav${open ? " is-open" : ""}`} aria-label="Tools">
+        <div className="ve-nav-head">
+          <button type="button" className="ve-nav-toggle" onClick={onToggle} aria-expanded={open} aria-label={open ? "Collapse sidebar" : "Expand sidebar"} title={open ? "Collapse sidebar" : "Expand sidebar"}>
+            {open ? <PanelLeftClose size={18} strokeWidth={1.75} /> : <PanelLeftOpen size={18} strokeWidth={1.75} />}
+          </button>
+        </div>
+        <div className="ve-nav-foot">{children}</div>
+      </nav>
+    );
+  }
   return (
     <nav className={`ve-nav${open ? " is-open" : ""}`} aria-label="Edits">
       <div className="ve-nav-head">
@@ -432,7 +447,7 @@ const JUEL_EDITS: JuelPageTools = {
 const JUEL_PRESETS = SOUND_PRESETS.map((p) => `${p.id} (${p.character})`);
 const JUEL_TIMELINE_RULES = "Times are seconds. Video clips sit on tracks (0 = base sequence, higher tracks composite in front); sound sits on audio lanes. A clip plays source seconds in..out starting at timeline start. Captions are word-timed cues. Use ids exactly as given; never invent asset ids (generate or ask for media). voicePresets are the values for update_item preset.";
 
-function Editor({ onBack, onOpenEdit, onNew }: { onBack: () => void; onOpenEdit: (id: string) => void; onNew: () => void }) {
+function Editor({ onBack, onOpenEdit, onNew, backLabel = "Projects", embedded = false }: { onBack: () => void; onOpenEdit: (id: string) => void; onNew: () => void; backLabel?: string; embedded?: boolean }) {
   const name = useVibe((s) => s.project.name);
   const projectId = useVibe((s) => s.project.id);
   // Juel works on this edit: it reads the project as it is when a message is sent, and its edits run here.
@@ -576,8 +591,8 @@ function Editor({ onBack, onOpenEdit, onNew }: { onBack: () => void; onOpenEdit:
     >
       <header className="ve-top">
         <nav className="ve-crumbs" aria-label="Breadcrumb">
-          <button type="button" className="ve-crumb-back" onClick={onBack} aria-label="Back to projects">
-            <ChevronLeft size={17} /> <span className="ve-label-wide">Projects</span>
+          <button type="button" className="ve-crumb-back" onClick={onBack} aria-label={`Back to ${backLabel.toLowerCase()}`}>
+            <ChevronLeft size={17} /> <span className="ve-label-wide">{backLabel}</span>
           </button>
           <span className="ve-crumb-sep" aria-hidden="true">/</span>
           <label className="ve-name-wrap">
@@ -594,7 +609,7 @@ function Editor({ onBack, onOpenEdit, onNew }: { onBack: () => void; onOpenEdit:
         </div>
       </header>
 
-      <Sidebar open={navOpen} onToggle={() => setNavOpen((o) => !o)} onAll={onBack} onOpenEdit={onOpenEdit} onNew={onNew}>
+      <Sidebar open={navOpen} onToggle={() => setNavOpen((o) => !o)} onAll={onBack} onOpenEdit={onOpenEdit} onNew={onNew} embedded={embedded}>
         <SideItem icon={<Upload size={18} strokeWidth={1.75} />} label="Import files" onClick={() => importer.current?.click()} />
         <SideItem icon={<WandSparkles size={18} strokeWidth={1.75} />} label="Auto edit" on={tab === "auto"} onClick={() => setTab(tab === "auto" ? "media" : "auto")} />
         <span className="ve-nav-sep ve-nav-phone" aria-hidden="true" />
@@ -687,7 +702,9 @@ function Editor({ onBack, onOpenEdit, onNew }: { onBack: () => void; onOpenEdit:
   );
 }
 
-export default function VibeEdit({ theme, projectId }: { theme: "light" | "dark"; projectId?: string }) {
+/** Vibe Edit, the one editor. On its own page it has a home of edits; `embedded` puts one edit inside another page
+ *  (Create Video, Create Film), whose back button returns there. */
+export default function VibeEdit({ theme, projectId, embedded }: { theme: "light" | "dark"; projectId?: string; embedded?: { backLabel: string; onBack: () => void } }) {
   const [openId, setOpenId] = useState<string | undefined>(projectId);
   const [loading, setLoading] = useState(false);
   const loadedId = useVibe((s) => s.project.id);
@@ -713,7 +730,8 @@ export default function VibeEdit({ theme, projectId }: { theme: "light" | "dark"
         setLoading(false);
         toast.error((e as Error).message);
         setOpenId(undefined);
-        writeDeepLink({ view: "vibe-edit" }, true);
+        if (embedded) embedded.onBack();
+        else writeDeepLink({ view: "vibe-edit" }, true);
       });
     return () => {
       live = false;
@@ -780,6 +798,7 @@ export default function VibeEdit({ theme, projectId }: { theme: "light" | "dark"
   };
   const back = async () => {
     await flush();
+    if (embedded) return embedded.onBack();
     setOpenId(undefined);
     writeDeepLink({ view: "vibe-edit" });
   };
@@ -795,8 +814,8 @@ export default function VibeEdit({ theme, projectId }: { theme: "light" | "dark"
   return (
     <div className="ve-root" data-theme={theme}>
       {editing ? (
-        <Editor onBack={() => void back()} onOpenEdit={(id) => void switchTo(id)} onNew={() => void startNew()} />
-      ) : openId ? (
+        <Editor onBack={() => void back()} onOpenEdit={(id) => void switchTo(id)} onNew={() => void startNew()} backLabel={embedded?.backLabel} embedded={Boolean(embedded)} />
+      ) : openId || embedded ? (
         <div className="ve-loading">
           <Loader2 size={20} className="ui-spin" /> Opening your edit…
         </div>

@@ -103,3 +103,12 @@
 .maker-art-button strong { overflow: hidden; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
 .maker-art-auto { display: flex; width: 100%; align-items: center; gap: 8px; margin: 0 0 12px; padding: 12px 14px; border: 1px solid var(--mk-line); border-radius: 12px; background: var(--mk-surface); color: var(--mk-text); font: inherit; font-weight: 650; text-align: left; cursor: pointer; }
 .maker-art-auto.is-on { border-color: var(--mk-accent); background: var(--mk-accent-soft); }
+
+/* The project's edit: the whole Vibe Edit, full screen (the app header steps aside while editing). */
+.maker-vibe-embed { position: fixed; inset: 0; z-index: 40; display: flex; flex-direction: column; background: var(--ui-bg); }
+.maker-vibe-embed > .ve-root { flex: 1; min-height: 0; }
+.maker-vibe-gate { display: grid; justify-items: start; gap: 10px; max-width: 640px; margin: 40px auto; padding: 24px; border: 1px solid var(--mk-line, var(--ui-line)); border-radius: 18px; background: var(--mk-surface, var(--ui-panel)); color: var(--mk-text, var(--ui-text)); }
+.maker-vibe-gate:not(:has(strong)) { display: flex; align-items: center; gap: 10px; color: var(--mk-muted, var(--ui-text-muted)); }
+.maker-vibe-gate strong { font-size: 17px; font-weight: 700; }
+.maker-vibe-gate p { margin: 0; color: var(--mk-muted, var(--ui-text-muted)); line-height: 1.55; }
+.maker-vibe-gate-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 6px; }

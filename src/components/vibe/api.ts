@@ -132,6 +132,18 @@ export interface ChatAction {
   args: Record<string, unknown>;
 }
 
+/** An export of an edit made for a Create Video project or a film episode becomes that project's video. Returns
+ *  what it became, or "" when the edit belongs to nothing. */
+export async function exportToSource(project: VibeProject, file: string): Promise<string> {
+  const source = project.source;
+  if (!file || !source || source.kind === "recap") return "";
+  const url = source.kind === "create-video"
+    ? `/api/maker/projects/${encodeURIComponent(source.projectId)}/vibe-edit/export`
+    : `/api/drama/episodes/${encodeURIComponent(source.episodeId)}/vibe-edit/export`;
+  await post(url, { file }, "Couldn't save the export to its project");
+  return source.kind === "create-video" ? "Saved as the Create Video project's video" : "Saved as the episode's final cut";
+}
+
 export interface RenderJob {
   id: string;
   status: "running" | "completed" | "failed" | "stopped";

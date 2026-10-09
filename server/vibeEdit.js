@@ -128,6 +128,12 @@ export async function adoptStudioMedia(userId, sourcePath, ext) {
   await persist(userId, file);
   return { file: name, url: fileUrl(name) };
 }
+/** A user's project document, or null when it's gone. */
+export async function loadVibeProject(userId, id) {
+  if (!PROJECT_ID.test(String(id || ""))) return null;
+  const text = await readOwned(userId, projectFile(id));
+  return text ? JSON.parse(text) : null;
+}
 /** Saves a complete project document and lists it in the user's Vibe Edit projects. */
 export async function saveVibeProject(userId, doc) {
   checkProject(doc);

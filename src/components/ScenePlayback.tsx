@@ -3,9 +3,15 @@
 // previews of royalty-free tracks.
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState, type CSSProperties } from "react";
 import { Loader2, Pause, Play } from "lucide-react";
-import { sceneTransform } from "./StoryboardPreview";
+import { moveAt, sceneMove } from "../utils/sceneMotion.js";
 import { claimPlayback } from "./AudioPlayer";
 import "./ScenePlayback.css";
+
+/** CSS transform for a pan-and-zoom still at `time`: the same move the render's zoompan makes, by scene position. */
+export const sceneTransform = (scene: { start: number; end: number }, index: number, time: number) => {
+  const { scale, x, y } = moveAt(sceneMove(index), (time - scene.start) / Math.max(0.1, scene.end - scene.start));
+  return { transform: `scale(${scale})`, transformOrigin: `${x * 100}% ${y * 100}%` };
+};
 
 type Scene = { id: string; start: number; end: number; motion?: string; clip?: string | null };
 

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import { Composer, SendButton, StudioLayout } from "./StudioLayout";
 import {
   ArrowLeft,
@@ -76,8 +76,7 @@ import { VoiceoverStudio } from "./VoiceoverStudio";
 import { StandardVideoCard } from "./StandardCards";
 import { loadVoiceProfiles } from "../utils/voiceProfiles";
 import { AudioPlayer } from "./AudioPlayer";
-import { StoryboardPreview } from "./StoryboardPreview";
-import { SceneTimeline } from "./SceneTimeline";
+import { lazyPage } from "../utils/lazyPage";
 import { MusicLibrary } from "./MusicLibrary";
 import { MixPreview, ScenePlayButton, SyncedClip, playbackStyle, useScenePlayback, type MixPreviewHandle } from "./ScenePlayback";
 import { VideoPlayer } from "./VideoPlayer";
@@ -3462,6 +3461,69 @@ function Step({ n, title, children }: { n: number; title: string; children: Reac
     </section>
   );
 }
+// The one editor: a project's video is cut in Vibe Edit (loaded when first opened), inside this page.
+const VibeEdit = lazyPage(() => import("./vibe/VibeEdit"));
+
+/** The project's own edit, embedded: built from the storyboard the first time, opened as it was left after that.
+ *  When the storyboard has changed since, it asks first: bring the new media in (keeping the cuts), start over,
+ *  or open it as it was. Its export becomes the project's video. */
+function ProjectVibeEdit({ projectId, accountId, theme, backLabel, onBack }: { projectId: string; accountId: string; theme: "light" | "dark"; backLabel: string; onBack: () => void }) {
+  const [state, setState] = useState<{ editId: string; stale: boolean } | null>(null);
+  const [error, setError] = useState("");
+  const [working, setWorking] = useState("");
+  const open = async (mode: "" | "refresh" | "rebuild" = "") => {
+    setWorking(mode || "open");
+    setError("");
+    try {
+      const data = await creatorApi(`/api/maker/projects/${projectId}/vibe-edit`, { accountId, ...(mode ? { [mode]: true } : {}) });
+      setState({ editId: data.projectId, stale: Boolean(data.stale) && !mode });
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setWorking("");
+    }
+  };
+  useEffect(() => {
+    void open();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
+  if (error) {
+    return (
+      <div className="maker-vibe-gate" role="alert">
+        <strong>The editor didn't open</strong>
+        <p>{error}</p>
+        <div className="maker-vibe-gate-actions">
+          <button className="maker-outline" onClick={onBack}>Back to the {backLabel.toLowerCase()}</button>
+          <button className="maker-primary" onClick={() => void open()}>Try again</button>
+        </div>
+      </div>
+    );
+  }
+  if (!state || working) {
+    return <div className="maker-vibe-gate"><Loader2 size={18} className="animate-spin" />{working === "rebuild" ? "Building the edit from your storyboard…" : working === "refresh" ? "Bringing in the new media…" : "Opening your edit…"}</div>;
+  }
+  if (state.stale) {
+    return (
+      <div className="maker-vibe-gate">
+        <strong>Your storyboard changed since you last edited</strong>
+        <p>Bring the new pictures, clips, narration, and music into your edit and keep your cuts, titles, and captions, or start the edit over from the storyboard.</p>
+        <div className="maker-vibe-gate-actions">
+          <button className="maker-primary" onClick={() => void open("refresh")}>Bring in the new media</button>
+          <button className="maker-outline" onClick={() => void open("rebuild")}>Start over from the storyboard</button>
+          <button className="maker-link" onClick={() => setState({ ...state, stale: false })}>Open it as it was</button>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="maker-vibe-embed">
+      <Suspense fallback={<div className="maker-vibe-gate"><Loader2 size={18} className="animate-spin" />Opening your edit…</div>}>
+        <VibeEdit theme={theme} projectId={state.editId} embedded={{ backLabel, onBack }} />
+      </Suspense>
+    </div>
+  );
+}
+
 function ProjectEditor({
   id,
   stage,
@@ -3494,7 +3556,16 @@ function ProjectEditor({
     [archiveOpen, setArchiveOpen] = useState(false),
     [playhead, setPlayhead] = useState(0),
     [selectedScene, setSelectedScene] = useState(""),
-    [visualView, setVisualView] = useState<"settings" | "cast" | "scenes" | "edit" | "">(""),
+    // Review's "open the editor" lands here (the stage change can remount this page), via a one-shot flag.
+    [visualView, setVisualView] = useState<"settings" | "cast" | "scenes" | "edit" | "">(() => {
+      try {
+        if (sessionStorage.getItem(`maker-open-edit:${id}`) !== "1") return "";
+        sessionStorage.removeItem(`maker-open-edit:${id}`);
+        return "edit";
+      } catch {
+        return "";
+      }
+    }),
     [visualTab, setVisualTab] = useState<"style" | "timing" | "output">("style"),
     [suggesting, setSuggesting] = useState(false),
     [sceneFilter, setSceneFilter] = useState<"all" | "missing" | "ready" | "failed" | "animated">("all"),
@@ -3732,16 +3803,12 @@ function ProjectEditor({
   }
   async function openInVibeEdit() {
     if (dirty && !(await save())) return;
-    setHandingOff(true);
+    // The project's own edit lives in the Visuals stage's editor.
     try {
-      const data = await creatorApi(`/api/maker/projects/${id}/vibe-edit`, { accountId });
-      toast.success("Opening your edit in Vibe Edit");
-      writeDeepLink({ view: "vibe-edit", projectId: data.projectId });
-    } catch (e) {
-      onError((e as Error).message);
-    } finally {
-      setHandingOff(false);
-    }
+      sessionStorage.setItem(`maker-open-edit:${id}`, "1");
+    } catch {}
+    setVisualView("edit");
+    await navigate("visualPlan");
   }
   async function runQualityReview() {
     if (dirty && !(await save())) return;
@@ -5265,37 +5332,9 @@ function ProjectEditor({
                   </div>
                   {stageNotices}
                   {view === "edit" && voiceover?.duration ? (
-                    <div className="maker-editor">
-                    <div className="maker-preview-row">
-                      <StoryboardPreview
-                        scenes={scenes}
-                        lines={voiceover.segments || []}
-                        aspect={project.metadata.settings?.aspect || settings.aspect || "16:9"}
-                        audioRef={timelineAudio}
-                        time={playhead}
-                        generating={Boolean(active)}
-                        onSceneChange={setSelectedScene}
-                      />
-                    </div>
-                    <SceneTimeline
-                      scenes={scenes}
-                      lines={voiceover.segments || []}
-                      duration={voiceover.duration}
-                      voiceSrc={voiceover.asset}
-                      musicSrc={project.outputs.soundtrack?.asset || null}
-                      musicVolume={settings.soundtrackVolume ?? 0.18}
-                      audioRef={timelineAudio}
-                      selectedId={selectedScene}
-                      disabled={Boolean(active) || busy}
-                      keysEnabled={!sceneEditor && !confirm}
-                      onSelect={setSelectedScene}
-                      onOpen={(sceneId) => {
-                        openSceneEditor(sceneId);
-                      }}
-                      onChange={(next) => edit({ scenes: next })}
-                      onError={onError}
-                    />
-                    </div>
+                    // The whole Vibe Edit: preview, media, captions, music, the timeline, and Juel. Its export
+                    // becomes this project's video in Review.
+                    <ProjectVibeEdit projectId={id} accountId={accountId} theme={theme} backLabel="Storyboard" onBack={() => setVisualView("scenes")} />
                   ) : null}
                   {focusScene && sceneEditor && (() => {
                     const { scene, index } = focusScene;
@@ -5963,8 +6002,8 @@ function ProjectEditor({
                   {voiceover?.asset && project.outputs.visualPlan?.scenes?.length && project.outputs.visualPlan.scenes.every((scene: any) => scene.asset) ? (
                     <div className="maker-vibe-handoff">
                       <div>
-                        <strong>Fine-tune it on a timeline</strong>
-                        <span>Open the scenes, narration, music, and captions in Vibe Edit to trim cuts, swap shots, add titles, and animate text. Your Create Video project stays as it is.</span>
+                        <strong>{output?.editedIn === "vibe-edit" ? "Made in the editor" : "Fine-tune it in the editor"}</strong>
+                        <span>{output?.editedIn === "vibe-edit" ? "This video is your last export from the editor. Open it again to change anything; exporting replaces it here." : "Trim cuts, swap shots, add titles, restyle captions, and animate text in Vibe Edit. Its export becomes this project's video."}</span>
                       </div>
                       <button className="maker-outline" disabled={busy || handingOff} onClick={() => void openInVibeEdit()}>
                         {handingOff ? <Loader2 size={15} className="animate-spin" /> : <Film size={15} />}
