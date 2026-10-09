@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { callRoute, cleanReport, cleanShows, creditShortfall, estimateCredits, JUEL_COSTS, JUEL_EXCLUDED, JUEL_RISKS, JUEL_ROUTES, JUEL_SPECIALISTS, juelTools, juelTurn, matchRoute, MCP_TOOLS, mcpRespond, openApiSpec, pageActionCredits, pageTools, spendsCredits, tokenRefusal, urlsIn } from "./juel.js";
+import { callRoute, cleanReport, cleanShows, creditShortfall, estimateCredits, JUEL_COSTS, JUEL_EXCLUDED, JUEL_RISKS, JUEL_ROUTES, JUEL_SPECIALISTS, juelTools, juelTurn, matchRoute, partialReply, MCP_TOOLS, mcpRespond, openApiSpec, pageActionCredits, pageTools, spendsCredits, tokenRefusal, urlsIn } from "./juel.js";
 
 /** Every route the server registers, as "METHOD /path". */
 function registeredRoutes() {
@@ -134,6 +134,8 @@ describe("Juel's turn", () => {
     expect(prompts.find((p) => p.includes("the Publisher specialist"))).toContain("Mutiny is trending");
     expect(steps.some((s) => s.text.startsWith("asks Research"))).toBe(true);
     expect(prompts.find((p) => p.includes("Write the reply"))).toContain("Started a render");
+    // Publisher finished in the same round it called the render, and the call's result still reached the board.
+    expect(prompts.find((p) => p.includes("Write the reply"))).toContain("Results: CALLED POST /api/recaps/rcp_1/render -> 200");
     expect(turn.reply).toContain("30 credits");
   });
 
@@ -155,6 +157,48 @@ describe("Juel's turn", () => {
     expect(prompts.find((p) => p.includes("the Editor specialist"))).toContain("ACTIONS ON THE OPEN PAGE");
     expect(prompts.find((p) => p.includes("the Research specialist"))).not.toContain("ACTIONS ON THE OPEN PAGE");
     expect(turn.reply).toContain("DAY 1");
+  });
+
+  it("streams the reply while the model writes it", async () => {
+    expect(partialReply('{"reply": "Hel')).toBe("Hel");
+    expect(partialReply('{"plan":[],"reply":"a\\"b\\nc\\u00e9"}')).toBe("a\"b\ncé");
+    expect(partialReply('{"reply":"ends on an escape \\')).toBe("ends on an escape ");
+    expect(partialReply('{"plan":[')).toBe("");
+    const think = async (prompt: string, options?: { onText?: (t: string) => void }) => {
+      if (prompt.includes("Plan the turn")) return { plan: [{ specialist: "research", task: "Look" }] };
+      if (prompt.includes("Write the reply")) {
+        for (const chunk of ['{"re', '{"reply":"Your rec', '{"reply":"Your recap is ready."']) options?.onText?.(chunk);
+        return { reply: "Your recap is ready." };
+      }
+      return { done: true, note: "Found it." };
+    };
+    const seen: string[] = [];
+    const turn = await juelTurn({ message: "status?", think, call: async () => ({}), onReply: (t) => seen.push(t) });
+    expect(seen).toEqual(["Your rec", "Your recap is ready."]);
+    expect(turn.reply).toBe("Your recap is ready.");
+  });
+
+  it("runs reads planned together at once, and changes in order", async () => {
+    let open = 0, most = 0;
+    const order: string[] = [];
+    const call = async (c: any) => {
+      open += 1; most = Math.max(most, open);
+      await new Promise((r) => setTimeout(r, 5));
+      open -= 1; order.push(c.path);
+      return { status: 200, data: {} };
+    };
+    let round = 0;
+    const think = async (prompt: string) => {
+      if (prompt.includes("Plan the turn")) return { plan: [{ specialist: "recap", task: "Look, then render" }] };
+      if (prompt.includes("Write the reply")) return { reply: "Done." };
+      round += 1;
+      if (round === 1) return { calls: [{ method: "GET", path: "/api/recaps" }, { method: "GET", path: "/api/recaps/rcp_1" }], done: false, note: "" };
+      if (round === 2) return { calls: [{ method: "POST", path: "/api/recaps/rcp_1/render", body: {} }, { method: "DELETE", path: "/api/recaps/rcp_2" }], done: true, note: "Rendered." };
+      return { done: true };
+    };
+    await juelTurn({ message: "go", think, call });
+    expect(most).toBe(2);
+    expect(order.slice(2)).toEqual(["/api/recaps/rcp_1/render", "/api/recaps/rcp_2"]);
   });
 
   it("answers directly when there's nothing to do in the app", async () => {

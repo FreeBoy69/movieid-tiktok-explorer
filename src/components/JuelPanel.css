@@ -21,57 +21,32 @@
 .juel-head { display: flex; align-items: center; gap: 8px; padding: 12px 12px 12px 18px; border-bottom: 1px solid var(--j-line); }
 .juel-title { display: inline-flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 750; letter-spacing: -0.01em; }
 .juel-title svg { color: var(--j-accent-text); }
-.juel-where { overflow: hidden; flex: 1; padding: 3px 10px; border-radius: 999px; background: var(--j-raised); color: var(--j-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .juel-icon { display: grid; width: 32px; height: 32px; place-items: center; border: 0; border-radius: 9px; background: transparent; color: var(--j-muted); }
 .juel-icon:hover { background: var(--j-raised); color: var(--j-text); }
-.juel-body { display: flex; min-height: 0; flex: 1; flex-direction: column; gap: 14px; overflow-y: auto; padding: 18px; }
-.juel-empty { display: grid; gap: 8px; margin: auto 0; }
-.juel-empty strong { font-size: 16px; }
-.juel-empty p { margin: 0; color: var(--j-muted); font-size: 13.5px; line-height: 1.6; }
-.juel-user { align-self: flex-end; max-width: 86%; margin: 0; padding: 9px 13px; border-radius: 16px 16px 4px 16px; background: var(--j-raised); white-space: pre-wrap; }
 .juel-reply { display: grid; gap: 10px; }
 .juel-reply > p { margin: 0; white-space: pre-wrap; }
 .juel-reply.is-error > p { color: var(--j-danger); }
-.juel-steps { display: grid; gap: 4px; margin: 0; padding: 0 0 0 12px; border-left: 2px solid var(--j-line); color: var(--j-muted); font-size: 12.5px; list-style: none; }
-.juel-steps b { color: var(--j-text); font-weight: 650; }
-.juel-working { display: inline-flex; align-items: center; gap: 6px; color: var(--j-faint); }
-.juel-error { margin: 0; color: var(--j-danger); font-size: 13px; }
 .juel-icon.is-on { background: var(--j-raised); color: var(--j-text); }
 
 /* Starters on an empty conversation: the page's quick prompts. */
-.juel-starters { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
-.juel-starter { min-height: 32px; padding: 6px 12px; border: 1px solid var(--j-line); border-radius: 999px; background: var(--j-panel); color: var(--j-text); font-size: 12.5px; font-weight: 600; text-align: left; transition: border-color 0.15s ease, background 0.15s ease; }
-.juel-starter:hover { border-color: color-mix(in srgb, var(--j-accent) 55%, var(--j-line)); background: color-mix(in srgb, var(--j-accent) 8%, var(--j-panel)); }
 .juel-starter:disabled { opacity: 0.5; cursor: progress; }
 
 /* Messages: edit on the user's, copy and ask-again on Juel's, shown on hover or focus. */
-.juel-user-row { display: flex; align-items: flex-start; justify-content: flex-end; gap: 6px; }
-.juel-user-row .juel-tool { opacity: 0; margin-top: 6px; }
-.juel-user-row:hover .juel-tool,
-.juel-user-row .juel-tool:focus-visible,
-.juel-reply:hover .juel-tools .juel-tool,
-.juel-tools .juel-tool:focus-visible { opacity: 1; }
-.juel-user-row.is-editing .juel-user { outline: 2px solid var(--ui-focus); }
-.juel-tools { display: flex; gap: 2px; margin-top: -4px; }
-.juel-tools .juel-tool { opacity: 0; }
 .juel-tool { display: grid; width: 28px; height: 28px; flex: none; place-items: center; border: 0; border-radius: 8px; background: transparent; color: var(--j-faint); transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease; }
 .juel-tool:hover { background: var(--j-raised); color: var(--j-text); }
 .juel-tool:disabled { cursor: default; opacity: 0.35; }
-@media (hover: none) { .juel-user-row .juel-tool, .juel-tools .juel-tool { opacity: 1; } }
 .juel-text { min-width: 0; overflow-wrap: anywhere; }
 .juel-text p { margin: 0 0 8px; }
 .juel-text p:last-child { margin-bottom: 0; }
 .juel-reply.is-error .juel-text { color: var(--j-danger); }
 
 /* Credits: each paid step with its estimate, refusals, and what the task has been charged. */
-.juel-spends { display: grid; gap: 4px; padding: 8px 10px; border: 1px solid var(--j-line); border-radius: 10px; background: var(--j-panel); font-size: 12.5px; }
 .juel-spend { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--j-muted); }
 .juel-spend svg { flex: none; color: var(--j-accent-text); }
 .juel-spend-what { overflow: hidden; flex: 1; text-overflow: ellipsis; white-space: nowrap; }
 .juel-spend-cost { flex: none; color: var(--j-text); font-weight: 650; font-variant-numeric: tabular-nums; }
 .juel-spend.is-refused svg,
 .juel-spend.is-refused .juel-spend-cost { color: var(--j-danger); }
-.juel-spend-total { display: flex; justify-content: space-between; gap: 12px; margin: 2px 0 0; padding-top: 6px; border-top: 1px solid var(--j-line); color: var(--j-faint); font-variant-numeric: tabular-nums; }
 
 /* An automation agent's own answer: report, numbers, live blocks, specialist checks, and its buttons. */
 .juel-operator { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--j-line); border-radius: 12px; background: var(--j-panel); }
@@ -134,20 +109,15 @@
 .juel-history-open time { flex: none; color: var(--j-faint); font-size: 11.5px; font-variant-numeric: tabular-nums; }
 .juel-history-empty { display: flex; align-items: center; gap: 8px; margin: 8px; color: var(--j-muted); font-size: 13px; }
 
-.juel-composer { position: relative; margin: 0 14px 14px; border: 1px solid var(--j-line); border-radius: 16px; background: var(--j-panel); }
-.juel-composer textarea { display: block; width: 100%; max-height: 160px; padding: 12px 88px 12px 14px; border: 0; background: transparent; color: var(--j-text); font: inherit; resize: none; outline: none; }
 .juel-composer textarea::placeholder { color: var(--j-faint); }
 .juel-editing { display: flex; align-items: center; gap: 6px; margin: 0; padding: 7px 12px; border-bottom: 1px solid var(--j-line); color: var(--j-muted); font-size: 12px; }
 .juel-editing button { margin-left: auto; padding: 2px 8px; border: 0; border-radius: 6px; background: transparent; color: var(--j-text); font-weight: 700; }
 .juel-editing button:hover { background: var(--j-raised); }
-.juel-composer-tools { position: absolute; right: 8px; bottom: 8px; display: flex; gap: 6px; }
 .juel-mic { display: grid; width: 34px; height: 34px; place-items: center; border: 1px solid var(--j-line); border-radius: 50%; background: var(--j-raised); color: var(--j-muted); transition: color 0.15s ease, border-color 0.15s ease, box-shadow 0.1s linear; }
 .juel-mic:hover { color: var(--j-text); }
 .juel-mic.is-on { border-color: var(--j-danger); color: var(--j-danger); box-shadow: 0 0 0 calc(2px + var(--level, 0) * 7px) color-mix(in srgb, var(--j-danger) 22%, transparent); }
 .juel-mic:disabled { opacity: 0.5; cursor: default; }
-.juel-send { display: grid; width: 34px; height: 34px; place-items: center; border: 0; border-radius: 50%; background: var(--j-accent); color: var(--j-accent-ink); }
 .juel-send.is-stop { background: var(--j-text); color: var(--j-bg); }
-.juel-send:disabled { opacity: 0.45; cursor: default; }
 .juel-spin { animation: juel-spin 0.9s linear infinite; }
 @keyframes juel-spin { to { transform: rotate(360deg); } }
 /* Embedded in a page's own card (Vibe Edit's assistant): it fills the card and takes the page's surface. */
@@ -170,3 +140,122 @@
 .juel-applied svg { color: #3fb950; }
 @media (max-width: 760px) { .juel { width: 100vw; border-left: 0; } }
 @media (prefers-reduced-motion: reduce) { .juel, .juel-spin { animation: none; } }
+
+/* ---------- The conversation: a reading column like the best chat apps ----------
+   Replies are plain text on the page (no bubble), the user's messages are soft bubbles, what the
+   specialists did folds into one line, credits sit quietly under the reply, and the composer floats. */
+.juel-head { min-height: 52px; padding: 8px 10px 8px 16px; }
+.juel-mark { display: grid; width: 22px; height: 22px; place-items: center; border-radius: 7px; background: var(--j-accent); color: var(--j-accent-ink); }
+.juel-title svg { color: inherit; }
+.juel-thread-title { overflow: hidden; flex: 1; min-width: 0; color: var(--j-muted); font-size: 13px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.juel-body { position: relative; display: flex; min-height: 0; flex: 1; flex-direction: column; overflow-y: auto; scrollbar-gutter: stable; }
+.juel-thread { display: flex; width: 100%; max-width: 760px; min-height: 100%; flex-direction: column; gap: 22px; margin: 0 auto; padding: 24px 20px 28px; }
+.juel-bottom { height: 1px; flex: none; margin-top: -21px; }
+
+/* Empty: a centred invitation with the page's quick prompts. */
+.juel-empty { display: flex; flex-direction: column; align-items: center; gap: 10px; margin: auto 0; padding: 24px 0; text-align: center; }
+.juel-empty-mark { display: grid; width: 44px; height: 44px; place-items: center; margin-bottom: 4px; border-radius: 14px; background: var(--j-accent); color: var(--j-accent-ink); box-shadow: 0 10px 24px -14px rgb(160 130 0 / 0.8); }
+.juel-empty h2 { margin: 0; color: var(--j-text); font-family: var(--font-serif, "Antonio", sans-serif); font-size: clamp(26px, 3.2vw, 32px); font-weight: 700; letter-spacing: -0.005em; line-height: 1.05; text-wrap: balance; }
+.juel-empty p { max-width: 46ch; margin: 0; color: var(--j-muted); font-size: 14px; line-height: 1.6; text-wrap: pretty; }
+.juel-starters { display: grid; width: 100%; max-width: 560px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; margin-top: 14px; }
+.juel-starter { display: flex; min-height: 46px; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px; border: 1px solid var(--j-line); border-radius: 14px; background: var(--j-panel); color: var(--j-text); font-size: 13.5px; font-weight: 550; text-align: left; transition: border-color 0.18s ease, background 0.18s ease, transform 0.25s cubic-bezier(0.16, 1, 0.3, 1); }
+.juel-starter svg { flex: none; color: var(--j-faint); transition: color 0.18s ease, transform 0.25s cubic-bezier(0.16, 1, 0.3, 1); }
+.juel-starter:hover:not(:disabled) { border-color: color-mix(in srgb, var(--j-text) 18%, transparent); background: var(--j-raised); }
+.juel-starter:hover:not(:disabled) svg { color: var(--j-text); transform: translate(1px, -1px); }
+
+/* The user's messages. */
+.juel-user-row { display: flex; flex-direction: row-reverse; align-items: center; gap: 4px; }
+.juel-user { max-width: min(82%, 560px); margin: 0; padding: 10px 16px; border-radius: 20px; background: var(--j-raised); color: var(--j-text); font-size: 14.5px; line-height: 1.6; overflow-wrap: anywhere; white-space: pre-wrap; }
+.juel-user-row.is-editing .juel-user { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--j-accent) 60%, transparent); }
+
+/* Juel's replies. */
+.juel-reply { display: grid; gap: 12px; min-width: 0; }
+.juel-reply.is-new { animation: juel-rise 0.36s cubic-bezier(0.16, 1, 0.3, 1); }
+@keyframes juel-rise { from { opacity: 0; transform: translateY(6px); } }
+.juel-text { font-size: 15px; line-height: 1.7; }
+.juel-text .agent-chat-markdown { max-width: none; color: var(--j-text); font-size: 15px; line-height: 1.7; }
+.juel-text strong { font-weight: 650; }
+.juel-text code { padding: 1px 5px; border-radius: 5px; background: var(--j-raised); font-size: 0.88em; }
+.juel-text pre code { padding: 0; background: transparent; }
+.juel-text.is-streaming .agent-chat-markdown > :last-child::after { content: ""; display: inline-block; width: 0.5em; height: 1.05em; margin-left: 3px; border-radius: 2px; background: var(--j-text); vertical-align: -0.17em; animation: juel-caret 1s steps(1) infinite; }
+@keyframes juel-caret { 50% { opacity: 0; } }
+
+/* What the specialists did. */
+.juel-activity { color: var(--j-muted); font-size: 13px; }
+.juel-activity summary { display: inline-flex; max-width: 100%; align-items: center; gap: 6px; padding: 3px 8px 3px 4px; margin-left: -4px; border-radius: 8px; cursor: pointer; list-style: none; transition: background 0.15s ease, color 0.15s ease; }
+.juel-activity summary::-webkit-details-marker { display: none; }
+.juel-activity summary:hover { background: var(--j-raised); color: var(--j-text); }
+.juel-chev { flex: none; transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1); }
+.juel-activity[open] .juel-chev { transform: rotate(90deg); }
+.juel-who { overflow: hidden; color: var(--j-faint); text-overflow: ellipsis; white-space: nowrap; }
+.juel-who::before { content: "·"; margin-right: 6px; }
+.juel-steps { position: relative; display: grid; gap: 8px; margin: 10px 0 2px 10px; padding: 0 0 0 16px; list-style: none; font-size: 12.5px; line-height: 1.5; }
+.juel-steps::before { content: ""; position: absolute; top: 6px; bottom: 6px; left: 0; width: 1px; background: var(--j-line); }
+.juel-steps li { position: relative; color: var(--j-muted); }
+.juel-steps li::before { content: ""; position: absolute; top: 7px; left: -19px; width: 7px; height: 7px; border: 1px solid var(--j-line); border-radius: 50%; background: var(--j-bg); }
+.juel-steps b, .juel-now b { margin-right: 6px; color: var(--j-text); font-weight: 600; }
+.juel-activity.is-working .juel-steps { margin: 0 0 8px; padding-left: 18px; }
+.juel-activity.is-working .juel-steps::before { left: 4px; }
+.juel-activity.is-working .juel-steps li::before { left: -18px; }
+.juel-now { display: flex; align-items: center; gap: 10px; margin: 0; }
+.juel-pulse { position: relative; width: 8px; height: 8px; flex: none; border-radius: 50%; background: var(--j-accent); }
+.juel-pulse::after { content: ""; position: absolute; inset: -4px; border-radius: 50%; background: var(--j-accent); opacity: 0.35; animation: juel-ping 1.4s cubic-bezier(0, 0, 0.2, 1) infinite; }
+@keyframes juel-ping { 75%, 100% { opacity: 0; transform: scale(2); } }
+.juel-shimmer { overflow: hidden; min-width: 0; text-overflow: ellipsis; white-space: nowrap; animation: juel-breathe 1.8s ease-in-out infinite; }
+@keyframes juel-breathe { 50% { opacity: 0.55; } }
+.juel-elapsed { flex: none; color: var(--j-faint); font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 11.5px; font-variant-numeric: tabular-nums; }
+
+/* Under a reply: copy and ask again, then the credits it took. */
+.juel-foot { display: flex; min-height: 28px; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; margin-top: -4px; }
+.juel-tools { display: flex; gap: 2px; opacity: 0; transition: opacity 0.18s ease; }
+.juel-user-row:hover .juel-tools,
+.juel-reply:hover .juel-tools,
+.juel-tools:focus-within,
+.juel-reply.is-new .juel-tools { opacity: 1; }
+@media (hover: none) { .juel-tools { opacity: 1; } }
+.juel-spends { display: grid; justify-items: end; gap: 6px; margin-left: auto; font-size: 12px; }
+.juel-spend-sum summary { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 999px; color: var(--j-faint); cursor: pointer; font-variant-numeric: tabular-nums; list-style: none; transition: background 0.15s ease, color 0.15s ease; }
+.juel-spend-sum summary::-webkit-details-marker { display: none; }
+.juel-spend-sum summary svg { color: var(--j-accent-text); }
+.juel-spend-sum summary:hover,
+.juel-spend-sum[open] summary { background: var(--j-raised); color: var(--j-text); }
+.juel-spend-list { display: grid; gap: 4px; min-width: min(320px, 70vw); margin-top: 6px; padding: 8px 12px; border: 1px solid var(--j-line); border-radius: 12px; background: var(--j-panel); }
+.juel-spend.is-refused { padding: 6px 10px; border-radius: 10px; background: color-mix(in srgb, var(--j-danger) 10%, transparent); }
+.juel-error { display: flex; align-items: center; gap: 8px; margin: 0; padding: 10px 14px; border-radius: 12px; background: color-mix(in srgb, var(--j-danger) 10%, transparent); color: var(--j-danger); font-size: 13px; }
+
+/* Back to the latest message. */
+.juel-jump { position: absolute; bottom: 118px; left: 50%; z-index: 4; display: grid; width: 34px; height: 34px; place-items: center; border: 1px solid var(--j-line); border-radius: 50%; background: var(--j-panel); color: var(--j-text); box-shadow: 0 8px 22px -10px rgb(0 0 0 / 0.55); transform: translateX(-50%); animation: juel-rise 0.25s cubic-bezier(0.16, 1, 0.3, 1); }
+.juel-jump:hover { background: var(--j-raised); }
+
+/* The composer: a floating box that grows, with where Juel starts from at its foot. */
+.juel-composer { position: relative; width: calc(100% - 32px); max-width: 728px; margin: 0 auto 16px; border: 1px solid var(--j-line); border-radius: 22px; background: var(--j-panel); box-shadow: 0 1px 0 rgb(255 255 255 / 0.03) inset, 0 14px 34px -20px rgb(0 0 0 / 0.6); }
+:root[data-theme="light"] .juel-composer { box-shadow: 0 12px 30px -20px rgb(40 36 20 / 0.35); }
+.juel-composer textarea { display: block; width: 100%; min-height: 50px; max-height: 220px; padding: 14px 16px 4px; border: 0; background: transparent; color: var(--j-text); font: inherit; font-size: 15px; line-height: 1.55; resize: none; outline: none; }
+.juel-composer textarea::placeholder { overflow: hidden; color: var(--j-faint); text-overflow: ellipsis; white-space: nowrap; }
+.juel-composer-tools { display: flex; align-items: center; gap: 6px; padding: 6px 8px 8px 12px; }
+.juel-where { display: inline-flex; min-width: 0; max-width: 60%; align-items: center; gap: 5px; margin-right: auto; padding: 4px 9px 4px 7px; border-radius: 999px; background: var(--j-raised); color: var(--j-muted); font-size: 12px; }
+.juel-where svg { flex: none; color: var(--j-faint); }
+.juel-where span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.juel-mic { border-color: transparent; background: transparent; }
+.juel-mic:hover { background: var(--j-raised); }
+.juel-send { display: grid; width: 34px; height: 34px; flex: none; place-items: center; border: 0; border-radius: 50%; background: var(--j-accent); color: var(--j-accent-ink); transition: background 0.15s ease, color 0.15s ease, transform 0.12s ease; }
+.juel-send:active:not(:disabled) { transform: scale(0.94); }
+.juel-send:disabled { background: var(--j-raised); color: var(--j-faint); cursor: default; }
+.juel-send.is-stop { background: var(--j-text); color: var(--j-bg); }
+.juel-editing { padding: 8px 14px; }
+@media (max-width: 560px) {
+  .juel-thread { gap: 18px; padding: 18px 14px 22px; }
+  .juel-composer { width: calc(100% - 20px); margin-bottom: 10px; }
+  .juel-user { max-width: 88%; }
+  .juel-starters { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .juel-reply.is-new, .juel-jump, .juel-pulse::after, .juel-shimmer, .juel-text.is-streaming .agent-chat-markdown > :last-child::after { animation: none; }
+}
+/* Results under a reply share one softer card language. */
+.juel-operator { gap: 12px; padding: 16px; border-radius: 16px; }
+.juel-operator-head { font-size: 12px; font-weight: 600; letter-spacing: 0; text-transform: none; }
+.juel-metric { padding: 10px 12px; border-radius: 12px; }
+.juel-gen { padding: 10px; border-radius: 16px; }
+.juel-gen-images button, .juel-gen-video { border-radius: 10px; }
+.juel-action { min-height: 34px; border-radius: 999px; padding: 6px 13px; }

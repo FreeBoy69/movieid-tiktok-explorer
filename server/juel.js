@@ -760,20 +760,25 @@ Rules: call a route only to do the task. Every call runs at once, as the user. P
 Return JSON only: {"read":["METHOD /path", ...], "calls":[{"method":"GET","path":"/api/...","query":{},"body":{},"why":"short"}],${pageList ? ` "page":[{"type":"action type","args":{},"why":"short"}],` : ""} "show":[{"type":"image"|"video"|"audio","url":"exact URL from a result","label":"short caption"}], "ask":{"specialist":"id","question":"..."} or null, "done":true|false, "note":"one or two sentences for the board: what you found or did, with key facts and ids"}`;
     const plan = await think(prompt);
     note = String(plan?.note || note || "").slice(0, 1200);
+    const roundStart = log.length;
     for (const key of (Array.isArray(plan?.read) ? plan.read : []).slice(0, 3)) {
       const source = await routeSource(String(key));
       log.push(`READ ${key}: ${source ? clipText(source, 2500) : "no such route"}`);
     }
     const calls = (Array.isArray(plan?.calls) ? plan.calls : []).slice(0, 4);
-    for (const c of calls) {
+    const runCall = async (c) => {
       onStep?.({ specialist, text: c.why || `${c.method} ${c.path}` });
       try {
         const result = await call({ method: c.method, path: c.path, query: c.query, body: c.body, why: c.why, specialist });
-        log.push(`CALLED ${c.method} ${c.path} -> ${result.status}${result.credits ? ` (≈${result.credits} credits)` : ""}: ${clipText(result.data, 2500)}`);
+        return `CALLED ${c.method} ${c.path} -> ${result.status}${result.credits ? ` (≈${result.credits} credits)` : ""}: ${clipText(result.data, 2500)}`;
       } catch (error) {
-        log.push(`CALL ${c.method} ${c.path} refused: ${error instanceof Error ? error.message : error}`);
+        return `CALL ${c.method} ${c.path} refused: ${error instanceof Error ? error.message : error}`;
       }
-    }
+    };
+    // Reads planned together don't depend on each other, so they run at once; anything that changes
+    // something runs in the order planned.
+    if (calls.length > 1 && calls.every((c) => String(c.method || "GET").toUpperCase() === "GET")) log.push(...(await Promise.all(calls.map(runCall))));
+    else for (const c of calls) log.push(await runCall(c));
     const pageCalls = pageActions.length ? (Array.isArray(plan?.page) ? plan.page : []).slice(0, 12) : [];
     for (const p of pageCalls) {
       onStep?.({ specialist, text: p.why || String(p.type) });
@@ -797,15 +802,22 @@ Return JSON only: {"read":["METHOD /path", ...], "calls":[{"method":"GET","path"
       log.push(`ASKED ${ask.specialist}: ${ask.question} -> ${answer}`);
       board.push({ specialist: ask.specialist, note: `(for ${specialist}) ${answer}` });
     }
-    if (plan?.done || (!calls.length && !pageCalls.length && !ask && !(plan?.read || []).length)) break;
+    if (plan?.done || (!calls.length && !pageCalls.length && !ask && !(plan?.read || []).length)) {
+      // The note was written before this round's calls ran, so a round that finishes with calls hands
+      // their results to the board too.
+      if (calls.length || pageCalls.length) note = `${note}\nResults: ${clipText(log.slice(roundStart).join("\n"), 1800)}`.trim();
+      break;
+    }
   }
   return note || "Nothing to report.";
 }
 
 /** One turn of a Juel conversation. Returns { reply, steps, board }; `shown` says what the caller shows
  *  under the reply (an operator's report, generations).
- *  @param {{ message: string, history?: Array<{ role: string, content: string }>, context?: any, admin?: boolean, think: (prompt: string) => Promise<any>, call: (call: any) => Promise<any>, page?: (action: any) => Promise<any>, show?: (items: any[], specialist: string) => number, onStep?: (step: { specialist: string, text: string }) => void, shown?: () => string }} turn */
-export async function juelTurn({ message, history = [], context = {}, admin = false, think, call, page, show, onStep, shown }) {
+ *  `onReply` gets the reply's text so far while the model writes it.
+ *  @param {{ message: string, history?: Array<{ role: string, content: string }>, context?: any, admin?: boolean, think: (prompt: string, options?: { onText?: (text: string) => void }) => Promise<any>, call: (call: any) => Promise<any>, page?: (action: any) => Promise<any>, show?: (items: any[], specialist: string) => number, onStep?: (step: { specialist: string, text: string }) => void, onReply?: (text: string) => void, shown?: () => string }} turn */
+export async function juelTurn({ message, history = [], context = {}, admin = false, think, call, page, show, onStep, onReply, shown }) {
+  const streamed = onReply ? { onText: replyStream(onReply) } : undefined;
   const team = Object.entries(JUEL_SPECIALISTS).filter(([id]) => admin || id !== "admin").map(([id, s]) => `${id}: ${s.brief}`).join("\n");
   // The page's action list goes to its specialist's prompt, not into everyone's context.
   const { clientTools, ...where } = context || {};
@@ -825,7 +837,7 @@ ${history.slice(-12).map((m) => `${m.role === "user" ? "User" : "Juel"}: ${clipT
 USER: ${message}
 
 Plan the turn. If the message needs the app (reading data, changing something, making or posting something), list the specialists who do it, in order, each with a precise task; they share a board, so later ones see earlier results. If it's conversation or a question you can answer from the context, answer directly with no plan.
-Return JSON only: {"reply":"your answer when no plan is needed, else empty","plan":[{"specialist":"id","task":"..."}]}`);
+Return JSON only: {"reply":"your answer when no plan is needed, else empty","plan":[{"specialist":"id","task":"..."}]}`, streamed);
   const steps = [];
   const board = [];
   const work = (Array.isArray(plan?.plan) ? plan.plan : []).filter((p) => JUEL_SPECIALISTS[p?.specialist] && (admin || p.specialist !== "admin")).slice(0, 4);
@@ -848,8 +860,45 @@ ${board.map((b) => `- ${b.specialist}: ${b.note}`).join("\n")}
 
 ${shown?.() ? `SHOWN BELOW YOUR REPLY: ${shown()}. Don't repeat it; point to it in a few words.\n\n` : ""}Write the reply to the user: plain, short (under 120 words), what was done or found, with the facts that matter. Say what paid work started and that it spends credits; when something was refused for low credits, say what it needed. Never claim something happened that the board doesn't show.
 When the user asked for a report, numbers, a status overview, or a comparison, also give "report": a title, up to 6 headline numbers as cards, and a table (up to 8 columns, 20 rows) built only from facts on the board. Otherwise leave it out.
-Return JSON only: {"reply":"...", "report": {"title":"...", "cards":[{"label":"...","value":"...","tone":"good"|"warn"|"neutral"}], "table":{"columns":["..."],"rows":[["..."]]}} or null}`);
+Return JSON only: {"reply":"...", "report": {"title":"...", "cards":[{"label":"...","value":"...","tone":"good"|"warn"|"neutral"}], "table":{"columns":["..."],"rows":[["..."]]}} or null}`, streamed);
   return { reply: String(final?.reply || "").trim() || board.map((b) => b.note).join(" "), steps, board, report: cleanReport(final?.report) };
+}
+
+/** The "reply" string of a JSON object that's still being written, decoded as far as it goes ("" until it
+ *  starts). Lets the reply show while the model writes it. */
+export function partialReply(json) {
+  const start = /"reply"\s*:\s*"/.exec(json);
+  if (!start) return "";
+  let out = "";
+  for (let i = start.index + start[0].length; i < json.length; i++) {
+    const ch = json[i];
+    if (ch === '"') break;
+    if (ch !== "\\") { out += ch; continue; }
+    const next = json[i + 1];
+    if (next === undefined) break;
+    if (next === "u") {
+      const hex = json.slice(i + 2, i + 6);
+      if (!/^[0-9a-fA-F]{4}$/.test(hex)) break;
+      out += String.fromCharCode(parseInt(hex, 16));
+      i += 5;
+    } else {
+      out += { n: "\n", t: "\t", r: "", b: "", f: "" }[next] ?? next;
+      i += 1;
+    }
+  }
+  return out;
+}
+
+/** Calls `onReply` with the reply so far each time it grows (a retry starting over sends the shorter text). */
+function replyStream(onReply) {
+  let last = "";
+  return (json) => {
+    const text = partialReply(json);
+    if (text && text !== last) {
+      last = text;
+      onReply(text);
+    }
+  };
 }
 
 /** Juel's own report for a reply: a title, headline numbers, and a table, all plain text and capped. */
@@ -1365,7 +1414,8 @@ export function registerJuel(app, deps) {
       send({ type: "page", surface, actions: [{ type, args }] });
       return { sent: true, credits };
     };
-    const think = (prompt) => deps.generateJson(prompt, { maxTokens: 2500, signal: stop.signal });
+    // Low reasoning effort keeps each step quick; a step that hangs gives up after a minute per provider.
+    const think = (prompt, extra = {}) => deps.generateJson(prompt, { maxTokens: 2500, signal: stop.signal, reasoningEffort: "low", timeoutMs: 60000, ...extra });
     const shown = () => attachments.map((a) => (a.kind === "operator" ? "the agent operator's full answer (report, cards, buttons)" : a.kind === "media" ? `${a.items.length} picture/video/audio item(s) a specialist showed` : `the ${a.tab || "studio"} generation it started`)).join("; ");
     const at = new Date().toISOString();
     try {
@@ -1378,7 +1428,7 @@ export function registerJuel(app, deps) {
           urlsIn(open.data, seen);
         }
       }
-      const turn = await deps.withUsage(who.userId, "juel", () => juelTurn({ message, history: thread.messages, context, admin: who.admin, think, call, page, show, shown, onStep: (s) => send({ type: "step", ...s }) }));
+      const turn = await deps.withUsage(who.userId, "juel", () => juelTurn({ message, history: thread.messages, context, admin: who.admin, think, call, page, show, shown, onStep: (s) => send({ type: "step", ...s }), onReply: (text) => send({ type: "reply", text }) }));
       if (turn.report) attach(turn.report);
       // What the turn has actually charged so far (Juel's own thinking included); long jobs keep charging after.
       const after = before ? await snapshot(who.userId) : null;

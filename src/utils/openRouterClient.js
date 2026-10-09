@@ -509,7 +509,7 @@ const VR_CHAT_MODELS = {
 };
 export const vrChatModel = (model) => VR_CHAT_MODELS[model] || String(model || "").replace(/^anthropic\//, "") || model;
 
-async function readChatStream(response, { idleMs, onProgress, signal, stalled, bump }) {
+async function readChatStream(response, { idleMs, onProgress, onText, signal, stalled, bump }) {
   bump();
   const decoder = new TextDecoder();
   let buffer = "", content = "", finish = null, usage = null, id = "", model = "";
@@ -536,6 +536,7 @@ async function readChatStream(response, { idleMs, onProgress, signal, stalled, b
       if (choice?.delta?.content) {
         content += choice.delta.content;
         onProgress?.(content.length);
+        onText?.(content);
       }
       if (choice?.finish_reason) finish = choice.finish_reason;
       if (data.usage) usage = data.usage;
@@ -555,7 +556,7 @@ async function readChatStream(response, { idleMs, onProgress, signal, stalled, b
  * @param {string} endpoint
  * @param {{ body?: object, signal?: AbortSignal, timeoutMs?: number, idleMs?: number, onProgress?: (n: number) => void, fetchImpl?: Function, env?: NodeJS.ProcessEnv }} [options]
  */
-export async function openRouterStream(endpoint, { body, signal, timeoutMs = 90000, idleMs = 120000, onProgress, fetchImpl = httpsFetch, env = process.env } = {}) {
+export async function openRouterStream(endpoint, { body, signal, timeoutMs = 90000, idleMs = 120000, onProgress, onText, fetchImpl = httpsFetch, env = process.env } = {}) {
   if (!endpoint.startsWith("/") || endpoint.startsWith("//")) throw new Error("Invalid AI provider endpoint.");
   const orKey = openRouterKeys(env)[0] || "";
   const vrKey = videoRouterKey(env);
@@ -590,7 +591,7 @@ export async function openRouterStream(endpoint, { body, signal, timeoutMs = 900
         error.status = response.status;
         throw error;
       }
-      const data = await readChatStream(response, { idleMs, onProgress, signal, stalled, bump });
+      const data = await readChatStream(response, { idleMs, onProgress, onText, signal, stalled, bump });
       if (!data.usage) data.usage = estimatedStreamUsage(payload, data.choices?.[0]?.message?.content);
       meterResponse(provider, endpoint, payload, data);
       return data;
@@ -620,7 +621,7 @@ export async function openRouterStream(endpoint, { body, signal, timeoutMs = 900
   return withOpenRouterKeys(env, (key) => run(API, key, "openrouter", body), { signal, label: `stream ${body?.model || ""}`.trim() });
 }
 
-export async function requestOpenRouter({ messages, kind = "text", model, json = false, maxTokens = 4096, temperature = 0.3, validate = undefined, plugins = undefined, reasoningEffort = undefined, ...options }) {
+export async function requestOpenRouter({ messages, kind = "text", model, json = false, maxTokens = 4096, temperature = 0.3, validate = undefined, plugins = undefined, reasoningEffort = undefined, onText = undefined, ...options }) {
   const env = options.env || process.env;
   const selected = model || openRouterModel(kind, env);
   const fallback = kind === "vision" ? "qwen/qwen3.8-max-0902" : "deepseek/deepseek-v4.1-flash";
@@ -629,12 +630,14 @@ export async function requestOpenRouter({ messages, kind = "text", model, json =
   for (const candidate of models) {
     options.signal?.throwIfAborted();
     try {
-      const data = await openRouterRequest("/chat/completions", { ...options, body: {
+      const body = {
         model: candidate, messages, max_tokens: maxTokens, temperature,
         provider: { allow_fallbacks: true }, reasoning: { exclude: true, ...(reasoningEffort ? { effort: reasoningEffort } : {}) },
         ...(json ? { response_format: { type: "json_object" } } : {}),
         ...(plugins?.length ? { plugins } : {}),
-      } });
+      };
+      // A caller that shows the text as it's written (Juel's replies) gets it streamed.
+      const data = onText ? await openRouterStream("/chat/completions", { ...options, body, onText }) : await openRouterRequest("/chat/completions", { ...options, body });
       const choice = data.choices?.[0];
       if (choice?.finish_reason === "length") throw new Error("The AI response was too long to finish.");
       if (choice?.finish_reason === "content_filter") throw new Error("The AI provider could not return this response.");

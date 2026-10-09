@@ -4,7 +4,7 @@
 // that can't cover it gets the credits toast), and shows an agent operator's answers and generations inline.
 import { FormEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { AlertCircle, ArrowUp, Check, Coins, Copy, History, Loader2, Mic, Pencil, Plus, RotateCcw, Sparkles, Square, Trash2, X } from "lucide-react";
+import { AlertCircle, ArrowDown, ArrowUp, ArrowUpRight, Check, ChevronRight, Coins, Copy, History, Loader2, MapPin, Mic, Pencil, Plus, RotateCcw, Sparkles, Square, Trash2, X } from "lucide-react";
 import { readDeepLink } from "../utils/tiktokRoute";
 import { toast } from "../utils/toast";
 import { FormattedChatText } from "./AgentStructuredContent";
@@ -16,7 +16,7 @@ type Step = { specialist: string; text: string };
 type Message = { role: "user" | "assistant"; content: string; steps?: Step[]; spends?: JuelSpend[]; attachments?: JuelAttachment[]; applied?: number; charged?: number; error?: boolean; stopped?: boolean; at: string };
 type Thread = { id: string; title: string; surface?: string; entityId?: string; messages: Message[] };
 type ThreadSummary = { id: string; title: string; surface: string; entityId: string; updatedAt: string };
-type Live = { text: string; steps: Step[]; spends: JuelSpend[]; attachments: JuelAttachment[] };
+type Live = { text: string; reply: string; steps: Step[]; spends: JuelSpend[]; attachments: JuelAttachment[]; startedAt: number };
 /** What a page offers Juel to do on it, in the browser: which specialist uses it, and each action's args,
  *  what it does, its risk, and (for paid ones) a cost spec like "speech" or "image:2" for the quote. */
 export type JuelPageTools = { specialist: string; actions: Record<string, { args: string; about: string; risk: "read" | "change" | "paid" | "publish" | "delete"; cost?: string }> };
@@ -155,6 +155,9 @@ export function JuelPanel({ onClose, embedded = false, headStart }: { onClose?: 
   const [historyOpen, setHistoryOpen] = useState(false);
   const [copied, setCopied] = useState(-1);
   const bottom = useRef<HTMLDivElement>(null);
+  const body = useRef<HTMLDivElement>(null);
+  const [atBottom, setAtBottom] = useState(true);
+  const following = useRef(true);
   const field = useRef<HTMLTextAreaElement>(null);
   const stopper = useRef<AbortController | null>(null);
   const context = announced || routeContext();
@@ -195,9 +198,28 @@ export function JuelPanel({ onClose, embedded = false, headStart }: { onClose?: 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 
+  // Follow new output only while the reader is at the bottom; scrolling up to read stops it.
   useEffect(() => {
-    bottom.current?.scrollIntoView({ block: "end" });
-  }, [thread?.messages.length, live?.steps.length, live?.attachments.length]);
+    if (following.current) bottom.current?.scrollIntoView({ block: "end" });
+  }, [thread?.messages.length, live?.steps.length, live?.attachments.length, live?.reply]);
+  const onScroll = () => {
+    const el = body.current;
+    if (!el) return;
+    const near = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    following.current = near;
+    setAtBottom(near);
+  };
+  const toBottom = () => {
+    following.current = true;
+    body.current?.scrollTo({ top: body.current.scrollHeight, behavior: "smooth" });
+  };
+  // The message box grows with what's typed, up to about eight lines.
+  useEffect(() => {
+    const el = field.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 220)}px`;
+  }, [message]);
 
   const voice = useVoiceInput(
     (text) => setMessage((m) => [m.trim(), text].filter(Boolean).join(" ").slice(0, 4000)),
@@ -214,7 +236,8 @@ export function JuelPanel({ onClose, embedded = false, headStart }: { onClose?: 
     setEditFrom(null);
     // An edit (or asking again) drops the old tail right away; the server does the same.
     if (from !== null && thread) setThread({ ...thread, messages: thread.messages.slice(0, from) });
-    setLive({ text, steps: [], spends: [], attachments: [] });
+    setLive({ text, reply: "", steps: [], spends: [], attachments: [], startedAt: Date.now() });
+    following.current = true;
     // The page's state right now (an edit changes between messages), else what it announced.
     const now = contextProvider?.() || context;
     const controller = new AbortController();
@@ -237,7 +260,8 @@ export function JuelPanel({ onClose, embedded = false, headStart }: { onClose?: 
         for (const line of lines) {
           if (!line.trim()) continue;
           const item = JSON.parse(line);
-          if (item.type === "step") setLive((l) => (l ? { ...l, steps: [...l.steps, { specialist: item.specialist, text: item.text }] } : l));
+          if (item.type === "reply") setLive((l) => (l ? { ...l, reply: String(item.text || "") } : l));
+          else if (item.type === "step") setLive((l) => (l ? { ...l, steps: [...l.steps, { specialist: item.specialist, text: item.text }] } : l));
           else if (item.type === "spend") setLive((l) => (l ? { ...l, spends: [...l.spends, item.spend] } : l));
           else if (item.type === "attach") setLive((l) => (l ? { ...l, attachments: [...l.attachments, item.attachment] } : l));
           else if (item.type === "credits") {
@@ -315,8 +339,8 @@ export function JuelPanel({ onClose, embedded = false, headStart }: { onClose?: 
     <aside className={`juel${embedded ? " juel-embedded" : ""}`} role={embedded ? undefined : "dialog"} aria-label="Juel">
       <header className="juel-head">
         {headStart}
-        <span className="juel-title"><Sparkles size={16} aria-hidden="true" />Juel</span>
-        <span className="juel-where" title="Juel starts from what you have open">{context.label || context.surface}</span>
+        <span className="juel-title"><span className="juel-mark" aria-hidden="true"><Sparkles size={13} /></span>Juel</span>
+        <span className="juel-thread-title" title={thread?.title || undefined}>{thread?.messages.length ? thread.title || "Conversation" : "New conversation"}</span>
         <button type="button" className={`juel-icon${historyOpen ? " is-on" : ""}`} onClick={() => setHistoryOpen((o) => !o)} aria-label="Conversations" aria-expanded={historyOpen} title="Conversations"><History size={16} /></button>
         <button type="button" className="juel-icon" onClick={newChat} aria-label="New conversation" title="New conversation"><Plus size={16} /></button>
         {onClose ? <button type="button" className="juel-icon" onClick={onClose} aria-label="Close Juel" title="Close (Esc)"><X size={16} /></button> : null}
@@ -334,49 +358,61 @@ export function JuelPanel({ onClose, embedded = false, headStart }: { onClose?: 
           onDeleted={(id) => thread?.id === id && newChat()}
         />
       ) : null}
-      <div className="juel-body">
-        {!thread?.messages.length && !live ? (
-          <div className="juel-empty">
-            <strong>{intro.title}</strong>
-            <p>{intro.body}</p>
-            <div className="juel-starters">
-              {starters.map((s) => (
-                <button key={s.label} type="button" className="juel-starter" disabled={sending} onClick={() => void send(s.prompt)}>{s.label}</button>
-              ))}
+      <div className="juel-body" ref={body} onScroll={onScroll}>
+        <div className="juel-thread">
+          {!thread?.messages.length && !live ? (
+            <div className="juel-empty">
+              <span className="juel-empty-mark" aria-hidden="true"><Sparkles size={20} /></span>
+              <h2>{intro.title}</h2>
+              <p>{intro.body}</p>
+              <div className="juel-starters">
+                {starters.map((s) => (
+                  <button key={s.label} type="button" className="juel-starter" disabled={sending} onClick={() => void send(s.prompt)}>
+                    <span>{s.label}</span>
+                    <ArrowUpRight size={14} aria-hidden="true" />
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
-        ) : null}
-        {thread?.messages.map((m, i) => (m.role === "user" ? (
-          <div key={i} className={`juel-user-row${editFrom === i ? " is-editing" : ""}`}>
-            <button type="button" className="juel-tool" onClick={() => beginEdit(i)} disabled={sending} aria-label="Edit this message" title="Edit"><Pencil size={13} /></button>
-            <p className="juel-user">{m.content}</p>
-          </div>
-        ) : (
-          <div key={i} className={`juel-reply${m.error ? " is-error" : ""}`}>
-            {m.steps?.length ? <Steps steps={m.steps} /> : null}
-            {m.content ? <div className="juel-text"><FormattedChatText content={m.content} theme={document.documentElement.dataset.theme === "light" ? "light" : "dark"} /></div> : null}
-            {m.applied ? <p className="juel-applied"><Check size={13} aria-hidden="true" />Made {m.applied} edit{m.applied === 1 ? "" : "s"} on the page</p> : null}
-            <Spends spends={m.spends} charged={m.charged} />
-            <Attachments items={m.attachments} onAsk={(text) => void send(text)} />
-            <div className="juel-tools">
-              <button type="button" className="juel-tool" onClick={() => void copy(m.content, i)} aria-label="Copy reply" title="Copy">{copied === i ? <Check size={13} /> : <Copy size={13} />}</button>
-              {i === lastAssistant ? <button type="button" className="juel-tool" onClick={regenerate} disabled={sending} aria-label="Ask again" title="Ask again"><RotateCcw size={13} /></button> : null}
+          ) : null}
+          {thread?.messages.map((m, i) => (m.role === "user" ? (
+            <div key={i} className={`juel-user-row${editFrom === i ? " is-editing" : ""}`}>
+              <p className="juel-user">{m.content}</p>
+              <div className="juel-tools">
+                <button type="button" className="juel-tool" onClick={() => beginEdit(i)} disabled={sending} aria-label="Edit this message" title="Edit"><Pencil size={13} /></button>
+              </div>
             </div>
-          </div>
-        )))}
-        {live ? (
-          <>
-            <p className="juel-user">{live.text}</p>
-            <div className="juel-reply">
-              <Steps steps={live.steps} working />
-              <Spends spends={live.spends} />
-              <Attachments items={live.attachments} onAsk={() => undefined} />
+          ) : (
+            <div key={i} className={`juel-reply${m.error ? " is-error" : ""}${i === thread.messages.length - 1 ? " is-new" : ""}`}>
+              {m.steps?.length ? <Activity steps={m.steps} /> : null}
+              {m.content ? <div className="juel-text"><FormattedChatText content={m.content} theme={document.documentElement.dataset.theme === "light" ? "light" : "dark"} /></div> : null}
+              {m.applied ? <p className="juel-applied"><Check size={13} aria-hidden="true" />Made {m.applied} edit{m.applied === 1 ? "" : "s"} on the page</p> : null}
+              <Attachments items={m.attachments} onAsk={(text) => void send(text)} />
+              <div className="juel-foot">
+                <div className="juel-tools">
+                  <button type="button" className="juel-tool" onClick={() => void copy(m.content, i)} aria-label="Copy reply" title="Copy">{copied === i ? <Check size={14} /> : <Copy size={14} />}</button>
+                  {i === lastAssistant ? <button type="button" className="juel-tool" onClick={regenerate} disabled={sending} aria-label="Ask again" title="Ask again"><RotateCcw size={14} /></button> : null}
+                </div>
+                <Spends spends={m.spends} charged={m.charged} />
+              </div>
             </div>
-          </>
-        ) : null}
-        {error ? <p className="juel-error" role="alert">{error}</p> : null}
-        <div ref={bottom} />
+          )))}
+          {live ? (
+            <>
+              <div className="juel-user-row"><p className="juel-user">{live.text}</p></div>
+              <div className="juel-reply is-live">
+                <Activity steps={live.steps} working={!live.reply} startedAt={live.startedAt} />
+                {live.reply ? <div className="juel-text is-streaming"><FormattedChatText content={live.reply} theme={document.documentElement.dataset.theme === "light" ? "light" : "dark"} /></div> : null}
+                <Attachments items={live.attachments} onAsk={() => undefined} />
+                {live.spends.length ? <div className="juel-foot"><Spends spends={live.spends} /></div> : null}
+              </div>
+            </>
+          ) : null}
+          {error ? <p className="juel-error" role="alert"><AlertCircle size={14} aria-hidden="true" />{error}</p> : null}
+          <div ref={bottom} className="juel-bottom" />
+        </div>
       </div>
+      {!atBottom ? <button type="button" className="juel-jump" onClick={toBottom} aria-label="Jump to the latest message"><ArrowDown size={16} /></button> : null}
       <form className="juel-composer" onSubmit={(event: FormEvent) => { event.preventDefault(); void send(); }}>
         {editFrom !== null ? (
           <p className="juel-editing">
@@ -394,12 +430,13 @@ export function JuelPanel({ onClose, embedded = false, headStart }: { onClose?: 
               void send();
             }
           }}
-          rows={2}
+          rows={1}
           maxLength={4000}
           placeholder={voice.state === "recording" ? "Listening… press the mic again when you're done" : voice.state === "transcribing" ? "Transcribing…" : "Ask Juel to find, make, fix, or post something…"}
           aria-label="Message Juel"
         />
         <div className="juel-composer-tools">
+          <span className="juel-where" title="Juel starts from what you have open"><MapPin size={12} aria-hidden="true" /><span>{context.label || context.surface}</span></span>
           <button
             type="button"
             className={`juel-mic${voice.state === "recording" ? " is-on" : ""}`}
@@ -422,14 +459,50 @@ export function JuelPanel({ onClose, embedded = false, headStart }: { onClose?: 
   );
 }
 
-function Steps({ steps, working = false }: { steps: Step[]; working?: boolean }) {
+/** What Juel's specialists did. While it works: each step, the latest one live. After: one line
+ *  ("Worked through 3 steps · Automation, Studio") that opens to the steps. */
+function Activity({ steps, working = false, startedAt }: { steps: Step[]; working?: boolean; startedAt?: number }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (!working) return;
+    const t = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(t);
+  }, [working]);
+  const who = [...new Set(steps.map((s) => SPECIALIST[s.specialist] || s.specialist))];
+  if (working) {
+    const latest = steps[steps.length - 1];
+    const seconds = startedAt ? Math.max(0, Math.floor((now - startedAt) / 1000)) : 0;
+    return (
+      <div className="juel-activity is-working" aria-live="polite">
+        {steps.length > 1 ? (
+          <ol className="juel-steps">
+            {steps.slice(0, -1).map((step, i) => (
+              <li key={i}><b>{SPECIALIST[step.specialist] || step.specialist}</b>{step.text}</li>
+            ))}
+          </ol>
+        ) : null}
+        <p className="juel-now">
+          <span className="juel-pulse" aria-hidden="true" />
+          <span className="juel-shimmer">{latest ? <><b>{SPECIALIST[latest.specialist] || latest.specialist}</b>{latest.text}</> : "Thinking"}</span>
+          {seconds >= 3 ? <span className="juel-elapsed">{seconds}s</span> : null}
+        </p>
+      </div>
+    );
+  }
+  if (!steps.length) return null;
   return (
-    <ol className="juel-steps">
-      {steps.map((step, i) => (
-        <li key={i}><b>{SPECIALIST[step.specialist] || step.specialist}</b> {step.text}</li>
-      ))}
-      {working ? <li className="juel-working"><Loader2 size={13} className="juel-spin" aria-hidden="true" />{steps.length ? "Working" : "Thinking"}</li> : null}
-    </ol>
+    <details className="juel-activity">
+      <summary>
+        <ChevronRight size={14} className="juel-chev" aria-hidden="true" />
+        <span>Worked through {steps.length} step{steps.length === 1 ? "" : "s"}</span>
+        {who.length ? <span className="juel-who">{who.join(", ")}</span> : null}
+      </summary>
+      <ol className="juel-steps">
+        {steps.map((step, i) => (
+          <li key={i}><b>{SPECIALIST[step.specialist] || step.specialist}</b>{step.text}</li>
+        ))}
+      </ol>
+    </details>
   );
 }
 
@@ -437,21 +510,32 @@ function Steps({ steps, working = false }: { steps: Step[]; working?: boolean })
 function Spends({ spends, charged }: { spends?: JuelSpend[]; charged?: number }) {
   if (!spends?.length && !charged) return null;
   const started = (spends || []).filter((s) => s.status === "started");
+  const refused = (spends || []).filter((s) => s.status === "refused");
   const total = started.reduce((sum, s) => sum + s.credits, 0);
+  const label = [started.length ? `≈ ${formatCredits(total)} credits` : "", charged ? `${formatCredits(charged)} charged` : ""].filter(Boolean).join(" · ");
   return (
     <div className="juel-spends">
-      {(spends || []).map((s, i) => (
-        <p key={i} className={`juel-spend${s.status === "refused" ? " is-refused" : ""}`}>
-          {s.status === "refused" ? <AlertCircle size={13} aria-hidden="true" /> : <Coins size={13} aria-hidden="true" />}
+      {refused.map((s, i) => (
+        <p key={i} className="juel-spend is-refused">
+          <AlertCircle size={13} aria-hidden="true" />
           <span className="juel-spend-what">{s.does}</span>
-          <span className="juel-spend-cost">{s.status === "refused" ? `needs ≈ ${formatCredits(s.credits)}` : `≈ ${formatCredits(s.credits)}`}</span>
+          <span className="juel-spend-cost">needs ≈ {formatCredits(s.credits)}</span>
         </p>
       ))}
-      {started.length > 1 || charged ? (
-        <p className="juel-spend-total">
-          {started.length > 1 ? <span>About {formatCredits(total)} credits for this task</span> : <span />}
-          {charged ? <span>{formatCredits(charged)} charged so far</span> : null}
-        </p>
+      {label ? (
+        <details className="juel-spend-sum">
+          <summary title="What this task costs in credits"><Coins size={13} aria-hidden="true" />{label}</summary>
+          {started.length ? (
+            <div className="juel-spend-list">
+              {started.map((s, i) => (
+                <p key={i} className="juel-spend">
+                  <span className="juel-spend-what">{s.does}</span>
+                  <span className="juel-spend-cost">≈ {formatCredits(s.credits)}</span>
+                </p>
+              ))}
+            </div>
+          ) : null}
+        </details>
       ) : null}
     </div>
   );

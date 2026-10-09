@@ -12126,6 +12126,7 @@ async function generateTextJson(prompt, geminiFallback, options = {}) {
                 messages: [{ role: "system", content: "Return valid compact JSON only. Include all requested fields." }, { role: "user", content: prompt }],
                 json: true, maxTokens: options.maxTokens || 4096,
                 signal: options.signal, timeoutMs: textProviderTimeoutMs(options.timeoutMs),
+                ...(options.onText ? { onText: options.onText } : {}), ...(options.reasoningEffort ? { reasoningEffort: options.reasoningEffort } : {}),
                 validate: (value) => requireUsefulJson(value, "The AI model"),
             });
             options.onResult?.({ provider: "openrouter", model: result.model });

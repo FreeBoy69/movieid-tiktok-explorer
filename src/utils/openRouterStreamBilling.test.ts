@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { openRouterStream } from "./openRouterClient.js";
+import { openRouterStream, requestOpenRouter } from "./openRouterClient.js";
 
 function stream(chunks: object[]) {
   return {
@@ -40,5 +40,23 @@ describe("stream billing", () => {
     expect(data.usage.prompt_tokens).toBeGreaterThan(0);
     expect(data.usage.completion_tokens).toBeGreaterThan(0);
     expect(data.usage.cost).toBeUndefined();
+  });
+
+  it("streams a JSON request's text to onText and still returns the parsed value", async () => {
+    const seen: string[] = [];
+    let sent: any;
+    const result = await requestOpenRouter({
+      env: { OPENROUTER_API_KEY: "test" },
+      messages: [{ role: "user", content: "hi" }], json: true, reasoningEffort: "low",
+      onText: (text: string) => seen.push(text),
+      fetchImpl: async (_url: string, options: any) => {
+        sent = JSON.parse(options.body);
+        return stream([{ choices: [{ delta: { content: "{\"reply\":" } }] }, { choices: [{ delta: { content: "\"hi\"}" }, finish_reason: "stop" }] }]);
+      },
+    } as any);
+    expect(sent.stream).toBe(true);
+    expect(sent.reasoning).toEqual({ exclude: true, effort: "low" });
+    expect(seen).toEqual(["{\"reply\":", "{\"reply\":\"hi\"}"]);
+    expect(result.value).toEqual({ reply: "hi" });
   });
 });
