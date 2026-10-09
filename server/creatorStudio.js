@@ -1892,13 +1892,15 @@ export function registerCreatorStudio(app, express) {
     res.sendFile(file);
   };
 
-  app.get("/api/studio/catalog", route(async (_req, res) => {
+  // Public: the model and tool list holds nothing personal, and signed-out visitors browse the
+  // real studios (generating still needs an account).
+  app.get("/api/studio/catalog", async (_req, res) => {
     try {
       res.json({ ...(await studioCatalog()), promo: { model: PROMO_MODEL(), renderer: promoRendererAvailable(), music: true }, explainer: { model: PROMO_MODEL(), renderer: promoRendererAvailable(), narration: Boolean(dependencies.speak) }, agents: Object.entries(AGENTS).map(([id, a]) => ({ id, name: a.name, intro: a.intro })), workflows: Object.entries(WORKFLOWS).map(([id, w]) => ({ id, ...w })) });
     } catch (error) {
-      throw fail(error.message, 503);
+      res.status(503).json({ error: publicMessage(error.message) });
     }
-  }));
+  });
 
   app.post(
     "/api/studio/uploads",

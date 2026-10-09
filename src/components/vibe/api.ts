@@ -26,7 +26,7 @@ export interface ProjectSummary {
   cover?: { kind: string; url: string };
 }
 
-export const listProjects = () => fetch("/api/vibe-edit/projects").then((r) => json<{ projects: ProjectSummary[] }>(r, "Couldn't load your edits")).then((d) => d.projects);
+export const listProjects = () => fetch("/api/vibe-edit/projects").then((r) => json<{ projects: ProjectSummary[] }>(r, "Couldn't load your edits")).then((d) => d.projects || []);
 export const loadProject = (id: string) => fetch(`/api/vibe-edit/projects/${encodeURIComponent(id)}`).then((r) => json<{ project: VibeProject }>(r, "Couldn't open that edit")).then((d) => d.project);
 export const saveProject = (project: VibeProject) =>
   fetch(`/api/vibe-edit/projects/${encodeURIComponent(project.id)}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ project }) }).then((r) => json<{ project: ProjectSummary }>(r, "Couldn't save"));

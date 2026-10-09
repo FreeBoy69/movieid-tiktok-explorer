@@ -17,9 +17,12 @@ let nextId = 1;
 const listeners = new Set<() => void>();
 const emit = () => listeners.forEach((listener) => listener());
 
+/** The answer a signed-out visitor's action gets; the sign-in dialog already says it. */
+export const GUEST_SIGN_IN_MESSAGE = "Sign in to continue.";
+
 function push(tone: ToastTone, message: unknown, options: ToastOptions = {}) {
   const text = messageOf(message);
-  if (!text) return 0;
+  if (!text || text === GUEST_SIGN_IN_MESSAGE) return 0;
   // The same message again (a poll failing every few seconds) bumps a counter instead of stacking.
   const same = toasts.find((item) => item.tone === tone && item.message === text && item.title === options.title);
   if (same) {

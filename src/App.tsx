@@ -48,6 +48,7 @@ import { lazyPage, PageBoundary, PageLoading } from "./utils/lazyPage";
 import { readDeepLink, writeDeepLink, type MainView as View } from "./utils/tiktokRoute";
 import { BackgroundProcessCenter, openBackgroundProcessCenter, type BackgroundProcess } from "./components/BackgroundProcessCenter";
 import { MobileDock } from "./components/MobileDock";
+import { installGuestGuard } from "./utils/guestGuard";
 import { ToolsPage } from "./components/ToolsDirectory";
 
 // The admin console ships as its own chunk so users never download it.
@@ -74,7 +75,6 @@ const DigitalProductMaker = lazyPage(() => import("./components/DigitalProductMa
 const CreatorStudio = lazyPage(() => import("./components/CreatorStudio").then((m) => ({ default: m.CreatorStudio })));
 const ToolPage = lazyPage(() => import("./components/tools/ToolPage").then((m) => ({ default: m.ToolPage })));
 const MovieAnalysisTabs = lazyPage(() => import("./components/MovieAnalysisTabs").then((m) => ({ default: m.MovieAnalysisTabs })));
-const GuestToolView = lazyPage(() => import("./components/GuestToolView").then((m) => ({ default: m.GuestToolView })));
 // The docs are public and load only when opened.
 const DocsPage = lazyPage(() => import("./components/docs/DocsPage"));
 
@@ -546,6 +546,16 @@ function WorkspaceApp() {
   } as any);
   const dropzoneRootProps = getRootProps() as any;
 
+  // Signed out: real pages, but any action opens sign-in (src/utils/guestGuard.ts).
+  const signedOut = !authLoading && !auth?.user;
+  useEffect(() => {
+    if (!signedOut) return;
+    return installGuestGuard(() => setSignInOpen(true));
+  }, [signedOut]);
+  useEffect(() => {
+    if (signedOut && activeView === "account") setSignInOpen(true);
+  }, [signedOut, activeView]);
+
   if (authLoading) {
     return <BrandLoader />;
   }
@@ -620,8 +630,8 @@ function WorkspaceApp() {
                   </Suspense>
                 </PageBoundary>
               </motion.div>
-            ) : isGuest && activeView !== "tools" && activeView !== "all-tools" ? (
-              <GuestToolView key={`${activeView}-${routeLink.view === "studio" ? routeLink.studioTab : routeLink.view === "tool" ? routeLink.toolId : ""}`} view={activeView} studioTab={routeLink.view === "studio" ? routeLink.studioTab : undefined} toolId={routeLink.view === "tool" ? routeLink.toolId : undefined} theme={channelTheme} onBack={() => handleNavigate({ view: "tools" })} onUse={() => setSignInOpen(true)} />
+            ) : isGuest && activeView === "account" ? (
+              <ToolsHub theme={channelTheme} signedIn={false} onSignIn={() => setSignInOpen(true)} onOpen={handleNavSelect} onNavigate={handleNavigate} />
             ) : ["discover", "projects", "create", "styles", "drama"].includes(activeView) ? (
               <CreatorWorkspace key="creator-workspace" route={routeLink} accountId={auth?.activeAccount?.id} theme={channelTheme} />
             ) : activeView === "studio" ? (
