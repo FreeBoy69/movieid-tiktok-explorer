@@ -9,7 +9,7 @@ import { ArtStyleButton, Empty, Modal, PageHead, creatorApi } from "./CreatorWor
 import { Choice } from "./studio/studioShared";
 import ShortfilmTemplatePicker from "./ShortfilmTemplatePicker";
 import { shortfilmTemplateThumb } from "../utils/shortfilmTemplates.js";
-import { CastPanel, LocationsPanel, useSeriesProduction, type DramaLocation } from "./DramaCast";
+import { CastPanel, LocationsPanel, ObjectsPanel, useSeriesProduction, type DramaLocation, type DramaObject } from "./DramaCast";
 import { DramaEpisode } from "./DramaEpisode";
 import { loadVoiceProfiles } from "../utils/voiceProfiles";
 import { writeDeepLink } from "../utils/tiktokRoute";
@@ -40,7 +40,7 @@ import { EmptyState, Segmented, Tabs } from "./ui/controls";
 import { confirmRemoveCharacter } from "./castSheets";
 
 type Template = (typeof DRAMA_TEMPLATES)[number];
-type Concept = { title: string; genre: string; premise: string; logline: string; tone: string; visualPrompt: string; artStyleId: string; cast: Character[]; locations: DramaLocation[]; storyBible: StoryBible };
+type Concept = { title: string; genre: string; premise: string; logline: string; tone: string; visualPrompt: string; artStyleId: string; cast: Character[]; locations: DramaLocation[]; objects?: DramaObject[]; storyBible: StoryBible };
 type StoryBible = { setting: string; rules: string[]; themes: string[]; seriesArc: string; plotThreads: { name: string; promise: string }[] };
 type Character = { id: string; name: string; role: string; appearance: string; outfit: string; voice?: string };
 type EpisodePlan = { n: number; title: string; hook: string; goal: string; turn: string; payoff: string; cliffhanger: string };
@@ -64,6 +64,7 @@ type Series = {
   episodeCount: number;
   cast: Character[];
   locations: DramaLocation[];
+  objects?: DramaObject[];
   storyBible: StoryBible;
   voices: Record<string, string>;
   episodes: EpisodePlan[];
@@ -468,6 +469,16 @@ function DramaIdea({ accountId, format = "series", song = null, onError, project
                   </ul>
                 </>
               )}
+              {(concept.objects || []).length > 0 && (
+                <>
+                  <h4>Recurring objects</h4>
+                  <ul className="dr-concept-places">
+                    {(concept.objects || []).map((object) => (
+                      <li key={object.id} title={object.description}>{object.name}</li>
+                    ))}
+                  </ul>
+                </>
+              )}
               <h4>{format === "series" ? "Series" : "Settings"}</h4>
               <div className="dr-idea-settings">
                 {kind.count.max > 1 && <label>{kind.units} <input type="number" inputMode="numeric" min={kind.count.min} max={kind.count.max} value={episodeCount} onChange={(event) => setEpisodeCount(Number(event.target.value))} onBlur={() => setEpisodeCount(count)} /></label>}
@@ -690,8 +701,9 @@ function statusOf(project: EpisodeProject | undefined) {
 function SeriesPage({ accountId, id, onError }: { accountId: string; id: string; onError: (e: string) => void }) {
   const [series, setSeries] = useState<Series | null>(null),
     [episodes, setEpisodes] = useState<EpisodeProject[]>([]),
-    [tab, setTab] = useState<"episodes" | "cast" | "locations" | "look" | "song" | "bible">("episodes"),
+    [tab, setTab] = useState<"episodes" | "cast" | "locations" | "objects" | "look" | "song" | "bible">("episodes"),
     [editingLocation, setEditingLocation] = useState<DramaLocation | null>(null),
+    [editingObject, setEditingObject] = useState<DramaObject | null>(null),
     [voices, setVoices] = useState<any[]>([]),
     [voicesLoading, setVoicesLoading] = useState(true),
     [starting, setStarting] = useState(0),
@@ -734,7 +746,7 @@ function SeriesPage({ accountId, id, onError }: { accountId: string; id: string;
   // when Juel changes something.
   const seriesTitle = series?.title || "";
   useEffect(() => {
-    const tabs = ["episodes", "cast", "locations", "look", "song", "bible"] as const;
+    const tabs = ["episodes", "cast", "locations", "objects", "look", "song", "bible"] as const;
     const stopContext = provideJuelContext(() => ({
       surface: "film",
       entityId: id,
@@ -944,6 +956,7 @@ function SeriesPage({ accountId, id, onError }: { accountId: string; id: string;
                     ["episodes", single ? kind.unit : kind.units, single ? (byEpisode.size ? "Started" : "Plan") : `${byEpisode.size}/${series.episodes.length}`],
                     ["cast", "Cast", `${series.cast.filter((c) => production.characters[c.id]?.locked && (!kind.dialogue || series.voices[speakerName(c.name)])).length}/${series.cast.length}`],
                     ["locations", "Locations", `${series.locations.filter((l) => production.locations[l.id]?.locked).length}/${series.locations.length}`],
+                    ["objects", "Objects", (series.objects || []).length ? `${(series.objects || []).filter((o) => production.objects?.[o.id]?.locked).length}/${(series.objects || []).length}` : "None"],
                     ["look", "Look", Object.keys(series.cinema || {}).length ? `${Object.keys(series.cinema || {}).length} set` : "Auto"],
                     ...(format === "music" && series.song ? [["song", "Song", `${series.song.lyrics.length} lines`]] : []),
                     ["bible", "Story Bible", "Canon"],
@@ -992,6 +1005,17 @@ function SeriesPage({ accountId, id, onError }: { accountId: string; id: string;
                   production={production}
                   onChanged={() => void refreshProduction()}
                   onEdit={(location) => setEditingLocation(location || { id: "", name: "", description: "" })}
+                  onError={onError}
+                />
+              )}
+              {tab === "objects" && (
+                <ObjectsPanel
+                  seriesId={series.id}
+                  accountId={accountId}
+                  objects={series.objects || []}
+                  production={production}
+                  onChanged={() => void refreshProduction()}
+                  onEdit={(object) => setEditingObject(object || { id: "", name: "", description: "" })}
                   onError={onError}
                 />
               )}
@@ -1091,6 +1115,22 @@ function SeriesPage({ accountId, id, onError }: { accountId: string; id: string;
           )}
         </div>
       </div>
+      {editingObject && (
+        <ObjectModal
+          object={editingObject}
+          onClose={() => setEditingObject(null)}
+          onRemove={editingObject.id ? async () => {
+            const saved = await patch({ objects: (series.objects || []).filter((item) => item.id !== editingObject.id) });
+            if (saved) setEditingObject(null);
+          } : undefined}
+          onSave={async (next) => {
+            const list = series.objects || [];
+            const objects = list.some((item) => item.id === next.id) ? list.map((item) => (item.id === next.id ? next : item)) : [...list, next];
+            const saved = await patch({ objects });
+            if (saved) setEditingObject(null);
+          }}
+        />
+      )}
       {editingLocation && (
         <LocationModal
           location={editingLocation}
@@ -1250,6 +1290,56 @@ function LocationModal({ location, onClose, onSave }: { location: DramaLocation;
           What it looks like
           <textarea rows={3} maxLength={400} value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} placeholder="Glass walls over the city at night, dark walnut desk, warm lamp, leather chairs" />
           <small>Architecture, furnishing, palette, and time of day. Redraw the sheet after big changes.</small>
+        </label>
+      </div>
+    </Modal>
+  );
+}
+
+function ObjectModal({ object, onClose, onSave, onRemove }: { object: DramaObject; onClose: () => void; onSave: (next: DramaObject) => Promise<void>; onRemove?: () => Promise<void> }) {
+  const [draft, setDraft] = useState(object),
+    [busy, setBusy] = useState(false);
+  const id = object.id || draft.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
+  return (
+    <Modal
+      title={object.id ? `Edit ${object.name}` : "Add a recurring object"}
+      wide
+      onClose={onClose}
+      footer={
+        <>
+          {onRemove ? (
+            <button className="maker-outline dr-modal-remove" disabled={busy} onClick={async () => { setBusy(true); await onRemove(); setBusy(false); }}>
+              Remove
+            </button>
+          ) : null}
+          <button className="maker-outline" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            className="maker-primary"
+            disabled={busy || !draft.name.trim() || !draft.description.trim() || !id}
+            onClick={async () => {
+              setBusy(true);
+              await onSave({ ...draft, id });
+              setBusy(false);
+            }}
+          >
+            {busy && <Loader2 size={16} className="animate-spin" />}
+            Save object
+          </button>
+        </>
+      }
+    >
+      <div className="maker-stack">
+        <label className="maker-field">
+          Name
+          <input value={draft.name} maxLength={60} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="Silver locket" />
+          <small>Scenes that name it (in full, or by its last word) use its sheet.</small>
+        </label>
+        <label className="maker-field">
+          What it looks like
+          <textarea rows={3} maxLength={400} value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} placeholder="Oval tarnished-silver locket on a thin chain, engraved rose on the lid, a dent on one edge" />
+          <small>Shape, size, material, color, and the marks that make it this one. Redraw the sheet after big changes.</small>
         </label>
       </div>
     </Modal>

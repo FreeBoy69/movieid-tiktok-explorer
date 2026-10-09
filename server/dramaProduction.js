@@ -25,6 +25,8 @@ import {
   dramaStyleBlock,
   isPhotorealStyle,
   locationSheetPrompt,
+  objectSheetPrompt,
+  sceneObjects,
   modelReferencePrompt,
   musicSceneTimeline,
   musicScreenplayPrompt,
@@ -59,7 +61,7 @@ const runs = new Map();
 const fingerprint = (value) => crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex").slice(0, 16);
 // What each scene output was made from, so edits mark it out of date.
 // The cinema look joins the basis only once one is set, so older episodes stay current.
-export const boardBasis = (scene, cast, location, cinema = "") => fingerprint({ beats: scene.beats, summary: scene.summary, locationId: scene.locationId, cast: cast.map((c) => [c.id, c.appearance, c.outfit]), location: location?.description, ...(cinema ? { cinema } : {}) });
+export const boardBasis = (scene, cast, location, cinema = "", objects = []) => fingerprint({ beats: scene.beats, summary: scene.summary, locationId: scene.locationId, cast: cast.map((c) => [c.id, c.appearance, c.outfit]), location: location?.description, ...(cinema ? { cinema } : {}), ...(objects.length ? { objects: objects.map((o) => [o.id, o.description]) } : {}) });
 export const voiceBasis = (scene, voices) => fingerprint({ lines: scene.beats.map((b) => [b.id, b.speaker, b.line, b.emotion]), voices: scene.beats.map((b) => voices[b.speaker] || "") });
 // A music-video scene's audio is its slice of the song.
 export const songBasis = (scene, song) => fingerprint({ start: scene.start, end: scene.end, song: song?.asset || "" });
@@ -301,6 +303,7 @@ export function registerDramaProduction(app, ctx) {
     return {
       cast: drama.cast || [],
       locations: drama.locations || [],
+      objects: drama.objects || [],
       voices: drama.voices || {},
       style: dramaStyleBlock(drama.artStyleId, ART_STYLE_PRESETS),
       photoreal: isPhotorealStyle(drama.artStyleId, ART_STYLE_PRESETS),
@@ -311,6 +314,7 @@ export function registerDramaProduction(app, ctx) {
       cinemaVideo: filmCinemaText(drama.cinema, true),
       sheets: Object.fromEntries((drama.cast || []).map((c) => [c.id, production.characters?.[c.id]?.locked || ""]).filter(([, asset]) => asset)),
       locationSheets: Object.fromEntries((drama.locations || []).map((l) => [l.id, production.locations?.[l.id]?.locked || ""]).filter(([, asset]) => asset)),
+      objectSheets: Object.fromEntries((drama.objects || []).map((o) => [o.id, production.objects?.[o.id]?.locked || ""]).filter(([, asset]) => asset)),
     };
   };
   const clipReferenceModes = new Set(["model", "sheets", "text"]);
@@ -343,6 +347,7 @@ export function registerDramaProduction(app, ctx) {
     return {
       characters: settleMap(production.characters, "characters"),
       locations: settleMap(production.locations, "locations"),
+      objects: settleMap(production.objects, "objects"),
       voices: settleMap(production.voices, "voices"),
     };
   }
@@ -359,7 +364,7 @@ export function registerDramaProduction(app, ctx) {
       const voice = settle(state.voice, `${episode.id}:scenes.${scene.id}.voice`);
       const clip = settle(state.clip, `${episode.id}:scenes.${scene.id}.clip`);
       sceneState[scene.id] = {
-        board: board ? { ...board, stale: Boolean(board.asset && board.basis !== boardBasis(scene, parts.cast, location, parts.cinema)) } : null,
+        board: board ? { ...board, stale: Boolean(board.asset && board.basis !== boardBasis(scene, parts.cast, location, parts.cinema, sceneObjects(scene, parts.objects))) } : null,
         voice: voice ? { ...voice, stale: Boolean(voice.asset && voice.basis !== sceneAudioBasis(scene, parts)) } : null,
         clip: clip ? { ...clip, stale: Boolean(clip.asset && (clip.boardAsset !== board?.asset || clip.voiceAsset !== voice?.asset || clip.references !== referenceMode)) } : null,
       };
@@ -385,11 +390,12 @@ export function registerDramaProduction(app, ctx) {
       qualityReview: production.qualityReview || null,
       cast: parts.cast.map((character) => ({ ...character, speaker: speakerName(character.name), sheet: parts.sheets[character.id] || "", voiceId: parts.voices[speakerName(character.name)] || "" })),
       locations: parts.locations.map((location) => ({ ...location, sheet: parts.locationSheets[location.id] || "" })),
+      objects: parts.objects.map((object) => ({ ...object, sheet: parts.objectSheets[object.id] || "" })),
       estimate: scenes.map((scene) => ({ id: scene.id, cost: clipCostEstimate(Math.min(30, Math.max(MIN_CLIP_SECONDS, sceneState[scene.id]?.voice?.seconds || (scene.end > scene.start ? Math.ceil(scene.end - scene.start) : 10))), production.settings?.quality || "final") })),
     };
   }
 
-  // ---------- series: characters, locations, voices ----------
+  // ---------- series: characters, locations, objects, voices ----------
   const findCharacter = (series, id) => {
     const character = (series.metadata?.drama?.cast || []).find((item) => item.id === id);
     if (!character) throw fail("Character not found", 404);
@@ -399,6 +405,12 @@ export function registerDramaProduction(app, ctx) {
     const location = (series.metadata?.drama?.locations || []).find((item) => item.id === id);
     if (!location) throw fail("Location not found", 404);
     return location;
+  };
+
+  const findObject = (series, id) => {
+    const object = (series.metadata?.drama?.objects || []).find((item) => item.id === id);
+    if (!object) throw fail("Object not found", 404);
+    return object;
   };
 
   app.get(
@@ -494,6 +506,34 @@ export function registerDramaProduction(app, ctx) {
       const asset = String(req.body?.asset || "");
       if (asset && !(series.metadata?.production?.locations?.[location.id]?.candidates || []).includes(asset)) throw fail("Choose one of this location's sheets");
       await patch(session.user.id, series.id, (metadata) => setAt(metadata, ["locations", location.id], (current) => ({ ...current, locked: asset })));
+      res.json({ ok: true });
+    }),
+  );
+  app.post(
+    "/api/drama/series/:id/objects/:oid/sheet",
+    route(async (req, res, session) => {
+      const a = await account(req, session);
+      const series = await load(session.user.id, a.id, req.params.id, "series");
+      const object = findObject(series, req.params.oid);
+      if (!object.description) throw fail(`Describe how ${object.name} looks first`);
+      const style = seriesParts(series).style;
+      await startStep(session.user.id, series.id, ["objects", object.id], async ({ signal }) => {
+        const asset = await renderImage(series, objectSheetPrompt(object, style), `obj-${object.id}-${crypto.randomUUID().slice(0, 8)}.png`, { signal });
+        const current = (await dependencies.getProject(session.user.id, series.id)).metadata?.production?.objects?.[object.id] || {};
+        return { candidates: [asset, ...(current.candidates || [])].slice(0, 8), ...(current.locked ? {} : { locked: asset }) };
+      }, { conflict: `${object.name} is already generating` });
+      res.status(202).json({ ok: true });
+    }),
+  );
+  app.post(
+    "/api/drama/series/:id/objects/:oid/lock",
+    route(async (req, res, session) => {
+      const a = await account(req, session);
+      const series = await load(session.user.id, a.id, req.params.id, "series");
+      const object = findObject(series, req.params.oid);
+      const asset = String(req.body?.asset || "");
+      if (asset && !(series.metadata?.production?.objects?.[object.id]?.candidates || []).includes(asset)) throw fail("Choose one of this object's sheets");
+      await patch(session.user.id, series.id, (metadata) => setAt(metadata, ["objects", object.id], (current) => ({ ...current, locked: asset })));
       res.json({ ok: true });
     }),
   );
@@ -709,6 +749,7 @@ export function registerDramaProduction(app, ctx) {
         const parse = (raw) => JSON.parse(String(raw).replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, ""));
         const speakers = parts.cast.map((c) => speakerName(c.name));
         const locations = parts.locations.map((location) => ({ id: location.id, name: location.name, description: location.description }));
+        const objects = parts.objects.map((object) => ({ name: object.name, description: object.description }));
         const kind = filmFormat(parts.format);
         const textOptions = { signal, maxTokens: parts.format === "series" ? 16000 : 32000, reasoningEffort: "low", openRouterModel: process.env.OPENROUTER_DRAMA_MODEL || DRAMA_MODELS.text, timeoutMs: 300000 };
         if (parts.format === "music") {
@@ -720,7 +761,7 @@ export function registerDramaProduction(app, ctx) {
           const prompt = musicScreenplayPrompt({ aspect: parts.aspect, plan, maxBeats: kind.maxBeats, bpm: song.grid?.bpm || 0 });
           const raw = await dependencies.text(
             prompt.system,
-            JSON.stringify({ video: context, locations, creatorNote: note || undefined, song: JSON.parse(prompt.user) }),
+            JSON.stringify({ video: context, locations, ...(objects.length ? { objects } : {}), creatorNote: note || undefined, song: JSON.parse(prompt.user) }),
             textOptions,
           );
           const { scenes } = normalizeMusicScreenplay(parse(raw), plan, { speakers, locations: parts.locations, maxBeats: kind.maxBeats });
@@ -733,6 +774,7 @@ export function registerDramaProduction(app, ctx) {
           JSON.stringify({
             drama: context,
             locations,
+            ...(objects.length ? { objects } : {}),
             episodeSeconds: seconds,
             creatorNote: note || undefined,
           }),
@@ -761,11 +803,12 @@ export function registerDramaProduction(app, ctx) {
     const parts = seriesParts(series);
     const location = parts.locations.find((item) => item.id === scene.locationId);
     const ids = sceneCharacters(scene, parts.cast);
+    const objects = sceneObjects(scene, parts.objects);
     const missing = parts.cast.filter((c) => ids.includes(c.id) && !parts.sheets[c.id]).map((c) => c.name);
     if (missing.length) throw fail(`Lock a character sheet for ${missing.join(", ")} first (series → Cast)`);
     await startStep(userId, episode.id, ["scenes", scene.id, "board"], async ({ signal }) => {
       const references = [];
-      const refs = { characters: {}, location: 0 };
+      const refs = { characters: {}, location: 0, objects: {} };
       for (const id of ids) {
         references.push(await localAsset(series.id, parts.sheets[id]));
         refs.characters[id] = references.length;
@@ -774,15 +817,21 @@ export function registerDramaProduction(app, ctx) {
         references.push(await localAsset(series.id, parts.locationSheets[location.id]));
         refs.location = references.length;
       }
+      // The scene's recurring objects with a locked sheet (at most three) come after the set.
+      refs.objects = {};
+      for (const object of objects.filter((o) => parts.objectSheets[o.id]).slice(0, 3)) {
+        references.push(await localAsset(series.id, parts.objectSheets[object.id]));
+        refs.objects[object.id] = references.length;
+      }
         const settings = episode.metadata?.production?.settings || {};
         const shotTemplateId = settings.shotTemplateId || series.metadata?.drama?.shotTemplateId || "micro-drama";
       const aspect = parts.aspect;
       const shotDirection = shotDirectionRules(shotTemplateId, settings.shotTemplateValues || series.metadata?.drama?.shotTemplateValues);
       const kind = { series: "short drama", short: "short film", long: "feature film", music: "music video" }[parts.format] || "short drama";
-      const prompt = storyboardPrompt(scene, { cast: parts.cast, location, style: parts.style, refs, shotDirection, aspect, kind, cinema: parts.cinema, music: parts.format === "music" });
+      const prompt = storyboardPrompt(scene, { cast: parts.cast, location, objects, style: parts.style, refs, shotDirection, aspect, kind, cinema: parts.cinema, music: parts.format === "music" });
       const asset = await renderImage(episode, prompt, `board-${scene.id}-${crypto.randomUUID().slice(0, 8)}.png`, { references, aspect, signal });
       warmModelRefs(userId, episode, series, scene, asset);
-      return { asset, basis: boardBasis(scene, parts.cast, location, parts.cinema) };
+      return { asset, basis: boardBasis(scene, parts.cast, location, parts.cinema, objects) };
     }, { conflict: "This storyboard is already drawing" });
   }
 
@@ -865,6 +914,8 @@ export function registerDramaProduction(app, ctx) {
     const aspect = parts.aspect;
     const location = parts.locations.find((item) => item.id === scene.locationId);
     const locationSheet = location && parts.locationSheets[location.id];
+    const objects = sceneObjects(scene, parts.objects);
+    const objectSheets = Object.fromEntries(objects.filter((o) => parts.objectSheets[o.id]).map((o) => [o.id, parts.objectSheets[o.id]]));
     const quality = state.clip?.quality || (fresh.metadata?.production?.settings?.quality === "draft" ? "draft" : "final");
     const tier = DRAMA_MODELS.video[quality];
     const sceneModels = usesModelRefs(freshSeries, parts, scene);
@@ -884,11 +935,11 @@ export function registerDramaProduction(app, ctx) {
       const textOnly = mode === "text";
       const silent = Boolean(state.voice.silent);
       const audioMode = parts.format === "music" ? "music" : silent ? "silent" : "dialogue";
-      const refs = sceneReferences(scene, { cast: parts.cast, sheets: parts.sheets, locationSheet, textOnly, audio: !silent });
+      const refs = sceneReferences(scene, { cast: parts.cast, sheets: parts.sheets, locationSheet, objectSheets: textOnly ? {} : objectSheets, textOnly, audio: !silent });
       const modelRefs = mode === "model" && sceneModels;
       const sceneIndex = (fresh.metadata?.production?.script?.scenes || []).findIndex((item) => item.id === scene.id);
       const shotDirection = sceneAnimationPrompt(shotTemplateId, sceneIndex, (fresh.metadata?.production?.script?.scenes || []).length, settings.shotTemplateValues || freshSeries.metadata?.drama?.shotTemplateValues);
-      const prompt = seedancePrompt(scene, { cast: parts.cast, location, style: parts.style, refs, modelRefs, seconds: state.voice.seconds, timeline: state.voice.timeline, shotDirection, aspect, audioMode, cinema: parts.cinemaVideo, rhythm: audioMode === "music" ? sceneBeatGrid(scene, parts.song?.grid) : null });
+      const prompt = seedancePrompt(scene, { cast: parts.cast, location, objects, style: parts.style, refs, modelRefs, seconds: state.voice.seconds, timeline: state.voice.timeline, shotDirection, aspect, audioMode, cinema: parts.cinemaVideo, rhythm: audioMode === "music" ? sceneBeatGrid(scene, parts.song?.grid) : null });
       let body;
       if (!resumeId) {
         if (modelRefs) await report("Preparing 3D-model references");
@@ -898,6 +949,7 @@ export function registerDramaProduction(app, ctx) {
               localAsset(freshSeries.id, modelRefs ? await modelCopy(userId, freshSeries, ["characters", id], parts.sheets[id], "character", signal) : parts.sheets[id]),
           ),
           ...(refs.location ? [localAsset(freshSeries.id, locationSheet)] : []),
+          ...Object.keys(refs.objects).map((id) => localAsset(freshSeries.id, objectSheets[id])),
           ...(refs.grid
               ? [(async () => localAsset(episode.id, modelRefs ? await modelCopy(userId, fresh, ["scenes", scene.id, "board"], state.board.asset, "storyboard", signal, aspect) : state.board.asset))()]
             : []),

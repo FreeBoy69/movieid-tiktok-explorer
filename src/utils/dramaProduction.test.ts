@@ -9,6 +9,8 @@ import {
   isPhotorealStyle,
   locationSheetPrompt,
   modelReferencePrompt,
+  objectSheetPrompt,
+  sceneObjects,
   normalizeScreenplay,
   refusedForFaces,
   sceneCharacters,
@@ -109,7 +111,7 @@ describe("dialogue track", () => {
 describe("storyboard and Seedance prompts", () => {
   const refs = sceneReferences(scene, { cast, sheets: { lily: "a", adrian: "b", sienna: "c" }, locationSheet: "loc" });
   it("numbers each reference once: character sheets, then the location, then the grid", () => {
-    expect(refs).toEqual({ characters: { lily: 1, adrian: 2 }, location: 3, grid: 4, audio: 1 });
+    expect(refs).toEqual({ characters: { lily: 1, adrian: 2 }, location: 3, objects: {}, grid: 4, audio: 1 });
   });
   it("writes a character-locked storyboard with a VOICE line on every panel", () => {
     const prompt = storyboardPrompt(scene, { cast, location, style: "photoreal", refs: { characters: refs.characters, location: refs.location } });
@@ -140,7 +142,7 @@ describe("storyboard and Seedance prompts", () => {
   });
   it("renders from descriptions alone, keeping only the location sheet", () => {
     const textRefs = sceneReferences(scene, { cast, sheets: { lily: "a", adrian: "b" }, locationSheet: "loc", textOnly: true });
-    expect(textRefs).toEqual({ characters: {}, location: 1, grid: 0, audio: 1 });
+    expect(textRefs).toEqual({ characters: {}, location: 1, objects: {}, grid: 0, audio: 1 });
     const { timeline, seconds } = sceneTrackTimeline(scene.beats, { b1: 1.8, b2: 1.5 });
     const prompt = seedancePrompt(scene, { cast, location, style: "photoreal", refs: textRefs, seconds, timeline });
     expect(prompt).not.toContain("@image1 -");
@@ -178,6 +180,27 @@ describe("voice design", () => {
   it("offers three voices that fit the described gender", () => {
     expect(designVoiceCandidates("a cold British woman in her thirties")).toHaveLength(3);
     expect(designVoiceCandidates("a gruff old man").every((id) => !["sage", "coral", "shimmer", "marin"].includes(id))).toBe(true);
+  });
+
+  it("keeps recurring objects identical: a sheet, matched by name, numbered after the set, locked in both prompts", () => {
+    const locket = { id: "locket", name: "Silver locket", description: "oval tarnished-silver locket, engraved rose" };
+    const car = { id: "car", name: "Red convertible", description: "1960s cherry-red convertible" };
+    const withObject = { ...scene, beats: [...scene.beats, { id: "b9", cam: "insert", move: "Lily closes her hand around the locket", speaker: "", emotion: "", line: "" }] };
+    expect(sceneObjects(withObject, [locket, car]).map((o) => o.id)).toEqual(["locket"]);
+    expect(sceneObjects(scene, [locket, car])).toEqual([]);
+    const sheet = objectSheetPrompt(locket, "photoreal");
+    expect(sheet).toContain("SILVER LOCKET");
+    expect(sheet).toContain("no people and no hands");
+    const objectRefs = sceneReferences(withObject, { cast, sheets: { lily: "a", adrian: "b" }, locationSheet: "loc", objectSheets: { locket: "obj" } });
+    expect(objectRefs).toEqual({ characters: { lily: 1, adrian: 2 }, location: 3, objects: { locket: 4 }, grid: 5, audio: 1 });
+    const board = storyboardPrompt(withObject, { cast, location, objects: [locket], style: "photoreal", refs: objectRefs });
+    expect(board).toContain("OBJECT LOCK");
+    expect(board).toContain("Silver locket (image 4)");
+    const { timeline, seconds } = sceneTrackTimeline(withObject.beats, { b1: 1.8, b2: 1.5 });
+    const clip = seedancePrompt(withObject, { cast, location, objects: [locket], style: "photoreal", refs: objectRefs, seconds, timeline });
+    expect(clip).toContain("Object Silver locket: @image4 -");
+    expect(clip).toContain("object sheets");
+    expect(clip).toContain("OBJECT LOCK: Silver locket");
   });
 });
 

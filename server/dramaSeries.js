@@ -17,6 +17,7 @@ import {
   normalizeDramaConcept,
   normalizeDramaEpisodes,
   normalizeDramaLocations,
+  normalizeDramaObjects,
   normalizeDramaStoryBible,
   normalizeSeriesPlan,
   seriesOutlinePrompt,
@@ -80,6 +81,7 @@ function seriesView(series) {
     episodeCount: Number(drama.episodeCount) || 0,
     cast: seriesCast(series),
     locations: drama.locations || [],
+    objects: drama.objects || [],
     storyBible: normalizeDramaStoryBible(drama.storyBible),
     voices: drama.voices || {},
     episodes: drama.episodes || [],
@@ -179,7 +181,7 @@ export function registerDramaSeries(app, ctx) {
     const template = findDramaTemplate(drama.templateId);
     const prompt = seriesOutlinePrompt({
       template,
-      concept: template ? null : { genre: drama.genre, premise: drama.premise, logline: drama.logline, tone: drama.tone, storyBible: drama.storyBible, cast: drama.cast, locations: drama.locations },
+      concept: template ? null : { genre: drama.genre, premise: drama.premise, logline: drama.logline, tone: drama.tone, storyBible: drama.storyBible, cast: drama.cast, locations: drama.locations, objects: drama.objects },
       twist: [drama.twist, note].filter(Boolean).join("\n"),
       title: series.title,
       episodeCount: drama.episodeCount,
@@ -210,6 +212,7 @@ export function registerDramaSeries(app, ctx) {
         tone: plan.tone || next.tone || template?.tone || "",
         cast: plan.cast,
         locations: plan.locations.length ? plan.locations : next.locations || [],
+        objects: plan.objects.length ? plan.objects : next.objects || [],
         storyBible: Object.values(plan.storyBible || {}).some((value) => Array.isArray(value) ? value.length : Boolean(value))
           ? plan.storyBible
           : normalizeDramaStoryBible(next.storyBible),
@@ -375,6 +378,7 @@ export function registerDramaSeries(app, ctx) {
             tone: template?.tone || concept?.tone || "",
             cast: normalizeDramaCast(template?.cast || concept.cast),
             locations: concept?.locations || [],
+            objects: concept?.objects || [],
             storyBible: normalizeDramaStoryBible(concept?.storyBible),
             voices: {},
             episodes: [],
@@ -545,6 +549,7 @@ export function registerDramaSeries(app, ctx) {
         }
         if (body.episodes !== undefined) next.episodes = normalizeDramaEpisodes(body.episodes, drama.episodeCount);
         if (body.locations !== undefined) next.locations = normalizeDramaLocations(body.locations);
+        if (body.objects !== undefined) next.objects = normalizeDramaObjects(body.objects);
         if (body.storyBible !== undefined) next.storyBible = normalizeDramaStoryBible(body.storyBible);
         if (body.cinema !== undefined) next.cinema = normalizeFilmCinema(body.cinema);
         if (body.song?.lyrics !== undefined && drama.song) next.song = { ...drama.song, lyrics: normalizeLyrics(body.song.lyrics, drama.song.duration) };

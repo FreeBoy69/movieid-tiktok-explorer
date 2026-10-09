@@ -23,10 +23,11 @@ function harness(overrides: Record<string, any> = {}) {
           { id: "adrian", name: "Adrian Cole", role: "CEO", appearance: "grey eyes", outfit: "suit" },
         ],
         locations: [{ id: "office", name: "Office", description: "glass walls" }],
+        objects: [{ id: "locket", name: "Silver locket", description: "oval tarnished-silver locket" }],
         voices: {},
         episodes: [{ n: 1, title: "The Contract", hook: "h", goal: "g", turn: "t", payoff: "p", cliffhanger: "c" }],
       },
-      production: { characters: { lily: { candidates: ["/api/maker/projects/prj_s/assets/char-lily-a.png"] } } },
+      production: { characters: { lily: { candidates: ["/api/maker/projects/prj_s/assets/char-lily-a.png"] } }, objects: { locket: { candidates: ["/api/maker/projects/prj_s/assets/obj-locket-a.png"] } } },
     },
   });
   projects.set("prj_e", {
@@ -127,6 +128,16 @@ describe("drama production routes", () => {
     expect((await h.call("POST", "/api/drama/series/:id/characters/:cid/lock", { asset: "/api/maker/projects/prj_s/assets/other.png" }, { id: "prj_s", cid: "lily" })).status).toBe(400);
     expect((await h.call("POST", "/api/drama/series/:id/characters/:cid/lock", { asset: "/api/maker/projects/prj_s/assets/char-lily-a.png" }, { id: "prj_s", cid: "lily" })).status).toBe(200);
     expect(h.projects.get("prj_s").metadata.production.characters.lily.locked).toBe("/api/maker/projects/prj_s/assets/char-lily-a.png");
+  });
+
+  it("locks only a generated sheet for a recurring object, and lists objects with their sheets", async () => {
+    const h = harness();
+    expect((await h.call("POST", "/api/drama/series/:id/objects/:oid/lock", { asset: "/api/maker/projects/prj_s/assets/other.png" }, { id: "prj_s", oid: "locket" })).status).toBe(400);
+    expect((await h.call("POST", "/api/drama/series/:id/objects/:oid/lock", { asset: "/api/maker/projects/prj_s/assets/obj-locket-a.png" }, { id: "prj_s", oid: "locket" })).status).toBe(200);
+    expect((await h.call("POST", "/api/drama/series/:id/objects/:oid/lock", {}, { id: "prj_s", oid: "nope" })).status).toBe(404);
+    expect(h.projects.get("prj_s").metadata.production.objects.locket.locked).toBe("/api/maker/projects/prj_s/assets/obj-locket-a.png");
+    const view = await h.call("GET", "/api/drama/series/:id/production", undefined, { id: "prj_s" });
+    expect(view.body.production.objects.locket.locked).toBe("/api/maker/projects/prj_s/assets/obj-locket-a.png");
   });
 
   it("sets a character's voice from an existing voice for the whole series", async () => {

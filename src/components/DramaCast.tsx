@@ -2,7 +2,7 @@
 // location's look, once. Every episode draws its storyboards and clips from
 // these locked sheets and voices.
 import { useEffect, useRef, useState } from "react";
-import { AlertCircle, Check, Image as ImageIcon, Loader2, Lock, MapPin, Mic, Pause, Play, Plus, RotateCcw, Sparkles, Wand2 } from "lucide-react";
+import { AlertCircle, Box, Check, Image as ImageIcon, Loader2, Lock, MapPin, Mic, Pause, Play, Plus, RotateCcw, Sparkles, Wand2 } from "lucide-react";
 import { creatorApi } from "./CreatorWorkspace";
 import { VoicePicker } from "./VoicePicker";
 import { MAX_DRAMA_CAST, speakerName } from "../utils/dramaTemplates";
@@ -13,13 +13,15 @@ import { SheetPhotoButton, SheetViewer, TakeCount } from "./castSheets";
 
 export type DramaCharacter = { id: string; name: string; role: string; appearance: string; outfit: string; voice?: string };
 export type DramaLocation = { id: string; name: string; description: string };
+/** A recurring story object: same shape as a location (name and look). */
+export type DramaObject = DramaLocation;
 type Step = { status?: string; error?: string; progress?: string; candidates?: any[]; locked?: string; photo?: string; description?: string; selected?: string; profileId?: string };
-export type SeriesProduction = { characters: Record<string, Step>; locations: Record<string, Step>; voices: Record<string, Step> };
+export type SeriesProduction = { characters: Record<string, Step>; locations: Record<string, Step>; objects?: Record<string, Step>; voices: Record<string, Step> };
 
 const running = (step?: Step) => step?.status === "running";
 
 export function useSeriesProduction(seriesId: string, onError: (e: string) => void) {
-  const [production, setProduction] = useState<SeriesProduction>({ characters: {}, locations: {}, voices: {} });
+  const [production, setProduction] = useState<SeriesProduction>({ characters: {}, locations: {}, objects: {}, voices: {} });
   const [loaded, setLoaded] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   async function refresh() {
@@ -27,7 +29,7 @@ export function useSeriesProduction(seriesId: string, onError: (e: string) => vo
       const data = await creatorApi(`/api/drama/series/${encodeURIComponent(seriesId)}/production`);
       setProduction(data.production);
       setLoaded(true);
-      const busy = [data.production.characters, data.production.locations, data.production.voices].some((map: Record<string, Step>) => Object.values(map || {}).some(running));
+      const busy = [data.production.characters, data.production.locations, data.production.objects, data.production.voices].some((map: Record<string, Step>) => Object.values(map || {}).some(running));
       clearTimeout(timer.current);
       if (busy) timer.current = setTimeout(refresh, 3500);
     } catch (e) {
@@ -363,23 +365,56 @@ function CharacterCard({
   );
 }
 
-export function LocationsPanel({
+type SheetPanelProps = {
+  seriesId: string;
+  accountId: string;
+  production: SeriesProduction;
+  onChanged: () => void;
+  onError: (e: string) => void;
+};
+
+// Locations and recurring objects work the same way: a list of things, each with a sheet to draw and lock.
+const SHEET_KINDS = {
+  locations: {
+    title: "Locations",
+    add: "Add location",
+    hint: "A locked location sheet keeps the set, layout, and light the same whenever a scene returns to it.",
+    empty: "No locations yet. Add the places your scenes return to.",
+    options: "Location options",
+    draw: "Draw location",
+    Icon: MapPin,
+  },
+  objects: {
+    title: "Objects",
+    add: "Add object",
+    hint: "A locked object sheet keeps a recurring prop (a ring, a letter, a weapon) the same shape, color, and markings in every scene that names it.",
+    empty: "No recurring objects yet. Add the props your story keeps coming back to.",
+    options: "Object options",
+    draw: "Draw object",
+    Icon: Box,
+  },
+} as const;
+
+export function LocationsPanel({ locations, onEdit, ...rest }: SheetPanelProps & { locations: DramaLocation[]; onEdit: (location: DramaLocation | null) => void }) {
+  return <SheetsPanel kind="locations" items={locations} onEdit={onEdit} {...rest} />;
+}
+
+export function ObjectsPanel({ objects, onEdit, ...rest }: SheetPanelProps & { objects: DramaObject[]; onEdit: (object: DramaObject | null) => void }) {
+  return <SheetsPanel kind="objects" items={objects} onEdit={onEdit} {...rest} />;
+}
+
+function SheetsPanel({
+  kind,
   seriesId,
   accountId,
-  locations,
+  items: locations,
   production,
   onChanged,
   onEdit,
   onError,
-}: {
-  seriesId: string;
-  accountId: string;
-  locations: DramaLocation[];
-  production: SeriesProduction;
-  onChanged: () => void;
-  onEdit: (location: DramaLocation | null) => void;
-  onError: (e: string) => void;
-}) {
+}: SheetPanelProps & { kind: keyof typeof SHEET_KINDS; items: DramaLocation[]; onEdit: (item: DramaLocation | null) => void }) {
+  const copy = SHEET_KINDS[kind];
+  const Icon = copy.Icon;
   const [busy, setBusy] = useState(""),
     [zoom, setZoom] = useState("");
   async function call(label: string, url: string, body: Record<string, unknown> = {}) {
@@ -394,28 +429,28 @@ export function LocationsPanel({
     }
   }
   return (
-    <section aria-labelledby="dr-loc-title">
+    <section aria-labelledby={`dr-${kind}-title`}>
       <div className="maker-section-title">
-        <h2 id="dr-loc-title">Locations</h2>
+        <h2 id={`dr-${kind}-title`}>{copy.title}</h2>
         <button type="button" className="maker-outline dr-small" onClick={() => onEdit(null)}>
-          Add location
+          {copy.add}
         </button>
       </div>
-      <p className="dr-hint dr-hint-top">A locked location sheet keeps the set, layout, and light the same whenever a scene returns to it.</p>
+      <p className="dr-hint dr-hint-top">{copy.hint}</p>
       {!locations.length ? (
         <div className="dr-empty-inline">
-          <MapPin size={18} aria-hidden="true" />
-          <span>No locations yet. Add the places your scenes return to.</span>
+          <Icon size={18} aria-hidden="true" />
+          <span>{copy.empty}</span>
         </div>
       ) : (
         <ul className="dr-locations">
           {locations.map((location) => {
-            const state = production.locations[location.id] || {};
-            const base = `/api/drama/series/${encodeURIComponent(seriesId)}/locations/${encodeURIComponent(location.id)}`;
+            const state = production[kind]?.[location.id] || {};
+            const base = `/api/drama/series/${encodeURIComponent(seriesId)}/${kind}/${encodeURIComponent(location.id)}`;
             return (
               <li key={location.id} className="dr-location">
                 <button type="button" className="dr-location-art" onClick={() => state.locked && setZoom(state.locked)} disabled={!state.locked} aria-label={`View ${location.name}`}>
-                  {state.locked ? <img src={state.locked} alt="" loading="lazy" /> : running(state) ? <Loader2 className="animate-spin" size={20} /> : <MapPin size={20} />}
+                  {state.locked ? <img src={state.locked} alt="" loading="lazy" /> : running(state) ? <Loader2 className="animate-spin" size={20} /> : <Icon size={20} />}
                   {state.locked && (
                     <span className="dr-badge is-ok">
                       <Lock size={12} /> Locked
@@ -431,7 +466,7 @@ export function LocationsPanel({
                     </p>
                   )}
                   {(state.candidates || []).length > 1 && (
-                    <div className="dr-takes is-wide" role="list" aria-label="Location options">
+                    <div className="dr-takes is-wide" role="list" aria-label={copy.options}>
                       {(state.candidates || []).slice(0, 4).map((asset: string) => (
                         <div role="listitem" key={asset} className={`dr-take ${asset === state.locked ? "is-on" : ""}`}>
                           <button type="button" onClick={() => setZoom(asset)} aria-label="View this option">
@@ -449,7 +484,7 @@ export function LocationsPanel({
                   <div className="dr-row">
                     <button type="button" className={state.locked ? "maker-outline" : "maker-primary"} disabled={running(state) || Boolean(busy)} onClick={() => void call(location.id, `${base}/sheet`)}>
                       {running(state) || busy === location.id ? <Loader2 size={15} className="animate-spin" /> : state.locked ? <RotateCcw size={15} /> : <Sparkles size={15} />}
-                      {running(state) ? "Drawing…" : state.locked ? "Draw another" : "Draw location"}
+                      {running(state) ? "Drawing…" : state.locked ? "Draw another" : copy.draw}
                     </button>
                     <button type="button" className="maker-outline" onClick={() => onEdit(location)}>
                       Edit

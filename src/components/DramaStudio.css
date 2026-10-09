@@ -1720,3 +1720,6 @@
 .dr-cast-head .maker-outline { display: inline-flex; align-items: center; gap: 6px; }
 .dr-field-error { color: var(--ui-danger); }
 .maker-workspace .dr-modal-remove { margin-right: auto; color: var(--ui-danger); }
+
+/* A recurring object can be removed from its edit dialog; Remove sits apart from Cancel and Save. */
+.dr-modal-remove { margin-right: auto; }
