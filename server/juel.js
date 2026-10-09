@@ -213,6 +213,8 @@ export const JUEL_ROUTES = {
   "POST /api/digital-products/:id/cover": ["producer", "paid", "Generates an ebook cover image for a digital product."],
   "POST /api/digital-products/:id/generate": ["producer", "paid", "AI-writes the full ebook manuscript for a digital product from its idea."],
   "POST /api/downloader/inspect": ["research", "read", "Inspects a video URL and lists its title, duration and available download formats (url)."],
+  "POST /api/drama/episodes/:id/vibe-edit": ["film", "change", "Opens a film episode's own Vibe Edit edit (its final cut by hand), building it from the scenes the first time; {refresh: true} swaps in new scene media keeping the cuts, {rebuild: true} starts over. Returns {projectId, stale}."],
+  "POST /api/drama/episodes/:id/vibe-edit/export": ["film", "change", "Makes a Vibe Edit export (gen-vibe-….mp4 file) the episode's final cut, with captions from the edit (file)."],
   "POST /api/drama/episodes/:id/final": ["film", "paid", "Cuts all rendered scene clips into the final episode video with title cards and subtitles."],
   "POST /api/drama/episodes/:id/prepare": ["film", "paid", "Draws storyboards and voices dialogue for every scene in an episode that still needs them."],
   "POST /api/drama/episodes/:id/quality-review": ["film", "change", "Runs a preflight quality check on an episode and saves the review with AI next-step advice."],

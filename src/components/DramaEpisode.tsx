@@ -21,7 +21,7 @@ import {
   Trash2,
   Wand2,
 } from "lucide-react";
-import { Empty, Modal, creatorApi } from "./CreatorWorkspace";
+import { Empty, Modal, ProjectVibeEdit, creatorApi } from "./CreatorWorkspace";
 import { PlayButton } from "./DramaCast";
 import { Lightbox } from "./studio/studioShared";
 import { FILM_FORMATS } from "../utils/filmFormats.js";
@@ -50,7 +50,8 @@ type Episode = {
   settings: { quality: "final" | "draft"; subtitles: boolean; titleCards?: boolean; aspect?: string };
   script: { status?: string; error?: string; scenes: Scene[] };
   scenes: Record<string, { board: Step | null; voice: Step | null; clip: Step | null }>;
-  final: Step | null;
+  /** `editedIn: "vibe-edit"` when the cut is an export from the episode's edit. */
+  final: (Step & { editedIn?: string }) | null;
   qualityReview?: ProductionReview | null;
   cast: Array<{ id: string; name: string; speaker: string; sheet: string; voiceId: string }>;
   locations: Array<{ id: string; name: string; sheet: string }>;
@@ -73,7 +74,9 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
     [note, setNote] = useState(""),
     [rewrite, setRewrite] = useState(false),
     [zoom, setZoom] = useState(""),
-    [qualityBusy, setQualityBusy] = useState(false);
+    [qualityBusy, setQualityBusy] = useState(false),
+    // The final cut in the full Vibe Edit (the episode's own edit).
+    [editing, setEditing] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const firstLoad = useRef(true);
   const url = `/api/drama/episodes/${encodeURIComponent(episodeId)}`;
@@ -604,6 +607,19 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
             </section>
           )}
 
+          {tab === "final" && editing && (
+            <ProjectVibeEdit
+              endpoint={`/api/drama/episodes/${encodeURIComponent(episodeId)}/vibe-edit`}
+              accountId={accountId}
+              theme={document.documentElement.dataset.theme === "light" ? "light" : "dark"}
+              backLabel="Final cut"
+              what="scenes"
+              onBack={() => {
+                setEditing(false);
+                void load();
+              }}
+            />
+          )}
           {tab === "final" && (
             <section aria-label="Final cut" className="dr-final">
               <div className="dr-final-stage" style={{ aspectRatio: sceneAspect }}>
@@ -643,14 +659,25 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
                     <AlertCircle size={14} /> {episode.final.error}
                   </p>
                 )}
+                {/* The full editor: trim and reorder scenes, restyle subtitles, add titles, music, and moves. Its
+                    export becomes this final cut. The quick cut joins the scenes in order as they are. */}
                 <button
                   type="button"
                   className="maker-primary maker-lg"
+                  disabled={!scenes.length || clipsDone === 0 || running(episode.final) || Boolean(busy)}
+                  onClick={() => setEditing(true)}
+                >
+                  <Film size={16} />
+                  {episode.final?.editedIn === "vibe-edit" ? "Open the edit" : "Edit the final cut"}
+                </button>
+                <button
+                  type="button"
+                  className="maker-outline"
                   disabled={clipsDone < scenes.length || !scenes.length || running(episode.final) || Boolean(busy)}
                   onClick={() => void post("final", "/final", { subtitles: episode.settings.subtitles, titleCards: episode.settings.titleCards !== false })}
                 >
                   {running(episode.final) || busy === "final" ? <Loader2 size={16} className="animate-spin" /> : <Clapperboard size={16} />}
-                  {episode.final?.asset ? "Cut again" : `Cut the ${kind.unit.toLowerCase()}`}
+                  {episode.final?.asset ? "Quick cut again" : "Quick cut"}
                 </button>
                 {episode.final?.asset && (
                   <div className="dr-row">
@@ -664,7 +691,7 @@ export function DramaEpisode({ accountId, seriesId, episodeId, onError }: { acco
                     )}
                   </div>
                 )}
-                <p className="dr-hint">{music ? "Scenes are joined in order over the song, so the music plays straight through." : "Scenes are joined in order with each character's locked voice."} Nothing is re-rendered, so cutting is quick and free.</p>
+                <p className="dr-hint">{episode.final?.editedIn === "vibe-edit" ? "This cut is your last export from the editor; exporting again replaces it." : `The editor opens your scenes on a timeline to trim, reorder, and restyle. A quick cut joins them in order ${music ? "over the song" : "with each character's locked voice"}, free and fast.`}</p>
               </div>
             </section>
           )}

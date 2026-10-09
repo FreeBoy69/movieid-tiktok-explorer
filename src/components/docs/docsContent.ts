@@ -249,6 +249,8 @@ export const DOCS: DocPage[] = [
             },
           },
           { p: "Paid stages show their estimate before you confirm. Stock footage is free. Projects live at [Projects](/projects)." },
+          { h3: "Editing the cut" },
+          { p: "**Approve storyboard** opens the project's own edit in the full Vibe Edit editor, right inside the project: trim and reorder shots, restyle captions, adjust each shot's move and entrance, change the look, and edit overlays as motion graphics. Its **Export** becomes the project's video in Review. If you change the storyboard later, the editor offers to bring the new media into your edit without losing your cuts." },
         ],
       },
       {
@@ -278,7 +280,8 @@ export const DOCS: DocPage[] = [
         title: "Building a film",
         blocks: [
           { p: "Each film has tabs for its episodes, cast, locations, look, song, and story bible. Characters and locations get reference sheets so they stay consistent; each character gets a voice. Pick a cinema look and camera to set the style." },
-          { p: "In an episode, every scene is storyboarded, voiced, and rendered into a clip; the final cut joins them with titles and subtitles. Rendering clips spends credits, and each step shows its estimate first." },
+          { p: "In an episode, every scene is storyboarded, voiced, and rendered into a clip. Rendering clips spends credits, and each step shows its estimate first." },
+          { p: "On the **Final cut** tab, **Edit the final cut** opens the episode in the full Vibe Edit editor: its scenes on a timeline with their dialogue, the lines as subtitles, and the title and next-episode cards as editable motion graphics. Its export becomes the episode's final cut. **Quick cut** joins the scenes in order for free." },
         ],
       },
     ],
@@ -307,7 +310,8 @@ export const DOCS: DocPage[] = [
         id: "captions-voices-export",
         title: "Captions, voices, and export",
         blocks: [
-          { p: "Choose from 35 caption styles, generate voiceover in dozens of voices with direction, add stock B-roll that matches what's being said, and animated titles. **Export** renders the finished video." },
+          { p: "Choose from 35 caption styles, generate voiceover in dozens of voices with direction, add stock B-roll that matches what's being said, and animated titles. Give each clip a camera move (push, pull, or pan) and an entrance (fade, flash, glitch, or zoom), and the whole edit a look. Double-click into a motion title with **Edit graphic** to move, resize, reword, or recolour any part of it. **Export** renders the finished video." },
+          { p: "Vibe Edit is the one editor in AutoYT: Create Video and Create Film open their videos in it too, and their exports become those projects' videos." },
         ],
       },
     ],

@@ -3467,7 +3467,7 @@ const VibeEdit = lazyPage(() => import("./vibe/VibeEdit"));
 /** The project's own edit, embedded: built from the storyboard the first time, opened as it was left after that.
  *  When the storyboard has changed since, it asks first: bring the new media in (keeping the cuts), start over,
  *  or open it as it was. Its export becomes the project's video. */
-function ProjectVibeEdit({ projectId, accountId, theme, backLabel, onBack }: { projectId: string; accountId: string; theme: "light" | "dark"; backLabel: string; onBack: () => void }) {
+export function ProjectVibeEdit({ endpoint, accountId, theme, backLabel, onBack, what = "storyboard" }: { endpoint: string; accountId: string; theme: "light" | "dark"; backLabel: string; onBack: () => void; what?: string }) {
   const [state, setState] = useState<{ editId: string; stale: boolean } | null>(null);
   const [error, setError] = useState("");
   const [working, setWorking] = useState("");
@@ -3475,7 +3475,7 @@ function ProjectVibeEdit({ projectId, accountId, theme, backLabel, onBack }: { p
     setWorking(mode || "open");
     setError("");
     try {
-      const data = await creatorApi(`/api/maker/projects/${projectId}/vibe-edit`, { accountId, ...(mode ? { [mode]: true } : {}) });
+      const data = await creatorApi(endpoint, { accountId, ...(mode ? { [mode]: true } : {}) });
       setState({ editId: data.projectId, stale: Boolean(data.stale) && !mode });
     } catch (e) {
       setError((e as Error).message);
@@ -3486,7 +3486,7 @@ function ProjectVibeEdit({ projectId, accountId, theme, backLabel, onBack }: { p
   useEffect(() => {
     void open();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId]);
+  }, [endpoint]);
   if (error) {
     return (
       <div className="maker-vibe-gate" role="alert">
@@ -3500,16 +3500,16 @@ function ProjectVibeEdit({ projectId, accountId, theme, backLabel, onBack }: { p
     );
   }
   if (!state || working) {
-    return <div className="maker-vibe-gate"><Loader2 size={18} className="animate-spin" />{working === "rebuild" ? "Building the edit from your storyboard…" : working === "refresh" ? "Bringing in the new media…" : "Opening your edit…"}</div>;
+    return <div className="maker-vibe-gate"><Loader2 size={18} className="animate-spin" />{working === "rebuild" ? `Building the edit from your ${what}…` : working === "refresh" ? "Bringing in the new media…" : "Opening your edit…"}</div>;
   }
   if (state.stale) {
     return (
       <div className="maker-vibe-gate">
-        <strong>Your storyboard changed since you last edited</strong>
-        <p>Bring the new pictures, clips, narration, and music into your edit and keep your cuts, titles, and captions, or start the edit over from the storyboard.</p>
+        <strong>Your {what} changed since you last edited</strong>
+        <p>Bring the new pictures, clips, and sound into your edit and keep your cuts, titles, and captions, or start the edit over from the {what}.</p>
         <div className="maker-vibe-gate-actions">
           <button className="maker-primary" onClick={() => void open("refresh")}>Bring in the new media</button>
-          <button className="maker-outline" onClick={() => void open("rebuild")}>Start over from the storyboard</button>
+          <button className="maker-outline" onClick={() => void open("rebuild")}>Start over from the {what}</button>
           <button className="maker-link" onClick={() => setState({ ...state, stale: false })}>Open it as it was</button>
         </div>
       </div>
@@ -5334,7 +5334,7 @@ function ProjectEditor({
                   {view === "edit" && voiceover?.duration ? (
                     // The whole Vibe Edit: preview, media, captions, music, the timeline, and Juel. Its export
                     // becomes this project's video in Review.
-                    <ProjectVibeEdit projectId={id} accountId={accountId} theme={theme} backLabel="Storyboard" onBack={() => setVisualView("scenes")} />
+                    <ProjectVibeEdit endpoint={`/api/maker/projects/${id}/vibe-edit`} accountId={accountId} theme={theme} backLabel="Storyboard" onBack={() => setVisualView("scenes")} />
                   ) : null}
                   {focusScene && sceneEditor && (() => {
                     const { scene, index } = focusScene;

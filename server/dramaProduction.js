@@ -51,6 +51,7 @@ import { triageDramaPreflight } from "../src/utils/jevDecision.js";
 import { claimVoice } from "./voiceOwners.js";
 import { hyperframesAvailable, hyperframesKit, renderHyperframesProject } from "./hyperframesRenderer.js";
 import { normalizeOverlay, OVERLAY_FONTS, OVERLAY_KINDS, overlayTemplate } from "../src/utils/videoOverlays.js";
+import { adoptStudioMedia, loadVibeProject, saveVibeProject, studioFilePath } from "./vibeEdit.js";
 
 export const DRAMA_EPISODE_SOURCE = "drama_episode";
 const STALE_MS = 15 * 60 * 1000;
@@ -1156,6 +1157,168 @@ export function registerDramaProduction(app, ctx) {
         return { asset: assetUrl(episode.id, name), captions: assetUrl(episode.id, captionsName), seconds: Math.round(clock), subtitles: Boolean(subtitles) };
       }, { conflict: "The final cut is already rendering" });
       res.status(202).json({ ok: true });
+    }),
+  );
+
+  // ---------- The episode's edit in Vibe Edit (the final cut, by hand) ----------
+  const VIBE_SIZES = { "16:9": [1920, 1080], "9:16": [1080, 1920], "1:1": [1080, 1080], "4:5": [1080, 1350], "21:9": [2520, 1080] };
+  /** What the edit is built from: when this changes, the scenes have moved on since the edit was made. */
+  const episodeFingerprint = (episode) => {
+    const production = episode.metadata?.production || {};
+    const parts = (production.script?.scenes || []).map((scene) => {
+      const state = production.scenes?.[scene.id] || {};
+      return [scene.id, state.clip?.asset, state.clip?.dubbed, state.voice?.asset, state.board?.asset, scene.lyrics?.length || 0];
+    });
+    return crypto.createHash("sha1").update(JSON.stringify(parts)).digest("hex").slice(0, 16);
+  };
+
+  /** The episode as a Vibe Edit project: each scene's clip (with its dialogue, or the board over its voice when
+   *  it has no clip yet), the dialogue (or lyrics) as captions, and the title and next-episode cards as editable
+   *  motion graphics. */
+  async function episodeVibeProject(userId, episode, series, signal) {
+    const production = episode.metadata?.production || {};
+    const scenes = production.script?.scenes || [];
+    const parts = seriesParts(series);
+    const aspect = VIBE_SIZES[parts.aspect] ? parts.aspect : "9:16";
+    const [width, height] = VIBE_SIZES[aspect];
+    const r = (n) => Math.round(n * 1000) / 1000;
+    const adopt = async (asset) => {
+      if (!asset) return null;
+      const file = await localAsset(episode.id, asset).catch(() => null);
+      return file ? adoptStudioMedia(userId, file, path.extname(file).slice(1).toLowerCase().replace("jpeg", "jpg")).catch(() => null) : null;
+    };
+    const assets = [];
+    const clips = [];
+    const audio = [];
+    const segments = [];
+    let clock = 0;
+    for (const [i, scene] of scenes.entries()) {
+      const state = production.scenes?.[scene.id] || {};
+      const clipFile = state.clip?.asset ? await localAsset(episode.id, state.clip.asset).catch(() => null) : null;
+      const seconds = Math.max(MIN_CLIP_SECONDS, Number(state.voice?.seconds) || (clipFile ? await probeSeconds(clipFile, signal).catch(() => 0) : 0) || 4);
+      const clip = clipFile ? await adopt(state.clip.asset) : null;
+      const voice = state.voice?.asset && (!clip || !state.clip.dubbed) ? await adopt(state.voice.asset) : null;
+      if (clip) {
+        assets.push({ id: `scene${i}_clip`, kind: "video", name: scene.title || `Scene ${i + 1}`, url: clip.url, file: clip.file, duration: seconds, origin: "generated" });
+        clips.push({ id: `sc${i}`, assetId: `scene${i}_clip`, track: 0, start: r(clock), in: 0, out: r(seconds), fit: "fill", ...(state.clip.dubbed ? {} : { muted: true }) });
+      } else {
+        const board = await adopt(state.board?.asset);
+        if (board) {
+          assets.push({ id: `scene${i}_board`, kind: "image", name: `${scene.title || `Scene ${i + 1}`} (storyboard)`, url: board.url, file: board.file, origin: "generated" });
+          clips.push({ id: `sc${i}`, assetId: `scene${i}_board`, track: 0, start: r(clock), in: 0, out: r(seconds), fit: "fill", motion: "push" });
+        }
+      }
+      if (voice) {
+        assets.push({ id: `scene${i}_voice`, kind: "audio", name: `${scene.title || `Scene ${i + 1}`} dialogue`, url: voice.url, file: voice.file, duration: seconds, origin: "voiceover" });
+        audio.push({ id: `vo${i}`, assetId: `scene${i}_voice`, lane: 0, start: r(clock), in: 0, out: r(seconds), volume: 1, name: "Dialogue" });
+      }
+      if (scene.lyrics?.length && scene.end > scene.start)
+        for (const line of normalizeLyrics(scene.lyrics)) segments.push({ start: clock + Math.max(0, line.start - scene.start), end: clock + Math.min(seconds, line.end - scene.start), text: line.text });
+      else for (const item of state.voice?.timeline || []) if (!item.silent) segments.push({ start: clock + item.start, end: clock + item.end, text: item.line });
+      clock += seconds;
+    }
+    if (!clips.length) throw fail("Make the scenes first: the edit starts from their clips");
+    const cues = buildSubtitleCues(segments, clock, 34).map((cue, k) => {
+      const words = cue.text.split(/\s+/).filter(Boolean);
+      const per = (cue.end - cue.start) / Math.max(1, words.length);
+      return { id: `cap${k}`, start: r(cue.start), end: r(cue.end), text: cue.text, words: words.map((w, j) => ({ w, t0: r(cue.start + j * per), t1: r(cue.start + (j + 1) * per) })) };
+    });
+    // The episode's packaging, as motion graphics you can open and edit: its title over the opening shot and, when
+    // one follows, the next episode teased at the end.
+    if (hyperframesAvailable()) {
+      const n = Number(episode.metadata?.drama?.episode) || 1;
+      const plan = series.metadata?.drama?.episodes || [];
+      const single = parts.format !== "series" && plan.length <= 1;
+      const unit = parts.format === "series" ? "Episode" : "Part";
+      const opener = normalizeOverlay({ kind: "episode", vars: single ? { series: "", label: parts.format === "music" ? "Music video" : "", title: series.title } : { series: series.title, label: `${unit} ${n}`, title: plan.find((item) => item.n === n)?.title || episode.title } });
+      const following = plan.find((item) => item.n === n + 1);
+      const teaser = following && clock > 14 ? normalizeOverlay({ kind: "next", vars: { label: `Next ${unit.toLowerCase()}`, title: following.title } }) : null;
+      const work = path.join(directory(episode.id), `vibe-cards-${crypto.randomUUID().slice(0, 6)}`);
+      await fs.mkdir(work, { recursive: true });
+      try {
+        for (const [card, start] of [[opener, Math.min(0.6, clock / 10)], [teaser, clock - OVERLAY_KINDS.next.seconds - 0.4]]) {
+          if (!card || start < 0) continue;
+          const html = overlayTemplate(card.kind, { width, height });
+          const [file] = await renderHyperframesProject({ files: { ...hyperframesKit(OVERLAY_FONTS), "card.html": html }, composition: "card.html", format: "mov", rows: [card.vars], output: path.join(work, `card-${card.kind}-{index}.mov`), signal }).catch(() => []);
+          const made = file ? await adoptStudioMedia(userId, file, "mov").catch(() => null) : null;
+          if (!made) continue;
+          const seconds = OVERLAY_KINDS[card.kind].seconds;
+          const id = `card_${card.kind}`;
+          assets.push({ id, kind: "video", name: card.kind === "episode" ? "Title card" : "Next episode card", url: made.url, file: made.file, duration: seconds, width, height, origin: "generated", motion: { html, seconds, width, height, kind: card.kind, vars: card.vars } });
+          clips.push({ id: `card_${card.kind}`, assetId: id, track: 1, start: r(start), in: 0, out: r(seconds), fit: "fit", muted: true });
+        }
+      } finally {
+        await fs.rm(work, { recursive: true, force: true }).catch(() => {});
+      }
+    }
+    const now = Date.now();
+    return {
+      version: 1,
+      id: `vp_${crypto.randomBytes(6).toString("hex")}`,
+      name: String(episode.title || series.title || "Episode").slice(0, 120),
+      aspect,
+      background: "#000000",
+      source: { kind: "drama", episodeId: episode.id, seriesId: series.id },
+      assets,
+      clips,
+      audio,
+      texts: [],
+      captions: { cues, show: production.settings?.subtitles ?? true, style: "clean", wordHighlight: false },
+      createdAt: now,
+      updatedAt: now,
+    };
+  }
+
+  // Opens the episode's own edit: built from its scenes the first time, then as it was left. {refresh} swaps in the
+  // scenes' new media and keeps the cuts; {rebuild} starts it over.
+  app.post(
+    "/api/drama/episodes/:id/vibe-edit",
+    route(async (req, res, session) => {
+      const { episode, series } = await loadEpisode(req, session);
+      const userId = session.user.id;
+      const linked = episode.metadata?.vibeEdit || {};
+      const fingerprint = episodeFingerprint(episode);
+      const existing = linked.projectId ? await loadVibeProject(userId, linked.projectId).catch(() => null) : null;
+      const mode = req.body?.rebuild ? "rebuild" : req.body?.refresh ? "refresh" : "open";
+      if (existing && mode === "open") return res.json({ projectId: existing.id, stale: linked.fingerprint !== fingerprint });
+      let doc = await episodeVibeProject(userId, episode, series, AbortSignal.timeout(10 * 60 * 1000));
+      if (existing && mode === "refresh") {
+        const fresh = new Map(doc.assets.map((asset) => [asset.id, asset]));
+        doc = { ...existing, assets: [...existing.assets.map((asset) => (fresh.has(asset.id) ? { ...asset, ...fresh.get(asset.id) } : asset)), ...doc.assets.filter((asset) => !existing.assets.some((a) => a.id === asset.id))], updatedAt: Date.now() };
+      } else if (existing) doc = { ...doc, id: existing.id, name: existing.name };
+      await saveVibeProject(userId, doc);
+      await patch(userId, episode.id, (metadata) => {
+        metadata.vibeEdit = { projectId: doc.id, fingerprint, builtAt: new Date().toISOString() };
+      });
+      res.json({ projectId: doc.id, stale: false });
+    }),
+  );
+
+  // An export from the episode's edit becomes its final cut.
+  app.post(
+    "/api/drama/episodes/:id/vibe-edit/export",
+    route(async (req, res, session) => {
+      const { episode } = await loadEpisode(req, session);
+      const file = String(req.body?.file || "");
+      if (!/^gen-vibe-[A-Za-z0-9_-]+\.mp4$/.test(file)) throw fail("That export can't be used");
+      const source = await studioFilePath(session.user.id, file);
+      const name = `episode-${crypto.randomUUID().slice(0, 8)}.mp4`;
+      await fs.mkdir(directory(episode.id), { recursive: true });
+      await fs.copyFile(source, path.join(directory(episode.id), name));
+      const edit = episode.metadata?.vibeEdit?.projectId ? await loadVibeProject(session.user.id, episode.metadata.vibeEdit.projectId).catch(() => null) : null;
+      const cues = edit?.captions?.cues || [];
+      let captions = "";
+      if (cues.length) {
+        const captionsName = `episode-${crypto.randomUUID().slice(0, 8)}-captions.srt`;
+        await fs.writeFile(path.join(directory(episode.id), captionsName), subtitlesSrt(cues));
+        captions = assetUrl(episode.id, captionsName);
+      }
+      await saveProject(episode.id);
+      const seconds = Math.round(Math.max(0, ...(edit?.clips || []).map((c) => c.start + c.out - c.in), ...(edit?.audio || []).map((c) => c.start + c.out - c.in)));
+      await patch(session.user.id, episode.id, (metadata) =>
+        setAt(metadata, ["final"], (current) => ({ ...current, asset: assetUrl(episode.id, name), ...(captions ? { captions } : {}), seconds, subtitles: Boolean(edit?.captions?.show), status: "ready", error: "", progress: "", editedIn: "vibe-edit", finishedAt: Date.now() })),
+      );
+      res.json({ ok: true });
     }),
   );
 }
