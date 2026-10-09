@@ -760,8 +760,10 @@ export function rankDiscoveryChannels(videos, filters = {}) {
   }
   const finite = (value) =>
     value !== null && value !== undefined && value !== "" && Number.isFinite(Number(value));
-  const numeric = (value, fallback = 0) =>
-    finite(value) ? Number(value) : fallback;
+  const numeric = (value, fallback = 0) => {
+    const amount = parseAmount(value);
+    return Number.isFinite(amount) ? amount : fallback;
+  };
   const timestamp = (value) => {
     const parsed = Date.parse(value || "");
     return Number.isFinite(parsed) ? parsed : 0;
@@ -777,27 +779,27 @@ export function rankDiscoveryChannels(videos, filters = {}) {
     .split(",")
     .map((term) => term.trim().toLowerCase())
     .filter(Boolean);
-  // Excluded niches match whole words, so "tv" leaves "tvOS reviews" and "clean" leaves "cleaning".
-  const excludePattern = excludeTerms.length
-    ? new RegExp(`\\b(${excludeTerms.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})\\b`, "i")
-    : null;
+  const excludePattern = excludeTermsPattern(excludeTerms);
   const includeTerms = String(filters.includeTerms || "")
     .split(",")
     .map((term) => term.trim())
     .filter(Boolean);
   const unknownPolicy = String(filters.facelessUnknown || filters.unknown || "include");
 
-  return [...groups.entries()]
+  const ranked = [...groups.entries()]
     .map(([id, items]) => {
       const sortedByDate = [...items].sort(
         (a, b) => timestamp(b.publishedAt) - timestamp(a.publishedAt),
       );
-      const views = items.map((v) => numeric(v.viewCount)).sort((a, b) => a - b);
+      // Videos with no view count don't drag the typical views down to zero; with none at all it's unknown.
+      const views = items.filter((v) => finite(v.viewCount)).map((v) => Number(v.viewCount)).sort((a, b) => a - b);
       const mid = Math.floor(views.length / 2);
-      const median =
-        views.length % 2 ? views[mid] : (views[mid - 1] + views[mid]) / 2;
-      const average =
-        views.reduce((sum, value) => sum + value, 0) / Math.max(1, views.length);
+      const median = !views.length
+        ? null
+        : views.length % 2 ? views[mid] : (views[mid - 1] + views[mid]) / 2;
+      const average = views.length
+        ? views.reduce((sum, value) => sum + value, 0) / views.length
+        : null;
       const best = [...items].sort(
         (a, b) => numeric(b.viewCount) - numeric(a.viewCount),
       )[0];
@@ -852,10 +854,12 @@ export function rankDiscoveryChannels(videos, filters = {}) {
       const score =
         items.reduce((sum, item) => sum + numeric(item.discoveryScore), 0) /
         items.length;
-      const recentViewsPerHour =
-        items.reduce((sum, item) => sum + numeric(item.viewsPerHour), 0) /
-        items.length;
-      const dated = sortedByDate.map((item) => timestamp(item.publishedAt));
+      const paced = items.filter((item) => finite(item.viewsPerHour));
+      const recentViewsPerHour = paced.length
+        ? paced.reduce((sum, item) => sum + Number(item.viewsPerHour), 0) / paced.length
+        : null;
+      // Undated uploads say nothing about when or how often the channel posts.
+      const dated = sortedByDate.map((item) => timestamp(item.publishedAt)).filter(Boolean);
       const gaps = dated
         .slice(1)
         .map((value, index) => Math.abs(dated[index] - value))
@@ -867,7 +871,7 @@ export function rankDiscoveryChannels(videos, filters = {}) {
           ? gaps[gapMid]
           : (gaps[gapMid - 1] + gaps[gapMid]) / 2
         : null;
-      const spanMs = dated.length > 1 ? Math.max(...dated) - Math.min(...dated.filter(Boolean)) : 0;
+      const spanMs = dated.length > 1 ? Math.max(...dated) - Math.min(...dated) : 0;
       // Uploads per month across the fetched uploads (at least a week of span, so a burst
       // of two same-day videos doesn't read as 60 a month).
       const uploadsPerMonth =
@@ -895,7 +899,7 @@ export function rankDiscoveryChannels(videos, filters = {}) {
         createdAt,
         videoCount,
         subscribers,
-        ratio: subscribers ? median / subscribers : null,
+        ratio: subscribers && median !== null ? median / subscribers : null,
         score,
         opportunityScore,
         facelessScore,
@@ -908,9 +912,9 @@ export function rankDiscoveryChannels(videos, filters = {}) {
         medianDurationSeconds,
         longformShare,
         recentViewsPerHour,
-        earliestSampledAt: Math.min(...dated.filter(Boolean)),
-        latestSampledAt: Math.max(...dated),
-        newest: Math.max(...dated),
+        earliestSampledAt: dated.length ? Math.min(...dated) : null,
+        latestSampledAt: dated.length ? Math.max(...dated) : null,
+        newest: dated.length ? Math.max(...dated) : null,
         uploadCadenceDays: cadenceMs ? cadenceMs / 86400000 : null,
         videos: [...items].sort(
           (a, b) => numeric(b.viewCount) - numeric(a.viewCount),
@@ -922,13 +926,27 @@ export function rankDiscoveryChannels(videos, filters = {}) {
         region,
         monetization,
         titles: items.map((item) => String(item.title || "")).join(" \n "),
+        titleList: items.map((item) => String(item.title || "")),
       };
-    })
+    });
+  // Filters that need a subscriber count drop channels that hide theirs; the count is reported.
+  const minSubs = numeric(filters.minSubs);
+  const maxSubs = numeric(filters.maxSubs);
+  const minRatio = numeric(filters.minRatio);
+  const needsSubscribers = Boolean(minSubs || maxSubs || minRatio);
+  // A short-video duration and a long-form format contradict each other (and long videos with
+  // a shorts format), so the format gives way to the duration the user picked.
+  const format =
+    (filters.format === "longform" && filters.duration === "short") ||
+    (filters.format === "shorts" && (filters.duration === "medium" || filters.duration === "long"))
+      ? "any"
+      : filters.format;
+  const kept = ranked
     .filter(
       (c) =>
-        c.medianViews >= numeric(filters.minViews) &&
-        (!numeric(filters.minAvgViews) || c.averageViews >= numeric(filters.minAvgViews)) &&
-        (!numeric(filters.maxAvgViews) || c.averageViews <= numeric(filters.maxAvgViews)) &&
+        (!numeric(filters.minViews) || (c.medianViews !== null && c.medianViews >= numeric(filters.minViews))) &&
+        (!numeric(filters.minAvgViews) || (c.averageViews !== null && c.averageViews >= numeric(filters.minAvgViews))) &&
+        (!numeric(filters.maxAvgViews) || (c.averageViews !== null && c.averageViews <= numeric(filters.maxAvgViews))) &&
         (!filters.createdAfter ||
           (c.createdAt !== null && c.createdAt >= timestamp(filters.createdAfter))) &&
         (!filters.createdBefore ||
@@ -938,17 +956,13 @@ export function rankDiscoveryChannels(videos, filters = {}) {
           (c.videoCount !== null && c.videoCount >= numeric(filters.minVideos))) &&
         (!numeric(filters.maxVideos) ||
           (c.videoCount !== null && c.videoCount <= numeric(filters.maxVideos))) &&
-        (!numeric(filters.maxViews) || c.medianViews <= numeric(filters.maxViews)) &&
-        (!filters.faceless ||
-          (c.facelessScore !== null && c.facelessScore >= 50)) &&
-        (!filters.minSubs ||
-          (c.subscribers !== null &&
-            c.subscribers >= Number(filters.minSubs))) &&
-        (!filters.maxSubs ||
-          (c.subscribers !== null &&
-            c.subscribers <= Number(filters.maxSubs))) &&
-        (!numeric(filters.minRatio) ||
-          (c.ratio !== null && c.ratio >= numeric(filters.minRatio))) &&
+        (!numeric(filters.maxViews) || (c.medianViews !== null && c.medianViews <= numeric(filters.maxViews))) &&
+        // Faceless judges channels with a score; what happens to unknown ones is facelessUnknown's call.
+        (!filters.faceless || c.facelessScore === null || c.facelessScore >= 50) &&
+        (!needsSubscribers || c.subscribers !== null) &&
+        (!minSubs || (c.subscribers !== null && c.subscribers >= minSubs)) &&
+        (!maxSubs || (c.subscribers !== null && c.subscribers <= maxSubs)) &&
+        (!minRatio || (c.ratio !== null && c.ratio >= minRatio)) &&
         (!numeric(filters.minDurationMinutes) ||
           (c.medianDurationSeconds !== null &&
             c.medianDurationSeconds >=
@@ -957,9 +971,9 @@ export function rankDiscoveryChannels(videos, filters = {}) {
           (c.medianDurationSeconds !== null &&
             c.medianDurationSeconds <=
               numeric(filters.maxDurationMinutes) * 60)) &&
-        (filters.format === "longform"
+        (format === "longform"
           ? c.longformShare !== null && c.longformShare >= 0.5
-          : filters.format === "shorts"
+          : format === "shorts"
             ? c.longformShare !== null && c.longformShare < 0.5
             : true) &&
         // Channels whose language YouTube doesn't report are kept.
@@ -968,7 +982,7 @@ export function rankDiscoveryChannels(videos, filters = {}) {
           c.language.toLowerCase().slice(0, 2) === String(filters.language).toLowerCase().slice(0, 2)) &&
         (!filters.monetized || c.monetization === "likely") &&
         includesTerm(`${c.title} ${c.niche} ${c.handle}`, includeTerms) &&
-        !(excludePattern && excludePattern.test(`${c.title} ${c.niche} ${c.handle} ${c.titles}`)) &&
+        !excludedChannel(c, excludePattern) &&
         (filters.facelessUnknown === "exclude"
           ? c.facelessScore !== null
           : filters.facelessUnknown === "only"
@@ -982,16 +996,71 @@ export function rankDiscoveryChannels(videos, filters = {}) {
         case "created":
           return (b.createdAt ?? 0) - (a.createdAt ?? 0);
         case "recentVph":
-          return b.recentViewsPerHour - a.recentViewsPerHour;
+          return (b.recentViewsPerHour ?? -1) - (a.recentViewsPerHour ?? -1);
         case "opportunity":
           return b.opportunityScore - a.opportunityScore;
+        case "score":
+          return numeric(b.score) - numeric(a.score);
         default:
+          // Unknown values (hidden subscribers, no ratio) sort after every known one.
           return (
-            numeric(b[filters.sort || "score"]) -
-            numeric(a[filters.sort || "score"])
+            numeric(b[filters.sort || "score"], -Infinity) -
+            numeric(a[filters.sort || "score"], -Infinity) || 0
           );
       }
     });
+  // How many channels were dropped only because they hide their subscriber count.
+  // (Likely-monetized needs a subscriber count too, so it drops them as well.)
+  const hiddenSubscribersExcluded = needsSubscribers || filters.monetized
+    ? ranked.filter((c) => c.subscribers === null && (needsSubscribers || c.monetization !== "likely")).length
+    : 0;
+  Object.defineProperty(kept, "hiddenSubscribersExcluded", { value: hiddenSubscribersExcluded, enumerable: false });
+  return kept;
+}
+
+/** A number typed the way people write them: "10k", "1.2m", "2,500", or a number. NaN when it isn't one. */
+export function parseAmount(value) {
+  if (value === null || value === undefined || value === "") return NaN;
+  if (typeof value === "number") return value;
+  const match = /^\s*([0-9][0-9,]*(?:\.[0-9]+)?|\.[0-9]+)\s*([kmb])?\s*$/i.exec(String(value));
+  if (!match) return NaN;
+  const base = Number(match[1].replace(/,/g, ""));
+  const scale = { k: 1e3, m: 1e6, b: 1e9 }[String(match[2] || "").toLowerCase()] || 1;
+  return base * scale;
+}
+
+/** One regex for the excluded niche words: whole words (so "clean" leaves "cleaning"), with their
+ *  plural or singular ("song" catches "Songs", "kids" catches "Kid"), safe for terms like "c++",
+ *  and never an age rating ("TV-14"). */
+export function excludeTermsPattern(terms = []) {
+  const escape = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const forms = new Set();
+  for (const raw of terms) {
+    const term = String(raw || "").trim().toLowerCase();
+    if (!term) continue;
+    forms.add(term);
+    if (/[a-z]$/.test(term)) {
+      forms.add(`${term}s`);
+      if (/(s|x|z|ch|sh)$/.test(term)) forms.add(`${term}es`);
+      if (/[^aeiou]y$/.test(term)) forms.add(`${term.slice(0, -1)}ies`);
+      if (term.length > 3 && /ies$/.test(term)) forms.add(`${term.slice(0, -3)}y`);
+      else if (term.length > 3 && /(s|x|z|ch|sh)es$/.test(term)) forms.add(term.slice(0, -2));
+      else if (term.length > 3 && /[^s]s$/.test(term) && !/(us|is|ws)$/.test(term)) forms.add(term.slice(0, -1));
+    }
+  }
+  if (!forms.size) return null;
+  const alternatives = [...forms].sort((a, b) => b.length - a.length).map(escape).join("|");
+  return new RegExp(`(?<![\\p{L}\\p{N}])(?:${alternatives})(?![\\p{L}\\p{N}])(?!-\\d)`, "iu");
+}
+
+/** A channel is excluded when its own name, handle or niche names an excluded word, or when it
+ *  runs through its uploads (more than 30% of the sampled titles), not for one stray title. */
+function excludedChannel(channel, pattern) {
+  if (!pattern) return false;
+  if (pattern.test(`${channel.title || ""} ${channel.niche || ""} ${channel.handle || ""}`)) return true;
+  const titles = channel.titleList || [];
+  if (!titles.length) return false;
+  return titles.filter((title) => pattern.test(title)).length / titles.length > 0.3;
 }
 
 // Built-in art styles. The prompt text is what image generation receives.

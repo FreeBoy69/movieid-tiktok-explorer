@@ -6,6 +6,8 @@ import {
   normalizeMusicSegments,
   normalizeVisualSegments,
   normalizeVisualBible,
+  excludeTermsPattern,
+  parseAmount,
   rankDiscoveryChannels,
   sceneObjects,
   segmentImageLimit,
@@ -455,5 +457,73 @@ describe("stages that start early", () => {
   it("voices an uploaded recording without a script", () => {
     expect(() => assertStageReady(base, "voiceover")).toThrow(/script/);
     expect(() => assertStageReady({ ...base, metadata: { narrationUpload: { asset: "/a.wav", duration: 30 } } }, "voiceover")).not.toThrow();
+  });
+});
+
+describe("Niche Finder filters keep the right channels", () => {
+  const day = 86400000;
+  const at = (daysAgo: number) => new Date(Date.now() - daysAgo * day).toISOString();
+  const clip = (channel: string, extra: Record<string, unknown> = {}, n = 0) => ({
+    id: `${channel}-${n}`, channelId: channel, channelTitle: channel, title: `${channel} video ${n}`,
+    viewCount: 10000, subscriberCount: 50000, publishedAt: at(n + 1), durationSeconds: 600, facelessScore: 80, discoveryScore: 1, ...extra,
+  });
+  const titles = (list: any[]) => list.map((c) => c.title).sort();
+
+  it("lets facelessUnknown decide channels the faceless check couldn't judge (#2)", () => {
+    const videos = [clip("Judged"), clip("OnCamera", { facelessScore: 20 }), clip("Unknown", { facelessScore: null })];
+    expect(titles(rankDiscoveryChannels(videos, { faceless: true }))).toEqual(["Judged", "Unknown"]);
+    expect(titles(rankDiscoveryChannels(videos, { faceless: true, facelessUnknown: "exclude" }))).toEqual(["Judged"]);
+    expect(titles(rankDiscoveryChannels(videos, { faceless: true, facelessUnknown: "only" }))).toEqual(["Unknown"]);
+  });
+
+  it("excludes a channel for its name or a run of titles, not one stray title (#7)", () => {
+    const history = [0, 1, 2, 3, 4].map((n) => clip("History Hub", { title: n === 0 ? "The first TV broadcast" : `Ancient Rome part ${n}` }, n));
+    const music = [0, 1, 2].map((n) => clip("Chill Corner", { title: `Lofi music mix ${n}` }, n));
+    const named = [clip("Kids Corner TV")];
+    expect(titles(rankDiscoveryChannels([...history, ...music, ...named], { excludeTerms: "tv,music,kids" }))).toEqual(["History Hub"]);
+  });
+
+  it("matches excluded words with plurals and singulars, safely, and never an age rating (#23)", () => {
+    const pattern = excludeTermsPattern(["song", "kids", "compilation", "tv", "c++", "news"])!;
+    for (const text of ["Sad Songs Daily", "Kid Stories", "Best Compilations", "Cozy TV", "Learn C++ fast", "Daily news"]) expect(pattern.test(text)).toBe(true);
+    for (const text of ["Rated TV-14", "Songbird facts", "Cleaning tips", "What's new"]) expect(pattern.test(text)).toBe(false);
+  });
+
+  it("drops the long-form format when the duration asks for short videos (#24)", () => {
+    const short = [0, 1].map((n) => clip("Quick", { durationSeconds: 120 }, n));
+    expect(titles(rankDiscoveryChannels(short, { format: "longform", duration: "short" }))).toEqual(["Quick"]);
+    expect(rankDiscoveryChannels(short, { format: "longform" })).toEqual([]);
+  });
+
+  it("keeps hidden-subscriber channels unless a subscriber filter is set, and reads 10k (#25)", () => {
+    const videos = [clip("Big", { subscriberCount: 200000 }), clip("Small", { subscriberCount: 3000 }), clip("Hidden", { subscriberCount: null })];
+    expect(titles(rankDiscoveryChannels(videos, {}))).toEqual(["Big", "Hidden", "Small"]);
+    const filtered = rankDiscoveryChannels(videos, { minSubs: "10k" });
+    expect(titles(filtered)).toEqual(["Big"]);
+    expect((filtered as any).hiddenSubscribersExcluded).toBe(1);
+    expect(titles(rankDiscoveryChannels(videos, { minSubs: "lots" }))).toEqual(["Big", "Hidden", "Small"]);
+    expect([parseAmount("10k"), parseAmount("1.2m"), parseAmount("2,500"), parseAmount(7)]).toEqual([10000, 1200000, 2500, 7]);
+    expect(Number.isNaN(parseAmount("lots"))).toBe(true);
+  });
+
+  it("ignores undated uploads and missing views in the channel's numbers (#26, #33)", () => {
+    const [channel] = rankDiscoveryChannels([
+      clip("Mixed", { publishedAt: at(1), viewCount: 1000 }, 0),
+      clip("Mixed", { publishedAt: at(31), viewCount: 3000 }, 1),
+      clip("Mixed", { publishedAt: "", viewCount: null }, 2),
+    ]);
+    expect(channel.medianViews).toBe(2000);
+    expect(Math.round(channel.uploadsPerMonth!)).toBe(1);
+    expect(Number.isFinite(channel.earliestSampledAt)).toBe(true);
+    const [undated] = rankDiscoveryChannels([clip("Blank", { publishedAt: "", viewCount: null }, 0), clip("Blank", { publishedAt: "", viewCount: null }, 1)]);
+    expect(undated.earliestSampledAt).toBeNull();
+    expect(undated.uploadsPerMonth).toBeNull();
+    expect(undated.medianViews).toBeNull();
+  });
+
+  it("sorts by discovery score, with unknown values last on other sorts (#6)", () => {
+    const videos = [clip("Low", { discoveryScore: 1, subscriberCount: 900 }), clip("High", { discoveryScore: 9, subscriberCount: null }), clip("Mid", { discoveryScore: 5, subscriberCount: 5000 })];
+    expect(rankDiscoveryChannels(videos, { sort: "score" }).map((c) => c.title)).toEqual(["High", "Mid", "Low"]);
+    expect(rankDiscoveryChannels(videos, { sort: "subscribers" }).map((c) => c.title)).toEqual(["Mid", "Low", "High"]);
   });
 });
