@@ -18010,7 +18010,9 @@ async function fetchYouTubeJson(pathName, params = {}) {
  * Video IDs from YouTube's public web search, used only when the Data API search
  * quota is spent. Stats still come from videos.list/channels.list (1 unit each).
  */
-async function searchYouTubeWebVideoIds(query, limit = 20) {
+// `params` is YouTube's search filter token: EgIQAQ== is videos only; the radar also uses
+// upload-date and view-count sorted variants (see webSearchLanes).
+async function searchYouTubeWebVideoIds(query, limit = 20, params = "EgIQAQ==") {
     const response = await fetch("https://www.youtube.com/youtubei/v1/search?prettyPrint=false", {
         method: "POST",
         headers: {
@@ -18021,7 +18023,7 @@ async function searchYouTubeWebVideoIds(query, limit = 20) {
         body: JSON.stringify({
             context: { client: { clientName: "WEB", clientVersion: "2.20250910.00.00", hl: "en", gl: "US" } },
             query,
-            params: "EgIQAQ==",
+            params,
         }),
         signal: AbortSignal.timeout(15000),
     });
@@ -18400,7 +18402,10 @@ function normalizeYouTubeRadarInput(body) {
         || String(b.mode ?? "").toLowerCase() === "trending"
         || String(b.scanMode ?? "").toLowerCase() === "trending";
     const mode = wantsTrending ? "trending" : "search";
-    return { mode, query, maxResults: capped, publishedAfterDays, regionCode, relevanceLanguage, order, duration };
+    // Web-search scans cost no search quota, so they may sample more videos.
+    const webSearch = b.webSearch === true;
+    const maxResults = webSearch ? Math.min(Math.max(Number.isFinite(maxN) && maxN > 0 ? maxN : 30, 5), 120) : capped;
+    return { mode, query, maxResults, publishedAfterDays, regionCode, relevanceLanguage, order, duration, webSearch };
 }
 function orderRadarVideosBySearch(videos, order) {
     if (order === "viewCount")
@@ -18441,6 +18446,10 @@ async function refineRadarRankingWithJev(videos, query, order) {
     })).sort((a, b) => b.score - a.score || originalPosition.get(a.video.id) - originalPosition.get(b.video.id)).map((entry) => entry.video);
     return [...blended, ...base.slice(top.length)];
 }
+// Quota-free search lanes: relevance and view count, each limited to this month or this year.
+function webSearchLanes(publishedAfterDays) {
+    return publishedAfterDays <= 31 ? ["EgQIBBAB", "CAMSBAgEEAE="] : ["EgQIBRAB", "CAMSBAgFEAE="];
+}
 async function getYouTubeSearchRadar(n) {
     const { query: cleanQuery, maxResults, regionCode, relevanceLanguage, order, duration, publishedAfterDays } = n;
     if (!cleanQuery)
@@ -18452,7 +18461,9 @@ async function getYouTubeSearchRadar(n) {
         { query, order: "date" },
         { query, order: "viewCount" },
     ]);
-    const searches = await Promise.all(plans.map(async (plan) => {
+    // webSearch skips the Data API search (100 quota units per call) and finds candidates
+    // through YouTube's web search instead; details still come from the Data API.
+    const searches = n.webSearch ? [{ items: [], quotaExceeded: true }] : await Promise.all(plans.map(async (plan) => {
         try {
             return await fetchYouTubeJson("search", {
                 part: "snippet",
@@ -18478,10 +18489,10 @@ async function getYouTubeSearchRadar(n) {
     if (searches.some((search) => search.quotaExceeded)) {
         // Data API search quota is spent: find candidates through web search, then
         // apply the date and length filters locally after enrichment.
-        const webIds = (await Promise.all(searchQueries.map((query) => searchYouTubeWebVideoIds(query, 20).catch((error) => {
+        const webIds = (await Promise.all(searchQueries.flatMap((query) => webSearchLanes(publishedAfterDays).map((lane) => searchYouTubeWebVideoIds(query, 20, lane).catch((error) => {
             console.warn("YouTube web search fallback failed:", query, error instanceof Error ? error.message : error);
             return [];
-        })))).flat();
+        }))))).flat();
         usedWebSearch = webIds.length > 0;
         ids = Array.from(new Set([...ids, ...webIds])).slice(0, 150);
         if (!ids.length)
@@ -21040,7 +21051,7 @@ async function startServer() {
         next();
     });
     configureCreatorWorkspace({ runPsql, sqlString, jsonbLiteral, getProject: getCreatorProject, updateProject: updateCreatorProject, createProject: createCreatorProject, listProjects: listCreatorProjects, cloneVoice: createDramaVoiceClone,
-        session: getSessionRecord, account: usableYouTubeAccount, styles: listChannelStyles, radar: getYouTubeRadar, text: generateRewriteText,
+        session: getSessionRecord, account: usableYouTubeAccount, styles: listChannelStyles, radar: getYouTubeRadar, youtube: fetchYouTubeJson, faceless: facelessSignals, text: generateRewriteText,
         narrate: generateVoiceStudioNarration, transcribe: transcribeMediaFileWithSegments, separateStems: (sourcePath, workspace) => separateVoiceStudioStems(sourcePath, workspace), learnStyle: learnNarrationStyle, buildStyle: buildChannelStyleProfile,
         projectAccount: async (userId, projectId) => { const accountId = await runPsql(`SELECT youtube_account_id FROM creator_projects WHERE id=${sqlString(projectId)} AND user_id=${sqlString(userId)};`); return usableYouTubeAccount(userId, accountId.trim()); },
         voiceJob: loadVoiceStudioJob,

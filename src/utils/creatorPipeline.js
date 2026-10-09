@@ -734,13 +734,17 @@ export function rankDiscoveryChannels(videos, filters = {}) {
     );
   const excludeTerms = String(filters.excludeTerms || "")
     .split(",")
-    .map((term) => term.trim())
+    .map((term) => term.trim().toLowerCase())
     .filter(Boolean);
+  // Excluded niches match whole words, so "tv" leaves "tvOS reviews" and "clean" leaves "cleaning".
+  const excludePattern = excludeTerms.length
+    ? new RegExp(`\\b(${excludeTerms.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})\\b`, "i")
+    : null;
   const includeTerms = String(filters.includeTerms || "")
     .split(",")
     .map((term) => term.trim())
     .filter(Boolean);
-  const unknownPolicy = String(filters.unknown || "include");
+  const unknownPolicy = String(filters.facelessUnknown || filters.unknown || "include");
 
   return [...groups.entries()]
     .map(([id, items]) => {
@@ -759,7 +763,9 @@ export function rankDiscoveryChannels(videos, filters = {}) {
       const recent = sortedByDate[0];
       const channelInfo =
         items.find((item) => item.channelPublishedAt || finite(item.channelVideoCount)) || {};
-      const createdAt = timestamp(channelInfo.channelPublishedAt) || null;
+      // When the channel started posting: its first upload when known, else its creation date.
+      const createdAt =
+        timestamp(channelInfo.channelFirstUploadAt) || timestamp(channelInfo.channelPublishedAt) || null;
       const videoCount = finite(channelInfo.channelVideoCount) && Number(channelInfo.channelVideoCount) > 0
         ? Number(channelInfo.channelVideoCount)
         : null;
@@ -779,7 +785,7 @@ export function rankDiscoveryChannels(videos, filters = {}) {
           : (durations[durationMid - 1] + durations[durationMid]) / 2
         : null;
       const longformShare = durations.length
-        ? durations.filter((value) => value >= 240).length / durations.length
+        ? durations.filter((value) => value > 180).length / durations.length
         : null;
       const facelessValues = items
         .map((item) => item.facelessScore)
@@ -820,6 +826,13 @@ export function rankDiscoveryChannels(videos, filters = {}) {
           ? gaps[gapMid]
           : (gaps[gapMid - 1] + gaps[gapMid]) / 2
         : null;
+      const spanMs = dated.length > 1 ? Math.max(...dated) - Math.min(...dated.filter(Boolean)) : 0;
+      // Uploads per month across the fetched uploads (at least a week of span, so a burst
+      // of two same-day videos doesn't read as 60 a month).
+      const uploadsPerMonth =
+        dated.length > 1 ? ((dated.length - 1) / Math.max(spanMs, 7 * 86400000)) * 30 * 86400000 : null;
+      const monetization =
+        items.map((item) => item.channelMonetized).find((value) => value && value !== "unknown") || "unknown";
       const niche =
         items.map((item) => String(item.niche || "").trim()).find(Boolean) || "";
       const language =
@@ -847,6 +860,7 @@ export function rankDiscoveryChannels(videos, filters = {}) {
         facelessScore,
         facelessConfidence: facelessScore,
         monetizationConfidence: null,
+        uploadsPerMonth,
         medianDurationSeconds,
         longformShare,
         recentViewsPerHour,
@@ -862,7 +876,8 @@ export function rankDiscoveryChannels(videos, filters = {}) {
         niche,
         language,
         region,
-        monetization: "unknown",
+        monetization,
+        titles: items.map((item) => String(item.title || "")).join(" \n "),
       };
     })
     .filter(
@@ -903,14 +918,13 @@ export function rankDiscoveryChannels(videos, filters = {}) {
           : filters.format === "shorts"
             ? c.longformShare !== null && c.longformShare < 0.5
             : true) &&
+        // Channels whose language YouTube doesn't report are kept.
         (!filters.language ||
-          c.language.toLowerCase() === String(filters.language).toLowerCase()) &&
+          !c.language ||
+          c.language.toLowerCase().slice(0, 2) === String(filters.language).toLowerCase().slice(0, 2)) &&
+        (!filters.monetized || c.monetization === "likely") &&
         includesTerm(`${c.title} ${c.niche} ${c.handle}`, includeTerms) &&
-        !excludeTerms.some((term) =>
-          `${c.title} ${c.niche} ${c.handle}`
-            .toLowerCase()
-            .includes(term.toLowerCase()),
-        ) &&
+        !(excludePattern && excludePattern.test(`${c.title} ${c.niche} ${c.handle} ${c.titles}`)) &&
         (filters.facelessUnknown === "exclude"
           ? c.facelessScore !== null
           : filters.facelessUnknown === "only"
@@ -920,10 +934,7 @@ export function rankDiscoveryChannels(videos, filters = {}) {
     .sort((a, b) => {
       switch (filters.sort) {
         case "consistency":
-          return (
-            (a.uploadCadenceDays ?? Number.POSITIVE_INFINITY) -
-            (b.uploadCadenceDays ?? Number.POSITIVE_INFINITY)
-          );
+          return (b.uploadsPerMonth ?? -1) - (a.uploadsPerMonth ?? -1);
         case "created":
           return (b.createdAt ?? 0) - (a.createdAt ?? 0);
         case "recentVph":

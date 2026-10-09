@@ -6,6 +6,7 @@ import {
   Archive,
   BarChart3,
   Bookmark,
+  CircleDollarSign,
   CalendarDays,
   Check,
   ChevronDown,
@@ -142,6 +143,7 @@ const stageCopy: Record<string, { name: string; text: string; icon: ReactNode }>
   thumbnail: { name: "Thumbnail Generator", text: "Copy the style of a winning video on your topic, edit a reference, or start from scratch.", icon: <ImagePlus size={18} /> },
   review: { name: "Export", text: "Validate, render, and download everything in one bundle.", icon: <Download size={18} /> },
 };
+const PAGE_SIZE = 18;
 const NICHE_SEEDS = [
   "history documentaries",
   "true crime cases",
@@ -1389,7 +1391,10 @@ function PruneModal({
 }
 
 /* Niche Finder */
-const DEFAULT_FILTERS = {
+// Niches left out by default: music and kids content, reuploads, and niches that game the algorithm.
+const DEFAULT_EXCLUDED = ["music", "song", "lofi", "movies", "breastfeeding", "lingerie", "transparent", "transparency", "clean", "haul", "kids", "gaming", "tv", "compilation", "bodycam", "dashcam"];
+// Every filter switched off. Removing a chip sets that filter back to this value.
+const EMPTY_FILTERS = {
   minViews: 0,
   maxViews: 0,
   minAvgViews: 0,
@@ -1401,7 +1406,8 @@ const DEFAULT_FILTERS = {
   minSubs: 0,
   maxSubs: 0,
   faceless: false,
-  sort: "score",
+  monetized: false,
+  sort: "created",
   days: 90,
   duration: "any",
   region: "US",
@@ -1414,23 +1420,40 @@ const DEFAULT_FILTERS = {
   excludeTerms: "",
   facelessUnknown: "include",
 };
+// The view a first visit opens on: faceless, long-form, English channels with a typical
+// video above 5K views, newest channels first.
+const DEFAULT_FILTERS = {
+  ...EMPTY_FILTERS,
+  faceless: true,
+  format: "longform",
+  language: "en",
+  minViews: 5000,
+  excludeTerms: DEFAULT_EXCLUDED.join(", "),
+};
 type Filters = typeof DEFAULT_FILTERS;
 const SERVER_FILTERS: Array<keyof Filters> = ["days", "duration", "region"];
+const LANGUAGES: Array<[string, string]> = [["en", "English"], ["es", "Spanish"], ["pt", "Portuguese"], ["fr", "French"], ["de", "German"], ["it", "Italian"], ["hi", "Hindi"], ["ar", "Arabic"], ["ja", "Japanese"], ["ko", "Korean"], ["id", "Indonesian"], ["tr", "Turkish"], ["ru", "Russian"]];
+const NICHE_PRESETS: Array<{ label: string; query: string; filters: Partial<Filters> }> = [
+  { label: "Sleep", query: "sleep stories", filters: { minViews: 1000, minDurationMinutes: 50 } },
+  { label: "Story", query: "stories", filters: { minViews: 4000, minDurationMinutes: 30 } },
+];
+const daysAgo = (days: number) => new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
 function activeFilterChips(filters: Filters) {
   const chips: Array<[keyof Filters, string]> = [];
-  if (filters.days !== DEFAULT_FILTERS.days) chips.push(["days", `Last ${filters.days} days`]);
+  if (filters.days !== EMPTY_FILTERS.days) chips.push(["days", `Videos from the last ${filters.days} days`]);
   if (filters.duration !== "any")
     chips.push(["duration", { short: "Under 4 min", medium: "4–20 min", long: "20+ min" }[filters.duration] || filters.duration]);
-  if (filters.region !== DEFAULT_FILTERS.region) chips.push(["region", `Region ${filters.region}`]);
-  if (filters.format !== "any") chips.push(["format", filters.format === "shorts" ? "Shorts" : "Long-form"]);
-  if (filters.language) chips.push(["language", `Language ${filters.language}`]);
-  if (filters.faceless) chips.push(["faceless", "Likely faceless"]);
+  if (filters.region !== EMPTY_FILTERS.region) chips.push(["region", `Region ${filters.region}`]);
+  if (filters.faceless) chips.push(["faceless", "Faceless channels"]);
+  if (filters.monetized) chips.push(["monetized", "Monetized"]);
+  if (filters.format !== "any") chips.push(["format", filters.format === "shorts" ? "Shorts" : "Long form"]);
+  if (filters.language) chips.push(["language", LANGUAGES.find(([code]) => code === filters.language)?.[1] || `Language ${filters.language}`]);
   if (filters.facelessUnknown !== "include")
     chips.push(["facelessUnknown", filters.facelessUnknown === "exclude" ? "Faceless known" : "Faceless unknown"]);
-  if (filters.createdAfter) chips.push(["createdAfter", `Channel created after ${filters.createdAfter}`]);
-  if (filters.createdBefore) chips.push(["createdBefore", `Channel created before ${filters.createdBefore}`]);
-  if (filters.minViews) chips.push(["minViews", `Median views ≥ ${compact(filters.minViews)}`]);
-  if (filters.maxViews) chips.push(["maxViews", `Median views ≤ ${compact(filters.maxViews)}`]);
+  if (filters.createdAfter) chips.push(["createdAfter", `Started after ${filters.createdAfter}`]);
+  if (filters.createdBefore) chips.push(["createdBefore", `Started before ${filters.createdBefore}`]);
+  if (filters.minViews) chips.push(["minViews", `Typical views ≥ ${compact(filters.minViews)}`]);
+  if (filters.maxViews) chips.push(["maxViews", `Typical views ≤ ${compact(filters.maxViews)}`]);
   if (filters.minAvgViews) chips.push(["minAvgViews", `Average views ≥ ${compact(filters.minAvgViews)}`]);
   if (filters.maxAvgViews) chips.push(["maxAvgViews", `Average views ≤ ${compact(filters.maxAvgViews)}`]);
   if (filters.minVideos) chips.push(["minVideos", `Videos ≥ ${filters.minVideos}`]);
@@ -1441,7 +1464,10 @@ function activeFilterChips(filters: Filters) {
   if (filters.minDurationMinutes) chips.push(["minDurationMinutes", `Length ≥ ${filters.minDurationMinutes} min`]);
   if (filters.maxDurationMinutes) chips.push(["maxDurationMinutes", `Length ≤ ${filters.maxDurationMinutes} min`]);
   if (filters.includeTerms) chips.push(["includeTerms", `Includes ${filters.includeTerms}`]);
-  if (filters.excludeTerms) chips.push(["excludeTerms", `Excludes ${filters.excludeTerms}`]);
+  if (filters.excludeTerms) {
+    const count = filters.excludeTerms.split(",").filter((t) => t.trim()).length;
+    chips.push(["excludeTerms", `${count} excluded ${count === 1 ? "niche" : "niches"}`]);
+  }
   return chips;
 }
 function snapshotChannel(c: any) {
@@ -1456,6 +1482,11 @@ function snapshotChannel(c: any) {
     };
   const { videos, ...rest } = c;
   return { ...rest, bestVideo: trim(c.bestVideo), recentVideo: trim(c.recentVideo), savedAt: Date.now() };
+}
+// How long a channel has been posting: "5mo", "3y".
+function activeFor(since: number) {
+  const days = Math.max(0, (Date.now() - since) / 86400000);
+  return days < 30 ? `${Math.round(days)}d` : days < 365 ? `${Math.floor(days / 30)}mo` : `${Math.floor(days / 365)}y`;
 }
 export function ChannelCard({
   channel: c,
@@ -1476,17 +1507,7 @@ export function ChannelCard({
   onSimilar: () => void;
   onCopyStyle: () => void;
 }) {
-  const [broken, setBroken] = useState(false),
-    [thumbBroken, setThumbBroken] = useState(false);
-  const tags = [c.niche, c.language && c.language.toUpperCase(), c.region].filter(Boolean);
-  const hero = c.bestVideo || c.recentVideo;
-  const latest = c.recentVideo && c.recentVideo.id !== hero?.id ? c.recentVideo : null;
-  const facelessKnown = c.facelessConfidence !== null && c.facelessConfidence !== undefined;
-  const meta = [
-    c.handle,
-    c.videoCount ? `${compact(c.videoCount)} videos` : `${c.sampleCount} sampled`,
-    c.createdAt ? `started ${ageLabel(new Date(c.createdAt).toISOString())}` : "",
-  ].filter(Boolean);
+  const [broken, setBroken] = useState(false);
   const avatar =
     c.thumbnailUrl && !broken ? (
       <img className="maker-avatar" src={c.thumbnailUrl} alt="" onError={() => setBroken(true)} />
@@ -1495,55 +1516,86 @@ export function ChannelCard({
         {(c.title || "C")[0]}
       </span>
     );
-  const subs = c.subscribers === null || c.subscribers === undefined ? "" : `${compact(c.subscribers)} subs`;
-  const cadence = c.uploadCadenceDays === null || c.uploadCadenceDays === undefined ? "" : `every ~${Math.max(1, Math.round(c.uploadCadenceDays))}d`;
-  // Everything that no longer fits on the 16:9 tile stays reachable as hover text.
-  const details = [
-    hero?.title,
-    meta.join(" · "),
-    c.medianDurationSeconds ? `${durationLabel(c.medianDurationSeconds)} typical length` : "",
-    latest ? `Latest: ${latest.title} (${compact(latest.viewCount)} views, ${ageLabel(latest.publishedAt)})` : "",
-  ].filter(Boolean).join("\n");
-  return (
-    <article className="maker-channel-tile" data-selected={selected || undefined}>
-      <a className="maker-channel-tile-media" href={hero?.url || c.url} target="_blank" rel="noreferrer" title={details} aria-label={`Open ${hero?.title || c.title || "channel"} on YouTube`}>
-        {hero?.thumbnailUrl && !thumbBroken ? (
-          <img src={hero.thumbnailUrl} alt="" loading="lazy" onError={() => setThumbBroken(true)} />
-        ) : (
-          <span className="maker-yt-thumb-empty">{avatar}</span>
-        )}
+  const known = (v: unknown) => v !== null && v !== undefined;
+  const tags = [c.niche, c.language && c.language.toUpperCase(), known(c.facelessConfidence) && c.facelessConfidence >= 50 ? "Faceless" : ""].filter(Boolean);
+  // Newest and most-viewed uploads; when they are the same video, the next best fills in.
+  const recent = c.recentVideo;
+  const best = c.bestVideo?.id !== recent?.id ? c.bestVideo : (c.videos || []).find((v: any) => v.id !== recent?.id);
+  const video = (label: string, v: any) =>
+    v && (
+      <a className="maker-channel-card-video" href={v.url} target="_blank" rel="noreferrer" title={v.title}>
+        <span>{v.thumbnailUrl && <img src={v.thumbnailUrl} alt="" loading="lazy" />}</span>
+        <small>
+          <b>{label}</b> · {compact(v.viewCount)} views · {ageLabel(v.publishedAt)}
+        </small>
       </a>
-      <div className="maker-channel-tile-top">
-        <label className="maker-channel-tile-check" title="Select for a project">
+    );
+  return (
+    <article className="maker-channel-card" data-selected={selected || undefined}>
+      <div className="maker-channel-card-head">
+        {avatar}
+        <a className="maker-channel-card-name" href={c.url} target="_blank" rel="noreferrer">
+          <strong>{c.title || "Channel"}</strong>
+          <small>{c.handle || `${c.sampleCount} videos sampled`}</small>
+        </a>
+        <label className="maker-channel-card-check" title="Use as project evidence">
           <input type="checkbox" aria-label={`Select ${c.title}`} checked={selected} onChange={(e) => onSelect(e.target.checked)} />
         </label>
-        {tags[0] && <span className="maker-channel-tile-tag">{tags[0]}</span>}
-        <span className="maker-channel-tile-tools">
-          <Action label={bookmarked ? "Remove bookmark" : "Bookmark channel"} className="maker-channel-tile-tool" aria-pressed={bookmarked} onClick={onBookmark}>
-            <Bookmark size={15} />
-          </Action>
-          <Action label="Similar channels" className="maker-channel-tile-tool" onClick={onSimilar}>
-            <Users size={15} />
-          </Action>
-          <Action label={copying ? "Copying style…" : "Copy style"} className="maker-channel-tile-tool" disabled={copying} onClick={onCopyStyle}>
-            {copying ? <Loader2 size={15} className="animate-spin" /> : <Copy size={15} />}
-          </Action>
-        </span>
+        <Action label={bookmarked ? "Remove bookmark" : "Bookmark channel"} className="maker-channel-card-mark" aria-pressed={bookmarked} onClick={onBookmark}>
+          <Bookmark size={17} />
+        </Action>
       </div>
-      <div className="maker-channel-tile-body">
-        <a className="maker-channel-tile-name" href={c.url} target="_blank" rel="noreferrer">
-          {avatar}
-          <strong>{c.title || "Channel"}</strong>
-          <ArrowUpRight size={13} />
-        </a>
-        <p className="maker-channel-tile-stats">
-          {[subs, `${compact(c.medianViews)} median views`, cadence].filter(Boolean).join(" · ")}
-          {facelessKnown && (
-            <span className={c.facelessConfidence >= 50 ? "is-accent" : ""} title="Inferred from titles and thumbnails, not verified">
-              {" "}· {c.facelessConfidence}% faceless
-            </span>
-          )}
-        </p>
+      <ul className="maker-channel-card-stats">
+        {known(c.subscribers) && (
+          <li title="Subscribers">
+            <Users size={13} />
+            {compact(c.subscribers)}
+          </li>
+        )}
+        <li title="Typical (median) views of recent uploads">
+          <Eye size={13} />~{compact(c.medianViews)}
+        </li>
+        {known(c.videoCount) && (
+          <li title="Videos on the channel">
+            <Film size={13} />
+            {compact(c.videoCount)}
+          </li>
+        )}
+        {c.createdAt && (
+          <li title={`Active since ${new Date(c.createdAt).toLocaleDateString([], { month: "short", year: "numeric" })}`}>
+            <CalendarDays size={13} />
+            {activeFor(c.createdAt)}
+          </li>
+        )}
+        {c.monetization === "likely" && (
+          <li className="is-money" title="Likely monetized: estimated from subscribers and recent watch time">
+            <CircleDollarSign size={13} />
+            Monetized
+          </li>
+        )}
+      </ul>
+      {tags.length > 0 && (
+        <ul className="maker-channel-card-tags">
+          {tags.map((tag) => (
+            <li key={tag}>{tag}</li>
+          ))}
+        </ul>
+      )}
+      {(recent || best) && (
+        <div className="maker-channel-card-videos">
+          {video("Recent", recent)}
+          {video("Best", best)}
+        </div>
+      )}
+      <div className="maker-channel-card-actions">
+        <button className="maker-outline" onClick={onSimilar}>
+          <Users size={15} />
+          Similar channels
+        </button>
+        <button className="maker-outline" disabled={copying} onClick={onCopyStyle}>
+          {copying ? <Loader2 size={15} className="animate-spin" /> : <Copy size={15} />}
+          {copying ? "Copying…" : "Copy style"}
+        </button>
       </div>
     </article>
   );
@@ -1570,22 +1622,27 @@ function Discovery({
     [selected, setSelected] = useState<string[]>([]);
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [draftFilters, setDraftFilters] = useState<Filters>(DEFAULT_FILTERS);
-  const cacheKey = `autoyt-research-${accountId}`;
+  const cacheKey = `autoyt-niches-${accountId}`;
+  const [shown, setShown] = useState(PAGE_SIZE);
+  const endRef = useRef<HTMLDivElement | null>(null);
   const loadCollections = () =>
     creatorApi(`/api/maker/collections?accountId=${accountId}`).then((d) =>
       setCollections(d.collections || []),
     );
   useEffect(() => {
+    let cache: any = null;
     try {
-      const raw = sessionStorage.getItem(cacheKey);
-      if (raw) {
-        const cache = JSON.parse(raw);
-        setResult(cache.result);
-        setFilters({ ...DEFAULT_FILTERS, ...(cache.filters || {}) });
-        setSearch(query || cache.search || "");
-        setSelected(cache.selected || []);
-      }
+      cache = JSON.parse(sessionStorage.getItem(cacheKey) || "null");
     } catch {}
+    if (cache?.result && (!query || query === cache.search)) {
+      setResult(cache.result);
+      setFilters({ ...DEFAULT_FILTERS, ...(cache.filters || {}) });
+      setSearch(cache.search || "");
+      setSelected(cache.selected || []);
+    } else {
+      // Results load on open: the linked search, or a faceless niche to start from.
+      void scan(query || NICHE_SEEDS[Math.floor(Math.random() * NICHE_SEEDS.length)]);
+    }
     void loadCollections().catch((e) => onError(e.message));
   }, [accountId]);
   useEffect(() => {
@@ -1615,6 +1672,7 @@ function Discovery({
         }),
       );
       setSelected([]);
+      setShown(PAGE_SIZE);
       setTab("channels");
       return true;
     } catch (e) {
@@ -1668,6 +1726,7 @@ function Discovery({
       setResult(data);
       setSearch(data.query);
       setSelected([]);
+      setShown(PAGE_SIZE);
       setTab("channels");
       writeDeepLink({ view: "discover", discoveryQuery: data.query });
       setSimilar({ title: c.title, previous });
@@ -1683,7 +1742,23 @@ function Discovery({
     setFilterOpen(false);
     if (serverChanged && result && search) void scan(search, next);
   }
-  const channels = rankDiscoveryChannels(result?.videos || [], filters);
+  // Filters apply instantly on the client. "Discovery" keeps the server's ranking, which
+  // weighs fit to the niche and repeatable breakouts.
+  const ranked = rankDiscoveryChannels(result?.videos || [], filters);
+  const serverOrder = new Map<string, number>((result?.channels || []).map((c: any, i: number) => [c.id, i]));
+  const channels = filters.sort === "score" && serverOrder.size
+    ? [...ranked].sort((a: any, b: any) => (serverOrder.get(a.id) ?? 1e6) - (serverOrder.get(b.id) ?? 1e6))
+    : ranked;
+  const visible = channels.slice(0, shown);
+  useEffect(() => {
+    const node = endRef.current;
+    if (!node || shown >= channels.length) return;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) setShown((n) => n + PAGE_SIZE);
+    }, { rootMargin: "400px" });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [shown, channels.length, tab]);
   const chips = activeFilterChips(filters);
   async function createFromSelection() {
     try {
@@ -1736,7 +1811,7 @@ function Discovery({
                 </button>
               </span>
             ) : (
-              "Search a niche or paste a channel link. Metrics describe the sampled videos, not whole channels."
+              "Channels finding an audience on YouTube. Search a niche or paste a channel link."
             )
           }
         />
@@ -1791,13 +1866,13 @@ function Discovery({
                 {label}
                 <button
                   aria-label={`Remove ${label}`}
-                  onClick={() => applyFilters({ ...filters, [key]: DEFAULT_FILTERS[key] })}
+                  onClick={() => applyFilters({ ...filters, [key]: EMPTY_FILTERS[key] })}
                 >
                   <X size={12} />
                 </button>
               </span>
             ))}
-            <button className="maker-link" onClick={() => applyFilters({ ...DEFAULT_FILTERS, sort: filters.sort })}>
+            <button className="maker-link" onClick={() => applyFilters({ ...EMPTY_FILTERS, sort: filters.sort, days: filters.days, duration: filters.duration, region: filters.region })}>
               Clear all
             </button>
           </div>
@@ -1814,6 +1889,24 @@ function Discovery({
               { value: "saved", label: "Collections", hint: research.length ? String(research.length) : undefined },
             ]}
           />
+          <div className="maker-niche-presets" role="group" aria-label="Presets">
+            <span>Presets</span>
+            {NICHE_PRESETS.map((preset) => (
+              <button
+                key={preset.label}
+                className="maker-outline"
+                disabled={busy}
+                onClick={() => {
+                  const next = { ...filters, ...preset.filters };
+                  setFilters(next);
+                  setSimilar(null);
+                  void scan(preset.query, next);
+                }}
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
           <label className="maker-sort">
             Sort by
             <select
@@ -1822,16 +1915,14 @@ function Discovery({
               onChange={(e) => setFilters({ ...filters, sort: e.target.value })}
             >
               {[
-                ["score", "Discovery score"],
-                ["medianViews", "Median views"],
+                ["created", "Recency (newest channel)"],
+                ["medianViews", "Typical views"],
                 ["averageViews", "Average views"],
-                ["newest", "Latest upload"],
-                ["created", "Newest channels"],
                 ["subscribers", "Subscribers"],
+                ["consistency", "Consistency (uploads a month)"],
                 ["ratio", "Views per subscriber"],
-                ["recentVph", "Recent views per hour"],
-                ["consistency", "Upload consistency"],
-                ["opportunity", "Opportunity"],
+                ["newest", "Latest upload"],
+                ["score", "Discovery"],
               ].map(([v, l]) => (
                 <option value={v} key={v}>
                   {l}
@@ -1923,17 +2014,22 @@ function Discovery({
           <>
             <div className="maker-result-summary">
               <span>
-                {channels.length} {channels.length === 1 ? "channel" : "channels"} · {result.videos?.length || 0} sampled videos
+                {channels.length} {channels.length === 1 ? "channel" : "channels"} · {result.videos?.length || 0} videos analyzed
                 {result.sampledAt ? ` · sampled ${new Date(result.sampledAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : ""}
               </span>
-              <span>Faceless is inferred · monetization isn’t shown because it can’t be verified</span>
+              <span>Faceless and monetized are estimates</span>
             </div>
             {channels.length ? (
-              <div className="maker-channel-grid">{channels.map(card)}</div>
+              <>
+                <div className="maker-channel-grid">{visible.map(card)}</div>
+                <div ref={endRef} className="maker-niche-end">
+                  {shown < channels.length ? <Loader2 size={16} className="animate-spin" aria-label="Loading more channels" /> : "No more channels to load"}
+                </div>
+              </>
             ) : (
-              <Empty title="No channels match these filters" text="Loosen a metric filter or remove a term.">
-                <button className="maker-outline" onClick={() => applyFilters({ ...DEFAULT_FILTERS, sort: filters.sort, days: filters.days, duration: filters.duration, region: filters.region })}>
-                  Clear metric filters
+              <Empty title="No channels match these filters" text="Remove a filter, or shuffle to another niche.">
+                <button className="maker-outline" onClick={() => applyFilters({ ...EMPTY_FILTERS, sort: filters.sort, days: filters.days, duration: filters.duration, region: filters.region })}>
+                  Clear filters
                 </button>
               </Empty>
             )}
@@ -2016,6 +2112,7 @@ function Discovery({
 }
 function FilterForm({ value: f, onChange }: { value: Filters; onChange: (f: Filters) => void }) {
   const set = (patch: Partial<Filters>) => onChange({ ...f, ...patch });
+  const excluded = f.excludeTerms.split(",").map((t) => t.trim()).filter(Boolean);
   const num = (key: keyof Filters, label: string, extra: Record<string, number> = {}) => (
     <label className="maker-field">
       {label}
@@ -2071,7 +2168,14 @@ function FilterForm({ value: f, onChange }: { value: Filters; onChange: (f: Filt
           </label>
           <label className="maker-field">
             Language
-            <input value={f.language} placeholder="Any, e.g. en" onChange={(e) => set({ language: e.target.value })} />
+            <select value={f.language} onChange={(e) => set({ language: e.target.value })}>
+              <option value="">Any language</option>
+              {LANGUAGES.map(([code, name]) => (
+                <option key={code} value={code}>
+                  {name}
+                </option>
+              ))}
+            </select>
           </label>
           <label className="maker-field">
             Unknown faceless
@@ -2082,28 +2186,40 @@ function FilterForm({ value: f, onChange }: { value: Filters; onChange: (f: Filt
             </select>
           </label>
         </div>
-        <Switch className="maker-switch-row maker-filter-switch" compact checked={f.faceless} onChange={(on) => set({ faceless: on })} label="Likely faceless channels only" />
+        <Switch className="maker-switch-row maker-filter-switch" compact checked={f.faceless} onChange={(on) => set({ faceless: on })} label="Faceless channels only" />
+        <Switch className="maker-switch-row maker-filter-switch" compact checked={f.monetized} onChange={(on) => set({ monetized: on })} label="Monetized channels only (estimated)" />
       </section>
       <section>
         <h3>Channel recency</h3>
-        <p className="maker-filter-note">When the channel was created, from YouTube channel data. Channels without a date are left out while a date is set.</p>
+        <p className="maker-filter-note">When the channel started posting: its first upload, or the date it was created when it has too many videos to check.</p>
         <div className="maker-grid-2">
           <label className="maker-field">
-            Created after
+            From
             <input type="date" value={f.createdAfter} max={f.createdBefore || undefined} onChange={(e) => set({ createdAfter: e.target.value })} />
           </label>
           <label className="maker-field">
-            Created before
+            To
             <input type="date" value={f.createdBefore} min={f.createdAfter || undefined} onChange={(e) => set({ createdBefore: e.target.value })} />
           </label>
+        </div>
+        <div className="maker-chips">
+          {[
+            [90, "Last 3 months"],
+            [180, "Last 6 months"],
+            [365, "Last year"],
+          ].map(([days, label]) => (
+            <button key={days} type="button" className="maker-chip" aria-pressed={f.createdAfter === daysAgo(days as number)} onClick={() => set({ createdAfter: daysAgo(days as number), createdBefore: "" })}>
+              {label}
+            </button>
+          ))}
         </div>
       </section>
       <section>
         <h3>View statistics</h3>
-        <p className="maker-filter-note">Median views show a channel's typical video. Average views get pulled up by a single viral hit.</p>
+        <p className="maker-filter-note">Typical views is the median of a channel's latest uploads. Average views get pulled up by a single viral hit.</p>
         <div className="maker-grid-4">
-          {num("minViews", "Min median views")}
-          {num("maxViews", "Max median views")}
+          {num("minViews", "Min typical views")}
+          {num("maxViews", "Max typical views")}
           {num("minAvgViews", "Min average views")}
           {num("maxAvgViews", "Max average views")}
           {num("minRatio", "Min views per subscriber", { step: 0.05 })}
@@ -2116,22 +2232,41 @@ function FilterForm({ value: f, onChange }: { value: Filters; onChange: (f: Filt
           {num("maxSubs", "Max subscribers")}
           {num("minVideos", "Min videos on channel")}
           {num("maxVideos", "Max videos on channel")}
-          {num("minDurationMinutes", "Min length (min)")}
-          {num("maxDurationMinutes", "Max length (min)")}
+          {num("minDurationMinutes", "Min video length (min)")}
+          {num("maxDurationMinutes", "Max video length (min)")}
         </div>
       </section>
       <section>
         <h3>Niches</h3>
-        <div className="maker-grid-2">
-          <label className="maker-field">
-            Include terms
-            <input value={f.includeTerms} placeholder="anime, history" onChange={(e) => set({ includeTerms: e.target.value })} />
-          </label>
-          <label className="maker-field">
-            Exclude terms
-            <input value={f.excludeTerms} placeholder="gaming, reaction" onChange={(e) => set({ excludeTerms: e.target.value })} />
-          </label>
-        </div>
+        <label className="maker-field">
+          Include terms
+          <input value={f.includeTerms} placeholder="anime, history" onChange={(e) => set({ includeTerms: e.target.value })} />
+        </label>
+        <label className="maker-field">
+          Excluded niches
+          <input
+            placeholder="Type a niche and press Enter"
+            onKeyDown={(e) => {
+              const value = e.currentTarget.value.trim().toLowerCase().replace(/,/g, "");
+              if (e.key !== "Enter" || !value) return;
+              e.preventDefault();
+              if (!excluded.includes(value)) set({ excludeTerms: [...excluded, value].join(", ") });
+              e.currentTarget.value = "";
+            }}
+          />
+        </label>
+        {excluded.length > 0 && (
+          <div className="maker-excluded">
+            {excluded.map((term) => (
+              <span className="maker-chip" key={term}>
+                {term}
+                <button type="button" aria-label={`Stop excluding ${term}`} onClick={() => set({ excludeTerms: excluded.filter((t) => t !== term).join(", ") })}>
+                  <X size={12} />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
       </section>
     </div>
   );

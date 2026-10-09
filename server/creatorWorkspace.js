@@ -32,6 +32,7 @@ import { sceneMove, zoompanFilter } from "../src/utils/sceneMotion.js";
 import { ensureFile, markSaved, removeFile, saveDirectory, saveFile } from "./assetStore.js";
 import { registerDramaSeries } from "./dramaSeries.js";
 import { streamZip } from "./zipStream.js";
+import { cachedDiscovery, enrichDiscoveryChannels } from "./nicheDiscovery.js";
 import { registerDramaProduction } from "./dramaProduction.js";
 import { DRAMA_SCRIPT_SCHEMA, DRAMA_SERIES_SOURCE, episodeContext, normalizeDramaStoryBible } from "../src/utils/dramaTemplates.js";
 import { sceneAnimationPrompt, shotDirectionRules, timedBeatsDirection } from "../src/utils/shortfilmTemplates.js";
@@ -4318,7 +4319,11 @@ export function registerCreatorWorkspace(app) {
         const channel = style.profile.sourceChannel;
         result = { videos: style.profile.topVideos.map(video=>({...video,channelId:channel.id,channelTitle:channel.title,channelUrl:channel.url,channelThumbnailUrl:channel.thumbnailUrl,subscriberCount:channel.subscriberCount})), competitors:[] };
       } else {
-        result = await dependencies.radar({ ...input, accountId:a.id,maxResults:50 });
+        const key = JSON.stringify(["discover", String(input.query || "").trim().toLowerCase(), input.publishedAfterDays, input.duration, input.regionCode]);
+        result = await cachedDiscovery(key, async () => {
+          const radar = await dependencies.radar({ ...input, accountId: a.id, maxResults: 120, webSearch: true });
+          return { ...radar, videos: await enrichDiscoveryChannels(radar.videos, { youtube: dependencies.youtube, faceless: dependencies.faceless }) };
+        });
       }
       const channels = await rerankWithJev(rankDiscoveryChannels(result.videos, input.filters), {
         context: { niche: String(input.niche || input.query || "").slice(0, 160), filters: input.filters || {} },
@@ -4413,13 +4418,18 @@ export function registerCreatorWorkspace(app) {
         channel = input.channel || {};
       const query = similarChannelQuery(channel);
       if (!query) throw fail("This channel has no titles or niche to compare");
-      const result = await dependencies.radar({
+      const options = {
         query,
         accountId: a.id,
-        maxResults: 50,
+        maxResults: 120,
+        webSearch: true,
         publishedAfterDays: input.filters?.days || 90,
         duration: input.filters?.duration || "any",
         regionCode: input.filters?.region || "US",
+      };
+      const result = await cachedDiscovery(JSON.stringify(["similar", query, options.publishedAfterDays, options.duration, options.regionCode]), async () => {
+        const radar = await dependencies.radar(options);
+        return { ...radar, videos: await enrichDiscoveryChannels(radar.videos, { youtube: dependencies.youtube, faceless: dependencies.faceless }) };
       });
       const videos = (result.videos || []).filter(
         (video) => video.channelId && video.channelId !== channel.id,
