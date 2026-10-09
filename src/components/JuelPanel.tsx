@@ -2,8 +2,9 @@
 // chat (Vibe Edit, automation agents, Creative Studio agents). It knows the page you're on (pages announce
 // it), streams what its specialists do, runs paid work straight away with its credit cost shown (a balance
 // that can't cover it gets the credits toast), and shows an agent operator's answers and generations inline.
-import { FormEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import gsap from "gsap";
 import { AlertCircle, ArrowDown, ArrowUp, ArrowUpRight, Check, ChevronRight, Coins, Copy, History, Loader2, MapPin, Mic, Pencil, Plus, RotateCcw, Sparkles, Square, Trash2, X } from "lucide-react";
 import { readDeepLink } from "../utils/tiktokRoute";
 import { toast } from "../utils/toast";
@@ -22,6 +23,10 @@ type Live = { text: string; reply: string; steps: Step[]; spends: JuelSpend[]; a
 export type JuelPageTools = { specialist: string; actions: Record<string, { args: string; about: string; risk: "read" | "change" | "paid" | "publish" | "delete"; cost?: string }> };
 /** Where the user is. `starters` are the page's quick prompts; `details.persona` picks a Creative Studio persona. */
 export type JuelContext = { surface: string; entityId?: string; label?: string; details?: any; clientTools?: JuelPageTools; starters?: Array<{ label: string; prompt: string }>; intro?: { title: string; body: string } };
+
+// Motion: the panel rises into place and its parts follow; it sinks away on close. Reduced motion only fades.
+const calm = () => typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+const RISE = "expo.out";
 
 const SPECIALIST: Record<string, string> = { automation: "Automation", publisher: "Publisher", recap: "Recap", editor: "Editor", producer: "Producer", studio: "Studio", film: "Film", research: "Research", community: "Community", account: "Account", admin: "Admin" };
 
@@ -121,6 +126,11 @@ const DEFAULT_STARTERS = [
 
 export function JuelButton() {
   const [open, setOpen] = useState(false);
+  // Kept mounted while it animates away, so closing sinks it instead of cutting it.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    if (open) setMounted(true);
+  }, [open]);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "j") {
@@ -137,14 +147,14 @@ export function JuelButton() {
         <Sparkles size={15} aria-hidden="true" />
         <span>Juel</span>
       </button>
-      {open ? createPortal(<JuelPanel onClose={() => setOpen(false)} />, document.body) : null}
+      {mounted ? createPortal(<JuelPanel onClose={() => setOpen(false)} leaving={!open} onLeft={() => setMounted(false)} />, document.body) : null}
     </>
   );
 }
 
 /** Juel's conversation. The header panel uses it; a page can embed it in place of its own chat, where it
  *  fills its container and has no close button. `headStart` goes at the head's start (a page's collapse). */
-export function JuelPanel({ onClose, embedded = false, headStart }: { onClose?: () => void; embedded?: boolean; headStart?: ReactNode }) {
+export function JuelPanel({ onClose, embedded = false, headStart, leaving = false, onLeft }: { onClose?: () => void; embedded?: boolean; headStart?: ReactNode; leaving?: boolean; onLeft?: () => void }) {
   const [thread, setThread] = useState<Thread | null>(null);
   const [message, setMessage] = useState("");
   const [editFrom, setEditFrom] = useState<number | null>(null);
@@ -162,6 +172,42 @@ export function JuelPanel({ onClose, embedded = false, headStart }: { onClose?: 
   const stopper = useRef<AbortController | null>(null);
   const context = announced || routeContext();
   const key = pageKey(context);
+  const root = useRef<HTMLElement>(null);
+  const liveBubble = useRef<HTMLParagraphElement>(null);
+
+  // The floating panel slides up into place, then its head and composer settle in after it.
+  useLayoutEffect(() => {
+    const el = root.current;
+    if (!el || embedded) return;
+    const ctx = gsap.context(() => {
+      if (calm()) {
+        gsap.from(el, { autoAlpha: 0, duration: 0.18, ease: "none", clearProps: "opacity,visibility" });
+        return;
+      }
+      gsap.timeline({ defaults: { ease: RISE } })
+        .from(el, { y: 48, autoAlpha: 0, scale: 0.97, transformOrigin: "50% 100%", duration: 0.7, clearProps: "transform,opacity,visibility" })
+        .from(el.querySelectorAll(".juel-head > *"), { y: 10, autoAlpha: 0, duration: 0.5, stagger: 0.035, clearProps: "transform,opacity,visibility" }, 0.12)
+        .from(el.querySelector(".juel-composer"), { y: 22, autoAlpha: 0, duration: 0.6, clearProps: "transform,opacity,visibility" }, 0.18);
+    }, el);
+    return () => ctx.revert();
+  }, [embedded]);
+
+  // Closing sinks it; opening again before it's gone brings it straight back.
+  const wasLeaving = useRef(false);
+  useEffect(() => {
+    const el = root.current;
+    if (!el || embedded) return;
+    if (leaving) {
+      wasLeaving.current = true;
+      gsap.killTweensOf(el);
+      gsap.to(el, calm() ? { autoAlpha: 0, duration: 0.12, onComplete: onLeft } : { y: 28, autoAlpha: 0, scale: 0.98, transformOrigin: "50% 100%", duration: 0.26, ease: "power3.in", onComplete: onLeft });
+    } else if (wasLeaving.current) {
+      wasLeaving.current = false;
+      gsap.killTweensOf(el);
+      gsap.to(el, { y: 0, autoAlpha: 1, scale: 1, duration: 0.45, ease: RISE, clearProps: "transform,opacity,visibility" });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leaving, embedded]);
 
   useEffect(() => {
     const onContext = (event: Event) => setAnnounced((event as CustomEvent<JuelContext | null>).detail || null);
@@ -197,6 +243,35 @@ export function JuelPanel({ onClose, embedded = false, headStart }: { onClose?: 
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
+
+  // The empty state's invitation and quick prompts rise in one after another once it's known to be empty.
+  const empty = ready && !thread?.messages.length && !live;
+  useLayoutEffect(() => {
+    const el = root.current?.querySelector(".juel-empty");
+    if (!empty || !el || calm()) return;
+    const tween = gsap.from(el.querySelectorAll(":scope > *:not(.juel-starters), .juel-starter"), { y: 14, autoAlpha: 0, duration: 0.6, ease: RISE, stagger: 0.045, delay: embedded ? 0 : 0.16, clearProps: "transform,opacity,visibility" });
+    return () => {
+      tween.revert();
+    };
+  }, [empty, key, embedded]);
+
+  // The send button pops awake when there's something to send.
+  const sendButton = useRef<HTMLButtonElement>(null);
+  const canSend = Boolean(message.trim());
+  useEffect(() => {
+    if (!canSend || !sendButton.current || calm()) return;
+    gsap.fromTo(sendButton.current, { scale: 0.82 }, { scale: 1, duration: 0.42, ease: "back.out(3)", clearProps: "transform" });
+  }, [canSend]);
+
+  // A sent message lifts out of the composer into the conversation.
+  useLayoutEffect(() => {
+    const el = liveBubble.current;
+    if (!el || calm()) return;
+    const tween = gsap.from(el, { y: 26, scale: 0.94, autoAlpha: 0, transformOrigin: "100% 100%", duration: 0.5, ease: RISE, clearProps: "transform,opacity,visibility" });
+    return () => {
+      tween.kill();
+    };
+  }, [live?.startedAt]);
 
   // Follow new output only while the reader is at the bottom; scrolling up to read stops it.
   useEffect(() => {
@@ -336,7 +411,7 @@ export function JuelPanel({ onClose, embedded = false, headStart }: { onClose?: 
   const intro = context.intro || { title: "Ask Juel anything in AutoYT", body: "It works with a team of specialists (recaps, editing, publishing, research, and more), runs what you ask straight away, and shows what each paid step costs in credits." };
 
   return (
-    <aside className={`juel${embedded ? " juel-embedded" : ""}`} role={embedded ? undefined : "dialog"} aria-label="Juel">
+    <aside ref={root} className={`juel${embedded ? " juel-embedded" : ""}`} role={embedded ? undefined : "dialog"} aria-label="Juel">
       <header className="juel-head">
         {headStart}
         <span className="juel-title"><span className="juel-mark" aria-hidden="true"><Sparkles size={13} /></span>Juel</span>
@@ -361,7 +436,7 @@ export function JuelPanel({ onClose, embedded = false, headStart }: { onClose?: 
       <div className="juel-body" ref={body} onScroll={onScroll}>
         <div className="juel-thread">
           {!thread?.messages.length && !live ? (
-            <div className="juel-empty">
+            <div className="juel-empty" data-ready={ready ? undefined : "false"}>
               <span className="juel-empty-mark" aria-hidden="true"><Sparkles size={20} /></span>
               <h2>{intro.title}</h2>
               <p>{intro.body}</p>
@@ -399,7 +474,7 @@ export function JuelPanel({ onClose, embedded = false, headStart }: { onClose?: 
           )))}
           {live ? (
             <>
-              <div className="juel-user-row"><p className="juel-user">{live.text}</p></div>
+              <div className="juel-user-row"><p ref={liveBubble} className="juel-user">{live.text}</p></div>
               <div className="juel-reply is-live">
                 <Activity steps={live.steps} working={!live.reply} startedAt={live.startedAt} />
                 {live.reply ? <div className="juel-text is-streaming"><FormattedChatText content={live.reply} theme={document.documentElement.dataset.theme === "light" ? "light" : "dark"} /></div> : null}
@@ -451,7 +526,7 @@ export function JuelPanel({ onClose, embedded = false, headStart }: { onClose?: 
           {sending ? (
             <button type="button" className="juel-send is-stop" onClick={() => stopper.current?.abort()} aria-label="Stop" title="Stop"><Square size={13} /></button>
           ) : (
-            <button type="submit" className="juel-send" disabled={!message.trim()} aria-label="Send"><ArrowUp size={16} /></button>
+            <button ref={sendButton} type="submit" className="juel-send" disabled={!canSend} aria-label="Send"><ArrowUp size={16} /></button>
           )}
         </div>
       </form>
@@ -561,6 +636,13 @@ function Conversations({ context, current, onClose, onPick, onDeleted }: { conte
   const [threads, setThreads] = useState<ThreadSummary[] | null>(null);
   const [opening, setOpening] = useState("");
   const panel = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (!panel.current || calm()) return;
+    const tween = gsap.from(panel.current, { y: -10, autoAlpha: 0, duration: 0.35, ease: RISE, clearProps: "transform,opacity,visibility" });
+    return () => {
+      tween.kill();
+    };
+  }, []);
   useEffect(() => {
     fetch("/api/juel/threads").then((r) => (r.ok ? r.json() : { threads: [] })).then((d) => setThreads(d.threads || [])).catch(() => setThreads([]));
     panel.current?.focus();
