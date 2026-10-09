@@ -620,7 +620,7 @@ function WorkspaceApp() {
                   </Suspense>
                 </PageBoundary>
               </motion.div>
-            ) : isGuest && activeView !== "tools" ? (
+            ) : isGuest && activeView !== "tools" && activeView !== "all-tools" ? (
               <GuestToolView key={`${activeView}-${routeLink.view === "studio" ? routeLink.studioTab : routeLink.view === "tool" ? routeLink.toolId : ""}`} view={activeView} studioTab={routeLink.view === "studio" ? routeLink.studioTab : undefined} toolId={routeLink.view === "tool" ? routeLink.toolId : undefined} theme={channelTheme} onBack={() => handleNavigate({ view: "tools" })} onUse={() => setSignInOpen(true)} />
             ) : ["discover", "projects", "create", "styles", "drama"].includes(activeView) ? (
               <CreatorWorkspace key="creator-workspace" route={routeLink} accountId={auth?.activeAccount?.id} theme={channelTheme} />
