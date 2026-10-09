@@ -34,6 +34,7 @@ import {
   Pencil,
   Plus,
   RefreshCw,
+  AlertCircle,
   RotateCcw,
   Save,
   Scissors,
@@ -153,28 +154,38 @@ type Job = {
   error?: string;
   createdAt: number;
 };
-export async function creatorApi(url: string, body?: unknown, method?: string) {
+export async function creatorApi(url: string, body?: unknown, method?: string, options: { signal?: AbortSignal } = {}) {
   const response = await fetch(url, {
     method: method || (body === undefined ? "GET" : "POST"),
     headers:
       body === undefined ? undefined : { "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
+    signal: options.signal,
   });
-  const data = await response.json();
-  if (!response.ok) {
-    const error = new Error(data.error || "Request failed. Try again.") as Error & {
-      status?: number;
-    };
+  // An outage or proxy page comes back as HTML; it gets a plain message, never a parser error.
+  const text = await response.text();
+  let data: any = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    data = null;
+  }
+  if (!response.ok || data === null) {
+    const message = data?.error || (data === null || response.status >= 500 ? "The server is unavailable right now. Try again in a moment." : "Request failed. Try again.");
+    const error = new Error(message) as Error & { status?: number };
     error.status = response.status;
     throw error;
   }
   return data;
 }
-const compact = (value: number) =>
-  new Intl.NumberFormat("en", {
-    notation: "compact",
-    maximumFractionDigits: 1,
-  }).format(value || 0);
+// Unknown counts read as a dash, never as zero.
+const compact = (value: number | null | undefined) =>
+  value === null || value === undefined || !Number.isFinite(Number(value))
+    ? "—"
+    : new Intl.NumberFormat("en", {
+        notation: "compact",
+        maximumFractionDigits: 1,
+      }).format(Number(value));
 const durationLabel = (seconds: number) => {
   const value = Math.max(0, Math.round(Number(seconds) || 0));
   return `${Math.floor(value / 60)}:${String(value % 60).padStart(2, "0")}`;
@@ -1531,7 +1542,7 @@ export function ChannelCard({
   const video = (label: string, v: any) =>
     v && (
       <a className="maker-channel-card-video" href={v.url} target="_blank" rel="noreferrer" title={v.title}>
-        <span>{v.thumbnailUrl && <img src={v.thumbnailUrl} alt="" loading="lazy" />}</span>
+        <span>{v.thumbnailUrl && <img src={v.thumbnailUrl} alt="" loading="lazy" onError={(e) => (e.currentTarget.style.display = "none")} />}</span>
         <small>
           <b>{label}</b> · {compact(v.viewCount)} views · {ageLabel(v.publishedAt)}
         </small>
@@ -1543,10 +1554,10 @@ export function ChannelCard({
         {avatar}
         <a className="maker-channel-card-name" href={c.url} target="_blank" rel="noreferrer">
           <strong>{c.title || "Channel"}</strong>
-          <small>{c.handle || `${c.sampleCount} videos sampled`}</small>
+          <small>{c.handle || (Number.isFinite(Number(c.sampleCount)) ? `${c.sampleCount} videos sampled` : "")}</small>
         </a>
         <label className="maker-channel-card-check" title="Use as project evidence">
-          <input type="checkbox" aria-label={`Select ${c.title}`} checked={selected} onChange={(e) => onSelect(e.target.checked)} />
+          <input type="checkbox" aria-label={`Select ${c.title || "this channel"}`} checked={selected} onChange={(e) => onSelect(e.target.checked)} />
         </label>
         <Action label={bookmarked ? "Remove bookmark" : "Bookmark channel"} className="maker-channel-card-mark" aria-pressed={bookmarked} onClick={onBookmark}>
           <Bookmark size={17} />
@@ -1625,21 +1636,36 @@ function Discovery({
     [busy, setBusy] = useState(false),
     [filterOpen, setFilterOpen] = useState(false),
     [tab, setTab] = useState("channels"),
-    [copying, setCopying] = useState(""),
-    [similar, setSimilar] = useState<{ title: string; previous: any } | null>(null),
+    [copying, setCopying] = useState<Set<string>>(() => new Set()),
+    [similar, setSimilar] = useState<{ title: string; previous: any; channel: any } | null>(null),
     [failed, setFailed] = useState(""),
-    [shuffle, setShuffle] = useState(0);
+    [shuffle, setShuffle] = useState(0),
+    // The search the shown results belong to (the box can hold a newer, unsent one).
+    [shownQuery, setShownQuery] = useState(query || "");
   const [collections, setCollections] = useState<any[]>([]),
+    [collectionsLoaded, setCollectionsLoaded] = useState(false),
     [selected, setSelected] = useState<string[]>([]);
+  // Only the latest search or similar lookup may show; starting one cancels the one before.
+  const requestId = useRef(0);
+  const inFlight = useRef<AbortController | null>(null);
+  const begin = () => {
+    inFlight.current?.abort();
+    const controller = new AbortController();
+    inFlight.current = controller;
+    return { id: ++requestId.current, signal: controller.signal };
+  };
+  // The bookmarks collection is created once, even when two bookmarks land before it exists.
+  const bookmarkCreate = useRef<Promise<string> | null>(null);
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [draftFilters, setDraftFilters] = useState<Filters>(DEFAULT_FILTERS);
   const cacheKey = `autoyt-niche-feed-${accountId}`;
   const [shown, setShown] = useState(PAGE_SIZE);
   const endRef = useRef<HTMLDivElement | null>(null);
   const loadCollections = () =>
-    creatorApi(`/api/maker/collections?accountId=${accountId}`).then((d) =>
-      setCollections(d.collections || []),
-    );
+    creatorApi(`/api/maker/collections?accountId=${accountId}`).then((d) => {
+      setCollections(d.collections || []);
+      setCollectionsLoaded(true);
+    });
   useEffect(() => {
     let cache: any = null;
     try {
@@ -1649,7 +1675,9 @@ function Discovery({
       setResult(cache.result);
       setFilters({ ...DEFAULT_FILTERS, ...(cache.filters || {}) });
       setSearch(cache.search || "");
+      setShownQuery(cache.search || "");
       setSelected(cache.selected || []);
+      setShuffle(Number(cache.shuffle) || 0);
     } else {
       // Results load on open: the linked search, or the feed across faceless niches.
       void scan(query || "");
@@ -1659,23 +1687,37 @@ function Discovery({
   useEffect(() => {
     if (result)
       try {
-        sessionStorage.setItem(cacheKey, JSON.stringify({ result, filters, search, selected }));
+        sessionStorage.setItem(cacheKey, JSON.stringify({ result, filters, search: shownQuery, selected, shuffle }));
       } catch {}
-  }, [result, filters, search, selected]);
+  }, [result, filters, shownQuery, selected, shuffle]);
+  // Back and forward: the address names a search the page isn't showing, so run it.
+  const routed = useRef(true);
+  useEffect(() => {
+    if (routed.current) {
+      routed.current = false;
+      return;
+    }
+    if ((query || "") !== shownQuery) {
+      setSimilar(null);
+      void scan(query || "", filters, shuffle, { link: false });
+    }
+  }, [query]);
+  useEffect(() => () => inFlight.current?.abort(), []);
   const bookmarkCollection = collections.find((c) => c.data?.kind === "bookmarks");
   const bookmarks: any[] = bookmarkCollection?.data?.channels || [];
   const research = collections.filter((c) => c.data?.kind !== "bookmarks");
   // An empty search loads the feed: channels across several faceless niches.
-  async function scan(value = search, nextFilters = filters, nextShuffle = shuffle) {
+  // A failed search keeps the results and address it had, and says what went wrong above them.
+  async function scan(value = search, nextFilters = filters, nextShuffle = shuffle, { link = true } = {}) {
     value = value.trim();
+    const { id, signal } = begin();
     setBusy(true);
     setFailed("");
     onError("");
     try {
-      writeDeepLink({ view: "discover", discoveryQuery: value });
-      setSearch(value);
-      setResult(
-        await creatorApi("/api/maker/discover", {
+      const data = await creatorApi(
+        "/api/maker/discover",
+        {
           accountId,
           query: value,
           shuffle: nextShuffle,
@@ -1683,21 +1725,33 @@ function Discovery({
           duration: nextFilters.duration,
           regionCode: nextFilters.region,
           filters: nextFilters,
-        }),
+        },
+        undefined,
+        { signal },
       );
+      if (id !== requestId.current) return false;
+      if (link) writeDeepLink({ view: "discover", discoveryQuery: value });
+      setResult(data);
+      setSearch(value);
+      setShownQuery(value);
+      setSimilar(null);
       setSelected([]);
       setShown(PAGE_SIZE);
       setTab("channels");
       return true;
     } catch (e) {
-      setFailed((e as Error).message || "Channels couldn't load");
-      onError((e as Error).message);
+      if (signal.aborted || id !== requestId.current) return false;
+      setFailed((e as Error).message || "Channels couldn't load. Try again.");
       return false;
     } finally {
-      setBusy(false);
+      if (id === requestId.current) setBusy(false);
     }
   }
   async function toggleBookmark(c: any) {
+    if (!collectionsLoaded) {
+      toast.info("Your bookmarks are still loading. Try again in a moment.");
+      return;
+    }
     const exists = bookmarks.some((b) => b.id === c.id);
     const channels = exists ? bookmarks.filter((b) => b.id !== c.id) : [snapshotChannel(c), ...bookmarks];
     const data = { kind: "bookmarks", channels };
@@ -1707,56 +1761,76 @@ function Discovery({
         : [{ id: "pending-bookmarks", name: "Bookmarked channels", data }, ...items],
     );
     try {
-      if (bookmarkCollection && bookmarkCollection.id !== "pending-bookmarks")
-        await creatorApi(`/api/maker/collections/${bookmarkCollection.id}`, { accountId, name: "Bookmarked channels", data }, "PUT");
-      else await creatorApi("/api/maker/collections", { accountId, name: "Bookmarked channels", data });
+      let id = bookmarkCollection && bookmarkCollection.id !== "pending-bookmarks" ? bookmarkCollection.id : "";
+      if (!id && bookmarkCreate.current) id = await bookmarkCreate.current;
+      if (id) await creatorApi(`/api/maker/collections/${id}`, { accountId, name: "Bookmarked channels", data }, "PUT");
+      else {
+        bookmarkCreate.current = creatorApi("/api/maker/collections", { accountId, name: "Bookmarked channels", data }).then((d) => String(d.id));
+        await bookmarkCreate.current;
+      }
       await loadCollections();
     } catch (e) {
+      bookmarkCreate.current = null;
       onError((e as Error).message);
       void loadCollections().catch(() => {});
     }
   }
   async function copyStyle(c: any) {
-    setCopying(c.id);
+    setCopying((set) => new Set(set).add(c.id));
     try {
-      await creatorApi("/api/channel-styles/copy", { accountId, sourceUrl: c.url, niche: c.niche || search });
-      writeDeepLink({ view: "styles" });
+      await creatorApi("/api/channel-styles/copy", { accountId, sourceUrl: c.url, niche: c.niche || shownQuery });
+      toast.success(`Copied ${c.title || "this channel"}'s style.`, { action: { label: "Open Styles", onClick: () => writeDeepLink({ view: "styles" }) } });
     } catch (e) {
       onError((e as Error).message);
     } finally {
-      setCopying("");
+      setCopying((set) => {
+        const next = new Set(set);
+        next.delete(c.id);
+        return next;
+      });
     }
   }
-  async function findSimilar(c: any) {
-    const previous = similar?.previous || { result, search };
+  async function findSimilar(c: any, nextFilters = filters) {
+    const previous = similar?.previous || { result, search: shownQuery };
+    const { id, signal } = begin();
     setBusy(true);
+    setFailed("");
     onError("");
     try {
       const titles = (c.videos?.length ? c.videos : [c.bestVideo, c.recentVideo]).filter(Boolean).map((v: any) => v.title);
-      const data = await creatorApi("/api/maker/similar", {
-        accountId,
-        channel: { id: c.id, title: c.title, niche: c.niche, titles },
-        filters,
-      });
+      const data = await creatorApi(
+        "/api/maker/similar",
+        { accountId, channel: { id: c.id, title: c.title, niche: c.niche, titles }, filters: nextFilters },
+        undefined,
+        { signal },
+      );
+      if (id !== requestId.current) return;
       setResult(data);
       setSearch(data.query);
+      setShownQuery(data.query);
       setSelected([]);
       setShown(PAGE_SIZE);
       setTab("channels");
       writeDeepLink({ view: "discover", discoveryQuery: data.query });
-      setSimilar({ title: c.title, previous });
+      setSimilar({ title: c.title, previous, channel: c });
     } catch (e) {
-      onError((e as Error).message);
+      if (signal.aborted || id !== requestId.current) return;
+      setFailed((e as Error).message || "Similar channels couldn't load. Try again.");
     } finally {
-      setBusy(false);
+      if (id === requestId.current) setBusy(false);
     }
   }
+  // Days, length and region change what YouTube is asked, so they search again, in the feed
+  // too; while showing similar channels, the similar lookup runs again with them.
   function applyFilters(next: Filters) {
     const serverChanged = SERVER_FILTERS.some((key) => next[key] !== filters[key]);
     setFilters(next);
     setFilterOpen(false);
-    if (serverChanged && result && search) void scan(search, next);
+    if (!serverChanged || !result) return;
+    if (similar) void findSimilar(similar.channel, next);
+    else void scan(shownQuery, next);
   }
+  const clearAll = () => applyFilters({ ...EMPTY_FILTERS, sort: filters.sort });
   // Filters apply instantly on the client. "Discovery" keeps the server's ranking, which
   // weighs fit to the niche and repeatable breakouts.
   const ranked = rankDiscoveryChannels(result?.videos || [], filters);
@@ -1779,9 +1853,9 @@ function Discovery({
     try {
       const evidence = channels.filter((c: any) => selected.includes(c.id));
       await createProject(accountId, {
-        title: search ? `${search[0].toUpperCase()}${search.slice(1)} video` : "Research project",
+        title: shownQuery ? `${shownQuery[0].toUpperCase()}${shownQuery.slice(1)} video` : "Research project",
         createdFrom: "discovery",
-        brief: `Create an original video about ${search}.\nResearch references:\n${evidence
+        brief: `Create an original video about ${shownQuery || evidence.map((c: any) => c.niche).filter(Boolean)[0] || "this niche"}.\nResearch references:\n${evidence
           .map((c: any) => `${c.title}: ${c.url} (median ${compact(c.medianViews)} views across ${c.sampleCount} sampled videos)`)
           .join("\n")}`,
       });
@@ -1795,7 +1869,7 @@ function Discovery({
       channel={c}
       selected={selected.includes(c.id)}
       bookmarked={bookmarks.some((b) => b.id === c.id)}
-      copying={copying === c.id}
+      copying={copying.has(c.id)}
       onSelect={(value) => setSelected((items) => (value ? [...items, c.id] : items.filter((id) => id !== c.id)))}
       onBookmark={() => void toggleBookmark(c)}
       onSimilar={() => void findSimilar(c)}
@@ -1815,8 +1889,13 @@ function Discovery({
                 <button
                   className="maker-outline"
                   onClick={() => {
+                    inFlight.current?.abort();
+                    requestId.current += 1;
+                    setBusy(false);
+                    setFailed("");
                     setResult(similar.previous.result);
                     setSearch(similar.previous.search);
+                    setShownQuery(similar.previous.search);
                     writeDeepLink({ view: "discover", discoveryQuery: similar.previous.search });
                     setSimilar(null);
                   }}
@@ -1834,7 +1913,6 @@ function Discovery({
           className="maker-searchbar"
           onSubmit={(e) => {
             e.preventDefault();
-            setSimilar(null);
             void scan();
           }}
         >
@@ -1851,7 +1929,6 @@ function Discovery({
             onClick={() => {
               const next = shuffle + 1;
               setShuffle(next);
-              setSimilar(null);
               void scan("", filters, next);
             }}
           >
@@ -1887,7 +1964,7 @@ function Discovery({
                 </button>
               </span>
             ))}
-            <button className="maker-link" onClick={() => applyFilters({ ...EMPTY_FILTERS, sort: filters.sort, days: filters.days, duration: filters.duration, region: filters.region })}>
+            <button className="maker-link" onClick={clearAll}>
               Clear all
             </button>
           </div>
@@ -1914,7 +1991,6 @@ function Discovery({
                 onClick={() => {
                   const next = { ...filters, ...preset.filters };
                   setFilters(next);
-                  setSimilar(null);
                   void scan(preset.query, next);
                 }}
               >
@@ -1946,6 +2022,16 @@ function Discovery({
             </select>
           </label>
         </div>
+        {failed && result && !busy ? (
+          <div className="maker-niche-error" role="alert">
+            <AlertCircle size={16} aria-hidden="true" />
+            <span>{failed} The results below are from your last search.</span>
+            <button className="maker-outline" onClick={() => (similar ? void findSimilar(similar.channel) : void scan())}>
+              <RefreshCw size={14} />
+              Try again
+            </button>
+          </div>
+        ) : null}
         {busy ? (
           <div className="maker-loading">
             <Loader2 className="animate-spin" />
@@ -1958,8 +2044,13 @@ function Discovery({
                 <div className="maker-list-row" key={c.id}>
                   <button
                     onClick={() => {
+                      inFlight.current?.abort();
+                      requestId.current += 1;
+                      setBusy(false);
+                      setFailed("");
                       setResult(c.data.result);
                       setSearch(c.data.search);
+                      setShownQuery(c.data.search || "");
                       setFilters({ ...DEFAULT_FILTERS, ...(c.data.filters || {}) });
                       setSelected(c.data.selected || []);
                       setSimilar(null);
@@ -1981,6 +2072,7 @@ function Discovery({
                   <Action
                     label="Delete collection"
                     onClick={async () => {
+                      if (!(await confirmDialog({ title: `Delete “${c.name}”?`, body: "The saved channels and filters in this collection are removed. This can't be undone.", confirmLabel: "Delete collection", danger: true }))) return;
                       try {
                         await creatorApi(`/api/maker/collections/${c.id}`, {}, "DELETE");
                         setCollections((items) => items.filter((i) => i.id !== c.id));
@@ -2040,26 +2132,29 @@ function Discovery({
                 </div>
               </>
             ) : (
-              <Empty
-                title="No channels match these filters"
-                text={(() => {
-                  const found = rankDiscoveryChannels(result.videos || [], { sort: filters.sort }).length;
-                  return found
-                    ? `${found} ${found === 1 ? "channel was" : "channels were"} found, but your filters hide all of them. Remove a filter or clear them all.`
-                    : "YouTube returned no channels for this search. Try another niche or shuffle.";
-                })()}
-              >
-                <button className="maker-outline" onClick={() => applyFilters({ ...EMPTY_FILTERS, sort: filters.sort, days: filters.days, duration: filters.duration, region: filters.region })}>
-                  Clear filters
-                </button>
-              </Empty>
+              (() => {
+                const found = rankDiscoveryChannels(result.videos || [], { sort: filters.sort }).length;
+                return found ? (
+                  <Empty
+                    title="No channels match these filters"
+                    text={`${found} ${found === 1 ? "channel was" : "channels were"} found, but your filters hide all of them. Remove a filter or clear them all.`}
+                  >
+                    <button className="maker-outline" onClick={clearAll}>
+                      Clear filters
+                    </button>
+                  </Empty>
+                ) : (
+                  <Empty title="No channels found" text="YouTube returned no channels for this search. Try another niche or shuffle." />
+                );
+              })()
             )}
           </>
         ) : (
           <div className="maker-video-grid">
-            {[...(result.videos || [])]
-              .sort((a, b) => b.viewCount - a.viewCount)
-              .map((v) => (
+            {channels
+              .flatMap((c: any) => (c.videos || []).map((v: any) => ({ ...v, channelTitle: v.channelTitle || c.title })))
+              .sort((a: any, b: any) => (Number(b.viewCount) || 0) - (Number(a.viewCount) || 0))
+              .map((v: any) => (
                 <StandardVideoCard
                   key={v.id}
                   title={v.title}
@@ -2082,12 +2177,14 @@ function Discovery({
             </span>
             <button
               className="maker-outline"
+              disabled={!selected.length}
+              title={selected.length ? undefined : "Select channels first"}
               onClick={async () => {
                 try {
                   await creatorApi("/api/maker/collections", {
                     accountId,
-                    name: search || `Niche feed: ${(result.niches || []).join(", ")}`.slice(0, 120),
-                    data: { result, filters, search, selected },
+                    name: (shownQuery || `Niche feed: ${(result.niches || []).join(", ")}`).slice(0, 120),
+                    data: { result, filters, search: shownQuery, selected },
                   });
                   await loadCollections();
                   setTab("saved");
@@ -2099,7 +2196,7 @@ function Discovery({
               <Save size={16} />
               Save collection
             </button>
-            <button className="maker-primary" onClick={() => void createFromSelection()}>
+            <button className="maker-primary" disabled={!selected.length} title={selected.length ? undefined : "Select channels first"} onClick={() => void createFromSelection()}>
               <Plus size={16} />
               Create project
             </button>
@@ -2164,7 +2261,7 @@ function FilterForm({ value: f, onChange }: { value: Filters; onChange: (f: Filt
           </label>
           <label className="maker-field">
             Video length
-            <select value={f.duration} onChange={(e) => set({ duration: e.target.value })}>
+            <select value={f.duration} onChange={(e) => set({ duration: e.target.value, ...(e.target.value === "short" && f.format === "longform" ? { format: "any" } : {}) })}>
               <option value="any">All lengths</option>
               <option value="short">Under 4 minutes</option>
               <option value="medium">4–20 minutes</option>
@@ -2173,7 +2270,7 @@ function FilterForm({ value: f, onChange }: { value: Filters; onChange: (f: Filt
           </label>
           <label className="maker-field">
             Content type
-            <select value={f.format} onChange={(e) => set({ format: e.target.value })}>
+            <select value={f.format} onChange={(e) => set({ format: e.target.value, ...(e.target.value === "longform" && f.duration === "short" ? { duration: "any" } : {}) })}>
               <option value="any">Long-form and Shorts</option>
               <option value="longform">Long-form</option>
               <option value="shorts">Shorts</option>

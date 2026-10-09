@@ -5493,3 +5493,75 @@
 .maker-readonly .maker-title-inline:hover {
   border-bottom-color: var(--mk-line-strong);
 }
+
+/* ---------- Niche Finder: failure banner, filter button, phone controls ---------- */
+/* A search that failed says so above the results it left in place. */
+.maker-niche-error {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 0 14px;
+  padding: 10px 12px 10px 14px;
+  border: 1px solid color-mix(in srgb, var(--mk-bad) 35%, var(--mk-line));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--mk-bad) 8%, var(--mk-surface));
+  color: var(--mk-text);
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+.maker-niche-error > svg {
+  flex: none;
+  color: var(--mk-bad);
+}
+.maker-niche-error > span {
+  flex: 1;
+  min-width: 0;
+}
+.maker-niche-error > button {
+  flex: none;
+}
+/* The filter count sits on the button's corner, clear of the icon. */
+.maker-workspace .maker-searchbar .maker-filter-btn,
+.maker-workspace .maker-searchbar > .maker-icon {
+  flex: none;
+  width: 40px;
+  min-height: 40px;
+}
+.maker-filter-btn em {
+  top: -5px;
+  right: -5px;
+  box-shadow: 0 0 0 2px var(--mk-surface);
+}
+@media (max-width: 640px) {
+  /* Phones: the box takes its own row; shuffle, filters and Search share the next. */
+  .maker-searchbar {
+    flex-wrap: wrap;
+    row-gap: 4px;
+    padding: 6px 6px 6px 14px;
+  }
+  .maker-workspace .maker-searchbar input {
+    flex: 1 1 calc(100% - 40px);
+    min-width: 0;
+  }
+  .maker-workspace .maker-searchbar .maker-filter-btn,
+  .maker-workspace .maker-searchbar > .maker-icon {
+    width: 44px;
+    min-height: 44px;
+  }
+  .maker-searchbar > .maker-primary {
+    flex: 1;
+    min-height: 44px;
+    justify-content: center;
+  }
+  /* The sort takes a full row, so its menu shows the whole option. */
+  .maker-sort {
+    flex: 1 1 100%;
+  }
+  .maker-sort select {
+    flex: 1;
+    min-width: 0;
+  }
+  .maker-niche-error {
+    flex-wrap: wrap;
+  }
+}
