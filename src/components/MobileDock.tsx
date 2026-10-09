@@ -1,11 +1,12 @@
 // The phone dock: four sections (Create, Projects, Agents, Tools) around a raised "+"
 // that springs open a half-disc of quick tools picked for the page you're on.
 // Shows below 760px and inside the native apps; hidden in full-screen editors.
-import { type ComponentType, useEffect, useMemo, useRef, useState } from "react";
+import { type ComponentType, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Bot, FolderOpen, Grid2x2, Plus, Sparkles } from "lucide-react";
 import { ALL_NAV_ENTRIES, CREATE_HOME_ENTRY, currentGroup, isCurrentEntry, navEntryFor, TOOL_NAV_GROUPS, type NavEntry, type NavTarget } from "../utils/appNavigation";
 import type { MainView, StudioTab, ToolId } from "../utils/tiktokRoute";
 import { nativePlatform } from "../native/platform";
+import { tapFeedback } from "../native/bootstrap";
 import { Dialog } from "./ui/Dialog";
 import "./MobileDock.css";
 
@@ -95,6 +96,19 @@ export function MobileDock({ view, studioTab, toolId, onNavigate, hidden }: { vi
   const active = sectionFor(view, studioTab, toolId);
   const quick = useMemo(() => quickToolsFor(view, studioTab, toolId), [view, studioTab, toolId]);
   const previous = useRef(active);
+  const bar = useRef<HTMLElement>(null);
+  const [pill, setPill] = useState<{ x: number; w: number } | null>(null);
+
+  // The selection pill slides under the active tab; measured so it follows any bar width.
+  useLayoutEffect(() => {
+    const place = () => {
+      const tabEl = active ? bar.current?.querySelector<HTMLElement>(`[data-section="${active}"]`) : null;
+      setPill(tabEl ? { x: tabEl.offsetLeft + tabEl.offsetWidth / 2, w: Math.min(64, tabEl.offsetWidth - 6) } : null);
+    };
+    place();
+    window.addEventListener("resize", place);
+    return () => window.removeEventListener("resize", place);
+  }, [active, hidden, view]);
 
   // The bar leans toward the newly picked section, then springs level.
   useEffect(() => {
@@ -126,9 +140,18 @@ export function MobileDock({ view, studioTab, toolId, onNavigate, hidden }: { vi
   if (hidden || HIDDEN_VIEWS.has(view)) return null;
 
   const go = (target: NavTarget) => {
+    tapFeedback();
     setTrayOpen(false);
     setToolsOpen(false);
     onNavigate(target);
+  };
+  // Tapping the section you're in takes the page back to the top.
+  const toTop = () => {
+    tapFeedback();
+    document.querySelectorAll<HTMLElement>("main, main *").forEach((el) => {
+      if (el.scrollTop > 0 && el.scrollHeight > el.clientHeight) el.scrollTo({ top: 0, behavior: "smooth" });
+    });
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
   const tab = (section: Section) => {
     const on = active === section.id;
@@ -138,12 +161,17 @@ export function MobileDock({ view, studioTab, toolId, onNavigate, hidden }: { vi
         key={section.id}
         type="button"
         className="mdock-tab"
-        aria-label={section.label}
+        data-section={section.id}
         aria-current={on ? "page" : undefined}
-        title={section.label}
-        onClick={() => (section.id === "tools" ? setToolsOpen(true) : go(SECTION_TARGET[section.id]))}
+        onClick={() => {
+          if (section.id === "tools") {
+            tapFeedback();
+            setToolsOpen(true);
+          } else if (on) toTop();
+          else go(SECTION_TARGET[section.id]);
+        }}
       >
-        <Icon size={23} strokeWidth={on ? 2 : 1.6} fill={on ? "var(--mdock-fill)" : "none"} aria-hidden />
+        <Icon size={22} strokeWidth={on ? 2.1 : 1.7} aria-hidden />
         <span className="mdock-label">{section.label}</span>
       </button>
     );
@@ -164,11 +192,15 @@ export function MobileDock({ view, studioTab, toolId, onNavigate, hidden }: { vi
           ))}
         </ul>
       </div>
-      <nav className="mdock" data-tilt={tilt || undefined} aria-label="Sections">
+      <nav ref={bar} className="mdock" data-tilt={tilt || undefined} aria-label="Sections">
+        {pill ? <span className="mdock-pill" aria-hidden="true" style={{ transform: `translateX(${pill.x}px) translateX(-50%)`, width: pill.w }} /> : null}
         {SECTIONS.slice(0, 2).map(tab)}
         <span className="mdock-fab-gap" aria-hidden="true" />
         {SECTIONS.slice(2).map(tab)}
-        <button type="button" className="mdock-fab" data-open={trayOpen || undefined} aria-expanded={trayOpen} aria-label={trayOpen ? "Close quick tools" : "Quick tools for this page"} onClick={() => setTrayOpen((open) => !open)}>
+        <button type="button" className="mdock-fab" data-open={trayOpen || undefined} aria-expanded={trayOpen} aria-label={trayOpen ? "Close quick tools" : "Quick tools for this page"} onClick={() => {
+            tapFeedback();
+            setTrayOpen((open) => !open);
+          }}>
           <Plus size={26} strokeWidth={2.4} aria-hidden="true" />
         </button>
       </nav>

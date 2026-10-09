@@ -2,7 +2,6 @@
    whose active glyph fills with the accent, and a raised "+" that springs open a
    half-disc of quick tools. Hidden above 760px except inside the native apps. */
 .mdock-slot {
-  --mdock-fill: var(--ui-accent);
   --mdock-ink: var(--ui-text);
   --mdock-faint: var(--ui-text-faint);
   --mdock-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -22,84 +21,117 @@
 .mdock {
   position: relative;
   display: grid;
-  grid-template-columns: 1fr 1fr 72px 1fr 1fr;
+  grid-template-columns: 1fr 1fr 76px 1fr 1fr;
   align-items: center;
   width: min(440px, 100%);
-  height: 62px;
+  height: 66px;
   margin: 0 auto;
-  padding: 0 8px;
-  border: 1px solid var(--ui-line);
-  border-radius: 16px 16px 30px 30px;
-  background: var(--ui-panel);
-  box-shadow: 0 18px 40px -18px rgb(40 36 20 / 0.35), 0 2px 4px rgb(40 36 20 / 0.08);
+  padding: 0 6px;
+  border: 1px solid color-mix(in srgb, var(--ui-text) 7%, transparent);
+  border-radius: 18px 18px 30px 30px;
+  background: color-mix(in srgb, var(--ui-panel) 84%, transparent);
+  -webkit-backdrop-filter: blur(22px) saturate(1.7);
+  backdrop-filter: blur(22px) saturate(1.7);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.7),
+    0 1px 2px rgb(40 36 20 / 0.06),
+    0 14px 34px -14px rgb(40 36 20 / 0.32);
   transform-origin: 50% 100%;
 }
-html[data-theme="dark"] .mdock { box-shadow: 0 18px 44px -16px rgb(0 0 0 / 0.75), 0 2px 4px rgb(0 0 0 / 0.4); }
+html[data-theme="dark"] .mdock {
+  border-color: rgb(255 255 255 / 0.07);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.06),
+    0 1px 2px rgb(0 0 0 / 0.4),
+    0 16px 40px -14px rgb(0 0 0 / 0.8);
+}
 .mdock[data-tilt="right"] { animation: mdock-tilt-right 520ms var(--mdock-spring); }
 .mdock[data-tilt="left"] { animation: mdock-tilt-left 520ms var(--mdock-spring); }
 @keyframes mdock-tilt-right {
-  30% { transform: rotate(-1.8deg) scaleX(0.95); }
+  30% { transform: rotate(-1.4deg) scaleX(0.96); }
 }
 @keyframes mdock-tilt-left {
-  30% { transform: rotate(1.8deg) scaleX(0.95); }
+  30% { transform: rotate(1.4deg) scaleX(0.96); }
+}
+
+/* The selection: a soft accent lozenge that slides under the active tab. */
+.mdock-pill {
+  position: absolute;
+  top: 9px;
+  left: 0;
+  height: 30px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ui-accent) 24%, transparent);
+  pointer-events: none;
+  transition: transform 460ms var(--mdock-spring), width 300ms ease;
 }
 
 .mdock .mdock-tab {
+  position: relative;
   display: grid;
   height: 100%;
   place-items: center;
   align-content: center;
-  gap: 3px;
+  gap: 4px;
   padding: 0;
   border: 0;
-  border-radius: 12px !important;
+  border-radius: 14px !important;
   background: none;
+  box-shadow: none;
   color: var(--mdock-faint);
   cursor: pointer;
-  transition: color 200ms ease;
+  transition: color 220ms ease;
   -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  user-select: none;
 }
-.mdock .mdock-tab svg { transition: transform 260ms var(--mdock-spring), fill 200ms ease; }
+.mdock .mdock-tab:focus { outline: none; }
+.mdock .mdock-tab svg { margin-top: 1px; transition: transform 300ms var(--mdock-spring), stroke-width 200ms ease; }
 .mdock .mdock-tab[aria-current="page"] { color: var(--mdock-ink); }
-.mdock .mdock-tab[aria-current="page"] svg { transform: scale(1.1); }
-.mdock .mdock-tab:active svg { transform: scale(0.88); }
+.mdock .mdock-tab[aria-current="page"] svg { transform: translateY(-1px) scale(1.06); }
+.mdock .mdock-tab:active svg { transform: scale(0.86); }
 .mdock-label {
   font-size: 10px;
-  font-weight: 650;
+  font-weight: 560;
   letter-spacing: 0.01em;
-  opacity: 0;
-  transform: translateY(-2px);
-  transition: opacity 200ms ease, transform 200ms ease;
+  line-height: 1;
 }
-.mdock-tab[aria-current="page"] .mdock-label { opacity: 1; transform: none; }
+.mdock-tab[aria-current="page"] .mdock-label { font-weight: 700; }
 
 /* ---------- Raised "+" ---------- */
 .mdock .mdock-fab {
   position: absolute;
-  top: -20px;
+  top: -22px;
   left: 50%;
   display: grid;
-  width: 56px;
-  height: 56px;
+  width: 58px;
+  height: 58px;
   place-items: center;
-  margin-left: -28px;
+  margin-left: -29px;
   padding: 0;
   border: 0;
   border-radius: 999px !important;
-  background: linear-gradient(145deg, #ffe53a, var(--ui-accent) 60%, #e9c800);
-  box-shadow: 0 10px 20px -6px rgb(201 170 0 / 0.55), 0 0 0 4px var(--ui-panel);
+  background:
+    radial-gradient(120% 90% at 30% 15%, rgb(255 255 255 / 0.55), transparent 45%),
+    linear-gradient(160deg, #ffe94d 0%, var(--ui-accent) 55%, #e2c200 100%);
+  box-shadow:
+    inset 0 -2px 4px rgb(150 120 0 / 0.25),
+    inset 0 1px 1px rgb(255 255 255 / 0.6),
+    0 12px 22px -8px rgb(201 170 0 / 0.6),
+    0 3px 6px -2px rgb(40 36 20 / 0.2);
   color: var(--ui-accent-ink);
   cursor: pointer;
-  transition: transform 420ms var(--mdock-spring);
+  transition: transform 420ms var(--mdock-spring), box-shadow 200ms ease;
   -webkit-tap-highlight-color: transparent;
 }
-.mdock-fab svg { transition: transform 360ms var(--mdock-spring); }
+.mdock-fab:focus { outline: none; }
+.mdock-fab svg { transition: transform 380ms var(--mdock-spring); }
 .mdock-fab[data-open] svg { transform: rotate(135deg); }
-.mdock-fab:active { transform: scale(0.82); }
+.mdock-fab:active { transform: scale(0.86); }
 
 /* ---------- Quick-tool tray: a half disc above the "+" ---------- */
 .mdock-tray {
-  --r: 134px;
+  --r: 150px;
   position: absolute;
   bottom: calc(10px + env(safe-area-inset-bottom) + 62px - 2px);
   left: 50%;
@@ -107,9 +139,13 @@ html[data-theme="dark"] .mdock { box-shadow: 0 18px 44px -16px rgb(0 0 0 / 0.75)
   height: var(--r);
   margin-left: calc(var(--r) * -1);
   overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--ui-text) 7%, transparent);
+  border-bottom: 0;
   border-radius: var(--r) var(--r) 0 0;
-  background: var(--ui-raised);
-  box-shadow: 0 -6px 24px -12px rgb(40 36 20 / 0.3);
+  background: color-mix(in srgb, var(--ui-raised) 86%, transparent);
+  -webkit-backdrop-filter: blur(22px) saturate(1.7);
+  backdrop-filter: blur(22px) saturate(1.7);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.6), 0 -10px 30px -16px rgb(40 36 20 / 0.35);
   opacity: 0;
   pointer-events: none;
   transform: scale(0.2);
@@ -146,10 +182,10 @@ html[data-theme="dark"] .mdock { box-shadow: 0 18px 44px -16px rgb(0 0 0 / 0.75)
 }
 .mdock-quick li {
   /* Spread the tools over the arc (162deg..18deg), from left to right. */
-  --a: calc(162deg - (144deg / (var(--n) - 1)) * var(--i));
+  --a: calc(166deg - (152deg / (var(--n) - 1)) * var(--i));
   position: absolute;
-  left: calc(50% + cos(var(--a)) * (var(--r) - 62px));
-  bottom: calc(sin(var(--a)) * (var(--r) - 62px) + 2px);
+  left: calc(50% + cos(var(--a)) * (var(--r) - 66px));
+  bottom: calc(sin(var(--a)) * (var(--r) - 66px) + 4px);
   translate: -50% 0;
   opacity: 0;
   transform: rotate(-70deg) scale(0.6);
@@ -161,6 +197,7 @@ html[data-theme="dark"] .mdock { box-shadow: 0 18px 44px -16px rgb(0 0 0 / 0.75)
   transform: none;
   transition: opacity 220ms ease calc(160ms + var(--i) * 55ms), transform 520ms var(--mdock-spring) calc(140ms + var(--i) * 55ms);
 }
+.mdock-quick button:focus { outline: none; }
 .mdock-quick button {
   display: grid;
   width: 62px;
@@ -176,11 +213,12 @@ html[data-theme="dark"] .mdock { box-shadow: 0 18px 44px -16px rgb(0 0 0 / 0.75)
 }
 .mdock-quick-icon {
   display: grid;
-  width: 38px;
-  height: 38px;
+  width: 40px;
+  height: 40px;
   place-items: center;
-  border-radius: 12px;
-  background: var(--ui-chip);
+  border-radius: 14px;
+  background: linear-gradient(180deg, var(--ui-raised), color-mix(in srgb, var(--ui-chip) 70%, var(--ui-raised)));
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.7), 0 0 0 1px color-mix(in srgb, var(--ui-text) 8%, transparent), 0 6px 12px -8px rgb(40 36 20 / 0.45);
   transition: transform 200ms var(--mdock-spring), background-color 160ms ease;
 }
 .mdock-quick button:active .mdock-quick-icon { transform: scale(0.88); }
@@ -230,3 +268,10 @@ html[data-theme="dark"] .mdock { box-shadow: 0 18px 44px -16px rgb(0 0 0 / 0.75)
   .mdock-tray, .mdock-tray[data-open], .mdock-quick li, .mdock-tray[data-open] .mdock-quick li, .mdock-fab, .mdock-fab svg { transition: opacity 120ms ease; }
   .mdock-tray[data-open] .mdock-wedge { animation: none; }
 }
+
+html[data-theme="dark"] .mdock-tray { box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06), 0 -10px 30px -16px rgb(0 0 0 / 0.7); }
+html[data-theme="dark"] .mdock-quick-icon { box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06), 0 0 0 1px rgb(255 255 255 / 0.07), 0 6px 12px -8px rgb(0 0 0 / 0.7); }
+@media (prefers-reduced-motion: reduce) {
+  .mdock-pill { transition: none; }
+}
+html[data-theme="dark"] .mdock-pill { background: color-mix(in srgb, var(--ui-accent) 16%, transparent); }
