@@ -728,3 +728,39 @@ label.ve-auto-pick:hover { background: var(--ve-raised); }
 .ve-top-end .cs-pop .cs-chip-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 .ve-top-end .cs-pop .cs-menu { top: calc(100% + 6px); right: 0; bottom: auto; left: auto; --cs-shadow-lift: var(--ui-shadow-lift); }
 @media (max-width: 720px) { .ve-top-end .cs-pop .cs-chip > span:not(.cs-aspect-box) { display: none; } }
+
+/* ---------- Phones: a touch-first timeline (narrow layout starts at 900px, as in useHeadWidth) ---------- */
+@media (max-width: 900px) {
+  /* Room for every track instead of a 220px slot; the picture card shrinks to suit. */
+  .ve-timeline { height: min(46vh, 400px) !important; }
+  .ve-row-video { height: 60px; }
+  .ve-row-audio { height: 48px; }
+  .ve-row-thin { height: 38px; }
+  .ve-ruler { height: 38px; }
+  /* Bigger toolbar targets; Fit stays (pinch does the zoom). */
+  .ve-tl-bar .ve-tool { width: 40px; height: 40px; }
+  .ve-zoom > .ve-tool[aria-label="Fit the edit"] { display: inline-grid; }
+  /* The picture card's transport: play, ±5s and the timecode, nothing that collides. */
+  .ve-viewer .ve-viewer-bar { grid-template-columns: minmax(0, 1fr) auto; height: 52px; padding: 0 8px 0 12px; }
+  .ve-transport > *, .ve-viewer-time { flex: none; }
+  .ve-viewer-tc { gap: 8px; font-size: 11.5px; }
+  .ve-viewer-tc small { font-size: 11.5px; }
+  .ve-transport .ve-tool:first-child,
+  .ve-transport .ve-tool:last-child,
+  .ve-viewer-tools .ve-speed,
+  .ve-viewer-tools .ve-volume { display: none; }
+  .ve-viewer-play { width: 40px; height: 40px; }
+}
+@media (pointer: coarse) {
+  /* A finger swipes the timeline; only the selected clip takes drags and trims. */
+  .ve-tl-scroll { touch-action: pan-x pan-y; }
+  .ve-item:not(.is-selected) { touch-action: pan-x pan-y; cursor: default; }
+  .ve-item:not(.is-selected) .ve-trim { pointer-events: none; }
+  .ve-item.is-selected .ve-trim { width: 22px; }
+  .ve-item.is-selected .ve-trim::after { top: 50%; bottom: auto; width: 5px; height: 24px; margin-top: -12px; background: #fff; box-shadow: 0 0 0 1.5px var(--ve-accent); }
+  .ve-item.is-selected .ve-trim-start::after { left: 6px; }
+  .ve-item.is-selected .ve-trim-end::after { right: 6px; }
+}
+/* The Details button is a phone affordance; wider screens open details on selection. */
+@media (min-width: 901px) { .ve-tl-details { display: none; } }
+.ve-tl-details { color: var(--ve-accent-text); }

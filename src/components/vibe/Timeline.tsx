@@ -37,6 +37,7 @@ import {
   Unlock,
   Volume2,
   VolumeX,
+  SlidersHorizontal,
 } from "lucide-react";
 import {
   assetById,
@@ -437,7 +438,7 @@ function Overview({ scroller, head, pps, project, duration, total }: { scroller:
   );
 }
 
-export function Timeline({ snapping, onToggleSnap, onCollapse }: { snapping: boolean; onToggleSnap: () => void; onCollapse?: () => void }) {
+export function Timeline({ snapping, onToggleSnap, onCollapse, onDetails }: { snapping: boolean; onToggleSnap: () => void; onCollapse?: () => void; onDetails?: () => void }) {
   const project = useVibe((s) => s.project);
   const selection = useVibe((s) => s.selection);
   const pps = useVibe((s) => s.pxPerSec);
@@ -445,6 +446,8 @@ export function Timeline({ snapping, onToggleSnap, onCollapse }: { snapping: boo
   const canRedo = useVibe((s) => s.future.length > 0);
   const scroller = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLDivElement>(null);
+  // The clip (or "lanes") a finger landed on, so a tap can select without a drag.
+  const touchTap = useRef<string | null>(null);
   const hoverLine = useRef<HTMLDivElement>(null);
   const hoverChip = useRef<HTMLSpanElement>(null);
   const drag = useRef<Drag | null>(null);
@@ -561,6 +564,44 @@ export function Timeline({ snapping, onToggleSnap, onCollapse }: { snapping: boo
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
+  }, [HEAD]);
+
+  // Two fingers pinch the timeline's zoom around the point between them.
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el) return;
+    let pinch: { dist: number; pps: number; t: number; x: number } | null = null;
+    const spread = (e: TouchEvent) => Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+    const middle = (e: TouchEvent) => (e.touches[0].clientX + e.touches[1].clientX) / 2 - el.getBoundingClientRect().left - HEAD;
+    const onStart = (e: TouchEvent) => {
+      if (e.touches.length !== 2) return;
+      const x = middle(e);
+      pinch = { dist: spread(e), pps: vibe.get().pxPerSec, t: (el.scrollLeft + x) / vibe.get().pxPerSec, x };
+    };
+    const onMove = (e: TouchEvent) => {
+      if (!pinch || e.touches.length !== 2) return;
+      e.preventDefault();
+      const next = Math.min(400, Math.max(6, pinch.pps * (spread(e) / Math.max(1, pinch.dist))));
+      const t = pinch.t;
+      const x = middle(e);
+      vibe.set({ pxPerSec: next });
+      requestAnimationFrame(() => {
+        el.scrollLeft = Math.max(0, t * next - x);
+      });
+    };
+    const onEnd = (e: TouchEvent) => {
+      if (e.touches.length < 2) pinch = null;
+    };
+    el.addEventListener("touchstart", onStart, { passive: true });
+    el.addEventListener("touchmove", onMove, { passive: false });
+    el.addEventListener("touchend", onEnd);
+    el.addEventListener("touchcancel", onEnd);
+    return () => {
+      el.removeEventListener("touchstart", onStart);
+      el.removeEventListener("touchmove", onMove);
+      el.removeEventListener("touchend", onEnd);
+      el.removeEventListener("touchcancel", onEnd);
+    };
   }, [HEAD]);
 
   const importer = useRef<HTMLInputElement>(null);
@@ -742,6 +783,12 @@ export function Timeline({ snapping, onToggleSnap, onCollapse }: { snapping: boo
   // ---------- Clips: move, trim, group move ----------
   const onItemDown = (e: ReactPointerEvent, id: string, kind: TrackKind, mode: Drag["mode"], start: number, end: number, inPoint: number) => {
     if (e.button !== 0) return;
+    // Touch: a finger on a clip that isn't selected scrolls the timeline; a tap selects it
+    // (onClick), and only a selected clip drags or trims, so swiping never moves clips.
+    if (e.pointerType === "touch" && !selected.has(id)) {
+      touchTap.current = id;
+      return;
+    }
     e.stopPropagation();
     e.preventDefault();
     keepSkim();
@@ -930,6 +977,10 @@ export function Timeline({ snapping, onToggleSnap, onCollapse }: { snapping: boo
   const onLanesDown = (e: ReactPointerEvent) => {
     const target = e.target as HTMLElement;
     if (e.button !== 0 || !(target.classList.contains("ve-lane") || target.classList.contains("ve-rows"))) return;
+    if (e.pointerType === "touch") {
+      touchTap.current = "lanes";
+      return;
+    }
     e.preventDefault();
     keepSkim();
     const box = canvas.current!.getBoundingClientRect();
@@ -1075,6 +1126,11 @@ export function Timeline({ snapping, onToggleSnap, onCollapse }: { snapping: boo
         data-w={w}
         style={{ left: o.start * pps, width: w > 10 ? w - 2 : w, ...(tint ? { ["--ve-label" as string]: tint } : {}) }}
         onPointerDown={(e) => onItemDown(e, o.id, o.kind, "move", o.start, o.end, o.inPoint)}
+        onClick={() => {
+          if (touchTap.current !== o.id) return;
+          touchTap.current = null;
+          vibe.select([o.id]);
+        }}
         onContextMenu={(e) => itemMenu(e, o.id)}
         tabIndex={0}
         role="button"
@@ -1170,6 +1226,12 @@ export function Timeline({ snapping, onToggleSnap, onCollapse }: { snapping: boo
           <button type="button" className="ve-tool" onClick={() => vibe.commit((p) => toggleMarker(p, vibe.get().playhead))} aria-label="Add or remove a marker at the playhead" title="Marker (M)">
             <BookmarkPlus size={16} />
           </button>
+          {onDetails && selection.length === 1 ? (
+            // Phones: selecting doesn't cover the editor with the details panel; this opens it.
+            <button type="button" className="ve-tool ve-tl-details" onClick={onDetails} aria-label="Clip details" title="Clip details">
+              <SlidersHorizontal size={16} />
+            </button>
+          ) : null}
         </div>
         <p className="ve-tl-status" aria-live="polite">
           {status}
@@ -1278,7 +1340,16 @@ export function Timeline({ snapping, onToggleSnap, onCollapse }: { snapping: boo
             <RulerHead head={HEAD} pps={pps} active={scrubbing} />
           </div>
 
-          <div className="ve-rows" onPointerDown={onLanesDown}>
+          <div
+            className="ve-rows"
+            onPointerDown={onLanesDown}
+            onClick={(e) => {
+              const target = e.target as HTMLElement;
+              if (touchTap.current !== "lanes" || !(target.classList.contains("ve-lane") || target.classList.contains("ve-rows"))) return;
+              touchTap.current = null;
+              vibe.select([]);
+            }}
+          >
             <div className="ve-row ve-row-thin">
               <TrackHead label="Titles" icon={<Type size={13} />} kind="text" row={0} project={project} narrow={narrow} />
               <div className={`ve-lane${st("text").locked ? " is-locked" : ""}`} data-row-kind="text" data-row-index={0}>

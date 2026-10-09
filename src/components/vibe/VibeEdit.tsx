@@ -497,7 +497,9 @@ function Editor({ onBack, onOpenEdit, onNew, backLabel = "Projects", embedded = 
   useEffect(() => {
     // Even when the side panel is closed (narrow windows start with it folded): a selected clip's
     // properties, a recap cut's scene match included, should never be one hidden click away.
-    if (selectedId) setTab("props");
+    // Phones are the exception: there the panel covers the editor, so a tap on a clip selects it
+    // and the timeline's Details button opens its properties.
+    if (selectedId && !window.matchMedia("(max-width: 900px)").matches) setTab("props");
   }, [selectedId]);
 
   useEffect(() => {
@@ -692,7 +694,7 @@ function Editor({ onBack, onOpenEdit, onNew, backLabel = "Projects", embedded = 
       </div>
 
       {timelineOpen ? (
-        <Timeline snapping={snapping} onToggleSnap={() => setSnapping((s) => !s)} onCollapse={() => setTimelineOpen(false)} />
+        <Timeline snapping={snapping} onToggleSnap={() => setSnapping((s) => !s)} onCollapse={() => setTimelineOpen(false)} onDetails={() => setTab("props")} />
       ) : (
         <section className="ve-card ve-fold ve-fold-h" aria-label="Timeline, hidden">
           <button type="button" className="ve-collapse" onClick={() => setTimelineOpen(true)} aria-label="Show timeline" title="Show timeline">
