@@ -1833,7 +1833,9 @@ function Discovery({
   const clearAll = () => applyFilters({ ...EMPTY_FILTERS, sort: filters.sort });
   // Filters apply instantly on the client. "Discovery" keeps the server's ranking, which
   // weighs fit to the niche and repeatable breakouts.
-  const ranked = rankDiscoveryChannels(result?.videos || [], filters);
+  // A pasted channel link asks about that one channel, so the niche filters (faceless, long form,
+  // size) don't hide it.
+  const ranked = rankDiscoveryChannels(result?.videos || [], result?.pasted ? { sort: filters.sort } : filters);
   const serverOrder = new Map<string, number>((result?.channels || []).map((c: any, i: number) => [c.id, i]));
   const channels = filters.sort === "score" && serverOrder.size
     ? [...ranked].sort((a: any, b: any) => (serverOrder.get(a.id) ?? 1e6) - (serverOrder.get(b.id) ?? 1e6))
