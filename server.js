@@ -5929,6 +5929,17 @@ ON CONFLICT (id) DO NOTHING;
 function topRows(rows, key = "score", limit = 6) {
     return [...rows].sort((a, b) => Number(b[key] || 0) - Number(a[key] || 0)).slice(0, limit);
 }
+// Opening an agent's report or learning view rebuilt its profile every time. New
+// upload signals already rebuild it (recordAgentContentSignal), so a view only
+// rebuilds when the last rebuild is over 10 minutes old.
+const LEARNING_REBUILD_MS = 10 * 60 * 1000;
+const learningRebuiltAt = new Map();
+async function rebuildAgentLearningProfileIfStale(agentId) {
+    if (!agentId || Date.now() - (learningRebuiltAt.get(agentId) || 0) < LEARNING_REBUILD_MS)
+        return null;
+    learningRebuiltAt.set(agentId, Date.now());
+    return rebuildAgentLearningProfile(agentId);
+}
 async function rebuildAgentLearningProfile(agentId) {
     if (!postgresConfigured() || !agentId)
         return null;
@@ -8716,7 +8727,25 @@ WHERE user_id = ${sqlString(userId)};
         };
     });
 }
+// Channel names and avatars barely change, but refreshing them calls Google (and may
+// refresh a token) for every connected account. The app shell and the Automation page
+// both ask on every open, so a refresh is reused for 10 minutes and concurrent asks
+// share one; the account list itself is always read fresh from the database.
+const IDENTITY_REFRESH_MS = 10 * 60 * 1000;
+const identityRefreshState = new Map();
 async function refreshYouTubeAccountIdentities(userId) {
+    const state = identityRefreshState.get(userId);
+    if (state?.pending)
+        return state.pending;
+    if (state && Date.now() - state.at < IDENTITY_REFRESH_MS)
+        return { accounts: await listYouTubeAccounts(userId), refreshedAt: new Date(state.at).toISOString() };
+    const pending = refreshYouTubeAccountIdentitiesNow(userId).finally(() => {
+        identityRefreshState.set(userId, { at: Date.now(), pending: null });
+    });
+    identityRefreshState.set(userId, { at: state?.at || 0, pending });
+    return pending;
+}
+async function refreshYouTubeAccountIdentitiesNow(userId) {
     const accounts = await listYouTubeAccounts(userId);
     const refreshedAt = new Date().toISOString();
     await Promise.allSettled(accounts.map(async (listedAccount) => {
@@ -22586,7 +22615,7 @@ VALUES (
             const agent = await getAutomationAgent(session.user.id, req.params.id);
             if (!agent)
                 return res.status(404).json({ error: "Automation agent not found" });
-            await rebuildAgentLearningProfile(agent.id).catch(() => null);
+            await rebuildAgentLearningProfileIfStale(agent.id).catch(() => null);
             const observationsOut = await runPsql(`
 SELECT COALESCE(json_agg(json_build_object(
   'microNiche', micro_niche,
@@ -22614,7 +22643,7 @@ WHERE agent_id = ${sqlString(agent.id)};
             const agent = await getAutomationAgent(session.user.id, req.params.id);
             if (!agent)
                 return res.status(404).json({ error: "Automation agent not found" });
-            await rebuildAgentLearningProfile(agent.id).catch(() => null);
+            await rebuildAgentLearningProfileIfStale(agent.id).catch(() => null);
             const learning = await getAgentLearningProfile(agent.id).catch(() => null);
             const report = await buildAgentPerformanceReport(agent.id);
             res.json({ agentId: agent.id, report: attachAutomationDecisionPolicy(agent, learning, report, `report:${agent.id}`) });

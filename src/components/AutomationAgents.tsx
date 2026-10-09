@@ -111,6 +111,7 @@ import { type PlaylistMode, PlaylistControl, SCHEDULED_VISIBILITY_OPTIONS, Visib
 import { choose, confirm, Dialog } from "./ui/Dialog";
 import { EmptyState, Notice as SharedNotice, SearchField, Switch } from "./ui/controls";
 import { OrientationPicker } from "./OrientationPicker";
+import { BrandLoader } from "./BrandLoader";
 
 const DEFAULT_SETTINGS = {
   maxPostsPerDay: 1,
@@ -648,14 +649,18 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
     }
   }, [form.youtubeAccountId]);
 
+  const authRef = useRef(auth);
+  authRef.current = auth;
   const loadAll = useCallback(async () => {
+    const auth = authRef.current;
     setLoading(true);
     setError("");
     try {
-      const optionsResponse = await fetch("/api/automation/options");
-      const optionsData = await readApiJson(optionsResponse, "Could not load automation options");
-      const agentsResponse = await fetch("/api/automation/agents");
-      const agentsData = await readApiJson(agentsResponse, "Could not load automation agents");
+      // Independent, so both requests go out at once.
+      const [optionsData, agentsData] = await Promise.all([
+        fetch("/api/automation/options").then((response) => readApiJson(response, "Could not load automation options")),
+        fetch("/api/automation/agents").then((response) => readApiJson(response, "Could not load automation agents")),
+      ]);
       const nextAccounts = (optionsData.accounts || auth.accounts || []) as ConnectedYouTubeAccount[];
       const nextSources = (optionsData.sources || []) as AutomationSourceSummary[];
       const nextAgents = (agentsData.agents || []) as AutomationAgent[];
@@ -685,7 +690,7 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
     } finally {
       setLoading(false);
     }
-  }, [auth.accounts, auth.activeAccount?.id, initialSlug]);
+  }, [initialSlug]);
 
   const analyzeSourceUrl = useCallback(async (rawUrl: string) => {
     const url = rawUrl.trim();
@@ -744,6 +749,11 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
       return;
     }
     try {
+      // The report doesn't need the detail first: fetch both at once.
+      const reportRequest = fetch(`/api/automation/agents/${encodeURIComponent(id)}/report`)
+        .then((reportResponse) => readApiJson(reportResponse, "Could not load agent report"))
+        .then((reportData) => reportData.report || null)
+        .catch(() => null);
       const response = await fetch(`/api/automation/agents/${encodeURIComponent(id)}`);
       const data = await readApiJson(response, "Could not load agent detail");
       if (data.agent) {
@@ -753,14 +763,7 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
       setRuns(data.runs || []);
       setUploads(data.uploads || []);
       setLearning(data.learning || null);
-      try {
-        const reportAgentId = data.agent?.id || id;
-        const reportResponse = await fetch(`/api/automation/agents/${encodeURIComponent(reportAgentId)}/report`);
-        const reportData = await readApiJson(reportResponse, "Could not load agent report");
-        setAgentReport(reportData.report || null);
-      } catch {
-        setAgentReport(null);
-      }
+      setAgentReport(await reportRequest);
     } catch (err) {
       // A deep link that cannot be opened reports itself in the board instead of a toast.
       if (!options.silent) setError(err instanceof Error ? err.message : "Could not load agent detail");
@@ -1477,26 +1480,7 @@ function AgentBoard({
   theme: "light" | "dark";
 }) {
   if (loading) {
-    return (
-      <section className="h-full overflow-y-auto p-4 md:p-5" aria-busy="true" aria-label="Loading agents">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {Array.from({ length: 8 }).map((_, index) => (
-            <div key={index} className="animate-pulse overflow-hidden rounded-[1.05rem] border border-[var(--ui-line)] bg-[var(--ui-panel)] shadow-sm" style={{ animationDelay: `${index * 90}ms` }}>
-              <div className="m-2 h-28 rounded-[0.9rem] bg-[var(--ui-bg)]" />
-              <div className="space-y-2 px-3 pb-3 pt-1">
-                <div className="h-4 w-3/5 rounded-md bg-[var(--ui-text)]/8" />
-                <div className="grid grid-cols-3 gap-1">
-                  <div className="h-11 rounded-lg bg-[var(--ui-bg)]" />
-                  <div className="h-11 rounded-lg bg-[var(--ui-bg)]" />
-                  <div className="h-11 rounded-lg bg-[var(--ui-bg)]" />
-                </div>
-                <div className="h-9 rounded-lg bg-[var(--ui-bg)]" />
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-    );
+    return <BrandLoader inline label="Loading your agents" theme={theme} />;
   }
 
   const showingDraft = creatingNew;

@@ -14,10 +14,11 @@ const savedTheme = (): Theme => {
   }
 };
 
-export function BrandLoader({ label = "Loading your workspace", theme }: { label?: string; theme?: Theme }) {
+/** `inline` fills its container instead of the whole window, for a page loading inside the app. */
+export function BrandLoader({ label = "Loading your workspace", theme, inline = false }: { label?: string; theme?: Theme; inline?: boolean }) {
   const mode = theme || savedTheme();
   return (
-    <div className="bl" data-theme={mode} role="status" aria-live="polite" aria-label={label}>
+    <div className={inline ? "bl is-inline" : "bl"} data-theme={mode} role="status" aria-live="polite" aria-label={label}>
       <div className="bl-stage" aria-hidden="true">
         <span className="bl-halo" />
         <span className="bl-ring" />

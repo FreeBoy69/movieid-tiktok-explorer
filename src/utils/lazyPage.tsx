@@ -6,6 +6,7 @@
 // until a manual reload. Here, a failed page load reloads the app once (fresh
 // file names), and anything still failing shows a message with a Reload button.
 import { Component, lazy, useEffect, useState, type ComponentType, type ReactNode } from "react";
+import { BrandLoader } from "../components/BrandLoader";
 
 const RELOAD_KEY = "autoyt-chunk-reload-at";
 const RELOAD_GAP_MS = 15_000;
@@ -98,15 +99,5 @@ export function PageLoading({ theme = "dark" }: { theme?: "light" | "dark" }) {
     const t = window.setTimeout(() => setShow(true), 180);
     return () => window.clearTimeout(t);
   }, []);
-  const dark = theme !== "light";
-  return (
-    <div role="status" aria-live="polite" className="flex h-full min-h-[240px] items-center justify-center">
-      {show ? (
-        <span className={`flex items-center gap-2.5 text-[13px] ${dark ? "text-[#9b9a93]" : "text-[#66655e]"}`}>
-          <span className={`h-4 w-4 animate-spin rounded-full border-2 ${dark ? "border-white/15 border-t-[#f9dc0b]" : "border-black/10 border-t-[#7a6600]"}`} aria-hidden="true" />
-          Loading
-        </span>
-      ) : null}
-    </div>
-  );
+  return show ? <BrandLoader inline label="Loading" theme={theme} /> : <div className="h-full min-h-[240px]" aria-busy="true" />;
 }
