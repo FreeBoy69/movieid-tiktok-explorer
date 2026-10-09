@@ -55,9 +55,10 @@ function likelyMonetized(subscribers, uploads) {
  * `youtube(path, params)` is the Data API fetcher; `faceless(title, description, channel)`
  * returns { score, hits }. Channels that can't be read keep their search hits.
  * @param {any[]} hits
- * @param {{ youtube?: (path: string, params: Record<string, unknown>) => Promise<any>, faceless?: (title: string, description: string, channel: string) => { score: number, hits?: string[] }, limit?: number, uploads?: number }} [options]
+ * `vision(request)` (requestOpenRouter) looks at thumbnails to decide whether each channel is faceless.
+ * @param {{ youtube?: (path: string, params: Record<string, unknown>) => Promise<any>, faceless?: (title: string, description: string, channel: string) => { score: number, hits?: string[] }, vision?: ((request: any) => Promise<{ value: any }>) | null, limit?: number, uploads?: number }} [options]
  */
-export async function enrichDiscoveryChannels(hits = [], { youtube, faceless, limit = 40, uploads = 15 } = {}) {
+export async function enrichDiscoveryChannels(hits = [], { youtube, faceless, vision, limit = 40, uploads = 15 } = {}) {
   const byChannel = new Map();
   for (const video of hits) {
     if (!video.channelId) continue;
@@ -86,6 +87,7 @@ export async function enrichDiscoveryChannels(hits = [], { youtube, faceless, li
 
   const now = Date.now();
   const out = [];
+  const looks = [];
   for (const [id, list] of playlists) {
     const found = byChannel.get(id);
     const channel = channels.get(id);
@@ -126,6 +128,7 @@ export async function enrichDiscoveryChannels(hits = [], { youtube, faceless, li
     const firstUploadAt = videoCount && videos.length >= videoCount && Number.isFinite(oldest) ? new Date(oldest).toISOString() : snippet.publishedAt || "";
     const channelLanguage = language(snippet.defaultLanguage) || mostCommon(videos.map((v) => v.language).filter(Boolean));
     const facelessScore = channelFaceless(snippet.title, videos.map((v) => v.title), faceless);
+    looks.push({ id, title: snippet.title || "", titles: videos.slice(0, 6).map((v) => v.title), videoIds: videos.slice(0, 4).map((v) => v.id) });
     const monetized = subscriberCount === null ? "unknown" : likelyMonetized(subscriberCount, videos);
     for (const video of videos)
       out.push({
@@ -147,7 +150,62 @@ export async function enrichDiscoveryChannels(hits = [], { youtube, faceless, li
         facelessScore,
       });
   }
+  // What the thumbnails show beats what the titles suggest.
+  const judged = await judgeFaceless(looks, vision);
+  for (const video of out) {
+    const verdict = judged.get(video.channelId);
+    if (verdict) Object.assign(video, verdict);
+  }
   return out;
+}
+
+// Vision verdicts per channel. A channel's presentation rarely changes, so a verdict is kept
+// for a month and each channel is judged once across all users' scans.
+const VERDICT_MS = 30 * 86400000;
+const verdicts = new Map();
+const FACELESS_PROMPT = `You classify YouTube channels as faceless or not from their recent video thumbnails, name and titles.
+A channel is NOT faceless when a real person presents on camera as its host: talking-head videos, vlogs, a creator's face in their thumbnails across videos, reaction cams, podcasts filmed on camera, or street interviews.
+A channel IS faceless when no recurring real presenter is shown: voiceover over stock or archival footage, AI images or AI video, animation or cartoons (including animated characters and mascots), gameplay, screen recordings, text, hands-only crafting, or nature and ambience. Strangers in stock photos, film stills, AI-generated people and historical figures do not make a channel non-faceless.
+Judge every channel. Return JSON only: {"channels":[{"id":"channel id","faceless":true,"confidence":0-100,"reason":"under 12 words, what you see"}]}`;
+
+async function judgeFaceless(looks, vision) {
+  const result = new Map();
+  const pending = [];
+  for (const look of looks) {
+    const kept = verdicts.get(look.id);
+    if (kept && Date.now() - kept.at < VERDICT_MS) result.set(look.id, kept.verdict);
+    else if (look.videoIds.length) pending.push(look);
+  }
+  if (!vision || !pending.length) return result;
+  // Six channels (24 small thumbnails) per request, all requests at once.
+  const batches = [];
+  for (let i = 0; i < pending.length; i += 6) batches.push(pending.slice(i, i + 6));
+  await inBatches(batches, 12, async (batch) => {
+    try {
+      const content = [{ type: "text", text: FACELESS_PROMPT }];
+      for (const look of batch) {
+        content.push({ type: "text", text: `Channel ${look.id}: "${look.title}". Recent titles: ${look.titles.map((t) => `"${t}"`).join("; ")}. Thumbnails:` });
+        for (const videoId of look.videoIds) content.push({ type: "image_url", image_url: { url: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg` } });
+      }
+      const { value } = await vision({ kind: "vision", json: true, temperature: 0, maxTokens: 1500, timeoutMs: 60000, messages: [{ role: "user", content }] });
+      for (const item of Array.isArray(value?.channels) ? value.channels : []) {
+        if (!batch.some((look) => look.id === item?.id) || typeof item.faceless !== "boolean") continue;
+        const confidence = Math.max(0, Math.min(100, Number(item.confidence) || 70));
+        // Faceless channels score 50 to 100 and on-camera channels 0 to 50, by confidence.
+        const verdict = {
+          facelessScore: Math.round(item.faceless ? 50 + confidence / 2 : 50 - confidence / 2),
+          facelessReason: String(item.reason || "").slice(0, 120),
+          facelessSource: "thumbnails",
+        };
+        verdicts.set(item.id, { at: Date.now(), verdict });
+        result.set(item.id, verdict);
+      }
+    } catch (error) {
+      console.warn("[niche-finder] faceless check failed:", error instanceof Error ? error.message : error);
+    }
+  });
+  if (verdicts.size > 20000) for (const key of [...verdicts.keys()].slice(0, 5000)) verdicts.delete(key);
+  return result;
 }
 
 // Faceless is judged across the channel, not per title: narration formats (stories, facts,

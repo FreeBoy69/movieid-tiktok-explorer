@@ -4586,7 +4586,7 @@ export function registerCreatorWorkspace(app) {
           return {
             query,
             niches: queries,
-            videos: await enrichDiscoveryChannels(videos, { youtube: dependencies.youtube, faceless: dependencies.faceless, limit: query ? 40 : 60 }),
+            videos: await enrichDiscoveryChannels(videos, { youtube: dependencies.youtube, faceless: dependencies.faceless, vision: openRouterConfigured() ? requestOpenRouter : null, limit: query ? 40 : 60 }),
           };
         });
       }
@@ -4700,7 +4700,7 @@ export function registerCreatorWorkspace(app) {
       };
       const result = await cachedDiscovery(JSON.stringify(["similar", query, options.publishedAfterDays, options.duration, options.regionCode]), async () => {
         const radar = await dependencies.radar(options);
-        return { ...radar, videos: await enrichDiscoveryChannels(radar.videos, { youtube: dependencies.youtube, faceless: dependencies.faceless }) };
+        return { ...radar, videos: await enrichDiscoveryChannels(radar.videos, { youtube: dependencies.youtube, faceless: dependencies.faceless, vision: openRouterConfigured() ? requestOpenRouter : null }) };
       });
       const videos = (result.videos || []).filter(
         (video) => video.channelId && video.channelId !== channel.id,

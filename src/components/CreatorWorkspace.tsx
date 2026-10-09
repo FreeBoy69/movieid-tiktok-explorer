@@ -1521,7 +1521,10 @@ export function ChannelCard({
       </span>
     );
   const known = (v: unknown) => v !== null && v !== undefined;
-  const tags = [c.niche, c.language && c.language.toUpperCase(), known(c.facelessConfidence) && c.facelessConfidence >= 50 ? "Faceless" : ""].filter(Boolean);
+  // Faceless from the thumbnails is a finding; from titles alone it's only a guess, so
+  // "On camera" is shown only when the thumbnails were checked.
+  const facelessTag = !known(c.facelessConfidence) ? "" : c.facelessConfidence >= 50 ? "Faceless" : c.facelessSource === "thumbnails" ? "On camera" : "";
+  const tags = [c.niche, c.language && c.language.toUpperCase(), facelessTag].filter(Boolean);
   // Newest and most-viewed uploads; when they are the same video, the next best fills in.
   const recent = c.recentVideo;
   const best = c.bestVideo?.id !== recent?.id ? c.bestVideo : (c.videos || []).find((v: any) => v.id !== recent?.id);
@@ -1581,7 +1584,9 @@ export function ChannelCard({
       {tags.length > 0 && (
         <ul className="maker-channel-card-tags">
           {tags.map((tag) => (
-            <li key={tag}>{tag}</li>
+            <li key={tag} title={tag === facelessTag ? c.facelessReason || (c.facelessSource === "titles" ? "Guessed from video titles" : undefined) : undefined}>
+              {tag}
+            </li>
           ))}
         </ul>
       )}

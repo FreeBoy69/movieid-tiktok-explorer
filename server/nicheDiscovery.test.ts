@@ -52,6 +52,23 @@ describe("enrichDiscoveryChannels", () => {
     expect(channel.facelessScore).toBeGreaterThanOrEqual(50);
   });
 
+  it("judges faceless from the thumbnails when a vision model is available", async () => {
+    let request: any = null;
+    const vision = async (body: any) => {
+      request = body;
+      return { value: { channels: [{ id: "UCnew", faceless: false, confidence: 90, reason: "Host on camera in every thumbnail" }] } };
+    };
+    const videos = await enrichDiscoveryChannels([{ id: "b", channelId: "UCnew", channelTitle: "Night Tales" }], {
+      youtube: fakeYouTube([]),
+      faceless: () => ({ score: 50, hits: ["story"] }),
+      vision,
+    });
+    const images = request.messages[0].content.filter((part: any) => part.type === "image_url");
+    expect(images.map((part: any) => part.image_url.url)).toContain("https://i.ytimg.com/vi/a/mqdefault.jpg");
+    const [channel] = rankDiscoveryChannels(videos, {});
+    expect(channel).toMatchObject({ facelessScore: 5, facelessSource: "thumbnails", facelessReason: "Host on camera in every thumbnail" });
+  });
+
   it("keeps search hits when the Data API isn't available", async () => {
     const hits = [{ id: "x", channelId: "UC1" }];
     expect(await enrichDiscoveryChannels(hits, {})).toBe(hits);

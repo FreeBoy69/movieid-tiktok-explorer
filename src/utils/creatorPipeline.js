@@ -900,6 +900,9 @@ export function rankDiscoveryChannels(videos, filters = {}) {
         opportunityScore,
         facelessScore,
         facelessConfidence: facelessScore,
+        // "thumbnails" when a vision model looked at the channel; "titles" for the title heuristic.
+        facelessSource: items.map((item) => item.facelessSource).find(Boolean) || (facelessScore !== null ? "titles" : ""),
+        facelessReason: items.map((item) => item.facelessReason).find(Boolean) || "",
         monetizationConfidence: null,
         uploadsPerMonth,
         medianDurationSeconds,
