@@ -18048,6 +18048,59 @@ async function searchYouTubeWebVideoIds(query, limit = 20, params = "EgIQAQ==") 
     walk(data);
     return ids;
 }
+// The same search through yt-dlp: a youtube.com URL, so remote media runs it on the
+// YouTube worker (the VPS), whose IP YouTube doesn't bot-check like the app host's.
+function searchYouTubeVideoIdsWithYtDlp(query, limit = 20, params = "EgIQAQ==") {
+    const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}&sp=${encodeURIComponent(params)}`;
+    const python = resolvePythonExecutable("-m").cmd;
+    return new Promise((resolve, reject) => {
+        const child = spawn(python, ["-m", "yt_dlp", "--flat-playlist", "--dump-single-json", "--playlist-end", String(limit), url], { cwd: __dirname, env: { ...process.env }, windowsHide: true });
+        let stdout = "";
+        let stderr = "";
+        const timer = setTimeout(() => {
+            try { child.kill("SIGKILL"); } catch {}
+        }, 90000);
+        child.stdout.setEncoding("utf8");
+        child.stderr.setEncoding("utf8");
+        child.stdout.on("data", (chunk) => { stdout += chunk; });
+        child.stderr.on("data", (chunk) => { stderr += chunk; });
+        child.on("error", (error) => {
+            clearTimeout(timer);
+            reject(error);
+        });
+        child.on("close", (code) => {
+            clearTimeout(timer);
+            if (code !== 0)
+                return reject(new Error(cleanYtDlpMessage(stderr) || `yt-dlp search exited with code ${code}`));
+            try {
+                const entries = JSON.parse(stdout).entries || [];
+                resolve(entries.map((entry) => entry?.id).filter((id) => typeof id === "string" && /^[\w-]{11}$/.test(id)).slice(0, limit));
+            }
+            catch {
+                reject(new Error("yt-dlp search returned unreadable output"));
+            }
+        });
+    });
+}
+// Web search from this host first; when YouTube answers with nothing (a bot check on
+// the host IP), the same search runs through yt-dlp on the YouTube worker.
+let youtubeWebSearchBlockedUntil = 0;
+async function searchYouTubeVideoIdsAnyRoute(query, limit, params) {
+    if (Date.now() >= youtubeWebSearchBlockedUntil) {
+        const direct = await searchYouTubeWebVideoIds(query, limit, params).catch((error) => {
+            console.warn("YouTube web search failed:", query, error instanceof Error ? error.message : error);
+            return [];
+        });
+        if (direct.length)
+            return direct;
+        // Skip the direct route for a while rather than waiting on it for every lane.
+        youtubeWebSearchBlockedUntil = Date.now() + 30 * 60 * 1000;
+    }
+    return searchYouTubeVideoIdsWithYtDlp(query, limit, params).catch((error) => {
+        console.warn("YouTube yt-dlp search failed:", query, error instanceof Error ? error.message : error);
+        return [];
+    });
+}
 async function fetchYouTubeDiscoveryJson(account, pathName, params = {}) {
     if (youtubeApiKey())
         return fetchYouTubeJson(pathName, params);
@@ -18489,10 +18542,7 @@ async function getYouTubeSearchRadar(n) {
     if (searches.some((search) => search.quotaExceeded)) {
         // Data API search quota is spent: find candidates through web search, then
         // apply the date and length filters locally after enrichment.
-        const webIds = (await Promise.all(searchQueries.flatMap((query) => webSearchLanes(publishedAfterDays).map((lane) => searchYouTubeWebVideoIds(query, 20, lane).catch((error) => {
-            console.warn("YouTube web search fallback failed:", query, error instanceof Error ? error.message : error);
-            return [];
-        }))))).flat();
+        const webIds = (await Promise.all(searchQueries.flatMap((query) => webSearchLanes(publishedAfterDays).map((lane) => searchYouTubeVideoIdsAnyRoute(query, 20, lane))))).flat();
         usedWebSearch = webIds.length > 0;
         ids = Array.from(new Set([...ids, ...webIds])).slice(0, 150);
         if (!ids.length)

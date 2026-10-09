@@ -3,6 +3,17 @@
 // best and newest video, upload rate, first upload, language, likely monetization).
 
 const CACHE_MS = 6 * 3600 * 1000;
+
+// Faceless niches the no-search feed draws from, four at a time.
+const FEED_NICHES = [
+  "scary stories", "history documentary", "anime recap", "true crime", "space facts", "sleep stories",
+  "movie recap", "mythology stories", "psychology facts", "finance explained", "geography explained",
+  "ancient civilizations", "manhwa recap", "reddit stories", "bible stories", "unsolved mysteries",
+];
+export function feedNiches(shuffle = 0) {
+  const start = (Math.abs(Math.floor(shuffle)) * 4) % FEED_NICHES.length;
+  return [0, 1, 2, 3].map((i) => FEED_NICHES[(start + i) % FEED_NICHES.length]);
+}
 const cache = new Map();
 
 /** Memoizes a discovery result for a few hours: YouTube search quota is scarce. */

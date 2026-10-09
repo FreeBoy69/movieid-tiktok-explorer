@@ -144,22 +144,6 @@ const stageCopy: Record<string, { name: string; text: string; icon: ReactNode }>
   review: { name: "Export", text: "Validate, render, and download everything in one bundle.", icon: <Download size={18} /> },
 };
 const PAGE_SIZE = 18;
-const NICHE_SEEDS = [
-  "history documentaries",
-  "true crime cases",
-  "space and astronomy facts",
-  "anime recaps",
-  "personal finance explainers",
-  "horror stories",
-  "geography explained",
-  "mythology stories",
-  "psychology facts",
-  "tech explainers",
-  "movie recaps",
-  "ancient civilizations",
-  "business case studies",
-  "animal documentaries",
-];
 type Job = {
   id: string;
   stage: string;
@@ -1617,12 +1601,14 @@ function Discovery({
     [filterOpen, setFilterOpen] = useState(false),
     [tab, setTab] = useState("channels"),
     [copying, setCopying] = useState(""),
-    [similar, setSimilar] = useState<{ title: string; previous: any } | null>(null);
+    [similar, setSimilar] = useState<{ title: string; previous: any } | null>(null),
+    [failed, setFailed] = useState(""),
+    [shuffle, setShuffle] = useState(0);
   const [collections, setCollections] = useState<any[]>([]),
     [selected, setSelected] = useState<string[]>([]);
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [draftFilters, setDraftFilters] = useState<Filters>(DEFAULT_FILTERS);
-  const cacheKey = `autoyt-niches-${accountId}`;
+  const cacheKey = `autoyt-niche-feed-${accountId}`;
   const [shown, setShown] = useState(PAGE_SIZE);
   const endRef = useRef<HTMLDivElement | null>(null);
   const loadCollections = () =>
@@ -1640,8 +1626,8 @@ function Discovery({
       setSearch(cache.search || "");
       setSelected(cache.selected || []);
     } else {
-      // Results load on open: the linked search, or a faceless niche to start from.
-      void scan(query || NICHE_SEEDS[Math.floor(Math.random() * NICHE_SEEDS.length)]);
+      // Results load on open: the linked search, or the feed across faceless niches.
+      void scan(query || "");
     }
     void loadCollections().catch((e) => onError(e.message));
   }, [accountId]);
@@ -1654,9 +1640,11 @@ function Discovery({
   const bookmarkCollection = collections.find((c) => c.data?.kind === "bookmarks");
   const bookmarks: any[] = bookmarkCollection?.data?.channels || [];
   const research = collections.filter((c) => c.data?.kind !== "bookmarks");
-  async function scan(value = search, nextFilters = filters) {
-    if (!value.trim()) return;
+  // An empty search loads the feed: channels across several faceless niches.
+  async function scan(value = search, nextFilters = filters, nextShuffle = shuffle) {
+    value = value.trim();
     setBusy(true);
+    setFailed("");
     onError("");
     try {
       writeDeepLink({ view: "discover", discoveryQuery: value });
@@ -1665,6 +1653,7 @@ function Discovery({
         await creatorApi("/api/maker/discover", {
           accountId,
           query: value,
+          shuffle: nextShuffle,
           publishedAfterDays: nextFilters.days,
           duration: nextFilters.duration,
           regionCode: nextFilters.region,
@@ -1676,6 +1665,7 @@ function Discovery({
       setTab("channels");
       return true;
     } catch (e) {
+      setFailed((e as Error).message || "Channels couldn't load");
       onError((e as Error).message);
       return false;
     } finally {
@@ -1825,19 +1815,19 @@ function Discovery({
         >
           <Search size={18} />
           <input
-            required
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search a niche, topic, or @channel"
+            placeholder="Search a niche or paste a channel link, or leave empty to browse"
             aria-label="Niche or channel"
           />
           <Action
-            label="Shuffle niche"
+            label="Shuffle niches"
             disabled={busy}
             onClick={() => {
-              const pool = NICHE_SEEDS.filter((seed) => seed !== search);
+              const next = shuffle + 1;
+              setShuffle(next);
               setSimilar(null);
-              void scan(pool[Math.floor(Math.random() * pool.length)]);
+              void scan("", filters, next);
             }}
           >
             <Shuffle size={17} />
@@ -1999,22 +1989,20 @@ function Discovery({
         ) : !result ? (
           <Empty
             icon={<Compass size={28} />}
-            title="Find your next niche"
-            text="Search a topic, paste a channel, or shuffle for a faceless niche to explore."
+            title={failed ? "Channels couldn't load" : "Find your next niche"}
+            text={failed || "Search a topic, paste a channel, or browse channels across faceless niches."}
           >
-            <button
-              className="maker-outline"
-              onClick={() => void scan(NICHE_SEEDS[Math.floor(Math.random() * NICHE_SEEDS.length)])}
-            >
-              <Shuffle size={15} />
-              Shuffle a niche
+            <button className="maker-outline" onClick={() => void scan()}>
+              <RefreshCw size={15} />
+              {failed ? "Try again" : "Browse channels"}
             </button>
           </Empty>
         ) : tab === "channels" ? (
           <>
             <div className="maker-result-summary">
               <span>
-                {channels.length} {channels.length === 1 ? "channel" : "channels"} · {result.videos?.length || 0} videos analyzed
+                {channels.length} {channels.length === 1 ? "channel" : "channels"}
+                {!result.query && result.niches?.length ? ` across ${result.niches.join(", ")}` : ""} · {result.videos?.length || 0} videos analyzed
                 {result.sampledAt ? ` · sampled ${new Date(result.sampledAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : ""}
               </span>
               <span>Faceless and monetized are estimates</span>
@@ -2027,7 +2015,15 @@ function Discovery({
                 </div>
               </>
             ) : (
-              <Empty title="No channels match these filters" text="Remove a filter, or shuffle to another niche.">
+              <Empty
+                title="No channels match these filters"
+                text={(() => {
+                  const found = rankDiscoveryChannels(result.videos || [], { sort: filters.sort }).length;
+                  return found
+                    ? `${found} ${found === 1 ? "channel was" : "channels were"} found, but your filters hide all of them. Remove a filter or clear them all.`
+                    : "YouTube returned no channels for this search. Try another niche or shuffle.";
+                })()}
+              >
                 <button className="maker-outline" onClick={() => applyFilters({ ...EMPTY_FILTERS, sort: filters.sort, days: filters.days, duration: filters.duration, region: filters.region })}>
                   Clear filters
                 </button>
@@ -2065,7 +2061,7 @@ function Discovery({
                 try {
                   await creatorApi("/api/maker/collections", {
                     accountId,
-                    name: search,
+                    name: search || `Niche feed: ${(result.niches || []).join(", ")}`.slice(0, 120),
                     data: { result, filters, search, selected },
                   });
                   await loadCollections();

@@ -32,7 +32,7 @@ import { sceneMove, zoompanFilter } from "../src/utils/sceneMotion.js";
 import { ensureFile, markSaved, removeFile, saveDirectory, saveFile } from "./assetStore.js";
 import { registerDramaSeries } from "./dramaSeries.js";
 import { streamZip } from "./zipStream.js";
-import { cachedDiscovery, enrichDiscoveryChannels } from "./nicheDiscovery.js";
+import { cachedDiscovery, enrichDiscoveryChannels, feedNiches } from "./nicheDiscovery.js";
 import { registerDramaProduction } from "./dramaProduction.js";
 import { DRAMA_SCRIPT_SCHEMA, DRAMA_SERIES_SOURCE, episodeContext, normalizeDramaStoryBible } from "../src/utils/dramaTemplates.js";
 import { sceneAnimationPrompt, shotDirectionRules, timedBeatsDirection } from "../src/utils/shortfilmTemplates.js";
@@ -4319,14 +4319,27 @@ export function registerCreatorWorkspace(app) {
         const channel = style.profile.sourceChannel;
         result = { videos: style.profile.topVideos.map(video=>({...video,channelId:channel.id,channelTitle:channel.title,channelUrl:channel.url,channelThumbnailUrl:channel.thumbnailUrl,subscriberCount:channel.subscriberCount})), competitors:[] };
       } else {
-        const key = JSON.stringify(["discover", String(input.query || "").trim().toLowerCase(), input.publishedAfterDays, input.duration, input.regionCode]);
+        // No search term: a feed across several faceless niches. `shuffle` picks another set.
+        const query = String(input.query || "").trim();
+        const queries = query ? [query] : feedNiches(Number(input.shuffle) || 0);
+        const key = JSON.stringify(["discover", queries, input.publishedAfterDays, input.duration, input.regionCode]);
         result = await cachedDiscovery(key, async () => {
-          const radar = await dependencies.radar({ ...input, accountId: a.id, maxResults: 120, webSearch: true });
-          return { ...radar, videos: await enrichDiscoveryChannels(radar.videos, { youtube: dependencies.youtube, faceless: dependencies.faceless }) };
+          const scans = await Promise.allSettled(
+            queries.map((niche) => dependencies.radar({ ...input, query: niche, accountId: a.id, maxResults: query ? 120 : 60, webSearch: true })),
+          );
+          const found = scans.filter((scan) => scan.status === "fulfilled").map((scan) => scan.value);
+          if (!found.length) throw scans[0].reason;
+          const seen = new Set();
+          const videos = found.flatMap((radar) => radar.videos || []).filter((video) => !seen.has(video.id) && seen.add(video.id));
+          return {
+            query,
+            niches: queries,
+            videos: await enrichDiscoveryChannels(videos, { youtube: dependencies.youtube, faceless: dependencies.faceless, limit: query ? 40 : 60 }),
+          };
         });
       }
       const channels = await rerankWithJev(rankDiscoveryChannels(result.videos, input.filters), {
-        context: { niche: String(input.niche || input.query || "").slice(0, 160), filters: input.filters || {} },
+        context: { niche: String(input.niche || input.query || (result.niches || []).join(", ")).slice(0, 160), filters: input.filters || {} },
         rubric: "Prioritize competitor channels with a clear fit to the requested niche, several recent breakout videos, and promising performance relative to channel size. Prefer credible repeatable evidence over a single lifetime-view outlier.",
         describe: (channel) => ({
           title: String(channel.title || channel.channelTitle || channel.name || "").slice(0, 140),

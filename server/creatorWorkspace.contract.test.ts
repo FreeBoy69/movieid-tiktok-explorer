@@ -395,6 +395,18 @@ describe("creator workspace API contracts", () => {
     expect(body.videos.map((video: any) => video.channelId)).toEqual(["other"]);
   });
 
+  it("loads a niche feed when the search is empty", async () => {
+    radarVideos = [{ id: "f1", channelId: "c1", channelTitle: "Night Tales", viewCount: 9000 }];
+    const response = await request("/api/maker/discover", { method: "POST", body: JSON.stringify({ accountId: "a1", query: "", shuffle: 7 }) });
+    const body = await response.json();
+    expect(response.status).toBe(200);
+    expect(body.query).toBe("");
+    expect(body.niches).toHaveLength(4);
+    expect(radarInput.webSearch).toBe(true);
+    expect(body.niches).toContain(radarInput.query);
+    expect(body.channels.map((c: any) => c.id)).toEqual(["c1"]);
+  });
+
   describe("TubeGen parity routes", () => {
     let root = "";
     const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(64)]);
