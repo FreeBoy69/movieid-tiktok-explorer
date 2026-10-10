@@ -354,6 +354,9 @@
 .juel-live-voice select { height: 36px; padding: 0 10px; border: 1px solid var(--j-line); border-radius: 10px; background: var(--j-panel); color: var(--j-text); font: inherit; }
 .juel-live-mic { display: grid; width: 44px; height: 44px; place-items: center; border: 1px solid var(--j-line); background: var(--j-panel); color: var(--j-text); transition: background-color 180ms ease; }
 .juel-live-mic.is-off { background: var(--j-danger); border-color: var(--j-danger); color: #fff; }
+.juel-live-stop { display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 18px; border: 1px solid var(--j-accent); background: transparent; color: var(--j-text); font-weight: 650; transition: background-color 180ms ease; }
+.juel-live-stop:hover { background: color-mix(in srgb, var(--j-accent) 16%, transparent); }
+.juel-live[data-phase="speaking"] .juel-live-stage { cursor: pointer; }
 .juel-live-end { display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 18px; border: 0; background: var(--j-text); color: var(--j-bg); font-weight: 650; }
 @media (prefers-reduced-motion: reduce) { .juel-live-ring { animation: none; } }
 

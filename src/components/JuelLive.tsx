@@ -4,7 +4,7 @@
 // Juel's reply is spoken sentence by sentence while it is still being written (each next sentence fetched
 // while the current one plays), his mouth follows the voice's loudness, and talking over him stops him.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Mic, MicOff, PhoneOff } from "lucide-react";
+import { Mic, MicOff, PhoneOff, Square } from "lucide-react";
 import { JuelMascot, type JuelPose, setJuelMood } from "./JuelMascot";
 
 type Phase = "starting" | "listening" | "hearing" | "thinking" | "speaking" | "error";
@@ -179,9 +179,43 @@ export function JuelLive({
       recognition.current?.abort();
     } catch {}
   };
+  // While Juel speaks the microphone is off (its track muted, the recogniser stopped), so his own voice
+  // never comes back as yours. It opens again a moment after he finishes, once the speakers are quiet.
+  const earsOff = useRef(false);
+  const reopen = useRef(0);
+  const micTracks = (on: boolean) => stream.current?.getAudioTracks().forEach((track) => (track.enabled = on));
+  const closeEars = () => {
+    window.clearTimeout(reopen.current);
+    if (earsOff.current) return;
+    earsOff.current = true;
+    micTracks(false);
+    window.clearTimeout(endTimer.current);
+    transcript.current = "";
+    if (recorder.current?.state === "recording") {
+      discard.current = true;
+      recorder.current.stop();
+    }
+    try {
+      recognition.current?.abort();
+    } catch {}
+  };
+  const openEars = (delay: number) => {
+    window.clearTimeout(reopen.current);
+    reopen.current = window.setTimeout(() => {
+      if (!earsOff.current || !live.current) return;
+      earsOff.current = false;
+      firstMine.current = 0;
+      micTracks(true);
+      try {
+        recognition.current?.start();
+      } catch {}
+    }, delay);
+  };
   const go = (next: Phase) => {
     phaseRef.current = next;
     setPhase(next);
+    if (next === "speaking") closeEars();
+    else if (earsOff.current && next !== "error") openEars(next === "hearing" ? 0 : 450);
   };
   const mutedRef = useRef(false);
   mutedRef.current = muted;
@@ -338,8 +372,10 @@ export function JuelLive({
 
   // The reply streams in: speak each finished sentence; the rest when the turn ends.
   const lastSeen = useRef("");
+  // Set when you cut him off: nothing more of that turn's answer is spoken, however late it arrives.
+  const cutOff = useRef(false);
   useEffect(() => {
-    if (reply === null) return;
+    if (reply === null || cutOff.current) return;
     turnDone.current = false;
     const text = speakable(reply);
     spokenUpTo.current = resumeAt(lastSeen.current, spokenUpTo.current, text);
@@ -353,7 +389,7 @@ export function JuelLive({
       if (phaseRef.current !== "speaking") go("thinking");
       return;
     }
-    if (turnDone.current) return;
+    if (turnDone.current || cutOff.current) return;
     turnDone.current = true;
     const streamed = lastSeen.current;
     lastSeen.current = "";
@@ -407,6 +443,7 @@ export function JuelLive({
     replyBefore.current = lastReplyRef.current;
     lastSeen.current = "";
     saidWords.current = new Set();
+    cutOff.current = false;
     discard.current = true;
     if (recorder.current?.state === "recording") recorder.current.stop();
     go("thinking");
@@ -419,10 +456,12 @@ export function JuelLive({
     stopSpeaking();
     interruptRef.current();
     turnDone.current = true;
+    cutOff.current = true;
     transcript.current = "";
     if (!keepEars) freshEars();
     setJuelMood("listen");
-    go("hearing");
+    // Cut off by your words: they're the start of your turn. By a tap: he waits for you.
+    go(keepEars ? "hearing" : "listening");
   }, [stopSpeaking]);
 
   useEffect(() => {
@@ -518,7 +557,7 @@ export function JuelLive({
         rec.lang = navigator.language || "en-US";
         rec.onresult = (event) => {
           let p = phaseRef.current;
-          if (mutedRef.current) return;
+          if (mutedRef.current || earsOff.current) return;
           // What's new in this result: his own words coming back are ignored while he talks and just after.
           let latest = "";
           for (let i = event.resultIndex; i < event.results.length; i++) latest += ` ${event.results[i][0].transcript}`;
@@ -567,7 +606,7 @@ export function JuelLive({
         // Recognition stops on its own now and then; keep it going while live.
         rec.onend = () => {
           firstMine.current = 0;
-          if (live.current) window.setTimeout(() => live.current && (() => { try { rec.start(); } catch {} })(), 150);
+          if (live.current && !earsOff.current) window.setTimeout(() => live.current && !earsOff.current && (() => { try { rec.start(); } catch {} })(), 150);
         };
         rec.onerror = (event) => {
           if (event.error === "language-not-supported") rec.lang = "en-US";
@@ -616,6 +655,7 @@ export function JuelLive({
     })();
     return () => {
       live.current = false;
+      window.clearTimeout(reopen.current);
       cancelAnimationFrame(frame);
       window.clearTimeout(endTimer.current);
       try {
@@ -643,13 +683,13 @@ export function JuelLive({
     listening: muted ? "Your microphone is off" : "I'm listening. Say anything.",
     hearing: "Listening",
     thinking: "Thinking",
-    speaking: "Speaking. Talk any time to interrupt.",
+    speaking: "Your mic is off while I talk. Tap me to cut in.",
     error: problem || "Live mode stopped.",
   }[phase];
 
   return (
     <div className="juel-live" data-phase={phase}>
-      <div className="juel-live-stage" ref={stage}>
+      <div className="juel-live-stage" ref={stage} onClick={phase === "speaking" ? () => bargeIn() : undefined}>
         <JuelMascot pose={pose} size={200} followPointer={phase === "listening"} title="Juel" />
         {phase === "hearing" || phase === "listening" ? <span className="juel-live-ring" aria-hidden="true" /> : null}
       </div>
@@ -675,6 +715,12 @@ export function JuelLive({
         <button type="button" className={`juel-live-mic${muted ? " is-off" : ""}`} onClick={() => setMuted((m) => !m)} aria-pressed={muted} aria-label={muted ? "Turn the microphone on" : "Mute the microphone"} title={muted ? "Unmute" : "Mute"}>
           {muted ? <MicOff size={18} /> : <Mic size={18} />}
         </button>
+        {phase === "speaking" ? (
+          <button type="button" className="juel-live-stop" onClick={() => bargeIn()}>
+            <Square size={14} />
+            Stop
+          </button>
+        ) : null}
         <button type="button" className="juel-live-end" onClick={onEnd}>
           <PhoneOff size={16} />
           End live
