@@ -4,7 +4,7 @@
 // Juel's reply is spoken sentence by sentence while it is still being written (each next sentence fetched
 // while the current one plays), his mouth follows the voice's loudness, and talking over him stops him.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Mic, MicOff, PhoneOff, Square } from "lucide-react";
+import { AudioLines, Mic, MicOff, PhoneOff, Square } from "lucide-react";
 import { JuelMascot, type JuelPose, setJuelMood } from "./JuelMascot";
 
 type Phase = "starting" | "listening" | "hearing" | "thinking" | "speaking" | "error";
@@ -144,6 +144,12 @@ export function JuelLive({
   const [phase, setPhase] = useState<Phase>("starting");
   const [heard, setHeard] = useState("");
   const [saying, setSaying] = useState("");
+  const [asked, setAsked] = useState("");
+  // His last line stays up after he finishes, until you start talking.
+  const [lastSaid, setLastSaid] = useState("");
+  useEffect(() => {
+    if (saying) setLastSaid(saying);
+  }, [saying]);
   const [muted, setMuted] = useState(false);
   const [problem, setProblem] = useState("");
   const [voice, setVoice] = useState(() => {
@@ -473,7 +479,7 @@ export function JuelLive({
     const { sentences } = nextSentences(text, Math.min(spokenUpTo.current, text.length), true);
     spokenUpTo.current = 0;
     if (sentences.length) enqueue(sentences);
-    else if (!playing.current && !queue.current.length) go("listening");
+    else if (!busy.current && !playing.current && !queue.current.length) go("listening");
   }, [sending, finished, lastReply, enqueue]);
 
   // ---------- Audio in: speech recognition, a voice-activity meter, and turn-taking ----------
@@ -502,6 +508,7 @@ export function JuelLive({
     gaps.current = [];
     setHeard("");
     if (!said) return go("listening");
+    setAsked(said);
     spokenUpTo.current = 0;
     spokenTotal.current = 0;
     turnDone.current = false;
@@ -743,53 +750,62 @@ export function JuelLive({
   }, [voice]);
 
   const pose: JuelPose = phase === "speaking" ? "speak" : phase === "thinking" ? "think" : phase === "hearing" ? "listen" : phase === "error" ? "oops" : phase === "starting" ? "wave" : "idle";
-  const status = {
-    starting: "Getting the microphone ready",
-    listening: muted ? "Your microphone is off" : "I'm listening. Say anything.",
-    hearing: "Listening",
-    thinking: "Thinking",
-    speaking: "Your mic is off while I talk. Tap me to cut in.",
-    error: problem || "Live mode stopped.",
-  }[phase];
+  // The big line under Juel is the conversation as it happens: your words as you say them, then his
+  // reply as he speaks it (which stays up until you talk again). Before the first turn, his prompt.
+  const caption =
+    phase === "speaking" ? saying || lastSaid
+    : phase === "hearing" ? heard
+    : phase === "thinking" ? asked
+    : phase === "error" ? problem || "Live mode stopped."
+    : phase === "starting" ? "One moment, getting the mic ready."
+    : lastSaid || (muted ? "Your mic is off." : "What are we making today?");
+  const who = phase === "hearing" || phase === "thinking" ? "you" : phase === "speaking" || (phase === "listening" && lastSaid) ? "juel" : "prompt";
+  // The card's line: what's happening, or a problem worth knowing about.
+  const hint =
+    problem && phase !== "error" ? problem
+    : { starting: "Starting live mode", listening: muted ? "Unmute to talk" : "Say anything", hearing: "Listening", thinking: "Thinking", speaking: "Tap Juel to cut in", error: "Try again, or type to Juel instead" }[phase];
 
   return (
     <div className="juel-live" data-phase={phase}>
       <div className="juel-live-stage" ref={stage} onClick={phase === "speaking" ? () => bargeIn() : undefined}>
-        <JuelMascot pose={pose} size={200} followPointer={phase === "listening"} title="Juel" />
-        {phase === "hearing" || phase === "listening" ? <span className="juel-live-ring" aria-hidden="true" /> : null}
+        <div className="juel-live-aura" aria-hidden="true">
+          <i />
+          <i />
+          <i />
+        </div>
+        <JuelMascot pose={pose} size={184} followPointer={phase === "listening"} title="Juel" />
       </div>
-      <p className="juel-live-status" role="status" aria-live="polite">
-        {status}
+      <p key={`${who}:${caption}`} className="juel-live-caption" data-who={who} aria-live="polite">
+        {caption.charAt(0).toUpperCase() + caption.slice(1)}
       </p>
-      <div className="juel-live-captions" aria-live="polite">
-        {heard ? <p className="is-you">{heard}</p> : null}
-        {saying ? <p className="is-juel">{saying}</p> : null}
-      </div>
-      {problem && phase !== "error" ? <p className="juel-live-note">{problem}</p> : null}
-      <div className="juel-live-controls">
-        <label className="juel-live-voice">
-          <span>Voice</span>
-          <select value={voice} onChange={(event) => setVoice(event.target.value)}>
-            {VOICES.map(([id, label]) => (
-              <option key={id} value={id}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button type="button" className={`juel-live-mic${muted ? " is-off" : ""}`} onClick={() => setMuted((m) => !m)} aria-pressed={muted} aria-label={muted ? "Turn the microphone on" : "Mute the microphone"} title={muted ? "Unmute" : "Mute"}>
-          {muted ? <MicOff size={18} /> : <Mic size={18} />}
-        </button>
-        {phase === "speaking" ? (
-          <button type="button" className="juel-live-stop" onClick={() => bargeIn()}>
-            <Square size={14} />
-            Stop
+      <div className="juel-live-dock">
+        <p className={`juel-live-hint${problem ? " is-problem" : ""}`} role="status" aria-live="polite">
+          {hint}
+        </p>
+        <div className="juel-live-row">
+          <label className="juel-live-voice" title="Juel's voice">
+            <AudioLines size={13} aria-hidden="true" />
+            <select value={voice} onChange={(event) => setVoice(event.target.value)} aria-label="Juel's voice">
+              {VOICES.map(([id, label]) => (
+                <option key={id} value={id}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button type="button" className={`juel-live-chip juel-live-mic${muted ? " is-off" : ""}`} onClick={() => setMuted((m) => !m)} aria-pressed={muted} aria-label={muted ? "Turn the microphone on" : "Mute the microphone"} title={muted ? "Unmute" : "Mute"}>
+            {muted ? <MicOff size={15} /> : <Mic size={15} />}
           </button>
-        ) : null}
-        <button type="button" className="juel-live-end" onClick={onEnd}>
-          <PhoneOff size={16} />
-          End live
-        </button>
+          {phase === "speaking" ? (
+            <button type="button" className="juel-live-chip juel-live-stop" onClick={() => bargeIn()}>
+              <Square size={11} />
+              Stop
+            </button>
+          ) : null}
+          <button type="button" className="juel-live-end" onClick={onEnd} aria-label="End live mode" title="End live mode">
+            <PhoneOff size={18} />
+          </button>
+        </div>
       </div>
     </div>
   );
