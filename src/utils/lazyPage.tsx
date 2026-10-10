@@ -17,8 +17,32 @@ export function isChunkLoadError(error: unknown): boolean {
   return /Failed to fetch dynamically imported module|Importing a module script failed|error loading dynamically imported module|Unable to preload CSS|ChunkLoadError|Loading chunk .* failed|is not a valid JavaScript MIME type/i.test(text);
 }
 
+// Who is holding reloads off (live mode with Juel: a reload mid-sentence cuts his voice and the
+// microphone), and whether one was wanted meanwhile.
+let holds = 0;
+let wanted = false;
+/** Keeps the app from reloading itself until the returned release is called; a reload wanted in the
+ *  meantime happens then. While held, a stale page shows its "AutoYT was just updated" message instead. */
+export function holdReload(reload: () => void = () => window.location.reload()): () => void {
+  holds += 1;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    holds -= 1;
+    if (!holds && wanted) {
+      wanted = false;
+      reload();
+    }
+  };
+}
+
 /** Reload the app, at most once every 15 seconds so a real outage can't loop. Returns whether it reloaded. */
-export function reloadOnce(): boolean {
+export function reloadOnce(reload: () => void = () => window.location.reload()): boolean {
+  if (holds) {
+    wanted = true;
+    return false;
+  }
   try {
     const last = Number(window.sessionStorage.getItem(RELOAD_KEY) || 0);
     if (Date.now() - last < RELOAD_GAP_MS) return false;
@@ -26,7 +50,7 @@ export function reloadOnce(): boolean {
   } catch {
     // No session storage (private mode): reload anyway; the boundary stops a loop.
   }
-  window.location.reload();
+  reload();
   return true;
 }
 

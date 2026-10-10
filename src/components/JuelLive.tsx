@@ -5,6 +5,7 @@
 // while the current one plays), his mouth follows the voice's loudness, and talking over him stops him.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AudioLines, Mic, MicOff, PhoneOff, Square } from "lucide-react";
+import { holdReload } from "../utils/lazyPage";
 import { micRecorder } from "../utils/micTape";
 import { JuelMascot, type JuelPose, setJuelMood } from "./JuelMascot";
 
@@ -820,6 +821,9 @@ export function JuelLive({
 
   useEffect(() => {
     live.current = true;
+    // A page Juel opens may be from before a deploy: the app would reload itself for the new files, which
+    // ends the call mid-sentence. That waits until the call ends.
+    const releaseReload = holdReload();
     // Chrome fills its voice list after a moment: ask early so the first sentence gets the nice voice.
     window.speechSynthesis?.getVoices?.();
     let frame = 0;
@@ -1094,6 +1098,7 @@ export function JuelLive({
     })();
     return () => {
       live.current = false;
+      releaseReload();
       window.clearTimeout(reopen.current);
       cancelAnimationFrame(frame);
       window.clearTimeout(endTimer.current);
