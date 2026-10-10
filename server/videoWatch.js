@@ -71,7 +71,8 @@ export function computePacing(cuts, duration) {
   const median = lengths.length % 2 ? lengths[mid] : (lengths[mid - 1] + lengths[mid]) / 2;
   return {
     shotCount: shots.length,
-    cutsPerMinute: round(shots.length / (d / 60)),
+    // Cuts, not shots: one unbroken take is 0 cuts a minute.
+    cutsPerMinute: round((shots.length - 1) / (d / 60)),
     meanShot: round(lengths.reduce((sum, n) => sum + n, 0) / lengths.length),
     medianShot: round(median),
     shots,
@@ -193,7 +194,7 @@ ${voices.length ? `\nBUILT-IN VOICES (name: description): ${voices.slice(0, 40).
 export function observePrompt({ frames, label, transcript }) {
   return `You are watching a video like a video editor. These are ${frames.length} frames (${label}); each is labelled with its time in the video. Describe only what is visible: never guess at sound.
 For each frame, in order: "shot" (close-up | medium | wide | screen recording | graphic | text card | b-roll | other), "subject" (who or what, a few words), "text" (on-screen words exactly as written, else ""), "captions" (if burned-in captions or subtitles show: their font weight, case, colours, highlighted word, box or outline, position, and how many words at a time; else ""), "look" (colour grade, lighting, framing, and effects such as zoom, split screen, picture-in-picture, a few words).
-Then "notes": one to three sentences on what happens across these frames and the editing patterns you see (zooms, jump cuts, transitions, overlays, recurring layouts).
+Then "notes": one to three sentences on what happens across these frames and the editing patterns you see (zooms, transitions, overlays, recurring layouts). The frames are seconds apart, so movement between them is expected: only call something a cut when the framing or location clearly changes.
 ${transcript ? `What is said over this stretch, for context:\n${transcript}\n` : ""}Return JSON only: {"frames":[{"shot":"","subject":"","text":"","captions":"","look":""}],"notes":""}`;
 }
 
@@ -203,7 +204,7 @@ export function reportPrompt({ facts, observations, notes, transcript, hook, que
   return `You are a senior video editor and YouTube strategist. You watched a video for a creator and write them a breakdown, then a plan to make a video like it in AutoYT, their video app.
 
 THE VIDEO: ${facts.title ? `"${facts.title}"` : "(untitled)"}${facts.url ? ` ${facts.url}` : ""}, ${formatTime(facts.duration)} long${facts.analysedSeconds < facts.duration ? `; you watched the first ${formatTime(facts.analysedSeconds)}` : ""}, ${facts.width && facts.height ? `${facts.width}x${facts.height} (${facts.width < facts.height ? "vertical" : facts.width === facts.height ? "square" : "horizontal"})` : "size unknown"}.
-PACING (measured from scene changes): ${pacing.shotCount} shots, ${pacing.cutsPerMinute} cuts a minute, mean shot ${pacing.meanShot}s, median ${pacing.medianShot}s.
+PACING (measured from scene changes): ${pacing.shotCount} shots, ${pacing.cutsPerMinute} cuts a minute, mean shot ${pacing.meanShot}s, median ${pacing.medianShot}s. These counts are the truth about editing: never describe more cuts or jump cuts than they show. The frames are sampled seconds apart, so a subject moving or a handheld camera drifting between them is not a cut.
 NARRATION (measured): ${facts.speech.words ? `${facts.speech.words} words, about ${facts.speech.wordsPerMinute} words a minute${facts.speech.sentenceWords ? `, ${facts.speech.sentenceWords} words a sentence` : ""}` : "no speech found"}; transcript from ${facts.transcriptSource}.
 ${question ? `\nTHE CREATOR'S QUESTION (answer it first, in "answer", and let it steer the whole report): ${question}\n` : ""}
 FRAMES (time, kind, then what was seen; "hook" frames are a 2-per-second pass over the first 10 s):
@@ -548,7 +549,8 @@ export async function watchVideo({ file, url = "", title = "", question = "", ma
   const { observations, notes } = await observe({ frames: [...measured.hookFrames, ...measured.frames], segments: transcript.segments, request, signal, onStatus });
   await onStatus("Writing the breakdown");
   const { value } = await request({
-    kind: "text", json: true, maxTokens: 9000, temperature: 0.3, signal, timeoutMs: 240000,
+    // Long JSON from a reasoning model comes back empty unless reasoning is kept low.
+    kind: "text", json: true, maxTokens: 9000, temperature: 0.3, reasoningEffort: "low", signal, timeoutMs: 240000,
     messages: [{ role: "user", content: reportPrompt({ facts, observations, notes, transcript: transcriptLines(transcript.segments, 30000), hook: hookTranscript(transcript.segments), question, catalog: watchCatalog({ voices }) }) }],
     validate: (v) => { if (!v?.recreate || !Array.isArray(v?.summary)) throw new Error("The breakdown came back incomplete"); },
   });

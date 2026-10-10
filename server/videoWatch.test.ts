@@ -65,7 +65,7 @@ describe("frames and pacing", () => {
     expect(p.shots.map((s) => s.duration)).toEqual([3, 4, 2.5, 5]);
     expect(p.meanShot).toBe(3.63);
     expect(p.medianShot).toBe(3.5);
-    expect(p.cutsPerMinute).toBe(16.55);
+    expect(p.cutsPerMinute).toBe(12.41);
     expect(computePacing([], 0).shotCount).toBe(0);
     expect(computePacing([], 60)).toMatchObject({ shotCount: 1, medianShot: 60 });
   });
