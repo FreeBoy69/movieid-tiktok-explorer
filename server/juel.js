@@ -16,7 +16,7 @@ export const JUEL_SPECIALISTS = {
   recap: { name: "Recap", brief: "Movie to Recap: analysing a film, the script and storyboard, matching footage, rendering, posting" },
   editor: { name: "Editor", brief: "Vibe Edit: the timeline, captions, voiceover, music, B-roll, auto edit, and exports" },
   producer: { name: "Producer", brief: "Create Video projects (script, voice, visuals, thumbnail, export), digital products, production profiles, channel styles" },
-  studio: { name: "Studio", brief: "image, video, and music generation, workflows, design, explainers, the prompt library, mini tools, and voices" },
+  studio: { name: "Studio", brief: "image, video, and music generation, workflows, design, explainers, the prompt library, mini tools, and voices; watching a video someone shares to break it down and explain how to recreate it in AutoYT (Watch a video)" },
   film: { name: "Film", brief: "Drama and Film: series, episodes, characters, locations, voices, clips, and the final cut" },
   research: { name: "Research", brief: "YouTube Radar, niches, competitors, growth insights, Movie ID, source scans, downloads, transcripts, rewriting" },
   community: { name: "Community", brief: "comment replies on YouTube and TikTok and their rules" },
@@ -150,6 +150,7 @@ export const JUEL_ROUTES = {
   "GET /api/studio/brand-kit": ["studio", "read", "Shows your AI Clipping brand kit: logo, logo corner and opacity, caption style, font and colours, intro and outro."],
   "GET /api/studio/catalog": ["studio", "read", "Lists the Creator Studio models and tools available for images, video, audio, and more."],
   "GET /api/studio/generations": ["studio", "read", "Lists your recent Creator Studio generations, optionally filtered by tab."],
+  "GET /api/studio/generations/:id": ["studio", "read", "Reads one Creator Studio generation (generation id): its status, progress message, and outputs. A finished Watch a video job leads with its brief (the answer, TL;DR, and how to recreate the video in AutoYT with the ready-to-paste prompt), then the full report: key moments, hook, pacing, visual style, audio, structure."],
   "GET /api/studio/marketing": ["studio", "read", "Lists your ad products, presenter avatars, and available ad video models."],
   "GET /api/support/tickets": ["account", "read", "Lists the user's support requests with status and last reply."],
   "GET /api/support/tickets/:id": ["account", "read", "Shows one of the user's support requests with its message thread."],
@@ -275,7 +276,7 @@ export const JUEL_ROUTES = {
   "POST /api/movie/identify-link": ["research", "paid", "Identifies the movie shown in a recap video from its URL."],
   "POST /api/prompts/custom": ["studio", "change", "Saves a custom prompt with title, text, and categories."],
   "POST /api/prompts/favorites": ["studio", "change", "Adds or removes a prompt from your favorites."],
-  "POST /api/recaps": ["recap", "paid", "Starts a new movie recap from a film link or upload with voice, formats, tone, and look options."],
+  "POST /api/recaps": ["recap", "paid", "Starts a new movie recap from a film link or upload with voice, formats, tone, and look options; styleReference is an optional link to a recap whose style (hook, narration rhythm, cut pace) to match."],
   "POST /api/recaps/:id/back": ["recap", "change", "Stops rendering and returns the recap to the storyboard for script edits, keeping analysis and script."],
   "POST /api/recaps/:id/cancel": ["recap", "change", "Stops a recap that is in progress."],
   "POST /api/recaps/:id/intro": ["recap", "paid", "Turns the long recap's teaser intro on (AI writes the line) or off (on)."],
@@ -297,7 +298,7 @@ export const JUEL_ROUTES = {
   "POST /api/saved/tiktok-playlists/genre-scan": ["research", "paid", "Scans the next batch of a saved TikTok source's videos for story genres with AI."],
   "POST /api/saved/tiktok-playlists/movie-scan": ["research", "paid", "Identifies the movies in the next batch of a saved TikTok source's videos."],
   "POST /api/saved/tiktok-post-analyses": ["research", "change", "Saves a movie-ID analysis result for a TikTok post."],
-  "POST /api/studio/generations": ["studio", "paid", "Starts a new Creator Studio generation such as an image, video, audio, design, or explainer."],
+  "POST /api/studio/generations": ["studio", "paid", "Starts a new Creator Studio generation such as an image, video, audio, design, or explainer. Also watches, analyses, and breaks down a video: tab \"watch\" with settings.sourceUrl (a public video link) or settings.sourceVideo (an upload), and the user's question as prompt, explains what's in it and how to recreate it in AutoYT."],
   "POST /api/studio/generations/:id/design": ["studio", "change", "Saves your edited HTML back into an Editable Design generation."],
   "POST /api/studio/generations/:id/vibe-edit": ["studio", "change", "Opens a Promo, Explainer, or Vibe Motion graphic in Vibe Edit (its own edit, reopened as it was left; {rebuild: true} starts over). Returns {projectId}."],
   "POST /api/studio/generations/:id/vibe-edit/export": ["studio", "change", "Makes a Vibe Edit export (gen-vibe-….mp4) the generation's video and saves the edits into its document (file, edits)."],
@@ -600,6 +601,8 @@ export const JUEL_COSTS = {
     const model = models.find((m) => m.id === c.body?.model) || models[0];
     if (model?.pricePerSecond) return { usd: model.pricePerSecond * (Number(s.duration) || 5) };
     if (tab === "music" || tab === "audio") return s.audioMode === "voice" ? "speech" : "music";
+    // Watch a video: the transcript, a vision pass over its frames in batches, and the write-up.
+    if (tab === "watch") return "transcription llm:6";
     return VIDEO_TABS.has(tab) ? "video" : `image:${count(s.count, 6)}`;
   },
 };
@@ -735,7 +738,8 @@ const SPECIALIST_GUIDES = {
     : ""),
   studio: (context) => {
     const persona = STUDIO_PERSONAS[context?.details?.persona];
-    return `${persona ? `WORK AS: ${persona.brief}.\n` : ""}MAKING THINGS: POST /api/studio/generations with {"tab": "image" | "video" | "music" (or another studio app), "prompt": "a rich, specific generation prompt", "settings": {"aspectRatio": "16:9" | "9:16" | "1:1" | "4:5", "count": 1-4 (images), "duration": 5 | 8 (video), "instrumental": true (a music cue)}}. Start at most 4 per turn, only when the user wants something made; ask one clarifying question instead when the request is too vague. Each result appears under Juel's reply.`;
+    return `${persona ? `WORK AS: ${persona.brief}.\n` : ""}MAKING THINGS: POST /api/studio/generations with {"tab": "image" | "video" | "music" (or another studio app), "prompt": "a rich, specific generation prompt", "settings": {"aspectRatio": "16:9" | "9:16" | "1:1" | "4:5", "count": 1-4 (images), "duration": 5 | 8 (video), "instrumental": true (a music cue)}}. Start at most 4 per turn, only when the user wants something made; ask one clarifying question instead when the request is too vague. Each result appears under Juel's reply.
+WATCHING A VIDEO: when the user shares a video link (or an upload) and asks what's in it, to analyse or break it down, or how to make one like it, start POST /api/studio/generations with {"tab": "watch", "prompt": "their question in their words", "settings": {"sourceUrl": "the link"}}. It takes a few minutes; the report appears under Juel's reply as it finishes, so say it's watching and don't wait for it. When they come back to it, read GET /api/studio/generations/:id (its brief leads: the answer and the recreate plan), answer from it, then offer to build the video with the recreate prompt and settings it gives (for example Create Video, AI Clipping, or Movie to Recap).`;
   },
 };
 

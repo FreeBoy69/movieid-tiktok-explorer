@@ -257,6 +257,7 @@ function NewRecapPanel({ onCreated, onError }: { onCreated: (recap: Recap) => vo
   const [tone, setTone] = useState<RecapTone>("dramatic");
   const [pace, setPace] = useState<RecapPace>("brisk");
   const [filmTitle, setFilmTitle] = useState("");
+  const [styleReference, setStyleReference] = useState("");
   const [channelName, setChannelName] = useState(() => {
     try { return window.localStorage.getItem("autoyt-recap-channel") || ""; } catch { return ""; }
   });
@@ -287,7 +288,8 @@ function NewRecapPanel({ onCreated, onError }: { onCreated: (recap: Recap) => vo
   const toggleFormat = (format: RecapFormat) =>
     setFormats((current) => (current.includes(format) ? (current.length > 1 ? current.filter((f) => f !== format) : current) : [...current, format].sort() as RecapFormat[]));
   const sourceReady = mode === "link" ? /^https?:\/\/\S+\.\S+/i.test(url.trim()) : Boolean(file);
-  const ready = sourceReady && Boolean(voiceId) && formats.length > 0 && !submitting;
+  const styleOk = !styleReference.trim() || /^https?:\/\/\S+\.\S+/i.test(styleReference.trim());
+  const ready = sourceReady && styleOk && Boolean(voiceId) && formats.length > 0 && !submitting;
 
   const pick = (next: File | null | undefined) => {
     if (!next) return;
@@ -313,6 +315,7 @@ function NewRecapPanel({ onCreated, onError }: { onCreated: (recap: Recap) => vo
         formats, longMinutes, shortSeconds, voiceId, tone, pace, captions, transforms, music, graphics,
         filmTitle: filmTitle.trim() || undefined,
         channelName: channelName.trim() || undefined,
+        styleReference: styleReference.trim() || undefined,
       });
       try { window.localStorage.setItem("autoyt-recap-channel", channelName.trim()); } catch {}
       onCreated(recap);
@@ -423,6 +426,21 @@ function NewRecapPanel({ onCreated, onError }: { onCreated: (recap: Recap) => vo
           ))}
         </div>
       </div>
+
+      <label className="mt-field">
+        <span className="mt-label">Match a recap's style <small>Optional link</small></span>
+        <input
+          className="mt-input"
+          type="url"
+          inputMode="url"
+          value={styleReference}
+          maxLength={500}
+          onChange={(event) => setStyleReference(event.target.value)}
+          placeholder="https://youtube.com/watch?v=…"
+          aria-invalid={!styleOk || undefined}
+        />
+        <span className="mt-note">{styleOk ? "We watch its first five minutes and follow its hook, narration rhythm, and cut pace. The house rules still apply." : "Paste the full link, starting with https://"}</span>
+      </label>
 
       <div className="mt-field">
         <span className="mt-label" id="mr-pace-label">Pace <small>Pauses are always trimmed</small></span>

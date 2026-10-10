@@ -10,6 +10,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import fsSync from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { openRouterConfigured, requestOpenRouter } from "../src/utils/openRouterClient.js";
@@ -25,6 +26,7 @@ import { MAX_SOURCES, normalizeSource, searchSources } from "./filmSources.js";
 import { narrationWpm, RECAP_PACE, RECAP_STEPS, stepAt } from "../src/utils/recapSteps.js";
 import { GRAPHIC_TEMPLATES, graphicsBatches, planRecapGraphics } from "./recapGraphics.js";
 import { alignBeats, chapterSegments, lineWords, charactersHeard, DEFAULT_BOUNDS, filmCharacters, lookupFilm, onlineSegments, parseReleaseName, storyBounds, titleFits, visualSegments } from "./filmBounds.js";
+import { recapStyleGuidance, recapStyleProfile, styleClipRange, watchVideo } from "./videoWatch.js";
 import { adoptStudioMedia, loadVibeProject, saveVibeProject, setVibeExportPreparer } from "./vibeEdit.js";
 
 let deps = {};
@@ -992,7 +994,7 @@ const TONES = {
 };
 
 /** The script prompt: the film's timeline plus the channel's house style (exported for tests and tuning). */
-export function recapScriptPrompt(project, analysis, described) {
+export function recapScriptPrompt(project, analysis, described, style = null) {
   const { formats, longMinutes, shortSeconds, tone, language, filmTitle, channelName } = project.options;
   const cast = project.cast?.characters || [];
   const wantLong = formats.includes("long");
@@ -1023,7 +1025,7 @@ House style for every recap:
 - Keep every pronoun right: he, she, and it never mixed up for the same character.
 - Never rush: no line that skims a whole plot point in one breath ("He wakes up, buys clothes, then calls his friends"). Give each moment its action.
 - Punctuate for the voice: commas for breath, full stops for weight, so the narrator lands the emotion.
-${wantLong ? `
+${style ? `\n${recapStyleGuidance(style)}\n` : ""}${wantLong ? `
 Long recap (${longMinutes} minutes):
 - No introduction: no welcome, no teaser of later moments, no "This is the movie ...". The first line goes straight into the story at the film's first scene, e.g. "The movie opens with ..." or "The movie begins as ...".
 - The opening decides whether viewers stay, and its footage must match the words exactly. The first 6 beats follow the timeline SHOT by SHOT: tell the film's first scenes in the exact order the SHOTs show them, and say only what those SHOTs show: the place, the time of day (day or night as the shots show it), who is there, and what they do. Nothing the timeline does not show (no object, action, or detail it never mentions). Each of these beats covers a short stretch of film (20-60 seconds) and lists as its "shots" the SHOT numbers it describes, in order.
@@ -1166,13 +1168,46 @@ export function partitionStory(centres, story, needs = centres.map(() => 0)) {
   });
 }
 
+// A recap the user wants this one to feel like (options.styleReference): its first five minutes are
+// watched once with Watch a video's engine and the profile cached as style-reference.json. Any failure
+// only loses the guidance, never the recap.
+const STYLE_SECONDS = 300;
+async function recapStyleReference(userId, project, signal) {
+  const url = project.options?.styleReference;
+  if (!url) return null;
+  const cached = await readJson(userId, project.id, "style-reference.json");
+  if (cached?.url === url && cached.profile) return cached.profile;
+  if (!deps.downloadVideo) return null;
+  await report(userId, project, "Watching your style reference", 0.72);
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "autoyt-recap-style-"));
+  try {
+    await deps.downloadVideo(url, path.join(dir, "source.mp4"), { signal });
+    const found = (await fs.readdir(dir)).find((name) => name.startsWith("source."));
+    if (!found) throw new Error("the reference could not be downloaded");
+    const watched = await watchVideo({
+      file: path.join(dir, found), url, maxSeconds: STYLE_SECONDS, maxFrames: 40, transcribe: deps.transcribe, captions: deps.linkCaptions, signal,
+      question: "How is this recap narrated and cut: its hook, narrator, person and tense, sentence rhythm, cut pace, captions, and music?",
+    });
+    const profile = { ...recapStyleProfile(watched.report), url };
+    await writeJson(userId, project.id, "style-reference.json", { url, profile, watchedAt: new Date().toISOString() });
+    return profile;
+  } catch (error) {
+    signal?.throwIfAborted();
+    console.warn(`[movie-recap] style reference skipped for ${project.id}: ${error?.message || error}`);
+    return null;
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
 async function stageWrite(userId, project, signal) {
+  const style = await recapStyleReference(userId, project, signal);
   await report(userId, project, "Writing the recap script", 0.72);
   // The cast for the film as identified now (the title card can change it after the frames are described).
   await recapCast(userId, project, signal).catch(() => []);
   const analysis = await readJson(userId, project.id, "analysis.json");
   const described = await readJson(userId, project.id, "descriptions.json", {});
-  const budget = recapScriptPrompt(project, analysis, described);
+  const budget = recapScriptPrompt(project, analysis, described, style);
   const { prompt, wantLong, wantShort, film } = budget;
   const model = process.env.MOVIE_RECAP_SCRIPT_MODEL || "google/gemini-3.8-flash";
   const ask = (messages) => requestOpenRouter({
@@ -1216,7 +1251,8 @@ async function stageWrite(userId, project, signal) {
     ...(wantLong ? { long: { beats: beats(value.long.beats) } } : {}),
     ...(wantShort ? { short: { title: clip(value.short.title, 70), beats: beats(value.short.beats) } } : {}),
   }, analysis, described);
-  await save(userId, project, { stage: "review", status: "review", script, message: "Script ready for review", progress: 0.75, title: script.title || project.title });
+  // The reference's shot length sets the cut range, inside the house 2-4 s.
+  await save(userId, project, { stage: "review", status: "review", script, message: "Script ready for review", progress: 0.75, title: script.title || project.title, styleCuts: style ? styleClipRange(style) : null });
 }
 
 // House standard: background music fits the film's mood and sits 10-15 dB under the voice. One
@@ -1478,6 +1514,7 @@ export function buildRecapPlan(project, analysis, matches = {}) {
       avoid: [...(analysis.avoid || []), ...emptyUnlessMatched(analysis.emptySpans, matches[format])],
       shotCuts: analysis.shotCuts,
       sourceScale: project.options.transforms?.speed ? 1.05 : 1,
+      ...(project.styleCuts || {}),
       beats: beats.map((beat, k) => {
         // Each cut needs 2-4 s plus a skipped gap, so a beat needs about 2.5x its length of film.
         const { from, to, duration } = windows[k];
@@ -3454,6 +3491,15 @@ export function registerMovieRecap(app) {
     res.json({ upload: id, name, size });
   }));
 
+  // An optional recap link whose style to match: a full http(s) link, else nothing.
+  const styleReferenceLink = (value) => {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    let parsed;
+    try { parsed = new URL(raw); } catch {}
+    if (!parsed || !["https:", "http:"].includes(parsed.protocol)) throw fail("The style reference must be a full link, starting with https://");
+    return parsed.href.slice(0, 500);
+  };
   app.post("/api/recaps", route(async (req, res, userId) => {
     if (!openRouterConfigured()) throw fail("Recaps aren't set up on this server yet.", 503);
     const body = req.body || {};
@@ -3504,6 +3550,7 @@ export function registerMovieRecap(app) {
         graphics: body.graphics !== false,
         language: clip(body.language, 40),
         captions: body.captions !== false,
+        styleReference: styleReferenceLink(body.styleReference),
         transforms: { zoom: transforms.zoom !== false, zoomPct: zoomPercent(transforms.zoomPct, transforms.zoom === false ? 0 : 10), pan: transforms.pan !== false, color: transforms.color !== false, mirror: transforms.mirror === true, speed: transforms.speed === true },
       },
       remote: source.stored ? { sourceStored: true } : {},

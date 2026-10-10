@@ -100,6 +100,8 @@ export type NewRecap = {
   pace: RecapPace;
   filmTitle?: string;
   channelName?: string;
+  /** A recap link whose hook, narration rhythm, and cut pace the script follows. */
+  styleReference?: string;
   music: boolean;
   graphics: boolean;
   captions: boolean;

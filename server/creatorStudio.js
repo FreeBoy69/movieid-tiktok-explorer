@@ -30,6 +30,7 @@ import { compactDesignHtml, DESIGN_CANVASES, designHtmlMessages, designPlanMessa
 import { STUDIO_PERSONAS } from "./juel.js";
 import { cleanMotionEdits, readMotionEdits, stripMotionEdits, withMotionEdits } from "../src/utils/videoGraphics.js";
 import { loadVibeProject, saveVibeProject } from "./vibeEdit.js";
+import { watchVideo } from "./videoWatch.js";
 import { EXPLAINER_ASPECTS, EXPLAINER_LENGTHS, EXPLAINER_MAX_SECONDS, EXPLAINER_MAX_WORDS, findExplainerTemplate, normalizeExplainerScript, scriptWords } from "../src/utils/explainerPresets.js";
 
 const API = "https://openrouter.ai/api/v1";
@@ -53,8 +54,8 @@ const UPLOAD_TYPES = {
   "video/quicktime": { ext: "mov", max: 200 },
   "video/webm": { ext: "webm", max: 200 },
 };
-const MIME = { png: "image/png", jpg: "image/jpeg", webp: "image/webp", gif: "image/gif", mp4: "video/mp4", mov: "video/quicktime", webm: "video/webm", mp3: "audio/mpeg", wav: "audio/wav", m4a: "audio/mp4", ogg: "audio/ogg", html: "text/html; charset=utf-8", json: "application/json", srt: "application/x-subrip; charset=utf-8" };
-const FILE_NAME = /^(up|gen)-[a-z0-9-]+\.(png|jpg|webp|gif|mp4|mov|webm|mp3|wav|m4a|ogg|html|json|srt)$/;
+const MIME = { png: "image/png", jpg: "image/jpeg", webp: "image/webp", gif: "image/gif", mp4: "video/mp4", mov: "video/quicktime", webm: "video/webm", mp3: "audio/mpeg", wav: "audio/wav", m4a: "audio/mp4", ogg: "audio/ogg", html: "text/html; charset=utf-8", json: "application/json", md: "text/markdown; charset=utf-8", srt: "application/x-subrip; charset=utf-8" };
+const FILE_NAME = /^(up|gen)-[a-z0-9-]+\.(png|jpg|webp|gif|mp4|mov|webm|mp3|wav|m4a|ogg|html|json|srt|md)$/;
 
 // Each app from the Open Generative AI navigation, mapped to the runner that serves it.
 export const STUDIO_APPS = {
@@ -90,6 +91,8 @@ export const STUDIO_APPS = {
   "video-upscaler": "video",
   // Split out of the retired Voiceover Studio: voice and background as two tracks.
   "vocal-remover": "stems",
+  // Watch a video: a breakdown of any video and how to make one like it in AutoYT (Juel uses it too).
+  watch: "watch",
 };
 export const STUDIO_TABS = Object.keys(STUDIO_APPS);
 // Each image tool edits one uploaded image with a fixed set of operations; the first is its default.
@@ -875,6 +878,46 @@ export async function runStems(userId, item, signal, report) {
       outputs.push(await writeOutput(userId, await fs.readFile(target), "mp3", { title }));
     }
     return { outputs, engine: stems.engine || "" };
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+// Watch a video: the link or upload is watched like an editor would (server/videoWatch.js) and the
+// breakdown saved as Markdown and JSON, with a few of its frames. The report also rides on the
+// generation, so the tool page and Juel read it without fetching a file.
+async function runWatch(userId, item, signal, report) {
+  const s = item.settings;
+  const dir = await scratchDir(userId, item.id);
+  try {
+    let source;
+    if (s.sourceVideo) source = await readableFile(userId, s.sourceVideo);
+    else {
+      if (!dependencies.downloadVideo) throw fail("Downloading videos isn't available on this server", 503);
+      await report("Downloading the video");
+      await dependencies.downloadVideo(s.sourceUrl, path.join(dir, "source.mp4"), { signal });
+      const found = (await fs.readdir(dir)).find((file) => file.startsWith("source."));
+      if (!found) throw fail("The video could not be downloaded", 502);
+      source = path.join(dir, found);
+    }
+    const watched = await watchVideo({
+      file: source,
+      url: s.sourceUrl || "",
+      question: item.prompt,
+      voices: hostedVoiceProfiles().map((v) => ({ name: v.name, description: v.description })),
+      transcribe: dependencies.transcribe,
+      captions: dependencies.linkCaptions,
+      signal,
+      onStatus: (message) => report(message),
+    });
+    const title = watched.report.source.title || "Video breakdown";
+    const outputs = [
+      await writeOutput(userId, Buffer.from(watched.markdown, "utf8"), "md", { title }),
+      await writeOutput(userId, Buffer.from(JSON.stringify(watched.report, null, 2), "utf8"), "json", { title: `${title} (data)` }),
+    ];
+    if (s.watchFrames !== false)
+      for (const frame of watched.heroes) outputs.push(await writeOutput(userId, frame.bytes, "jpg", { title: `Frame at ${Math.floor(frame.t / 60)}:${String(Math.floor(frame.t % 60)).padStart(2, "0")}`, start: frame.t }));
+    return { outputs, brief: watched.brief, report: watched.report };
   } finally {
     await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
   }
@@ -1757,6 +1800,7 @@ function start(userId, item) {
       else if (runner === "motion") result = await runVibeMotion(userId, item, controller.signal);
       else if (runner === "clip") result = await runClipping(userId, item, controller.signal, report);
       else if (runner === "stems") result = await runStems(userId, item, controller.signal, report);
+      else if (runner === "watch") result = await runWatch(userId, item, controller.signal, report);
       else if (runner === "workflow") result = await runWorkflow(userId, item, controller.signal, report);
       else if (runner === "ad") result = await runAd(userId, item, controller.signal, report);
       else if (runner === "promo") result = await runPromo(userId, item, controller.signal, report);
@@ -1847,6 +1891,7 @@ export function normalizeRequest(body = {}) {
         }
       : {}),
     vertical: s.vertical !== false,
+    ...(tab === "watch" ? { sourceUrl: watchLink(s.sourceUrl), watchFrames: s.watchFrames !== false } : {}),
     workflow: WORKFLOWS[s.workflow] ? s.workflow : undefined,
     script: clip(s.script, 3000) || undefined,
     voiceId: clip(s.voiceId, 200) || undefined,
@@ -1894,6 +1939,7 @@ export function normalizeRequest(body = {}) {
   if (tab === "thumbnail-maker") settings.aspectRatio = "16:9";
   if (tab === "video-upscaler" && !settings.sourceVideo) throw fail("Add the video to upscale");
   if (tab === "vocal-remover" && !settings.sourceVideo && !settings.sourceUrl) throw fail("Add the video to split, or paste its link");
+  if (tab === "watch" && !settings.sourceVideo && !settings.sourceUrl) throw fail("Paste a public video link, or upload a video");
   if (tab === "promo" && settings.baseFile && !prompt) throw fail("Describe what to change in the film");
   if (tab === "promo" && !prompt && !settings.sourceUrl && !settings.uploads.length) throw fail("Add a link, images, or a description first");
   if (tab === "explainer" && settings.stage === "plan" && !prompt && !settings.sourceUrl && !settings.uploads.length && !settings.recordings.length)
@@ -1906,6 +1952,18 @@ export function normalizeRequest(body = {}) {
     if (words > EXPLAINER_MAX_WORDS) throw fail(`The script is ${words} words; the limit is ${EXPLAINER_MAX_WORDS} (about ${EXPLAINER_MAX_SECONDS / 60} minutes). Shorten it first.`);
   }
   return { tab, model: clip(body.model, 120), prompt, settings };
+}
+// A public https video link for Watch, or nothing.
+function watchLink(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return undefined;
+  try {
+    const url = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`);
+    if (url.protocol !== "https:") throw new Error("Not https");
+    return clip(url.href, 500);
+  } catch {
+    throw fail("Paste a public https video link, or upload a video");
+  }
 }
 const cleanUrl = (value) => {
   const raw = String(value || "").trim();
@@ -2107,6 +2165,14 @@ export function registerCreatorStudio(app, express) {
     const tab = String(req.query.tab || "");
     const items = (await history(userId)).filter((item) => !tab || item.tab === tab);
     res.json({ generations: items.slice(0, 150) });
+  }));
+
+  // One generation; a Watch report leads with its short digest, so a clipped read keeps the answer and the plan.
+  app.get("/api/studio/generations/:id", route(async (req, res, userId) => {
+    await resume(userId);
+    const item = (await history(userId)).find((entry) => entry.id === req.params.id);
+    if (!item) throw fail("Generation not found", 404);
+    res.json({ generation: item.brief ? { id: item.id, tab: item.tab, status: item.status, brief: item.brief, ...item } : item });
   }));
 
   app.post("/api/studio/generations", route(async (req, res, userId) => {

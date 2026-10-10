@@ -71,6 +71,7 @@ export const TOOL_IDS = [
   "description-writer",
   "hashtag-generator",
   "movie-recap",
+  "watch",
 ] as const;
 export type ToolId = (typeof TOOL_IDS)[number];
 export const isToolId = (value: string | null | undefined): value is ToolId => typeof value === "string" && (TOOL_IDS as readonly string[]).includes(value);

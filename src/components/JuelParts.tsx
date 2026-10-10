@@ -373,7 +373,11 @@ export function MediaResult({ media }: { media: MediaAttachment }) {
 
 // ---------- Generations ----------
 
-type Generation = { id: string; tab: string; prompt: string; status: string; message?: string; error?: string; outputs: Array<{ file: string; url: string; type: string }> };
+type Generation = {
+  id: string; tab: string; prompt: string; status: string; message?: string; error?: string; outputs: Array<{ file: string; url: string; type: string }>;
+  /** Watch a Video: the breakdown, read here in short. */
+  report?: { answer?: string; summary?: string[]; source?: { title?: string }; recreate?: { tool?: string; prompt?: string } };
+};
 
 /** A generation Juel started, shown as it runs and when it's done (the old Creative Agents' results). */
 export function GenerationResult({ item }: { item: GenerationAttachment }) {
@@ -399,7 +403,14 @@ export function GenerationResult({ item }: { item: GenerationAttachment }) {
   const pending = !generation || generation.status === "queued" || generation.status === "running";
   return (
     <figure className="juel-gen">
-      {generation?.status === "done" && output ? (
+      {generation?.status === "done" && generation.report ? (
+        <div className="juel-gen-report">
+          <strong>{generation.report.source?.title || "Video breakdown"}</strong>
+          {generation.report.answer ? <p>{generation.report.answer}</p> : null}
+          {generation.report.summary?.length ? <ul>{generation.report.summary.map((s) => <li key={s}>{s}</li>)}</ul> : null}
+          {generation.report.recreate?.tool ? <p>Make one like it with {generation.report.recreate.tool}. The full report, with the prompt to paste, is in Tools &gt; Watch a Video.</p> : null}
+        </div>
+      ) : generation?.status === "done" && output ? (
         output.type.startsWith("image") ? (
           <div className="juel-gen-images">
             {generation.outputs.map((o) => (

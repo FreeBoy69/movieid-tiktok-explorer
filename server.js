@@ -21205,8 +21205,21 @@ async function startServer() {
     registerRemoteMedia(app, { fetcher: safePublicFetch });
     registerCreatorWorkspace(app);
     registerPromptLibrary(app, { session: getSessionRecord, account: async (userId, accountId) => { const account = await getYouTubeAccount(userId, accountId); if (!account) throw new Error("Publish channel not found"); return account; }, runPsql, sqlString, jsonbLiteral });
+    // Watch a video (and Movie to Recap's style reference): a YouTube link's own captions and title come
+    // first, before Whisper; other links have none here.
+    const linkCaptions = async (url) => {
+        if (!isYouTubeSourceUrl(url))
+            return null;
+        const valid = await validDownloaderUrl(url);
+        if (!valid)
+            return null;
+        const info = await runYtDlpJson(valid);
+        const captions = await youtubeCaptions(info, { fetcher: safePublicFetch }).catch(() => null);
+        return { title: String(info?.title || ""), segments: captions?.segments || [] };
+    };
     configureCreatorStudio({
         session: getSessionRecord,
+        linkCaptions,
         // AI Clipping reuses the social video downloader and Whisper transcription.
         downloadVideo: (url, outputPath, options) => runYtDlpSocialDownload(url, outputPath, options),
         // A pasted TikTok, Vimeo, or other video link becomes its cover image when used as a reference.
@@ -21233,6 +21246,10 @@ async function startServer() {
     setMediaBase(() => (Date.now() - registeredVoiceboxBase.seenAt < 10 * 60 * 1000 ? registeredVoiceboxBase.url : ""));
     configureMovieRecap({
         session: getSessionRecord,
+        // A style reference recap is watched like Watch a video does: downloaded, captions or Whisper.
+        downloadVideo: (url, outputPath, options) => runYtDlpSocialDownload(url, outputPath, options),
+        transcribe: transcribeMediaFileWithSegments,
+        linkCaptions,
         fetcher: safePublicFetch,
         // Posting a finished recap, the way automation agents post: the user's connected channels, a title,
         // description, and tags written for that channel's style, and the upload.

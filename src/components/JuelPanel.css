@@ -85,6 +85,9 @@
 .juel-gen-images img { display: block; width: 100%; height: auto; }
 .juel-gen-video { overflow: hidden; width: 100%; border-radius: 8px; }
 .juel-gen-status { display: flex; align-items: center; gap: 8px; margin: 0; padding: 18px 8px; color: var(--j-muted); font-size: 13px; }
+.juel-gen-report { display: grid; gap: 6px; padding: 6px 4px; font-size: 13px; line-height: 1.5; }
+.juel-gen-report p { margin: 0; }
+.juel-gen-report ul { margin: 0; padding-left: 18px; }
 .juel-gen figcaption { overflow: hidden; color: var(--j-faint); font-size: 12px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .juel-zoom { position: fixed; inset: 0; z-index: 2000; display: grid; place-items: center; padding: 24px; background: rgb(0 0 0 / 0.82); cursor: zoom-out; }
 .juel-zoom img { max-width: 100%; max-height: 100%; border-radius: 10px; }

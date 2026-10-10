@@ -4,7 +4,7 @@
 import type { ToolId } from "../../utils/tiktokRoute";
 import { navEntryFor } from "../../utils/appNavigation";
 
-export type ToolKind = "image" | "thumbnail" | "video-upscale" | "stems" | "transcribe" | "audio-extract" | "thumbnail-download" | "poster" | "text" | "design" | "recap";
+export type ToolKind = "image" | "thumbnail" | "video-upscale" | "stems" | "watch" | "transcribe" | "audio-extract" | "thumbnail-download" | "poster" | "text" | "design" | "recap";
 export type TextTask = "titles" | "description" | "hashtags";
 export type ToolOperation = { value: string; label: string; hint: string };
 export type ToolDef = {
@@ -168,6 +168,15 @@ export const TOOLS: Record<ToolId, ToolDef> = {
     action: "Split audio",
     heading: "Voice here, music there",
     body: "Upload a video or paste its link. You get two MP3s: the narration or dialogue alone, and everything else with the voice taken out, ready to re-voice or remix.",
+  },
+  watch: {
+    id: "watch",
+    kind: "watch",
+    tagline: "Paste a video. Get its hook, pacing, style, and structure, and how to make one like it in AutoYT.",
+    action: "Watch it",
+    heading: "Any video, broken down",
+    body: "Paste a YouTube, TikTok, or other video link, or upload one. It's watched shot by shot with the transcript: you get the hook frame by frame, cuts per minute, captions and look, the story beats, and the tool, settings, and prompt to recreate it here.",
+    prompt: { label: "What do you want to know? (optional)", placeholder: "e.g. How do they keep people watching past the first 10 seconds?", required: false },
   },
   "thumbnail-downloader": {
     id: "thumbnail-downloader",

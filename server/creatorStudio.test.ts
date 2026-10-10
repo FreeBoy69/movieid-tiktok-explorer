@@ -6,7 +6,7 @@ describe("creator studio", () => {
   it("serves every app the page links to, plus the studio-backed tools", () => {
     const toolTabs = STUDIO_TABS.filter((tab) => (TOOL_IDS as readonly string[]).includes(tab));
     expect(STUDIO_TABS.filter((tab) => !toolTabs.includes(tab)).sort()).toEqual(ROUTE_TABS.filter((tab) => tab !== "apps").sort());
-    expect(toolTabs.sort()).toEqual(["background-remover", "editable-design", "image-expander", "image-upscaler", "layer-splitter", "magic-edit", "object-remover", "relight", "restyle", "thumbnail-maker", "video-upscaler", "vocal-remover"]);
+    expect(toolTabs.sort()).toEqual(["background-remover", "editable-design", "image-expander", "image-upscaler", "layer-splitter", "magic-edit", "object-remover", "relight", "restyle", "thumbnail-maker", "video-upscaler", "vocal-remover", "watch"]);
     expect(Object.keys(TOOL_OPERATIONS).every((tab) => STUDIO_TABS.includes(tab))).toBe(true);
   });
 
