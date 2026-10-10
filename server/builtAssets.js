@@ -42,9 +42,11 @@ export function readPack(buf) {
  *  names too, behind this build's. They're left out of the list the next build fetches, so one
  *  generation is kept, not every one. */
 export function loadPackedAssets(distDir) {
-  const file = path.join(distDir, "assets.pack");
-  if (!fs.existsSync(file)) return null;
-  const files = readPack(fs.readFileSync(file));
+  // Split into parts (assets.pack, assets.1.pack, ...) to stay under the intake's per-file limit.
+  const parts = fs.existsSync(distDir) ? fs.readdirSync(distDir).filter((name) => /^assets(\.\d+)?\.pack$/.test(name)).sort() : [];
+  if (!parts.length) return null;
+  const files = new Map();
+  for (const part of parts) for (const [name, bytes] of readPack(fs.readFileSync(path.join(distDir, part)))) files.set(name, bytes);
   const entries = new Map();
   const entry = (bytes, previous) => ({ bytes, previous, etag: `"${crypto.createHash("sha1").update(bytes).digest("base64url").slice(0, 16)}"` });
   for (const [name, bytes] of files) if (!name.startsWith("previous/")) entries.set(name, entry(bytes, false));

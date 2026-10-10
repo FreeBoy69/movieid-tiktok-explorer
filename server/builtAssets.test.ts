@@ -147,4 +147,16 @@ describe("packed front-end assets", () => {
       close();
     }
   });
+
+  it("reads a pack split into parts", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "split-pack-"));
+    fs.writeFileSync(path.join(dir, "a.js"), "a");
+    fs.mkdirSync(path.join(dir, "previous"));
+    fs.writeFileSync(path.join(dir, "previous", "b.js"), "b");
+    execFileSync("tar", ["--format=ustar", "-cf", path.join(dir, "assets.pack"), "a.js"], { cwd: dir });
+    execFileSync("tar", ["--format=ustar", "-cf", path.join(dir, "assets.1.pack"), "previous/b.js"], { cwd: dir });
+    const entries = loadPackedAssets(dir)!;
+    expect(entries.get("a.js")?.previous).toBe(false);
+    expect(entries.get("b.js")?.previous).toBe(true);
+  });
 });

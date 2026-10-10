@@ -35,18 +35,35 @@ if [ -n "$PREVIOUS_ASSETS_URL" ]; then
     echo "no asset list at $PREVIOUS_ASSETS_URL (first deploy with it, or offline): nothing kept"
   fi
 fi
-# Vite's hashed scripts and styles go into one file, dist/assets.pack, which the
-# server serves from memory (server/builtAssets.js). Pages load on demand, so
-# there are dozens of these, and each would count against the 500-file limit.
-# Images and fonts stay plain files: server code reads some of them from disk.
+# Vite's hashed scripts and styles go into dist/assets.pack, which the server
+# serves from memory (server/builtAssets.js). Pages load on demand, so there are
+# dozens of these, and each would count against the 500-file limit. Images and
+# fonts stay plain files: server code reads some of them from disk. The intake
+# takes at most 5 MiB per file, and this build plus the previous one's scripts
+# is more than that, so the pack is split: assets.pack, assets.1.pack, ...
 (
   cd "$STAGE/dist/assets"
-  find . -maxdepth 2 -type f \( -name '*.js' -o -name '*.css' \) | sed 's|^\./||' > ../.packlist
+  find . -maxdepth 2 -type f \( -name '*.js' -o -name '*.css' \) | sed 's|^\./||' | sort > ../.packlist
   if [ -s ../.packlist ]; then
-    tar --format=ustar -cf ../assets.pack -T ../.packlist
+    part=0 bytes=0 limit=$((4500 * 1024))
+    : > ../.packpart
+    flush() {
+      [ -s ../.packpart ] || return 0
+      name=assets.pack; [ "$part" -gt 0 ] && name="assets.$part.pack"
+      tar --format=ustar -cf "../$name" -T ../.packpart
+      part=$((part + 1)) bytes=0
+      : > ../.packpart
+    }
+    while IFS= read -r f; do
+      size=$(wc -c < "$f")
+      if [ $((bytes + size)) -gt "$limit" ]; then flush; fi
+      printf '%s\n' "$f" >> ../.packpart
+      bytes=$((bytes + size))
+    done < ../.packlist
+    flush
     xargs rm -f < ../.packlist
   fi
-  rm -f ../.packlist
+  rm -f ../.packlist ../.packpart
   rmdir previous 2>/dev/null || true
 )
 for f in src/utils/*.js; do
