@@ -1918,14 +1918,14 @@ function ExpandedAgentCard({
         </SideNav>
       ) : null}
       <div className="ag-main">
-      {!isDraft && agent && (tab === "chat" || tab === "compile") ? (
+      {!isDraft && agent && tab === "chat" ? (
         <AgentHero agent={agent} agents={agents} compact tab={tab} tabCounts={tabCounts} onTab={onSetActiveTab} onSelectAgent={onSelectAgent} theme={theme}
           active={agentActive} statusBusy={statusBusy} locked={saving || !!deleting} onToggleStatus={() => void onSetStatus(agent.id, agentActive ? "paused" : "active")}
           running={agentRunning} stopping={agentStopping} onRun={() => void onRun(agent.id)} onStop={() => void onStop(agent.id)}
           onCreateAgent={onCreateAgent} onDelete={() => void onDelete(agent.id)} deleting={!!deleting} onRefresh={onRefreshAgent} />
       ) : null}
-      <div data-agent-scroll className={cn("relative min-h-0 flex-1", tab === "chat" ? "flex overflow-hidden" : tab === "compile" ? "overflow-hidden pb-24" : isDraft ? "overflow-y-auto p-4 pb-24 md:p-6 md:pb-28" : "ag-scroll overflow-y-auto pb-24 md:pb-28")}>
-        {!isDraft && agent && tab !== "chat" && tab !== "compile" ? (
+      <div data-agent-scroll className={cn("relative min-h-0 flex-1", tab === "chat" ? "flex overflow-hidden" : isDraft ? "overflow-y-auto p-4 pb-24 md:p-6 md:pb-28" : "ag-scroll overflow-y-auto pb-24 md:pb-28")}>
+        {!isDraft && agent && tab !== "chat" ? (
           <AgentHero agent={agent} agents={agents} tab={tab} tabCounts={tabCounts} onTab={onSetActiveTab} onSelectAgent={onSelectAgent} theme={theme}
             active={agentActive} statusBusy={statusBusy} locked={saving || !!deleting} onToggleStatus={() => void onSetStatus(agent.id, agentActive ? "paused" : "active")}
             running={agentRunning} stopping={agentStopping} onRun={() => void onRun(agent.id)} onStop={() => void onStop(agent.id)}
@@ -2019,6 +2019,7 @@ function ExpandedAgentCard({
               dbConfigured: true,
             }}
             embedded
+            theme={theme}
             initialAccountId={agent?.youtubeAccountId || form.youtubeAccountId || activeAccount?.id || ""}
             initialMode="url"
             initialQuery={agent?.sourceUrl || ""}

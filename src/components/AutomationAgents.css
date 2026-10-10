@@ -341,3 +341,34 @@
 @media (max-width: 899px) {
   .ag-shell > .juel-side { display: none; }
 }
+
+/* ---------- Compile, inside an agent: a source box like the studios', then the clips beside a
+   settings card that stays in view. ---------- */
+.cmp { display: grid; gap: 18px; padding-bottom: 8px; }
+.cmp-box { display: grid; gap: 10px; padding: 14px 14px 12px 18px; border: 1px solid var(--ui-line-strong); border-radius: 20px; background: var(--ui-input); box-shadow: var(--ui-shadow-soft); }
+.cmp-modes { display: inline-flex; width: fit-content; gap: 2px; padding: 3px; border-radius: 999px; background: var(--ui-chip); }
+.cmp-modes button { height: 28px; padding: 0 12px; border: 0; border-radius: 999px; background: transparent; color: var(--ui-text-muted); font: 600 12.5px/1 var(--font-sans); cursor: pointer; }
+.cmp-modes button[aria-pressed="true"] { background: var(--ui-panel); color: var(--ui-text); box-shadow: 0 1px 2px rgb(0 0 0 / 0.12); }
+.cmp-query { display: flex; align-items: center; gap: 10px; color: var(--ui-text-faint); }
+.cmp-query input { min-width: 0; flex: 1; height: 40px; border: 0; outline: none; background: transparent; color: var(--ui-text); font: 400 17px/1.4 var(--font-sans); }
+.cmp-query input::placeholder { color: var(--ui-text-faint); }
+.cmp-box-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+.cmp-count { display: inline-flex; height: 34px; align-items: center; gap: 6px; padding: 0 12px; border-radius: 999px; background: var(--ui-chip); color: var(--ui-text-muted); font-size: 13px; }
+.cmp-count input { width: 52px; border: 0; outline: none; background: transparent; color: var(--ui-text); font: 600 13px/1 var(--font-sans); font-variant-numeric: tabular-nums; text-align: center; -moz-appearance: textfield; }
+.cmp-count input::-webkit-inner-spin-button, .cmp-count input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.cmp-body { display: grid; grid-template-columns: minmax(0, 1fr) 340px; align-items: start; gap: 18px; }
+.cmp-results { min-width: 0; }
+.cmp-results > .flex.h-full { min-height: 280px; border: 1px dashed var(--ui-line-strong); border-radius: 20px; }
+.cmp-stats { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.cmp-stats > div { height: auto; padding: 8px 12px; border: 1px solid var(--ui-line); border-radius: 12px; background: var(--ui-panel); }
+.cmp-settings { position: sticky; top: 16px; padding: 18px; border: 1px solid var(--ui-line); border-radius: 20px; background: var(--ui-panel); box-shadow: var(--ui-shadow-soft); }
+@media (max-width: 1100px) {
+  .cmp-body { grid-template-columns: minmax(0, 1fr); }
+  .cmp-settings { position: static; }
+}
+@media (max-width: 560px) {
+  .cmp-box { padding: 12px 12px 10px 14px; }
+  .cmp-query input { font-size: 15px; }
+  .cmp-settings { padding: 14px; }
+}
+.cmp > .border-b { padding: 0; border: 0; background: transparent; }

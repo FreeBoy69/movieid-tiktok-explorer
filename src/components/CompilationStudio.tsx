@@ -66,6 +66,8 @@ interface CompilationStudioProps {
   initialClipId?: string;
   initialReturnTo?: string;
   routeKey?: string;
+  /** The page's theme, so pickers and fields match it. */
+  theme?: "light" | "dark";
 }
 
 interface CompilationSnapshot {
@@ -280,7 +282,9 @@ export function CompilationStudio({
   initialClipId = "",
   initialReturnTo = "",
   routeKey = "",
+  theme: themeProp,
 }: CompilationStudioProps) {
+  const theme = themeProp || (typeof document !== "undefined" && document.documentElement.dataset.theme === "dark" ? "dark" : "light");
   const [url, setUrl] = useState(initialQuery);
   const [sourceMode, setSourceMode] = useState<SourceMode>(initialMode);
   const [count, setCount] = useState(() => clampClipCount(initialCount));
@@ -961,6 +965,210 @@ export function CompilationStudio({
     );
   }
 
+  // The page's pieces, laid out full height on the Compile page and in the agent's flowing tab.
+  const resultsPanel = (
+    <>
+  {playlist ? (
+    <>
+      {/* Source header + controls */}
+      <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div className="min-w-0">
+          <p className="text-[11px] font-bold uppercase tracking-widest text-[var(--ui-accent-text)]">{playlist.author || "Source"}</p>
+          <h2 className="truncate text-lg font-black text-[var(--ui-text)]">{playlist.title || "Selected source"}</h2>
+        </div>
+        <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap">
+          <select value={sort} onChange={(event) => changeSort(event.target.value as SortMode)} className="col-span-2 h-11 min-w-0 rounded-lg border border-[var(--ui-line)] bg-[var(--ui-panel)] px-3 text-xs font-bold outline-none sm:col-span-1">
+            <option value="views">Views high to low</option>
+            <option value="newest">Newest first</option>
+            <option value="oldest">Oldest first</option>
+            <option value="length">Longest first</option>
+          </select>
+          <button type="button" onClick={selectUntilTarget} className="ui-btn is-primary">
+            <Sparkles className="h-4 w-4" />
+            Auto-select
+          </button>
+          <button type="button" onClick={() => setSelectedIds(new Set())} className="ui-btn">
+            Clear
+          </button>
+        </div>
+      </div>
+      <div className={cn(
+        "grid grid-cols-2 gap-x-3 gap-y-6 sm:grid-cols-3",
+        embedded ? "min-[1120px]:grid-cols-3 2xl:grid-cols-4" : "lg:grid-cols-4 2xl:grid-cols-5",
+      )}>
+        {sortedVideos.map((video) => {
+          const selected = selectedIds.has(video.id);
+          return (
+            <StandardVideoCard
+              key={video.id}
+              title={video.title || "Untitled clip"}
+              source={video.authorHandle || video.author || "TikTok"}
+              onSourceClick={(event) => {
+                event.stopPropagation();
+                void loadChannelVideos(video);
+              }}
+              meta={`${compact(videoViews(video))} views / ${compact(video.stats?.commentCount)} comments / ${formatDuration(durationSeconds(video))}`}
+              imageUrl={video.dynamicCover}
+              fallback={<div className="grid h-full w-full place-items-center text-[var(--ui-accent-text)]"><Film className="h-8 w-8" /></div>}
+              onOpen={() => openPreview(video)}
+              badge={selected ? "Selected" : formatDuration(durationSeconds(video))}
+              topRight={<label className="grid h-11 w-11 place-items-center rounded-lg bg-black/65 text-white shadow-md ring-1 ring-white/20 backdrop-blur-sm" onClick={(event) => event.stopPropagation()} title="Add to compilation">
+                  <input type="checkbox" checked={selected} onChange={() => toggleClip(video)} className="ui-check" aria-label="Add clip to compilation" />
+                </label>}
+              className={selected ? "ring-2 ring-[var(--ui-accent)]" : undefined}
+            />
+          );
+        })}
+      </div>
+      {loadedSearchUrl ? (
+        <div className="flex flex-col items-center gap-2 pb-4 pt-10">
+          {playlist.videos.length < count ? (
+            <button type="button" onClick={() => void loadMoreSearchResults()} disabled={loadingMore} className="ui-btn is-primary">
+              {loadingMore ? <Loader2 className="h-4 w-4 ui-spin" /> : <RefreshCw className="h-4 w-4" />}
+              Load {Math.min(SEARCH_PAGE_SIZE, count - playlist.videos.length)} more
+            </button>
+          ) : null}
+          <p className="text-[11px] font-bold text-[var(--ui-text)]/35">{playlist.videos.length} of {count} clips loaded</p>
+        </div>
+      ) : null}
+    </>
+  ) : (
+    <div className="flex h-full min-h-[340px] flex-col items-center justify-center gap-4 text-center">
+      <div className="grid h-14 w-14 place-items-center rounded-2xl bg-[var(--ui-accent)]/10 text-[var(--ui-accent-text)]"><Clock3 className="h-6 w-6" /></div>
+      <div>
+        <h2 className="font-serif text-lg font-bold text-[var(--ui-text)]">Load a source to start selecting clips.</h2>
+        <p className="mt-1 text-sm text-[var(--ui-text)]/45">Paste a URL or search above.</p>
+      </div>
+    </div>
+  )}
+    </>
+  );
+  const settingsPanel = (
+  <div className="grid gap-5">
+    <div className="grid gap-4">
+      <div className="grid grid-cols-2 gap-2">
+        <Field label="Min minutes">
+          <input
+            type="number"
+            min={1}
+            max={240}
+            value={minMinutes}
+            onChange={(event) => setMinMinutes(event.target.value === "" ? "" : Number(event.target.value))}
+            className="ui-input"
+            placeholder="Min"
+          />
+        </Field>
+        <Field label="Max minutes">
+          <input
+            type="number"
+            min={1}
+            max={300}
+            value={maxMinutes}
+            onChange={(event) => setMaxMinutes(event.target.value === "" ? "" : Number(event.target.value))}
+            className="ui-input"
+            placeholder="Max"
+          />
+        </Field>
+      </div>
+      <Field label="Format">
+        <OrientationPicker label="Format" value={layout} onChange={setLayout} />
+      </Field>
+    </div>
+    <div className="grid gap-4 border-t border-[var(--ui-line)] pt-5">
+      <SectionTitle icon={<Youtube className="h-4 w-4" />} title="Upload details" />
+      <Field label="Channel">
+        <SourcePicker theme={theme} label="Channel" value={accountId} onChange={value => { setAccountId(value); void loadPlaylists(value); }} options={auth.accounts.map(item => ({ value: item.id, label: item.channelTitle, imageUrl: item.thumbnailUrl }))} />
+      </Field>
+      <YouTubePublishFields
+        theme={theme}
+        title={title}
+        onTitleChange={setTitle}
+        description={description}
+        onDescriptionChange={setDescription}
+        privacyStatus={privacyStatus}
+        onPrivacyStatusChange={setPrivacyStatus}
+        playlist={{
+          mode: playlistMode,
+          onModeChange: (mode) => setPlaylistMode(mode as PlaylistMode),
+          playlists,
+          playlistId: targetPlaylistId,
+          onPlaylistIdChange: setTargetPlaylistId,
+          newTitle: createPlaylistTitle,
+          onNewTitleChange: setCreatePlaylistTitle,
+          newTitlePlaceholder: "Anime Recap Compilations",
+          onRefresh: () => void loadPlaylists(accountId),
+        }}
+      />
+    </div>
+    <label className="flex items-start gap-3 rounded-lg border border-[var(--ui-accent)]/70 bg-[var(--ui-accent)]/15 p-3 text-xs font-bold leading-5 text-[var(--ui-text)]/75">
+      <input type="checkbox" checked={rightsConfirmed} onChange={(event) => setRightsConfirmed(event.target.checked)} className="ui-check mt-1 shrink-0" />
+      I have rights or permission to compile and upload these clips.
+    </label>
+    <button type="button" onClick={createCompilation} disabled={processing || !selectedVideos.length || !rightsConfirmed} className="ui-btn is-primary is-lg">
+      {processing ? <Loader2 className="h-4 w-4 ui-spin" /> : <Play className="h-4 w-4" />}
+      Create and upload
+    </button>
+  </div>
+  );
+  const statusBar = (notice || metadataLoading || (jobMessage && processing) || downloadUrl) ? (
+        <div className="flex flex-wrap items-center gap-2 border-b border-[var(--ui-line)] bg-[var(--ui-panel)] px-4 py-2 text-xs font-bold">
+          {notice ? <span className="rounded-lg bg-[var(--ui-accent-soft)] px-3 py-1.5 text-[var(--ui-accent-text)]">{notice}</span> : null}
+          {jobMessage && processing ? <span className="inline-flex items-center gap-2 rounded-lg bg-[var(--ui-accent)]/15 px-3 py-1.5 text-[var(--ui-text)]/75"><Loader2 className="h-3.5 w-3.5 ui-spin" />{jobMessage}</span> : null}
+          {metadataLoading ? <span className="inline-flex items-center gap-2 text-[var(--ui-text)]/45"><Loader2 className="h-3.5 w-3.5 ui-spin" />Updating views and durations</span> : null}
+          {downloadUrl ? <a href={downloadUrl} className="ui-btn is-ink">Download compilation</a> : null}
+        </div>
+      ) : null;
+
+  // In an agent: a source box, then the clips beside a settings card, all in the page's own scroll.
+  if (embedded) {
+    return (
+      <div className="cmp">
+        <form onSubmit={loadSource} className="cmp-box">
+          <div className="cmp-modes" role="group" aria-label="Find clips by">
+            <button type="button" onClick={() => setSourceMode("url")} aria-pressed={sourceMode === "url"}>Link</button>
+            <button type="button" onClick={() => setSourceMode("search")} aria-pressed={sourceMode === "search"}>Search</button>
+          </div>
+          <label className="cmp-query">
+            <Search className="h-4 w-4" aria-hidden="true" />
+            <input
+              value={url}
+              onChange={(event) => setUrl(event.target.value)}
+              placeholder={sourceMode === "search" ? "Search TikTok, e.g. anime recap" : "Paste a TikTok playlist, channel, search, or collection link"}
+              aria-label={sourceMode === "search" ? "TikTok search" : "Source link"}
+            />
+          </label>
+          <div className="cmp-box-foot">
+            <label className="cmp-count">
+              <span>Up to</span>
+              <input type="number" min={1} max={5000} value={count} onChange={(event) => setCount(Number(event.target.value))} aria-label="Clips to load" />
+              <span>clips</span>
+            </label>
+            <button type="submit" disabled={loading || !url.trim()} className="ui-btn is-primary">
+              {loading ? <Loader2 className="h-4 w-4 ui-spin" /> : sourceMode === "search" ? <Search className="h-4 w-4" /> : <RefreshCw className="h-4 w-4" />}
+              {sourceMode === "search" ? "Search" : "Load clips"}
+            </button>
+          </div>
+        </form>
+        {statusBar}
+        <div className="cmp-body">
+          <section className="cmp-results" ref={resultsScrollRef}>
+            {playlist ? (
+              <div className="cmp-stats">
+                <MiniStat label="Selected" value={String(selectedVideos.length)} />
+                <MiniStat label={unknownSelectedDurations ? "Est. selected" : "Selected length"} value={`${unknownSelectedDurations ? "~" : ""}${formatDuration(unknownSelectedDurations ? estimatedTotalSeconds : totalSeconds)}`} />
+                <MiniStat label="Target" value={targetLabel} />
+              </div>
+            ) : null}
+            {resultsPanel}
+          </section>
+          <aside className="cmp-settings">
+            {settingsPanel}
+          </aside>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={cn("relative flex h-full min-h-0 flex-col overflow-hidden bg-[var(--ui-bg)] text-[var(--ui-text)]", !embedded && "workspace-floating-shell")}>
       {/* ── Top bar ── */}
@@ -1026,16 +1234,7 @@ export function CompilationStudio({
         </div>
       </header>
 
-      {/* Status bar */}
-      {(notice || metadataLoading || (jobMessage && processing) || downloadUrl) ? (
-        <div className="flex flex-wrap items-center gap-2 border-b border-[var(--ui-line)] bg-[var(--ui-panel)] px-4 py-2 text-xs font-bold">
-          {notice ? <span className="rounded-lg bg-[var(--ui-accent-soft)] px-3 py-1.5 text-[var(--ui-accent-text)]">{notice}</span> : null}
-          {jobMessage && processing ? <span className="inline-flex items-center gap-2 rounded-lg bg-[var(--ui-accent)]/15 px-3 py-1.5 text-[var(--ui-text)]/75"><Loader2 className="h-3.5 w-3.5 ui-spin" />{jobMessage}</span> : null}
-          {metadataLoading ? <span className="inline-flex items-center gap-2 text-[var(--ui-text)]/45"><Loader2 className="h-3.5 w-3.5 ui-spin" />Updating views and durations</span> : null}
-          {downloadUrl ? <a href={downloadUrl} className="ui-btn is-ink">Download compilation</a> : null}
-        </div>
-      ) : null}
-
+      {statusBar}
       <div className={cn(
         "grid min-h-0 flex-1 grid-cols-1 overflow-y-auto",
         embedded
@@ -1046,79 +1245,7 @@ export function CompilationStudio({
           "min-h-0 overflow-visible px-3 py-3 sm:px-4 sm:py-4 md:px-5",
           embedded ? "min-[1120px]:overflow-y-auto" : "lg:overflow-y-auto",
         )}>
-          {playlist ? (
-            <>
-              {/* Source header + controls */}
-              <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <div className="min-w-0">
-                  <p className="text-[11px] font-bold uppercase tracking-widest text-[var(--ui-accent-text)]">{playlist.author || "Source"}</p>
-                  <h2 className="truncate text-lg font-black text-[var(--ui-text)]">{playlist.title || "Selected source"}</h2>
-                </div>
-                <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap">
-                  <select value={sort} onChange={(event) => changeSort(event.target.value as SortMode)} className="col-span-2 h-11 min-w-0 rounded-lg border border-[var(--ui-line)] bg-[var(--ui-panel)] px-3 text-xs font-bold outline-none sm:col-span-1">
-                    <option value="views">Views high to low</option>
-                    <option value="newest">Newest first</option>
-                    <option value="oldest">Oldest first</option>
-                    <option value="length">Longest first</option>
-                  </select>
-                  <button type="button" onClick={selectUntilTarget} className="ui-btn is-primary">
-                    <Sparkles className="h-4 w-4" />
-                    Auto-select
-                  </button>
-                  <button type="button" onClick={() => setSelectedIds(new Set())} className="ui-btn">
-                    Clear
-                  </button>
-                </div>
-              </div>
-              <div className={cn(
-                "grid grid-cols-2 gap-x-3 gap-y-6 sm:grid-cols-3",
-                embedded ? "min-[1120px]:grid-cols-3 2xl:grid-cols-4" : "lg:grid-cols-4 2xl:grid-cols-5",
-              )}>
-                {sortedVideos.map((video) => {
-                  const selected = selectedIds.has(video.id);
-                  return (
-                    <StandardVideoCard
-                      key={video.id}
-                      title={video.title || "Untitled clip"}
-                      source={video.authorHandle || video.author || "TikTok"}
-                      onSourceClick={(event) => {
-                        event.stopPropagation();
-                        void loadChannelVideos(video);
-                      }}
-                      meta={`${compact(videoViews(video))} views / ${compact(video.stats?.commentCount)} comments / ${formatDuration(durationSeconds(video))}`}
-                      imageUrl={video.dynamicCover}
-                      fallback={<div className="grid h-full w-full place-items-center text-[var(--ui-accent-text)]"><Film className="h-8 w-8" /></div>}
-                      onOpen={() => openPreview(video)}
-                      badge={selected ? "Selected" : formatDuration(durationSeconds(video))}
-                      topRight={<label className="grid h-11 w-11 place-items-center rounded-lg bg-black/65 text-white shadow-md ring-1 ring-white/20 backdrop-blur-sm" onClick={(event) => event.stopPropagation()} title="Add to compilation">
-                          <input type="checkbox" checked={selected} onChange={() => toggleClip(video)} className="ui-check" aria-label="Add clip to compilation" />
-                        </label>}
-                      className={selected ? "ring-2 ring-[var(--ui-accent)]" : undefined}
-                    />
-                  );
-                })}
-              </div>
-              {loadedSearchUrl ? (
-                <div className="flex flex-col items-center gap-2 pb-4 pt-10">
-                  {playlist.videos.length < count ? (
-                    <button type="button" onClick={() => void loadMoreSearchResults()} disabled={loadingMore} className="ui-btn is-primary">
-                      {loadingMore ? <Loader2 className="h-4 w-4 ui-spin" /> : <RefreshCw className="h-4 w-4" />}
-                      Load {Math.min(SEARCH_PAGE_SIZE, count - playlist.videos.length)} more
-                    </button>
-                  ) : null}
-                  <p className="text-[11px] font-bold text-[var(--ui-text)]/35">{playlist.videos.length} of {count} clips loaded</p>
-                </div>
-              ) : null}
-            </>
-          ) : (
-            <div className="flex h-full min-h-[340px] flex-col items-center justify-center gap-4 text-center">
-              <div className="grid h-14 w-14 place-items-center rounded-2xl bg-[var(--ui-accent)]/10 text-[var(--ui-accent-text)]"><Clock3 className="h-6 w-6" /></div>
-              <div>
-                <h2 className="font-serif text-lg font-bold text-[var(--ui-text)]">Load a source to start selecting clips.</h2>
-                <p className="mt-1 text-sm text-[var(--ui-text)]/45">Paste a URL or search above.</p>
-              </div>
-            </div>
-          )}
+          {resultsPanel}
         </main>
 
         <aside className={cn(
@@ -1127,70 +1254,7 @@ export function CompilationStudio({
             ? "min-[1120px]:order-none min-[1120px]:overflow-y-auto min-[1120px]:border-b-0 min-[1120px]:border-l"
             : "lg:order-none lg:overflow-y-auto lg:border-b-0 lg:border-l",
         )}>
-          <div className="grid gap-5">
-            <div className="grid gap-4">
-              <div className="grid grid-cols-2 gap-2">
-                <Field label="Min minutes">
-                  <input
-                    type="number"
-                    min={1}
-                    max={240}
-                    value={minMinutes}
-                    onChange={(event) => setMinMinutes(event.target.value === "" ? "" : Number(event.target.value))}
-                    className="ui-input"
-                    placeholder="Min"
-                  />
-                </Field>
-                <Field label="Max minutes">
-                  <input
-                    type="number"
-                    min={1}
-                    max={300}
-                    value={maxMinutes}
-                    onChange={(event) => setMaxMinutes(event.target.value === "" ? "" : Number(event.target.value))}
-                    className="ui-input"
-                    placeholder="Max"
-                  />
-                </Field>
-              </div>
-              <Field label="Format">
-                <OrientationPicker label="Format" value={layout} onChange={setLayout} />
-              </Field>
-            </div>
-            <div className="grid gap-4 border-t border-[var(--ui-line)] pt-5">
-              <SectionTitle icon={<Youtube className="h-4 w-4" />} title="Upload details" />
-              <Field label="Channel">
-                <SourcePicker label="Channel" value={accountId} onChange={value => { setAccountId(value); void loadPlaylists(value); }} options={auth.accounts.map(item => ({ value: item.id, label: item.channelTitle, imageUrl: item.thumbnailUrl }))} />
-              </Field>
-              <YouTubePublishFields
-                title={title}
-                onTitleChange={setTitle}
-                description={description}
-                onDescriptionChange={setDescription}
-                privacyStatus={privacyStatus}
-                onPrivacyStatusChange={setPrivacyStatus}
-                playlist={{
-                  mode: playlistMode,
-                  onModeChange: (mode) => setPlaylistMode(mode as PlaylistMode),
-                  playlists,
-                  playlistId: targetPlaylistId,
-                  onPlaylistIdChange: setTargetPlaylistId,
-                  newTitle: createPlaylistTitle,
-                  onNewTitleChange: setCreatePlaylistTitle,
-                  newTitlePlaceholder: "Anime Recap Compilations",
-                  onRefresh: () => void loadPlaylists(accountId),
-                }}
-              />
-            </div>
-            <label className="flex items-start gap-3 rounded-lg border border-[var(--ui-accent)]/70 bg-[var(--ui-accent)]/15 p-3 text-xs font-bold leading-5 text-[var(--ui-text)]/75">
-              <input type="checkbox" checked={rightsConfirmed} onChange={(event) => setRightsConfirmed(event.target.checked)} className="ui-check mt-1 shrink-0" />
-              I have rights or permission to compile and upload these clips.
-            </label>
-            <button type="button" onClick={createCompilation} disabled={processing || !selectedVideos.length || !rightsConfirmed} className="ui-btn is-primary is-lg">
-              {processing ? <Loader2 className="h-4 w-4 ui-spin" /> : <Play className="h-4 w-4" />}
-              Create and upload
-            </button>
-          </div>
+          {settingsPanel}
         </aside>
       </div>
     </div>
