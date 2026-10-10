@@ -63,6 +63,10 @@ describe("live mode echo and replies", () => {
     expect(isEcho("make a video about rome", said)).toBe(false);
     expect(isEcho("anything", new Set())).toBe(false);
   });
+  it("treats a one-word interruption as a complete utterance", () => {
+    expect(thoughtState("hi")).toBe("done");
+    expect(thoughtState("stop")).toBe("done");
+  });
   it("never says the same words twice when the reply's text changes", () => {
     expect(resumeAt("Hello there. How are", 13, "Hello there. How are you?")).toBe(13);
     expect(resumeAt("Rome it is.!", 12, "Rome it is.")).toBe(11);

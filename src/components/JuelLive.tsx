@@ -331,6 +331,9 @@ export function JuelLive({
     try {
       recognition.current?.abort();
     } catch {}
+    // A new recognizer session must start after playback, so results cannot include Juel's
+    // previous sentence or append to a stale interim transcript.
+    firstMine.current = 0;
   };
   const openEars = (delay: number) => {
     window.clearTimeout(reopen.current);
@@ -952,7 +955,9 @@ export function JuelLive({
           }
           if (p === "speaking" || p === "thinking") {
             // Real words from you while he talks or thinks: he stops and listens, from those words on.
-            if (wordsOf(latest).length < 2) return;
+            // Even "hi" or "stop" is a complete interruption; waiting for two words made
+            // short interjections feel like the mic was ignored.
+            if (!wordsOf(latest).length) return;
             firstMine.current = event.resultIndex;
             bargeIn(true);
             p = phaseRef.current;
