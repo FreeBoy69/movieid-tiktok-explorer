@@ -81,7 +81,7 @@ function chainBy<T extends Chainable>(items: T[], lane: (c: T) => number, sameLo
 }
 export function clipChains(project: VibeProject) {
   // A camera move or an entrance belongs to its own clip, so those never share a player with the next one.
-  return chainBy(project.clips, (c) => c.track, (a, b) => a.fit === b.fit && (a.zoom || 1) === (b.zoom || 1) && JSON.stringify(a.grade || null) === JSON.stringify(b.grade || null) && !a.motion && !b.motion && !b.transition);
+  return chainBy(project.clips, (c) => c.track, (a, b) => a.fit === b.fit && (a.zoom || 1) === (b.zoom || 1) && JSON.stringify(a.grade || null) === JSON.stringify(b.grade || null) && JSON.stringify(a.look || null) === JSON.stringify(b.look || null) && !a.motion && !b.motion && !b.transition);
 }
 // Audio chains bridge any gap: one element plays a narration file straight through, silenced between
 // lines, instead of a new element reloading the file (and starting late or not at all) after each pause.
@@ -260,6 +260,15 @@ export function Preview() {
       const a = assetById(p, c.assetId);
       if (a?.kind !== "video") continue;
       const off = c.muted || trackState(p, `v${c.track}`).muted || trackState(p, `v${c.track}`).hidden;
+      // A held recap cut shows its first frame for the whole clip.
+      if (c.look?.freeze) {
+        const el = media.current.get(group.key);
+        if (el) {
+          if (!el.paused) el.pause();
+          if (Math.abs(el.currentTime - c.in) > 0.04 && el.readyState > 0) el.currentTime = c.in;
+        }
+        continue;
+      }
       sync(group.key, c.start, c.in, group.end, off ? 0 : c.volume ?? 1, false, c.preset);
     }
     for (const group of soundGroups) {
@@ -356,8 +365,12 @@ export function Preview() {
           const local = Math.min(length, Math.max(0, playhead - c.start));
           const first = !project.clips.some((o) => o !== c && o.track === c.track && o.start < c.start - 0.001);
           const entrance = c.transition ? (transitionStyle(c.transition, { local, seconds: length, first }) as { opacity?: number; filter?: string; translate?: string; scale?: string }) : {};
-          const transform = motionTransform(c.motion, local / length, c.zoom);
-          const filters = [c.grade ? gradeFilter(c.grade) : "", project.look ? lookCss(project.look) : "", entrance.filter || ""].filter(Boolean).join(" ");
+          // A recap cut on the film previews its look: the recap's zoom, mirrored, black and white (the export
+          // renders these from the original film).
+          const filmZoom = a.film && !c.zoom && project.source?.kind === "recap" ? project.source.zoom : undefined;
+          const moved = motionTransform(c.motion, local / length, c.zoom || filmZoom);
+          const transform = [moved || (filmZoom && filmZoom > 1 ? `scale(${filmZoom})` : ""), c.look?.flip ? "scaleX(-1)" : ""].filter(Boolean).join(" ");
+          const filters = [c.grade ? gradeFilter(c.grade) : "", c.look?.bw ? "grayscale(1)" : "", project.look ? lookCss(project.look) : "", entrance.filter || ""].filter(Boolean).join(" ");
           const shown = active(c.start, clipEnd(c)) && !trackState(project, `v${c.track}`).hidden;
           const style = {
             zIndex: 1 + c.track * 100 + i,

@@ -155,6 +155,9 @@ export interface RenderJob {
   error?: string;
   url?: string;
   file?: string;
+  /** What the server is doing first (cutting a recap edit from its film). */
+  message?: string;
+  warning?: string;
 }
 export const startRender = (project: VibeProject, overlays: { t0?: number; t1?: number; png: string; blank?: boolean }[]) =>
   post<{ render: RenderJob }>("/api/vibe-edit/renders", { project, overlays }, "Couldn't start the export").then((d) => d.render);
@@ -266,3 +269,9 @@ export const filmMotion = (motion: NonNullable<VibeAsset["motion"]>) =>
     { engine: motion.engine || "title", html: motion.html, vars: motion.vars, edits: motion.edits || {}, seconds: motion.seconds, width: motion.width, height: motion.height },
     "Couldn't film the edited graphic",
   );
+
+/** Moves a recap edit onto the film: 202 with progress while the film's editing copy is made, then the project. */
+export async function moveEditToFilm(recapId: string, projectId: string): Promise<{ state: string; progress?: number; error?: string; project?: VibeProject }> {
+  const response = await fetch(`/api/recaps/${encodeURIComponent(recapId)}/vibe-film`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ projectId }) });
+  return json(response, "Couldn't load the film");
+}

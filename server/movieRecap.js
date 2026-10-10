@@ -25,7 +25,7 @@ import { MAX_SOURCES, normalizeSource, searchSources } from "./filmSources.js";
 import { narrationWpm, RECAP_PACE, RECAP_STEPS, stepAt } from "../src/utils/recapSteps.js";
 import { GRAPHIC_TEMPLATES, graphicsBatches, planRecapGraphics } from "./recapGraphics.js";
 import { alignBeats, chapterSegments, lineWords, charactersHeard, DEFAULT_BOUNDS, filmCharacters, lookupFilm, onlineSegments, parseReleaseName, storyBounds, titleFits, visualSegments } from "./filmBounds.js";
-import { adoptStudioMedia, saveVibeProject } from "./vibeEdit.js";
+import { adoptStudioMedia, loadVibeProject, saveVibeProject, setVibeExportPreparer } from "./vibeEdit.js";
 
 let deps = {};
 const SCRIPT = path.resolve("scripts/movie_recap.py");
@@ -2713,7 +2713,7 @@ async function stagePlanAndRender(userId, project, signal) {
     prepareCutRules(analysis, described);
     // Lines placed by what they say before any footage is matched: covers scripts written before the
     // check and lines changed on the storyboard.
-    await save(userId, project, { script: placeScript(project.script, analysis, described) });
+    await save(userId, project, { script: keepPinned(project.script, placeScript(project.script, analysis, described)) });
     // Matching and the checks are paid AI steps: a retry or re-render with the same script and settings
     // reuses what they found instead of paying for them again.
     const cacheKey = crypto.createHash("sha1").update(JSON.stringify([MATCHING_VERSION, project.script, project.options, analysis.shotCuts?.length || 0])).digest("hex");
@@ -2882,6 +2882,153 @@ export function recapVibeProject(project, format, picture, voice, music) {
   };
 }
 
+// ---------- Editing from the film ----------
+// The film stays on the media worker; the editor plays a small proxy of it (H.264, up to 854 px wide, a
+// keyframe a second), made beside the analysis. Clips cut from it carry film times, so trimming reaches more
+// film, and an export renders the edited cut list from the original film at full quality.
+export const FILM_ASSET = "recap_film";
+const FPS = 30;
+
+/** A storyboard line as saved: its words and its stretch of the film. A stretch the editor moved (or marked
+ *  pinned) is pinned, so placing the lines again before the render keeps it. */
+export function storyboardBeat(beat, prior = {}, film = 0, i = 0) {
+  const from = clamp(beat?.from ?? prior.from, 0, film, 0);
+  const to = clamp(beat?.to ?? prior.to, from + 3, film, from + 60);
+  const moved = beat?.pinned !== false && (beat?.pinned === true || prior.pinned || (Number.isFinite(Number(beat?.from)) && Number.isFinite(Number(prior.from)) && (Math.abs(Number(beat.from) - prior.from) >= 1 || Math.abs(Number(beat.to ?? prior.to) - prior.to) >= 1)));
+  return { id: String(beat?.id || `n${i}`), text: clip(beat?.text, 600), from: Math.round(from * 10) / 10, to: Math.round(to * 10) / 10, shots: Array.isArray(prior.shots) ? prior.shots : [], ...(prior.teaser ? { teaser: true } : {}), ...(moved ? { pinned: true, placed: true } : prior.placed ? { placed: true } : {}) };
+}
+
+/** Lines whose stretch the editor set on the storyboard keep it when the lines are placed again. */
+export function keepPinned(before, after) {
+  const out = { ...after };
+  for (const format of ["long", "short"]) {
+    const pinned = new Map((before?.[format]?.beats || []).filter((beat) => beat.pinned).map((beat) => [beat.id, beat]));
+    if (!pinned.size || !after?.[format]?.beats) continue;
+    out[format] = { ...after[format], beats: after[format].beats.map((beat) => (pinned.has(beat.id) ? { ...beat, from: pinned.get(beat.id).from, to: pinned.get(beat.id).to, pinned: true, placed: true } : beat)) };
+  }
+  return out;
+}
+
+/** The film proxy's state on the media worker ({ state, progress, path, duration, film }). `start` makes it
+ *  when it's missing; `keep` marks the recap as being edited, so the film stays two weeks after last use. */
+export async function filmProxy(project, { start = false, keep = false, signal } = {}) {
+  if (!mediaAvailable()) throw fail("The media server is reconnecting. Try again in a minute.", 503);
+  return worker(["proxy", "--project", project.id, "--options", JSON.stringify({ start, keep, language: project.options?.language || "" })], { timeoutMs: 60 * 1000, signal });
+}
+
+/** The "Full film" asset of a recap's edit: the proxy for playing, the worker copy for exports, and the
+ *  analysis contact sheets (one tile every few seconds) for the timeline's thumbnails. */
+export function filmAsset(project, proxy) {
+  const film = project.film || {};
+  return {
+    id: FILM_ASSET, kind: "video", name: "Full film", url: `/api/recaps/${project.id}/media/film-proxy.mp4`, file: "",
+    remote: proxy.path || `${project.id}/film-proxy.mp4`, duration: Number(proxy.duration) || Number(film.duration) || 0, origin: "generated",
+    ...(Number(proxy.width) > 0 && Number(proxy.height) > 0 ? { width: Number(proxy.width), height: Number(proxy.height) } : {}),
+    film: { recapId: project.id, ...(film.sheet ? { sheets: { base: `/api/recaps/${project.id}/sheets/`, every: Number(film.shotEvery) || 3, cols: film.sheet.cols || 4, rows: film.sheet.rows || 3 } } : {}) },
+  };
+}
+
+/** The recap look of a planned cut that the editor previews and the worker renders: mirrored, black and
+ *  white, a held frame, blurred subtitles. `seed` is the cut's place in the first render (its zoom and pan). */
+export function cutLook(planCut = {}, index = 0) {
+  return { ...(planCut.flip ? { flip: true } : {}), ...(planCut.bw ? { bw: true } : {}), ...(planCut.freeze ? { freeze: true } : {}), ...(planCut.subs ? { subs: true } : {}), seed: index };
+}
+
+/** A recap's Vibe project with its cuts on the film itself: every clip that knows its film time plays from
+ *  the proxy at that time (in/out are film seconds), with the cut's look. Clips without a film time stay on
+ *  the cut picture. */
+export function withFilm(doc, project, proxy, planCuts = []) {
+  const asset = filmAsset(project, proxy);
+  if (!asset.duration) return doc;
+  const zoom = 1 + zoomPercent(project.options?.transforms?.zoomPct, project.options?.transforms?.zoom === false ? 0 : 10) / 100;
+  const clips = doc.clips.map((clip) => {
+    const film = Number(clip.match?.film);
+    if (clip.assetId === FILM_ASSET || !Number.isFinite(film)) return clip;
+    const index = Number(String(clip.id).replace(/^cut/, ""));
+    const length = clip.out - clip.in;
+    const start = Math.max(0, Math.min(film, asset.duration - length));
+    // The film copy carries the film's sound, which a recap never uses.
+    return { ...clip, assetId: FILM_ASSET, in: Math.round(start * 1000) / 1000, out: Math.round((start + length) * 1000) / 1000, muted: true, look: cutLook(planCuts[index] || {}, Number.isFinite(index) ? index : 0) };
+  });
+  return {
+    ...doc,
+    assets: [...doc.assets.filter((a) => a.id !== FILM_ASSET), asset],
+    clips,
+    source: { ...(doc.source || {}), kind: "recap", recapId: project.id, film: true, zoom: Math.round(zoom * 1000) / 1000 },
+  };
+}
+
+/** Frames per cut off the running timeline (the worker's cut_frames): where each clip lands in a rendered picture. */
+export function pictureOffsets(lengths) {
+  let at = 0;
+  return lengths.map((length) => {
+    const offset = Math.round(at * FPS) / FPS;
+    at += length;
+    return offset;
+  });
+}
+
+/** What the worker renders for an export: every clip on the film, in timeline order, and where each lands in
+ *  the rendered picture. Also a stable name, so exporting the same edit again reuses the render. */
+export function filmRenderRequest(doc, format = "long") {
+  const films = new Set(doc.assets.filter((a) => a.film).map((a) => a.id));
+  const clips = doc.clips.filter((c) => films.has(c.assetId) && c.out > c.in).sort((a, b) => a.track - b.track || a.start - b.start);
+  const cuts = clips.map((c) => ({ start: Math.round(c.in * 1000) / 1000, end: Math.round(c.out * 1000) / 1000, ...(c.look?.flip ? { flip: true } : {}), ...(c.look?.bw ? { bw: true } : {}), ...(c.look?.freeze ? { freeze: true } : {}), ...(c.look?.subs ? { subs: true } : {}), ...(Number.isInteger(c.look?.seed) ? { seed: c.look.seed } : {}) }));
+  const offsets = pictureOffsets(cuts.map((c) => c.end - c.start));
+  const name = `edit-${crypto.createHash("sha1").update(JSON.stringify([format, cuts])).digest("hex").slice(0, 16)}`;
+  return { name, format, cuts, map: clips.map((c, k) => ({ id: c.id, offset: offsets[k], length: c.out - c.in })) };
+}
+
+/** The project with its film clips moved onto the rendered picture (same timeline places and lengths). */
+export function onRenderedPicture(doc, request, picture) {
+  const at = new Map(request.map.map((m) => [m.id, m]));
+  const asset = { id: "recap_edit_picture", kind: "video", name: "Edited cuts", url: picture.url, file: "", remote: picture.remote, duration: picture.duration, origin: "generated" };
+  return {
+    ...doc,
+    assets: [...doc.assets.filter((a) => a.id !== asset.id), asset],
+    clips: doc.clips.map((c) => {
+      const m = at.get(c.id);
+      if (!m) return c;
+      const { look, ...rest } = c;
+      return { ...rest, assetId: asset.id, in: m.offset, out: Math.round((m.offset + m.length) * 1000) / 1000 };
+    }),
+  };
+}
+
+/** Before a recap edit exports: its film clips are rendered from the original film by the worker (reused when
+ *  the same edit was rendered before), and the export runs over that picture. A film the worker no longer has
+ *  exports from the proxy, with a warning. */
+export async function prepareRecapExport(job, doc, report = (_value, _message) => {}, { loadRecap = load, run = worker, wait = sleep } = {}) {
+  if (doc.source?.kind !== "recap" || !doc.assets.some((a) => a.film) || !doc.clips.some((c) => doc.assets.find((a) => a.id === c.assetId)?.film)) return doc;
+  const signal = job.controller?.signal;
+  const recapId = String(doc.source.recapId || "");
+  const project = await loadRecap(job.userId, recapId);
+  const request = filmRenderRequest(doc, doc.source.format === "short" ? "short" : "long");
+  const ask = (args) => run([...args, "--project", project.id], { timeoutMs: 2 * 60 * 1000, signal });
+  let status = await ask(["picture-status", "--name", request.name]);
+  if (status.state !== "done") {
+    report(0.01, "Cutting your edit from the film");
+    try {
+      await ask(["start-picture", "--options", JSON.stringify({ name: request.name, format: request.format, cuts: request.cuts })]);
+    } catch (error) {
+      if (/no longer on the media worker/i.test(String(error?.message))) {
+        job.warning = "The original film is no longer on the media server, so this export uses the editing copy (lower quality). Re-analyze the film for a full-quality export.";
+        return doc;
+      }
+      throw error;
+    }
+    for (;;) {
+      await wait(4000, signal);
+      status = await ask(["picture-status", "--name", request.name]);
+      if (status.state === "done") break;
+      if (status.state !== "running") throw fail(status.error || "Cutting the edit from the film failed. Export again.", 502);
+      report(Number(status.progress) || 0, "Cutting your edit from the film");
+    }
+  }
+  report(1, "Cut from the film");
+  return onRenderedPicture(doc, request, { remote: status.path, url: `/api/recaps/${project.id}/media/${request.name}.mp4`, duration: Number(status.duration) || 0 });
+}
+
 /** The quality gate's verdict on a finished recap, from the worker's measurements of the final file. */
 export function recapQa(project, output) {
   const short = output.format === "short";
@@ -2976,10 +3123,15 @@ async function stageFinish(userId, project, signal) {
     if (musicFile) music = { ...(await adoptStudioMedia(userId, musicFile, path.extname(project.music.file).slice(1)).catch(() => ({}))), duration: project.music.seconds };
     if (!music?.file) music = undefined;
   }
+  // The edit plays its cuts straight from the film when the proxy is ready (trim to reach more film,
+  // replace shots from the whole film); otherwise from the cut picture.
+  const proxy = onWorker ? await filmProxy(project, { keep: true, start: true, signal }).catch(() => null) : null;
+  const planFormats = proxy?.state === "done" ? (await readJson(userId, project.id, "plan-cache.json", null))?.final?.plan?.formats || {} : {};
   for (const format of Object.keys(media)) {
     const { picture, narration } = media[format];
     if (!picture || !narration) continue;
-    const doc = recapVibeProject(project, format, picture, narration, music);
+    const built = recapVibeProject(project, format, picture, narration, music);
+    const doc = proxy?.state === "done" ? withFilm(built, project, proxy, planFormats[format]?.cuts || []) : built;
     await saveVibeProject(userId, doc);
     vibe[format] = doc.id;
   }
@@ -3086,6 +3238,8 @@ export function configureMovieRecap(dependencies) {
 }
 
 export function registerMovieRecap(app) {
+  // A recap edit that plays from the film exports by cutting the edit from the original film first.
+  setVibeExportPreparer((job, doc, report) => prepareRecapExport(job, doc, report));
 
   const route = (handler) => async (req, res) => {
     try {
@@ -3466,11 +3620,7 @@ export function registerMovieRecap(app) {
       const beats = incoming[format]?.beats;
       if (!Array.isArray(beats)) continue;
       const known = new Map((project.script[format]?.beats || []).map((beat) => [beat.id, beat]));
-      project.script[format].beats = beats.slice(0, 200).map((beat, i) => {
-        const prior = known.get(String(beat?.id)) || {};
-        const from = clamp(beat?.from ?? prior.from, 0, film, 0);
-        return { id: String(beat?.id || `n${i}`), text: clip(beat?.text, 600), from: Math.round(from), to: Math.round(clamp(beat?.to ?? prior.to, from + 5, film, from + 60)), shots: Array.isArray(prior.shots) ? prior.shots : [], ...(prior.teaser ? { teaser: true } : {}) };
-      }).filter((beat) => beat.text);
+      project.script[format].beats = beats.slice(0, 200).map((beat, i) => storyboardBeat(beat, known.get(String(beat?.id)) || {}, film, i)).filter((beat) => beat.text);
       if (typeof incoming[format]?.title === "string") project.script[format].title = clip(incoming[format].title, 70);
     }
     await save(userId, project, { title: project.script.title || project.title });
@@ -3626,11 +3776,37 @@ export function registerMovieRecap(app) {
     res.json(await run());
   }));
 
+  // The film for playback and editing: the proxy's state, made on request, with its link when ready.
+  app.get("/api/recaps/:id/film", route(async (req, res, userId) => {
+    const project = await load(userId, req.params.id);
+    const proxy = await filmProxy(project, { start: req.query.start !== "0", keep: true });
+    res.setHeader("Cache-Control", "no-store");
+    res.json({
+      state: proxy.state, progress: Number(proxy.progress) || 0, film: Boolean(proxy.film), ...(proxy.error ? { error: proxy.error } : {}),
+      ...(proxy.state === "done" ? { url: `/api/recaps/${project.id}/media/film-proxy.mp4`, duration: Number(proxy.duration) || project.film?.duration || 0 } : {}),
+      sheet: project.film?.sheet || null, shotEvery: project.film?.shotEvery || 3,
+    });
+  }));
+
+  // Moves an existing recap edit onto the film (clips keep their places; in/out become film times).
+  app.post("/api/recaps/:id/vibe-film", route(async (req, res, userId) => {
+    const project = await load(userId, req.params.id);
+    const doc = await loadVibeProject(userId, String(req.body?.projectId || ""));
+    if (!doc || doc.source?.kind !== "recap" || doc.source.recapId !== project.id) throw fail("That edit isn't from this recap.", 404);
+    const proxy = await filmProxy(project, { start: true, keep: true });
+    if (proxy.state !== "done") return res.status(202).json({ state: proxy.state, progress: Number(proxy.progress) || 0, ...(proxy.error ? { error: proxy.error } : {}) });
+    const planFormats = (await readJson(userId, project.id, "plan-cache.json", null))?.final?.plan?.formats || {};
+    const next = withFilm(doc, project, proxy, planFormats[doc.source.format === "short" ? "short" : "long"]?.cuts || []);
+    next.updatedAt = Date.now();
+    await saveVibeProject(userId, next);
+    res.json({ state: "done", project: next });
+  }));
+
   // The Vibe Edit picture track of a recap, kept on the media worker.
   app.get("/api/recaps/:id/media/:name", route(async (req, res, userId) => {
     const project = await load(userId, req.params.id);
     const name = path.basename(String(req.params.name));
-    if (!/^(picture-(long|short)|recut-[a-z0-9-]{6,40})\.mp4$/.test(name)) throw fail("Not found", 404);
+    if (!/^(picture-(long|short)|recut-[a-z0-9-]{6,40}|film-proxy|edit-[a-z0-9]{6,40})\.mp4$/.test(name)) throw fail("Not found", 404);
     const url = signedMediaUrl(`${project.id}/${name}`);
     if (!url) throw fail("The media server is reconnecting. Try again in a minute.", 503);
     res.setHeader("Cache-Control", "no-store");

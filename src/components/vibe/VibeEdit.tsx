@@ -7,7 +7,7 @@ import { Check, Clapperboard, CloudOff, Download, Film, Loader2, Plus, SlidersHo
 import { toast } from "../../utils/toast";
 import { writeDeepLink } from "../../utils/tiktokRoute";
 import { loadVoiceProfiles } from "../../utils/voiceProfiles";
-import { compactTracks, deleteItems, duplicateItems, editPoints, isLocked, emptyProject, formatTime, frameSize, moveItems, normalizeProject, projectDuration, rippleDeleteItems, splitAt, toggleMarker, trimToTime, VIBE_ASPECTS, type VibeAspect } from "../../utils/vibeEdit";
+import { compactTracks, recapSource, deleteItems, duplicateItems, editPoints, isLocked, emptyProject, formatTime, frameSize, moveItems, normalizeProject, projectDuration, rippleDeleteItems, splitAt, toggleMarker, trimToTime, VIBE_ASPECTS, type VibeAspect } from "../../utils/vibeEdit";
 import { deleteProject, exportToSource, filmMotion, getRender, listProjects, loadProject, saveProject, startRender, stopRender, type ProjectSummary, type RenderJob } from "./api";
 import { getVoices, runActions, setVoices } from "./commands";
 import { JuelPanel, provideJuelContext, type JuelPageTools } from "../JuelPanel";
@@ -235,7 +235,7 @@ function ExportMenu() {
               <Progress
                 label="Export progress"
                 value={Math.max(0.03, phase === "frames" ? progress : 0.15 + (job?.progress || 0) * 0.85)}
-                message={phase === "motion" ? "Filming your motion graphic changes…" : phase === "frames" ? "Drawing captions and titles…" : "Rendering on the server. You can keep editing; this edit is what exports."}
+                message={phase === "motion" ? "Filming your motion graphic changes…" : phase === "frames" ? "Drawing captions and titles…" : job?.message ? `${job.message}… You can keep editing; this edit is what exports.` : "Rendering on the server. You can keep editing; this edit is what exports."}
               />
               {job?.status === "running" ? (
                 <button type="button" className="ui-btn is-sm is-ghost" onClick={() => void stopRender(job.id).then(() => setJob({ ...job, status: "stopped" }))}>
@@ -245,6 +245,7 @@ function ExportMenu() {
             </div>
           ) : job?.status === "completed" && job.url ? (
             <div className="ve-done">
+              {job.warning ? <p className="ve-warning" role="status">{job.warning}</p> : null}
               <VideoPlayer src={job.url} label="Exported video" size="fit" className="ve-done-video" />
               <div className="ve-actions">
                 <a className="ui-btn is-sm is-primary" href={`${job.url}?download=1`} download>
@@ -479,6 +480,8 @@ function Editor({ onBack, onOpenEdit, onNew, backLabel = "Projects", embedded = 
     };
   }, [projectId]);
   const aspect = useVibe((s) => s.project.aspect);
+  // The Film tab shows only in an edit made by Movie to Recap.
+  const isRecap = useVibe((s) => Boolean(recapSource(s.project)));
   // The assistant is the card on the left; the right card holds the tool panels and the
   // selected item's details as tabs.
   const saved = useRef(readLayout()).current;
@@ -661,7 +664,7 @@ function Editor({ onBack, onOpenEdit, onNew, backLabel = "Projects", embedded = 
         {tab ? (
           <aside className="ve-card ve-tabs-card" aria-label={tab === "props" ? "Details" : PANELS.find((p) => p.id === tab)?.label}>
             <div className="ve-tabs" role="tablist" aria-label="Tools">
-              {PANELS.filter((p) => p.id !== "auto").map((p) => (
+              {PANELS.filter((p) => p.id !== "auto" && (p.id !== "film" || isRecap)).map((p) => (
                 <button key={p.id} type="button" role="tab" aria-selected={tab === p.id} className={tab === p.id ? "is-on" : ""} onClick={() => setTab(p.id)} aria-label={p.label} title={p.label}>
                   {p.icon}
                   <span>{p.short || p.label}</span>

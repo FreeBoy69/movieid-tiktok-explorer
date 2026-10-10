@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   addAsset,
+  overwriteFromFilm,
+  replaceFromFilm,
   addText,
   clipEnd,
   deleteItems,
@@ -345,5 +347,39 @@ describe("locked tracks stay put", () => {
     const p = edit();
     const locked = p.clips.find((x) => x.track === 1)!;
     expect(duplicateItems(p, [locked.id]).ids).toHaveLength(0);
+  });
+});
+
+describe("editing a recap from its film", () => {
+  const filmProject = () => {
+    const p = emptyProject("Recap", "16:9");
+    return {
+      ...p,
+      assets: [{ id: "recap_film", kind: "video" as const, name: "Full film", url: "/f", duration: 1000, film: { recapId: "rcp_1" } }],
+      clips: [
+        { id: "cut0", assetId: "recap_film", track: 0, start: 0, in: 100, out: 102, look: { flip: true, seed: 0 }, flagged: true, note: "wrong shot" },
+        { id: "cut1", assetId: "recap_film", track: 0, start: 2, in: 200, out: 203 },
+        { id: "cut2", assetId: "recap_film", track: 0, start: 5, in: 300, out: 302 },
+      ],
+    };
+  };
+  it("replaces a clip with another moment of the film, keeping its place and length", () => {
+    const p = replaceFromFilm(filmProject(), "cut0", "recap_film", 640);
+    expect(p.clips[0]).toMatchObject({ id: "cut0", start: 0, in: 640, out: 642, muted: true, match: { film: 640 }, look: { seed: 0 } });
+    expect(p.clips[0].flagged).toBeUndefined();
+    expect(p.clips[0].look?.flip).toBeUndefined();
+    // Never past the end of the film.
+    expect(replaceFromFilm(filmProject(), "cut1", "recap_film", 999).clips[1]).toMatchObject({ in: 997, out: 1000 });
+  });
+  it("lays film over the picture at a time without moving anything after it", () => {
+    const { project, id } = overwriteFromFilm(filmProject(), "recap_film", 500, 503, 1, 0);
+    const byStart = [...project.clips].sort((a, b) => a.start - b.start);
+    expect(byStart.map((c) => [c.start, c.in, c.out])).toEqual([[0, 100, 101], [1, 500, 503], [4, 202, 203], [5, 300, 302]]);
+    expect(project.clips.find((c) => c.id === id)).toMatchObject({ assetId: "recap_film", muted: true, match: { film: 500 } });
+  });
+  it("trims a film clip past its cut, into the rest of the film", () => {
+    const p = updateItem(filmProject(), "cut1", { out: 260 });
+    expect(p.clips[1].out).toBe(260);
+    expect(updateItem(filmProject(), "cut1", { out: 5000 }).clips[1].out).toBe(1000);
   });
 });

@@ -263,6 +263,43 @@ function Waveform({ url, inPoint, out, width }: { url: string; inPoint: number; 
 
 // ---------- Filmstrip ----------
 function Strip({ asset, inPoint, width, height, pps }: { asset: VibeAsset; inPoint: number; width: number; height: number; pps: number }) {
+  // A recap's whole film: its contact sheets already hold a frame every few seconds, so no video is decoded.
+  if (asset.film?.sheets) return <FilmSheetStrip asset={asset} inPoint={inPoint} width={width} height={height} pps={pps} />;
+  return <VideoStrip asset={asset} inPoint={inPoint} width={width} height={height} pps={pps} />;
+}
+function FilmSheetStrip({ asset, inPoint, width, height, pps }: { asset: VibeAsset; inPoint: number; width: number; height: number; pps: number }) {
+  const { base, every, cols, rows } = asset.film!.sheets!;
+  const aspect = asset.width && asset.height ? asset.width / asset.height : 16 / 9;
+  const tileW = Math.max(24, Math.round(height * aspect));
+  const tiles = Math.min(200, Math.ceil(width / tileW));
+  const per = cols * rows;
+  return (
+    <span className="ve-strip" aria-hidden="true">
+      {Array.from({ length: tiles }, (_, i) => {
+        const t = inPoint + (i * tileW + tileW / 2) / pps;
+        const n = Math.max(0, Math.floor(t / every));
+        const at = n % per;
+        const col = at % cols;
+        const row = Math.floor(at / cols);
+        return (
+          <span
+            key={i}
+            className="ve-strip-tile"
+            style={{
+              left: i * tileW,
+              width: tileW,
+              height,
+              backgroundImage: `url("${base}s${String(Math.floor(n / per)).padStart(3, "0")}.jpg")`,
+              backgroundSize: `${cols * 100}% ${rows * 100}%`,
+              backgroundPosition: `${cols > 1 ? (col / (cols - 1)) * 100 : 0}% ${rows > 1 ? (row / (rows - 1)) * 100 : 0}%`,
+            }}
+          />
+        );
+      })}
+    </span>
+  );
+}
+function VideoStrip({ asset, inPoint, width, height, pps }: { asset: VibeAsset; inPoint: number; width: number; height: number; pps: number }) {
   const strip = useFilmstrip(asset.kind === "video" ? asset.url : undefined, asset.duration);
   if (asset.kind === "image") return <span className="ve-strip ve-strip-still" style={{ backgroundImage: `url("${asset.url}")`, backgroundSize: `auto ${height}px` }} />;
   if (!strip) return <span className="ve-strip is-loading" />;

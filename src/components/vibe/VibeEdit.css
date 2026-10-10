@@ -467,6 +467,7 @@
 .ve-item.is-tiny .ve-item-name { display: none; }
 .ve-strip { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
 .ve-strip img { position: absolute; top: 0; object-fit: cover; border-right: 1px solid rgb(0 0 0 / 0.35); }
+.ve-strip-tile { position: absolute; top: 0; background-repeat: no-repeat; border-right: 1px solid rgb(0 0 0 / 0.35); }
 .ve-strip-still { background-repeat: repeat-x; background-position: left center; }
 .ve-strip.is-loading { background: linear-gradient(100deg, transparent 30%, rgb(255 255 255 / 0.06) 50%, transparent 70%) 0 0 / 200% 100%; animation: ui-shimmer 1.4s ease-in-out infinite; }
 .ve-wave { position: absolute; inset: 18px 0 3px; width: 100%; height: calc(100% - 21px); pointer-events: none; }
@@ -764,3 +765,36 @@ label.ve-auto-pick:hover { background: var(--ve-raised); }
 /* The Details button is a phone affordance; wider screens open details on selection. */
 @media (min-width: 901px) { .ve-tl-details { display: none; } }
 .ve-tl-details { color: var(--ve-accent-text); }
+
+/* ---------- Film panel (recap edits): the whole film to scrub, mark, and cut from ---------- */
+.ve-warning { margin: 0 0 10px; padding: 8px 10px; border-radius: 10px; background: color-mix(in srgb, var(--ve-accent) 12%, transparent); color: var(--ve-text); font-size: 12.5px; line-height: 1.5; }
+.ve-film { display: grid; gap: 10px; padding: 12px; outline: none; }
+.ve-film-screen { position: relative; overflow: hidden; border-radius: 12px; background: #000; aspect-ratio: 16 / 9; }
+.ve-film-screen video { display: block; width: 100%; height: 100%; object-fit: contain; cursor: pointer; }
+.ve-film-screen .ve-film-error { position: absolute; inset: auto 8px 8px; margin: 0; }
+.ve-film-bar { display: flex; align-items: center; gap: 8px; }
+.ve-film-time { flex: 1; color: var(--ve-text); font-family: var(--ve-mono); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.ve-film-time small { color: var(--ve-faint); font-size: 11.5px; }
+.ve-film-scrub { position: relative; display: flex; align-items: center; height: 22px; }
+.ve-film-scrub .ui-range { position: relative; z-index: 1; width: 100%; }
+.ve-film-range, .ve-film-clip { position: absolute; top: 2px; bottom: 2px; border-radius: 4px; pointer-events: none; }
+.ve-film-range { background: color-mix(in srgb, var(--ve-accent) 38%, transparent); }
+.ve-film-clip { box-shadow: inset 0 0 0 2px var(--ve-text); opacity: 0.6; }
+.ve-film-overview { display: grid; grid-template-columns: repeat(12, 1fr); gap: 2px; }
+.ve-film-overview button { aspect-ratio: 16 / 9; padding: 0; border: 0; border-radius: 3px; background-color: var(--ve-sunken); background-repeat: no-repeat; cursor: pointer; transition: opacity 0.15s ease; }
+.ve-film-overview button:hover { opacity: 0.8; }
+.ve-film-marks { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.ve-film-marks .ui-btn { gap: 6px; }
+.ve-film-marks kbd { padding: 0 4px; border: 1px solid var(--ve-line); border-radius: 4px; color: var(--ve-faint); font-family: var(--ve-mono); font-size: 10.5px; }
+.ve-film-marks .ui-btn span { color: var(--ve-muted); font-family: var(--ve-mono); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.ve-film-len { margin-left: auto; color: var(--ve-muted); font-family: var(--ve-mono); font-size: 11.5px; }
+.ve-film-actions { display: grid; gap: 6px; }
+.ve-film-actions .ui-btn { justify-content: center; }
+.ve-film-hint, .ve-film-note { margin: 0; color: var(--ve-faint); font-size: 11.5px; line-height: 1.5; }
+.ve-film-note { padding: 14px; }
+.ve-film-error { margin: 0; color: var(--ve-danger); font-size: 12.5px; }
+.ve-film-move { display: grid; justify-items: start; gap: 10px; padding: 16px 14px; }
+.ve-film-move > svg { color: var(--ve-muted); }
+.ve-film-move p { margin: 0; color: var(--ve-muted); font-size: 13px; line-height: 1.55; }
+.ve-film-move strong { display: block; margin-bottom: 2px; color: var(--ve-text); font-size: 14px; }
+.ve-film-move small { color: var(--ve-faint); font-size: 11.5px; line-height: 1.5; }

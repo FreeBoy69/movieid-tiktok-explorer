@@ -32,6 +32,9 @@ export interface VibeAsset {
   language?: string;
   /** Kept on the media worker ("<project>/<file>"), streamed through a signed link: large recap media. */
   remote?: string;
+  /** A recap's whole film (its editing copy): clips cut from it carry film times, and the timeline's
+   *  thumbnails come from the recap's contact sheets (one tile every `every` seconds). */
+  film?: { recapId: string; sheets?: { base: string; every: number; cols: number; rows: number } };
   /** A motion graphic (a title, card, or overlay) rendered from HTML: the clip is its video, and this is what
    *  the motion editor reopens to change it. `edits` is its edits layer (src/utils/videoGraphics.js). */
   motion?: {
@@ -76,6 +79,9 @@ export interface VibeClip {
   label?: string;
   /** How the clip comes in (videoLooks.js VIDEO_TRANSITIONS): fade, flash, glitch, or zoom; plays on its own frames. */
   transition?: string;
+  /** A recap cut's look, previewed here and rendered from the film on export: mirrored, black and white, a held
+   *  first frame, blurred film subtitles. `seed` keeps the cut's zoom and pan from the first render. */
+  look?: { flip?: boolean; bw?: boolean; freeze?: boolean; subs?: boolean; seed?: number };
   /** A slow camera move across the clip (videoLooks.js VIDEO_MOTIONS): push, pull, or a pan. */
   motion?: string;
 }
@@ -175,7 +181,7 @@ export interface VibeProject {
   look?: string;
   /** Where the edit came from, which decides its extra tools: a recap finds better shots for its cuts, a Create
    *  Video project regenerates its scenes, a film episode re-renders its scenes; its export becomes their video. */
-  source?: { kind: "recap"; recapId: string; format: "long" | "short" } | { kind: "create-video"; projectId: string } | { kind: "drama"; episodeId: string; seriesId?: string } | { kind: "studio"; generationId: string; tab: string };
+  source?: { kind: "recap"; recapId: string; format: "long" | "short"; film?: boolean; zoom?: number } | { kind: "create-video"; projectId: string } | { kind: "drama"; episodeId: string; seriesId?: string } | { kind: "studio"; generationId: string; tab: string };
   createdAt: number;
   updatedAt: number;
 }
@@ -372,6 +378,47 @@ export function placeAsset(p: VibeProject, assetId: string, opts: PlaceOptions =
   const start = round(Math.max(0, opts.at ?? trackEnd(p, "clip", track)));
   const clip: VibeClip = { id: vibeId("c"), assetId, track, start, in: 0, out: round(length) };
   return { project: touch(p, { clips: [...p.clips, clip] }), id: clip.id };
+}
+
+/** The film asset of a recap edit, when its clips play from the film. */
+export function filmAssetOf(p: Pick<VibeProject, "assets">): VibeAsset | undefined {
+  return p.assets.find((a) => a.film && a.kind === "video");
+}
+
+/** Points a clip at another moment of the film, keeping its place and length on the timeline: a shot picked
+ *  by hand from the whole film. The old cut's look and its "better shot" flag go with it. */
+export function replaceFromFilm(p: VibeProject, clipId: string, assetId: string, from: number, length?: number): VibeProject {
+  const asset = assetById(p, assetId);
+  const clip = p.clips.find((c) => c.id === clipId);
+  if (!asset || !clip) return p;
+  const span = Math.max(MIN_ITEM_SECONDS, length ?? clip.out - clip.in);
+  const total = asset.duration || Infinity;
+  const start = round(Math.max(0, Math.min(from, total - span)));
+  const { look, flagged, note, ...rest } = clip;
+  const next: VibeClip = { ...rest, assetId, in: start, out: round(start + span), muted: true, match: { film: start }, ...(Number.isInteger(look?.seed) ? { look: { seed: look!.seed } } : {}) };
+  return touch(p, { clips: p.clips.map((c) => (c.id === clipId ? next : c)) });
+}
+
+/** Lays film from `from` to `to` onto a video track at `at`, over whatever is there (an overwrite edit):
+ *  clips under it are trimmed or split, nothing after it moves, so the picture stays in sync with the narration. */
+export function overwriteFromFilm(p: VibeProject, assetId: string, from: number, to: number, at: number, track = 0): { project: VibeProject; id: string } {
+  const asset = assetById(p, assetId);
+  if (!asset || !(to - from >= MIN_ITEM_SECONDS)) return { project: p, id: "" };
+  const start = round(Math.max(0, at));
+  const end = round(start + (to - from));
+  const kept: VibeClip[] = [];
+  for (const c of p.clips) {
+    const cEnd = clipEnd(c);
+    if (c.track !== track || cEnd <= start + 1e-4 || c.start >= end - 1e-4) {
+      kept.push(c);
+      continue;
+    }
+    // The part before the new clip, and the part after it, each kept when long enough to show.
+    if (c.start < start - MIN_ITEM_SECONDS) kept.push({ ...c, out: round(c.in + (start - c.start)) });
+    if (cEnd > end + MIN_ITEM_SECONDS) kept.push({ ...c, id: c.start < start - MIN_ITEM_SECONDS ? vibeId("c") : c.id, start: end, in: round(c.in + (end - c.start)) });
+  }
+  const clip: VibeClip = { id: vibeId("c"), assetId, track, start, in: round(from), out: round(to), fit: "fill", muted: true, match: { film: round(from) } };
+  return { project: touch(p, { clips: [...kept, clip] }), id: clip.id };
 }
 
 export interface ItemPatch {

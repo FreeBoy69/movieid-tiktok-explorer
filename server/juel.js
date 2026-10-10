@@ -280,6 +280,8 @@ export const JUEL_ROUTES = {
   "POST /api/recaps/:id/post/draft": ["recap", "paid", "Writes an AI title, description, and tags for posting a recap to a chosen channel (format, accountId)."],
   "POST /api/recaps/:id/posts/:postId/thumbnail": ["recap", "publish", "Sets the YouTube thumbnail of an already posted recap video to the recap's still or poster."],
   "POST /api/recaps/:id/recut": ["recap", "paid", "Replaces one cut of a finished recap with an AI-picked better shot, or a chosen time."],
+  "GET /api/recaps/:id/film": ["recap", "read", "The film's editing copy for playback (recap id): its state while it's being made, then its link and length."],
+  "POST /api/recaps/:id/vibe-film": ["recap", "change", "Moves a recap's Vibe Edit project onto the film, so its clips trim into the film (recap id; body projectId)."],
   "POST /api/recaps/:id/render": ["recap", "paid", "Renders this recap with the current script, optionally changing voice, captions, zoom, or pan."],
   "POST /api/recaps/:id/retry": ["recap", "paid", "Restarts a failed or stuck recap from its current stage, optionally with a new voice."],
   "POST /api/recaps/:id/rewrite": ["recap", "paid", "Writes the recap script again with AI from the existing film analysis."],

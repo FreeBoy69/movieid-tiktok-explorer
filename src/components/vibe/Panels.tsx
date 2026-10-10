@@ -1,11 +1,13 @@
 // The left-panel tools: media library, voice, captions, titles, music, and
 // generation, plus the inspector for whatever is selected.
 import { useEffect, useState, type ReactNode } from "react";
-import { AudioLines, Captions, Film, Flag, Image as ImageIcon, Link2, Loader2, Mic, Music2, Plus, Sparkles, Trash2, Type, Upload, Wand2 } from "lucide-react";
+import { AudioLines, Captions, Clapperboard, Film, Flag, Image as ImageIcon, Link2, Loader2, Mic, Music2, Plus, Sparkles, Trash2, Type, Upload, Wand2 } from "lucide-react";
 import { VoicePicker } from "../VoicePicker";
 import { toast } from "../../utils/toast";
 import {
   recapSource,
+  filmAssetOf,
+  replaceFromFilm,
   addText,
   assetById,
   clipEnd,
@@ -30,6 +32,7 @@ import { captionStyle, loadCaptionFont, resolveCaptionStyleId } from "./overlay"
 import CaptionStylePicker from "../CaptionStylePicker";
 import { useVibe, vibe, withTask } from "./store";
 import { AutoEditPanel } from "./AutoEditPanel";
+import { FilmPanel } from "./FilmPanel";
 import { normalizeOverlay, OVERLAY_KINDS, overlayExample } from "../../utils/videoOverlays.js";
 import { LookPicker } from "../CreateVideoExtras";
 import { MusicLibrary, type LibraryTrack } from "../MusicLibrary";
@@ -41,10 +44,12 @@ import { LanguagePicker } from "../LanguagePicker";
 import { COLOR_BOOST } from "../../utils/vibeAutoEdit";
 import { VIDEO_MOTIONS, VIDEO_TRANSITIONS } from "../../utils/videoLooks.js";
 
-export type PanelId = "auto" | "media" | "voice" | "captions" | "text" | "music" | "generate";
+export type PanelId = "auto" | "media" | "film" | "voice" | "captions" | "text" | "music" | "generate";
 export const PANELS: { id: PanelId; label: string; short?: string; icon: ReactNode }[] = [
   { id: "auto", label: "Auto edit", short: "Auto", icon: <Wand2 size={18} /> },
   { id: "media", label: "Media", icon: <Film size={18} /> },
+  // Only in a recap's edit: the whole film to cut from.
+  { id: "film", label: "Film", icon: <Clapperboard size={18} /> },
   { id: "voice", label: "Voice", icon: <Mic size={18} /> },
   { id: "captions", label: "Captions", icon: <Captions size={18} /> },
   { id: "text", label: "Text", icon: <Type size={18} /> },
@@ -552,6 +557,12 @@ async function replaceShot(clipId: string, t?: number) {
   const source = recapSource(project);
   if (!clip || index == null || !source) return;
   const { asset, frame } = await findBetterShot(source.recapId, source.format, index, clip.note || "", t);
+  // An edit on the film takes the new shot straight from the film, so it stays trimmable.
+  const film = filmAssetOf(project);
+  if (film && clip.assetId === film.id && Number.isFinite(frame?.t)) {
+    vibe.commit((p) => replaceFromFilm(p, clipId, film.id, Math.max(0, frame.t - (clip.out - clip.in) / 2)));
+    return frame;
+  }
   vibe.commit((p) => ({
     ...p,
     assets: [...p.assets, asset],
@@ -948,6 +959,8 @@ export function PanelBody({ panel, voicesLoading }: { panel: PanelId; voicesLoad
       return <AutoEditPanel />;
     case "media":
       return <MediaPanel />;
+    case "film":
+      return <FilmPanel />;
     case "voice":
       return <VoicePanel voicesLoading={voicesLoading} />;
     case "captions":

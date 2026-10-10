@@ -27,12 +27,20 @@ const MAX_PROJECT_BYTES = 4 * 1024 * 1024;
 const MAX_VOICE_LINES = 200;
 const MAX_VOICE_CHARS = 20000;
 const MAX_RENDER_SECONDS = 15 * 60;
+const MAX_RECAP_RENDER_SECONDS = 25 * 60;
 const MAX_ACTIVE_RENDERS = 2;
 const SAMPLE_RATE = 24000;
 
 let deps = {};
 export function configureVibeEdit(dependencies) {
   deps = dependencies;
+}
+
+// A feature whose edits draw on media it keeps elsewhere (Movie to Recap's film) readies a project before
+// it exports: (job, project, report) => project.
+let exportPreparer = null;
+export function setVibeExportPreparer(fn) {
+  exportPreparer = fn;
 }
 
 const fail = (message, statusCode = 400) => Object.assign(new Error(message), { statusCode });
@@ -373,7 +381,7 @@ async function voiceover(userId, body) {
 // ---------- Renders ----------
 const renders = new Map();
 const activeRenders = (userId) => [...renders.values()].filter((r) => r.userId === userId && r.status === "running").length;
-const publicRender = (r) => ({ id: r.id, status: r.status, progress: r.progress, error: r.error, url: r.url, file: r.file, duration: r.duration, createdAt: r.createdAt });
+const publicRender = (r) => ({ id: r.id, status: r.status, progress: r.progress, error: r.error, url: r.url, file: r.file, duration: r.duration, createdAt: r.createdAt, ...(r.message ? { message: r.message } : {}), ...(r.warning ? { warning: r.warning } : {}) });
 
 function decodePng(dataUrl) {
   const match = /^data:image\/png;base64,([a-z0-9+/=]+)$/i.exec(String(dataUrl || ""));
@@ -386,7 +394,9 @@ async function startRender(userId, body) {
   const project = checkProject(body?.project);
   if (activeRenders(userId) >= MAX_ACTIVE_RENDERS) throw fail("Two exports are already running. Wait for one to finish.", 429);
   const duration = renderDuration(project);
-  if (duration > MAX_RENDER_SECONDS) throw fail("Exports can be up to 15 minutes long");
+  // A long recap runs 10 to 20 minutes.
+  const limit = project.source?.kind === "recap" ? MAX_RECAP_RENDER_SECONDS : MAX_RENDER_SECONDS;
+  if (duration > limit) throw fail(`Exports can be up to ${Math.round(limit / 60)} minutes long`);
   if (!project.clips.length && !project.audio.length && !project.texts.length) throw fail("Add something to the timeline first");
   const overlays = (Array.isArray(body?.overlays) ? body.overlays : []).slice(0, 4000);
   const job = { id: newId("render"), userId, status: "running", progress: 0, createdAt: new Date().toISOString(), controller: new AbortController() };
@@ -397,7 +407,26 @@ async function startRender(userId, body) {
 
 async function runRender(job, project, overlays) {
   const workDir = await fs.mkdtemp(path.join(os.tmpdir(), "autoyt-vibe-render-"));
+  // Progress runs 0-1 across this export; a preparing step (cutting a recap edit from its film) takes the
+  // first 60% and the export the rest.
+  let base = 0;
+  let span = 1;
+  const setProgress = (value) => {
+    job.progress = Math.round((base + span * Math.max(0, Math.min(1, value))) * 1000) / 1000;
+  };
   try {
+    if (exportPreparer) {
+      const before = project;
+      project = await exportPreparer(job, project, (value, message) => {
+        job.progress = Math.round(0.6 * Math.max(0, Math.min(1, value)) * 1000) / 1000;
+        if (message) job.message = message;
+      });
+      if (project !== before) {
+        base = 0.6;
+        span = 0.4;
+      }
+      job.message = "";
+    }
     const paths = new Map();
     const used = new Set([...project.clips, ...project.audio].map((c) => c.assetId));
     for (const asset of project.assets) {
@@ -413,7 +442,7 @@ async function runRender(job, project, overlays) {
       const name = String(asset.file || decodeURIComponent(String(asset.url || "").split("/api/studio/files/")[1]?.split("?")[0] || ""));
       paths.set(asset.id, await readable(job.userId, name));
     }
-    job.progress = 0.1;
+    setProgress(0.1);
     const audible = [];
     for (const asset of project.assets) {
       if (asset.kind !== "video" || !paths.has(asset.id)) continue;
@@ -421,7 +450,7 @@ async function runRender(job, project, overlays) {
       // Unknown (probe unavailable) counts as silent rather than failing the graph.
       if (streams?.includes("audio")) audible.push(asset.id);
     }
-    job.progress = 0.2;
+    setProgress(0.2);
 
     let overlayList = null;
     const frames = [];
@@ -442,12 +471,12 @@ async function runRender(job, project, overlays) {
       overlayList = path.join(workDir, "overlays.txt");
       await fs.writeFile(overlayList, overlayConcatList(frames, blankFile, renderDuration(project)));
     }
-    job.progress = 0.3;
+    setProgress(0.3);
 
     const output = path.join(workDir, "out.mp4");
     const { args, duration } = buildRenderArgs({ project, pathOf: (a) => paths.get(a.id) || null, audible, overlayList, output });
     const ticker = setInterval(() => {
-      job.progress = Math.min(0.95, job.progress + 0.02);
+      setProgress(Math.min(0.95, (job.progress - base) / span + 0.02));
     }, 2000);
     try {
       await runFfmpeg(args, job.controller.signal);
