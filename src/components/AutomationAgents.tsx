@@ -23,6 +23,10 @@ import {
   Film,
   Heart,
   Layers3,
+  LayoutDashboard,
+  MessagesSquare,
+  History,
+  FileChartColumn,
   LayoutList,
   ListChecks,
   Loader2,
@@ -82,7 +86,7 @@ import { openBackgroundProcessCenter } from "./BackgroundProcessCenter";
 import { agentUploadMedia, buildAgentAnalyticsViz, readAgentUploadMetric } from "../utils/agentAnalyticsViz";
 import { PerformanceReportView, type AgentPerformanceReport } from "./AgentStructuredContent";
 import { MovieAnalysisTabs } from "./MovieAnalysisTabs";
-import { JuelDock, JuelPanel, onJuelChange, provideJuelContext } from "./JuelPanel";
+import { JuelDock, JuelPanel, onJuelChange, provideJuelContext, SideNav, SideNavItem, useSideOpen } from "./JuelPanel";
 import { SourcePicker, type SourceOption } from "./SourcePicker";
 import { SourcePoolUsage } from "./SourcePoolUsage";
 import { scheduleHourFromUtcLabel } from "../utils/automationDecisionPolicy.js";
@@ -1635,10 +1639,10 @@ function AgentHero({ agent, agents, compact: isCompact = false, tab, tabCounts, 
               <div className="ag-menu" role="menu">
                 <button type="button" role="menuitem" onClick={pick(onCreateAgent)}><Plus className="h-4 w-4" />New agent</button>
                 <button type="button" role="menuitem" onClick={pick(onRefresh)}><RefreshCw className="h-4 w-4" />Refresh</button>
-                <button type="button" role="menuitem" onClick={pick(() => onTab("voice"))}><AudioLines className="h-4 w-4" />Remake videos</button>
-                <button type="button" role="menuitem" onClick={pick(() => onTab("compile"))}><Layers3 className="h-4 w-4" />Compile a long video</button>
-                <button type="button" role="menuitem" onClick={pick(() => onTab("runs"))}><Clock3 className="h-4 w-4" />Run log</button>
-                <button type="button" role="menuitem" onClick={pick(() => onTab("report"))}><TrendingUp className="h-4 w-4" />Performance report</button>
+                <button type="button" role="menuitem" className="ag-menu-phone" onClick={pick(() => onTab("voice"))}><AudioLines className="h-4 w-4" />Remake videos</button>
+                <button type="button" role="menuitem" className="ag-menu-phone" onClick={pick(() => onTab("compile"))}><Layers3 className="h-4 w-4" />Compile a long video</button>
+                <button type="button" role="menuitem" className="ag-menu-phone" onClick={pick(() => onTab("runs"))}><Clock3 className="h-4 w-4" />Run log</button>
+                <button type="button" role="menuitem" className="ag-menu-phone" onClick={pick(() => onTab("report"))}><TrendingUp className="h-4 w-4" />Performance report</button>
                 <button type="button" role="menuitem" onClick={pick(openBackgroundProcessCenter)}><Activity className="h-4 w-4" />Background activity</button>
                 <hr />
                 <button type="button" role="menuitem" className="is-danger" disabled={deleting || running || locked} onClick={pick(onDelete)}>{deleting ? <Loader2 className="h-4 w-4 ui-spin" /> : <Trash2 className="h-4 w-4" />}Delete agent</button>
@@ -1658,6 +1662,44 @@ function AgentHero({ agent, agents, compact: isCompact = false, tab, tabCounts, 
         {offBar ? <span className="ag-offbar">{offBar}</span> : null}
       </div>
     </header>
+  );
+}
+
+// The agent's sections in its sidebar: the everyday ones, then the occasional tools.
+const SIDE_SECTIONS: Array<{ id: AutomationTab; label: string; icon: ReactNode }> = [
+  { id: "overview", label: "Overview", icon: <LayoutDashboard size={18} strokeWidth={1.75} /> },
+  { id: "chat", label: "Chat", icon: <MessagesSquare size={18} strokeWidth={1.75} /> },
+  { id: "uploads", label: "Uploads", icon: <Clapperboard size={18} strokeWidth={1.75} /> },
+  { id: "analytics", label: "Analytics", icon: <BarChart3 size={18} strokeWidth={1.75} /> },
+  { id: "setup", label: "Setup", icon: <Settings2 size={18} strokeWidth={1.75} /> },
+];
+const SIDE_TOOLS: Array<{ id: AutomationTab; label: string; icon: ReactNode }> = [
+  { id: "voice", label: "Remake", icon: <AudioLines size={18} strokeWidth={1.75} /> },
+  { id: "compile", label: "Compile", icon: <Layers3 size={18} strokeWidth={1.75} /> },
+  { id: "runs", label: "Run log", icon: <History size={18} strokeWidth={1.75} /> },
+  { id: "report", label: "Report", icon: <FileChartColumn size={18} strokeWidth={1.75} /> },
+];
+
+function AgentNavRows({ tab, counts, onTab }: { tab: AutomationTab; counts: Partial<Record<AutomationTab, number>>; onTab: (tab: AutomationTab) => void }) {
+  const row = (item: { id: AutomationTab; label: string; icon: ReactNode }) => (
+    <SideNavItem key={item.id} icon={item.icon} label={item.label} current={tab === item.id} count={counts[item.id] || undefined} onClick={() => onTab(item.id)} />
+  );
+  return (
+    <div className="juel-side-group">
+      {SIDE_SECTIONS.map(row)}
+      <span className="juel-side-sep" aria-hidden="true" />
+      {SIDE_TOOLS.map(row)}
+    </div>
+  );
+}
+
+/** The agent's face in the closed sidebar: its channel picture, or its initials. */
+function AgentAvatar({ agent }: { agent: AutomationAgent }) {
+  const name = agent.name || agent.channelTitle || "Agent";
+  return (
+    <span className="ag-avatar" title={name} aria-label={name}>
+      {agent.channelThumbnailUrl ? <img src={agent.channelThumbnailUrl} alt="" /> : name.split(/\s+/).slice(0, 2).map((w) => w[0]).join("").toUpperCase()}
+    </span>
   );
 }
 
@@ -1816,6 +1858,7 @@ function ExpandedAgentCard({
 }) {
   const isDraft = !agent;
   const tab = isDraft ? "setup" : activeTab;
+  const [sideOpen, toggleSide] = useSideOpen();
   const isDark = theme === "dark";
   const currentCreateStep = AGENT_CREATE_STEPS[Math.min(createStep, AGENT_CREATE_STEPS.length - 1)];
   const headerSubline = `Step ${Math.min(createStep + 1, AGENT_CREATE_STEPS.length)} of ${AGENT_CREATE_STEPS.length} · ${currentCreateStep.hint}`;
@@ -1868,6 +1911,13 @@ function ExpandedAgentCard({
           </div>
         </div>
       ) : null}
+      <div className="ag-shell">
+      {!isDraft && agent && tab !== "chat" ? (
+        <SideNav open={sideOpen} onToggle={toggleSide} label="Agent" head={<AgentChannelSwitcher agents={agents} agent={agent} onSelect={onSelectAgent} theme={theme} />} rail={<AgentAvatar agent={agent} />}>
+          <AgentNavRows tab={tab} counts={tabCounts} onTab={onSetActiveTab} />
+        </SideNav>
+      ) : null}
+      <div className="ag-main">
       {!isDraft && agent && (tab === "chat" || tab === "compile") ? (
         <AgentHero agent={agent} agents={agents} compact tab={tab} tabCounts={tabCounts} onTab={onSetActiveTab} onSelectAgent={onSelectAgent} theme={theme}
           active={agentActive} statusBusy={statusBusy} locked={saving || !!deleting} onToggleStatus={() => void onSetStatus(agent.id, agentActive ? "paused" : "active")}
@@ -1884,7 +1934,7 @@ function ExpandedAgentCard({
         {tab === "chat" ? (
           // The agent's chat is Juel: it consults this agent's own operator for anything about it.
           <div className="agent-juel">
-            <JuelPanel embedded sidebar />
+            <JuelPanel embedded sidebar sideHead={agent ? <AgentChannelSwitcher agents={agents} agent={agent} onSelect={onSelectAgent} theme={theme} /> : undefined} sideRail={agent ? <AgentAvatar agent={agent} /> : undefined} sideNav={<AgentNavRows tab={tab} counts={tabCounts} onTab={onSetActiveTab} />} />
           </div>
         ) : null}
         {tab === "overview" ? (
@@ -2002,6 +2052,8 @@ function ExpandedAgentCard({
           </div>
         </div>
       ) : null}
+      </div>
+      </div>
     </article>
   );
 }

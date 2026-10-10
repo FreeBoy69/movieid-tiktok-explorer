@@ -130,7 +130,7 @@ const DEFAULT_STARTERS = [
 
 /** Juel's conversation. The header panel uses it; a page can embed it in place of its own chat, where it
  *  fills its container and has no close button. `headStart` goes at the head's start (a page's collapse). */
-export function JuelPanel({ onClose, embedded = false, headStart, leaving = false, onLeft, sidebar = false }: { onClose?: () => void; embedded?: boolean; headStart?: ReactNode; leaving?: boolean; onLeft?: () => void; /** Conversations as a sidebar beside the chat (wide screens), instead of the head's dropdown. */ sidebar?: boolean }) {
+export function JuelPanel({ onClose, embedded = false, headStart, leaving = false, onLeft, sidebar = false, sideHead, sideRail, sideNav }: { onClose?: () => void; embedded?: boolean; headStart?: ReactNode; leaving?: boolean; onLeft?: () => void; /** Conversations as a sidebar beside the chat (wide screens), instead of the head's dropdown. */ sidebar?: boolean; /** The sidebar's top (a page's switcher), its closed-rail item, and its nav rows above the chats. */ sideHead?: ReactNode; sideRail?: ReactNode; sideNav?: ReactNode }) {
   const [thread, setThread] = useState<Thread | null>(null);
   const [message, setMessage] = useState("");
   const [editFrom, setEditFrom] = useState<number | null>(null);
@@ -514,6 +514,9 @@ export function JuelPanel({ onClose, embedded = false, headStart, leaving = fals
     <div className="juel-split">
       <JuelSidebar
         context={context}
+        head={sideHead}
+        rail={sideRail}
+        nav={sideNav}
         current={thread?.id || ""}
         refresh={`${thread?.id || ""}:${thread?.messages.length || 0}`}
         onPick={(picked) => {
@@ -675,7 +678,9 @@ function useConversations(context: JuelContext, refresh: unknown = 0) {
       },
     });
   };
-  return { threads, groups, opening, open, remove };
+  const mine = (threads || []).filter(here);
+  const rest = (threads || []).filter((t) => !here(t));
+  return { threads, groups, mine, rest, opening, open, remove };
 }
 
 const SIDE_OPEN_KEY = "juel-side-open";
@@ -686,15 +691,9 @@ const readSideOpen = () => {
     return true;
   }
 };
-
-/** Conversations as a sidebar beside the chat (an agent's Chat tab), in Vibe Edit's sidebar language:
- *  a slim icon column, or open, a card with search, a new-chat row, and the conversations. */
-function JuelSidebar({ context, current, refresh, onPick, onNew, onDeleted }: { context: JuelContext; current: string; refresh: unknown; onPick: (thread: Thread) => void; onNew: () => void; onDeleted: (id: string) => void }) {
+/** Whether the side navigation is open, remembered across pages and tabs. */
+export function useSideOpen() {
   const [open, setOpen] = useState(readSideOpen);
-  const [query, setQuery] = useState("");
-  const search = useRef<HTMLInputElement>(null);
-  const wantSearch = useRef(false);
-  const list = useConversations(context, refresh);
   const toggle = () =>
     setOpen((o) => {
       try {
@@ -702,61 +701,87 @@ function JuelSidebar({ context, current, refresh, onPick, onNew, onDeleted }: { 
       } catch {}
       return !o;
     });
-  useEffect(() => {
-    if (open && wantSearch.current) {
-      wantSearch.current = false;
-      search.current?.focus();
-    }
-  }, [open]);
-  const q = query.trim().toLowerCase();
-  const groups = list.groups.map((g) => ({ ...g, items: q ? g.items.filter((t) => (t.title || "").toLowerCase().includes(q)) : g.items })).filter((g) => g.items.length);
+  return [open, toggle] as const;
+}
+
+/** Vibe Edit's sidebar, for a workspace's navigation: a slim icon column, or open, a card. `head` sits at
+ *  the very top when open (an agent's switcher), `rail` under the toggle when it's closed, and the
+ *  children below (nav rows, then anything else, like a chat's history). Wide screens only. */
+export function SideNav({ open, onToggle, head, rail, label = "Navigation", children }: { open: boolean; onToggle: () => void; head?: ReactNode; rail?: ReactNode; label?: string; children: ReactNode }) {
   return (
-    <nav className={`juel-side${open ? " is-open" : ""}`} aria-label="Conversations">
+    <nav className={`juel-side${open ? " is-open" : ""}`} aria-label={label}>
       <div className="juel-side-head">
-        <button type="button" className="juel-side-btn" onClick={toggle} aria-expanded={open} aria-label={open ? "Collapse conversations" : "Expand conversations"} title={open ? "Collapse" : "Conversations"}>
+        {open ? <div className="juel-side-title">{head}</div> : null}
+        <button type="button" className="juel-side-btn" onClick={onToggle} aria-expanded={open} aria-label={open ? "Collapse sidebar" : "Expand sidebar"} title={open ? "Collapse sidebar" : "Expand sidebar"}>
           {open ? <PanelLeftClose size={18} strokeWidth={1.75} /> : <PanelLeftOpen size={18} strokeWidth={1.75} />}
         </button>
-        {open ? <strong>Chats</strong> : null}
       </div>
-      {open ? (
-        <label className="juel-side-search">
-          <Search size={15} aria-hidden="true" />
-          <input ref={search} value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => event.key === "Escape" && setQuery("")} placeholder="Search chats" aria-label="Search chats" />
-        </label>
-      ) : (
-        <button type="button" className="juel-side-btn" aria-label="Search chats" title="Search chats" onClick={() => { wantSearch.current = true; toggle(); }}>
-          <Search size={18} strokeWidth={1.75} />
-        </button>
-      )}
-      <button type="button" className="juel-side-btn juel-side-row" onClick={onNew} aria-label="New chat" title="New chat">
-        <Plus size={18} strokeWidth={1.75} />
-        <span>New chat</span>
-      </button>
-      {open ? (
-        <div className="juel-side-list">
-          {list.threads === null ? <p className="juel-side-empty"><Loader2 size={14} className="juel-spin" aria-hidden="true" />Loading</p> : null}
-          {list.threads?.length === 0 ? <p className="juel-side-empty">Your chats show up here.</p> : null}
-          {list.threads?.length && !groups.length ? <p className="juel-side-empty">No chat is called “{query.trim()}”.</p> : null}
-          {groups.map((g) => (
-            <section key={g.title}>
-              <h4>{g.title}</h4>
-              <ul>
-                {g.items.map((t) => (
-                  <li key={t.id} className={t.id === current ? "is-current" : undefined}>
-                    <button type="button" className="juel-side-item" aria-current={t.id === current ? "true" : undefined} onClick={() => void list.open(t.id, onPick)} title={t.title || "Untitled"}>
-                      {list.opening === t.id ? <Loader2 size={13} className="juel-spin" aria-hidden="true" /> : null}
-                      <span>{t.title || "Untitled"}</span>
-                      <time dateTime={t.updatedAt}>{ago(t.updatedAt)}</time>
-                    </button>
-                    <button type="button" className="juel-side-delete" onClick={() => list.remove(t, onDeleted)} aria-label={`Delete "${t.title}"`} title="Delete"><Trash2 size={13} /></button>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ))}
-        </div>
-      ) : null}
+      {!open && rail ? <div className="juel-side-rail">{rail}</div> : null}
+      {children}
     </nav>
+  );
+}
+
+/** One row of side navigation: an icon, and its label when the sidebar is open. */
+export function SideNavItem({ icon, label, current = false, count, onClick }: { icon: ReactNode; label: string; current?: boolean; count?: number; onClick: () => void }) {
+  return (
+    <button type="button" className={`juel-side-btn juel-side-row${current ? " is-current" : ""}`} aria-current={current ? "page" : undefined} onClick={onClick} aria-label={label} title={label}>
+      {icon}
+      <span>{label}</span>
+      {count ? <small>{count}</small> : null}
+    </button>
+  );
+}
+
+/** The side navigation in a chat: the page's own rows (`nav`), then the conversations as a plain list. */
+function JuelSidebar({ context, current, refresh, head, rail, nav, onPick, onNew, onDeleted }: { context: JuelContext; current: string; refresh: unknown; head?: ReactNode; rail?: ReactNode; nav?: ReactNode; onPick: (thread: Thread) => void; onNew: () => void; onDeleted: (id: string) => void }) {
+  const [open, toggle] = useSideOpen();
+  const [query, setQuery] = useState("");
+  const [searching, setSearching] = useState(false);
+  const search = useRef<HTMLInputElement>(null);
+  const list = useConversations(context, refresh);
+  useEffect(() => {
+    if (searching) search.current?.focus();
+  }, [searching]);
+  const q = query.trim().toLowerCase();
+  const match = (t: ThreadSummary) => !q || (t.title || "").toLowerCase().includes(q);
+  const row = (t: ThreadSummary) => (
+    <li key={t.id} className={t.id === current ? "is-current" : undefined}>
+      <button type="button" className="juel-chat-row" aria-current={t.id === current ? "true" : undefined} onClick={() => void list.open(t.id, onPick)} title={t.title || "Untitled"}>
+        {list.opening === t.id ? <Loader2 size={13} className="juel-spin" aria-hidden="true" /> : null}
+        <span>{t.title || "Untitled"}</span>
+      </button>
+      <button type="button" className="juel-chat-delete" onClick={() => list.remove(t, onDeleted)} aria-label={`Delete "${t.title}"`} title="Delete"><Trash2 size={13} /></button>
+    </li>
+  );
+  const shownMine = list.mine.filter(match);
+  const shownRest = list.rest.filter(match);
+  return (
+    <SideNav open={open} onToggle={toggle} head={head} rail={rail} label="Agent">
+      {nav}
+      {open ? (
+        <div className="juel-chats">
+          <div className="juel-chats-head">
+            <span>Chats</span>
+            <button type="button" className="juel-chats-tool" onClick={() => { setSearching((v) => !v); setQuery(""); }} aria-label="Search chats" aria-pressed={searching} title="Search chats"><Search size={14} /></button>
+            <button type="button" className="juel-chats-tool" onClick={onNew} aria-label="New chat" title="New chat"><Plus size={15} /></button>
+          </div>
+          {searching ? <input ref={search} className="juel-chats-search" value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => event.key === "Escape" && (setSearching(false), setQuery(""))} placeholder="Search chats" aria-label="Search chats" /> : null}
+          {list.threads === null ? <p className="juel-chats-note"><Loader2 size={13} className="juel-spin" aria-hidden="true" />Loading</p> : null}
+          {list.threads?.length === 0 ? <p className="juel-chats-note">Your chats show up here.</p> : null}
+          {list.threads?.length && !shownMine.length && !shownRest.length ? <p className="juel-chats-note">No chat is called “{query.trim()}”.</p> : null}
+          {shownMine.length ? <ul>{shownMine.map(row)}</ul> : null}
+          {shownRest.length ? (
+            <>
+              <p className="juel-chats-label">Other chats</p>
+              <ul>{shownRest.map(row)}</ul>
+            </>
+          ) : null}
+        </div>
+      ) : (
+        <SideNavItem icon={<Plus size={18} strokeWidth={1.75} />} label="New chat" onClick={onNew} />
+      )}
+    </SideNav>
   );
 }
 

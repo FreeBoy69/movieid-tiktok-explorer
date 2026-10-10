@@ -321,3 +321,23 @@
   .ag-menu { animation: none; }
   .ag-feature-media img, .ag-play { transition: none; }
 }
+
+/* ---------- The agent's sidebar holds its switcher and sections on wide screens; the top of the page
+   is just the name, what it does, and its switches. Phones keep the bar, tabs, and More menu. ---------- */
+.ag-shell { display: flex; min-height: 0; flex: 1; }
+.ag-main { position: relative; display: flex; min-width: 0; min-height: 0; flex: 1; flex-direction: column; }
+.ag-avatar { display: grid; width: 30px; height: 30px; place-items: center; overflow: hidden; border-radius: 9px; background: var(--ui-chip); color: var(--ui-text-muted); font-size: 11px; font-weight: 700; box-shadow: 0 0 0 2px var(--ui-accent); }
+.ag-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.juel-side .agent-header-channel-switcher { max-width: none; }
+@media (min-width: 900px) {
+  .ag-hero { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; column-gap: 20px; padding-top: 34px; }
+  .ag-hero > .ag-hero-head { grid-column: 1; grid-row: 1; margin-top: 0; }
+  .ag-hero > .ag-hero-bar { grid-column: 2; grid-row: 1; padding-top: 6px; }
+  .ag-hero-bar .agent-header-channel-switcher,
+  .ag-tabs-row,
+  .ag-hero.is-compact,
+  .ag-menu .ag-menu-phone { display: none; }
+}
+@media (max-width: 899px) {
+  .ag-shell > .juel-side { display: none; }
+}
