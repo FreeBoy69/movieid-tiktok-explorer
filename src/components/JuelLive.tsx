@@ -43,9 +43,69 @@ type Recognition = {
   onerror: ((event: { error: string }) => void) | null;
 };
 const recognitionClass = () => {
+  // Not on Android: its recogniser beeps every time it starts and stops, which live mode does around every
+  // reply (and whenever it times out). There the recording goes to /api/juel/hear instead, as on phones
+  // whose recogniser hears nothing.
+  if (/Android/i.test(navigator.userAgent)) return null;
   const w = window as unknown as { SpeechRecognition?: new () => Recognition; webkitSpeechRecognition?: new () => Recognition };
   return w.SpeechRecognition || w.webkitSpeechRecognition || null;
 };
+
+/** Juel's streamed voice player, on the audio thread (after KoljaB/RealtimeVoiceChat's playback worklet):
+ *  24 kHz PCM is queued as it arrives and resampled to the device rate in one continuous stream, so there
+ *  are no joins to click at, and a busy page can't starve it. It waits for `lead` seconds before the first
+ *  sound; when the stream runs dry it fades out, then waits for `refill` seconds before fading back in.
+ *  Messages in: {start, id, lead, refill}, {pcm: ArrayBuffer}, {end}, {clear}. Out: {drained: id}. */
+const PLAYER_WORKLET = `
+const IN = 24000;
+class JuelPlayer extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.chunks = []; this.at = 0; this.frac = 0; this.queued = 0;
+    this.state = "idle"; this.gain = 0; this.need = 0; this.refill = 0; this.ended = false; this.id = 0;
+    this.step = IN / sampleRate; this.ramp = 1 / (0.006 * sampleRate);
+    this.port.onmessage = ({ data }) => {
+      if (data.pcm) {
+        const pcm = new Int16Array(data.pcm), f = new Float32Array(pcm.length);
+        for (let i = 0; i < pcm.length; i++) f[i] = pcm[i] / 32768;
+        this.chunks.push(f); this.queued += f.length;
+      } else if (data.start) {
+        this.id = data.id; this.ended = false; this.state = "buffering";
+        this.need = data.lead * IN; this.refill = data.refill * IN;
+      } else if (data.end) this.ended = true;
+      else if (data.clear) { this.chunks = []; this.at = 0; this.frac = 0; this.queued = 0; this.state = "idle"; this.gain = 0; }
+    };
+  }
+  read(k) {
+    let c = 0, o = this.at + k;
+    while (c < this.chunks.length && o >= this.chunks[c].length) { o -= this.chunks[c].length; c++; }
+    return c < this.chunks.length ? this.chunks[c][o] : 0;
+  }
+  process(_, outputs) {
+    const out = outputs[0][0];
+    for (let i = 0; i < out.length; i++) {
+      if (this.state === "buffering" && (this.queued >= this.need || (this.ended && this.queued > 0))) this.state = "playing";
+      if (this.state !== "playing") { out[i] = 0; continue; }
+      // Running dry mid-stream: fade over the last few ms instead of stopping on a click.
+      const target = !this.ended && this.queued < 160 ? 0 : 1;
+      this.gain += Math.max(-this.ramp, Math.min(this.ramp, target - this.gain));
+      const a = this.read(0), b = this.read(1);
+      out[i] = (a + (b - a) * this.frac) * this.gain;
+      this.frac += this.step;
+      while (this.frac >= 1 && this.queued > 0) {
+        this.frac -= 1; this.at++; this.queued--;
+        if (this.at >= this.chunks[0].length) { this.chunks.shift(); this.at = 0; }
+      }
+      if (this.queued <= 1) {
+        if (this.ended) { this.chunks = []; this.at = 0; this.frac = 0; this.queued = 0; this.state = "idle"; this.gain = 0; this.port.postMessage({ drained: this.id }); }
+        else if (this.gain <= 0) { this.state = "buffering"; this.need = this.refill; }
+      } else if (target === 0 && this.gain <= 0) { this.state = "buffering"; this.need = this.queued + this.refill; }
+    }
+    return true;
+  }
+}
+registerProcessor("juel-player", JuelPlayer);
+`;
 
 /** What to say out loud from a markdown reply: no code, links, tables or formatting marks. */
 export function speakable(text: string): string {
@@ -311,6 +371,29 @@ export function JuelLive({
     }
     return ctx.current;
   };
+  // One player for the whole session (null where the browser has no AudioWorklet: the fallback below).
+  const player = useRef<Promise<AudioWorkletNode | null> | null>(null);
+  const sentenceId = useRef(0);
+  const voicePlayer = () => {
+    if (!player.current) {
+      const context = audioContext();
+      player.current = (async () => {
+        if (!context.audioWorklet) return null;
+        const url = URL.createObjectURL(new Blob([PLAYER_WORKLET], { type: "application/javascript" }));
+        try {
+          await context.audioWorklet.addModule(url);
+          const node = new AudioWorkletNode(context, "juel-player", { numberOfInputs: 0, outputChannelCount: [1] });
+          node.connect(outAnalyser.current!);
+          return node;
+        } catch {
+          return null;
+        } finally {
+          URL.revokeObjectURL(url);
+        }
+      })();
+    }
+    return player.current;
+  };
   // On the live view itself, not the whole page: a variable on <html> changed every frame makes a phone
   // restyle everything 60 times a second, and that jank starves the audio scheduling.
   const root = useRef<HTMLDivElement | null>(null);
@@ -374,8 +457,63 @@ export function JuelLive({
         go("listening");
       }
     };
-    // Streamed HD voice: raw PCM played chunk by chunk as it arrives, each piece queued right after the last.
-    if (response && /^audio\/l16/i.test(response.headers.get("Content-Type") || "") && response.body) {
+    // Streamed HD voice: raw PCM played as it arrives.
+    const streamed = response && /^audio\/l16/i.test(response.headers.get("Content-Type") || "") && response.body;
+    const node = streamed ? await voicePlayer() : null;
+    if (gen !== generation.current) {
+      busy.current = false;
+      void response?.body?.cancel().catch(() => undefined);
+      return;
+    }
+    if (node && response?.body) {
+      void audioContext().resume();
+      const reader = response.body.getReader();
+      const id = ++sentenceId.current;
+      let stopped = false;
+      let samples = 0;
+      let carry: Uint8Array | null = null;
+      node.port.onmessage = (event) => {
+        if (event.data?.drained === id) done();
+      };
+      // Phone networks deliver the stream in bursts: 250 ms in hand before the first sound, 150 ms after
+      // running dry (see PLAYER_WORKLET).
+      node.port.postMessage({ start: true, id, lead: 0.25, refill: 0.15 });
+      playing.current = {
+        pause: () => {
+          stopped = true;
+          void reader.cancel().catch(() => undefined);
+          node.port.postMessage({ clear: true });
+        },
+      } as unknown as HTMLAudioElement;
+      try {
+        for (;;) {
+          const { value, done: ended } = await reader.read();
+          if (ended || stopped) break;
+          let bytes = value;
+          if (carry) {
+            bytes = new Uint8Array(carry.length + value.length);
+            bytes.set(carry);
+            bytes.set(value, carry.length);
+            carry = null;
+          }
+          if (bytes.length % 2) {
+            carry = bytes.slice(-1);
+            bytes = bytes.slice(0, -1);
+          }
+          if (!bytes.length) continue;
+          const pcm = bytes.slice().buffer;
+          samples += bytes.length / 2;
+          node.port.postMessage({ pcm }, [pcm]);
+        }
+      } catch {}
+      if (stopped || gen !== generation.current) return;
+      node.port.postMessage({ end: true });
+      // In case the player never reports back: at most the whole sentence is still to play.
+      window.setTimeout(done, (samples / 24000) * 1000 + 1500);
+      return;
+    }
+    // Without AudioWorklet: the same buffering, scheduled as buffer sources.
+    if (streamed && response?.body) {
       const context = audioContext();
       void context.resume();
       const reader = response.body.getReader();
@@ -665,6 +803,9 @@ export function JuelLive({
         return go("error");
       }
       try {
+        // iOS 17+: keep voice playing through the speaker while the microphone is open.
+        const session = (navigator as unknown as { audioSession?: { type: string } }).audioSession;
+        if (session) session.type = "play-and-record";
         stream.current = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
       } catch {
         setProblem("Allow the microphone to talk with Juel (your browser's address bar has the setting).");
