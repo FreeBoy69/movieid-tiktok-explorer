@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { BarChart3, Check, Code2, Copy, CreditCard, KeyRound, LifeBuoy, Link2, Loader2, LogOut, Moon, Send, ShieldCheck, Sun, Trash2, UserRound, Users } from "lucide-react";
+import { BarChart3, Check, Code2, Copy, CreditCard, KeyRound, LifeBuoy, Link2, Loader2, LogOut, Moon, Palette, Send, ShieldCheck, Sun, Trash2, UserRound, Users } from "lucide-react";
+import { BrandKitEditor } from "./BrandKit";
 import type  { AuthSessionPayload } from "../types";
 import { writeDeepLink, type AccountSection } from "../utils/tiktokRoute";
 import { tokensToCredits } from "../utils/credits";
@@ -31,6 +32,7 @@ const SECTIONS: Array<{ id: AccountSection; label: string; icon: ReactNode }> = 
   { id: "billing", label: "Plan & billing", icon: <CreditCard size={17} /> },
   { id: "usage", label: "Usage", icon: <BarChart3 size={17} /> },
   { id: "channels", label: "Channels", icon: <Users size={17} /> },
+  { id: "brand", label: "Brand kit", icon: <Palette size={17} /> },
   { id: "telegram", label: "Telegram", icon: <Send size={17} /> },
   { id: "developers", label: "Developers", icon: <Code2 size={17} /> },
   { id: "security", label: "Security", icon: <ShieldCheck size={17} /> },
@@ -112,6 +114,11 @@ export function AccountPage({ auth, theme, section = "profile", onSection, onRef
             : current.id === "billing" ? <BillingSection />
               : current.id === "usage" ? <UsageSection />
                 : current.id === "channels" ? <ChannelsSection auth={auth} onRefresh={onRefresh} />
+                  : current.id === "brand" ? (
+                    <Panel title="Your brand" description="AI Clipping puts your logo, caption look, and intro and outro on every clip when Brand kit is on.">
+                      <BrandKitEditor />
+                    </Panel>
+                  )
                   : current.id === "telegram" ? <TelegramSection />
                     : current.id === "developers" ? <DevelopersSection />
                     : <SecuritySection auth={auth} theme={theme} onLogout={onLogout} />}

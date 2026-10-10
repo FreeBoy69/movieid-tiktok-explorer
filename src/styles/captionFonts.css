@@ -14,3 +14,5 @@
 @font-face { font-family: "JetBrains Mono"; src: url("/fonts/captions/JetBrainsMono.ttf") format("truetype"); font-weight: 800; font-display: swap; }
 @font-face { font-family: "Poppins"; src: url("/fonts/captions/Poppins.ttf") format("truetype"); font-weight: 800; font-display: swap; }
 @font-face { font-family: "Permanent Marker"; src: url("/fonts/captions/PermanentMarker.ttf") format("truetype"); font-weight: 400; font-display: swap; }
+/* Emoji captions render monochrome in the clip (libass draws outline glyphs only), so previews use the same face. */
+@font-face { font-family: "Noto Emoji"; src: url("/fonts/captions/NotoEmoji.ttf") format("truetype"); font-weight: 700; font-display: swap; }

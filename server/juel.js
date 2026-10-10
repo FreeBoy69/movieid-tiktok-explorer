@@ -147,6 +147,7 @@ export const JUEL_ROUTES = {
   "GET /api/saved/tiktok-post-analyses": ["research", "read", "Lists saved movie-ID analyses of TikTok posts, optionally for one source."],
   "GET /api/saved/tiktok-post-analyses/:slug": ["research", "read", "Gets the saved movie-ID analysis for one TikTok post (slug)."],
   "GET /api/saved/tiktok-posts/:slug": ["research", "read", "Finds a saved TikTok post by slug across your saved sources."],
+  "GET /api/studio/brand-kit": ["studio", "read", "Shows your AI Clipping brand kit: logo, logo corner and opacity, caption style, font and colours, intro and outro."],
   "GET /api/studio/catalog": ["studio", "read", "Lists the Creator Studio models and tools available for images, video, audio, and more."],
   "GET /api/studio/generations": ["studio", "read", "Lists your recent Creator Studio generations, optionally filtered by tab."],
   "GET /api/studio/marketing": ["studio", "read", "Lists your ad products, presenter avatars, and available ad video models."],
@@ -346,6 +347,7 @@ export const JUEL_ROUTES = {
   "PUT /api/digital-products/:id": ["producer", "change", "Saves edits to a digital product draft."],
   "PUT /api/maker/collections/:id": ["research", "change", "Updates a research collection's name and data."],
   "PUT /api/recaps/sources": ["recap", "change", "Replaces the user's saved list of film sources (sources)."],
+  "PUT /api/studio/brand-kit": ["studio", "change", "Saves your AI Clipping brand kit (logo, logoPosition, logoOpacity, primaryColor, accentColor, captionStyle, captionFont, intro, outro); files are studio uploads."],
   "PUT /api/vibe-edit/projects/:id": ["editor", "change", "Saves a Vibe Edit project's full timeline document (project)."],
 };
 

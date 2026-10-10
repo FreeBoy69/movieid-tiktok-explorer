@@ -4,6 +4,7 @@ import type { VoiceProfile } from "../../utils/voiceProfiles";
 import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
 import {
   AudioLines,
+  Captions,
   Clapperboard,
   Image as ImageIcon,
   Images,
@@ -16,6 +17,9 @@ import {
   Wand2,
 } from "lucide-react";
 import { type GalleryHandlers, StudioGallery } from "./StudioGallery";
+import CaptionStylePicker, { CaptionPreview } from "../CaptionStylePicker";
+import { BrandKitEditor, useBrandKit } from "../BrandKit";
+import { CAPTION_STYLES } from "../../utils/captionStyles.js";
 import { TemplateGallery } from "../TemplateGallery";
 import { AudioPlayer } from "../AudioPlayer";
 import { fillTemplatePrompt, studioDraftFor, type TemplateOutput, type TemplatePrompt } from "../../utils/promptTemplates";
@@ -53,6 +57,7 @@ import {
 
 type AppId = StudioApp["id"];
 export type Draft = Record<string, any>;
+type Section = "results" | "templates" | "captions" | "brand";
 
 const SCENES = [
   { value: "cafe", label: "Café selfie", hint: "Sunlit café, coffee in hand", group: "everyday" },
@@ -131,6 +136,10 @@ export function defaultDraft(): Draft {
     clipFraming: "auto",
     clipAspect: "9:16",
     clipCaptions: false,
+    clipCaptionStyle: "hormozi",
+    clipEmoji: false,
+    clipTrimFillers: false,
+    clipUseBrandKit: false,
     vertical: true,
     sourceUrl: "",
     upscaleFactor: 2,
@@ -219,7 +228,9 @@ export function StudioGenerator({
   const [voices, setVoices] = useState<Array<{ id: string; name: string }>>([]);
   const [voiceClips, setVoiceClips] = useState<Array<{ id: string; voice: string; text: string; audioUrl: string; createdAt: string }>>([]);
   const [audioRailTab, setAudioRailTab] = useState<"settings" | "history">("settings");
-  const [section, setSection] = useState<"results" | "templates">("results");
+  const [section, setSection] = useState<Section>("results");
+  // AI Clipping's brand kit: loaded once here, shared by the Captions preview and the Brand kit tab.
+  const brand = useBrandKit(app === "clipping");
   const pricing = useStudioPricing();
   const remove = useDeleteGeneration(onRemoved);
   const { key: modelKey, list: models } = useMemo(() => modelsFor(catalog, app, draft), [catalog, app, draft]);
@@ -328,6 +339,10 @@ export function StudioGenerator({
       clipFraming: draft.clipFraming,
       clipAspect: draft.clipAspect,
       clipCaptions: draft.clipCaptions,
+      clipCaptionStyle: draft.clipCaptionStyle,
+      clipEmoji: draft.clipCaptions && draft.clipEmoji,
+      clipTrimFillers: draft.clipTrimFillers,
+      clipUseBrandKit: draft.clipUseBrandKit,
       vertical: app === "clipping" ? draft.clipAspect !== "16:9" : draft.vertical,
       workflow: draft.workflow,
       script: draft.script,
@@ -384,7 +399,7 @@ export function StudioGenerator({
     patch({
       prompt: item.prompt,
       ...(item.model ? { model: item.model } : {}),
-      ...Object.fromEntries(["operation", "scene", "persona", "adStyle", "product", "style", "clipLength", "clipFraming", "clipAspect", "clipCaptions", "workflow", "script", "motion", "cinema"].filter((k) => s[k] !== undefined).map((k) => [k, s[k]])),
+      ...Object.fromEntries(["operation", "scene", "persona", "adStyle", "product", "style", "clipLength", "clipFraming", "clipAspect", "clipCaptions", "clipCaptionStyle", "clipEmoji", "clipTrimFillers", "clipUseBrandKit", "workflow", "script", "motion", "cinema"].filter((k) => s[k] !== undefined).map((k) => [k, s[k]])),
     }, item.tab as AppId);
   }
   async function voiceToLipSync(clip: { voice: string; audioUrl: string }) {
@@ -454,6 +469,10 @@ export function StudioGenerator({
   const estimatedCredits = providerCreditEstimate(quotedUsd, pricing)
     ?? (fallbackOperation && (model || app === "music") ? fallbackCreditEstimate(fallbackOperation, pricing, app === "image" ? Math.max(1, Number(draft.count) || 1) : 1) : null);
 
+  // AI Clipping: the brand kit's caption look wins while Brand kit is on.
+  const kitLook = app === "clipping" && draft.clipUseBrandKit && brand.kit ? brand.kit : null;
+  const brandKitSet = Boolean(brand.kit && (brand.kit.logo || brand.kit.intro || brand.kit.outro || brand.kit.captionStyle || brand.kit.primaryColor || brand.kit.accentColor || brand.kit.captionFont));
+  const clipStyleName = CAPTION_STYLES.find((style) => style.id === (kitLook?.captionStyle || draft.clipCaptionStyle))?.name || "Hormozi";
   const slots: ReactNode[] = [];
   const slot = (key: string, label: string, accept: string, field: string, compact = true) =>
     slots.push(<MediaSlot key={key} compact={compact} label={label} accept={accept} asset={draft[field]} onChange={(asset) => patch({ [field]: asset })} onError={setError} />);
@@ -603,6 +622,21 @@ export function StudioGenerator({
                 <Choice label="Aspect" value={draft.clipAspect} options={[{ value: "9:16", label: "9:16" }, { value: "1:1", label: "1:1" }, { value: "16:9", label: "16:9 (original)" }]} onChange={(clipAspect) => patch({ clipAspect })} />
                 {draft.clipAspect !== "16:9" ? <Choice label="Framing" value={draft.clipFraming} options={[{ value: "auto", label: "AI reframe" }, { value: "crop", label: "Fill" }, { value: "blur", label: "Blurred fill" }, { value: "fit", label: "Fit" }]} onChange={(clipFraming) => patch({ clipFraming })} /> : null}
                 <Toggle label="Burn captions" value={draft.clipCaptions} onChange={(clipCaptions) => patch({ clipCaptions })} />
+                {draft.clipCaptions ? (
+                  <>
+                    <button type="button" className="ui-chip cs-chip" aria-label={`Caption style: ${clipStyleName}. Change it in the Captions tab`} onClick={() => setSection("captions")}>
+                      <Captions className="h-3.5 w-3.5" aria-hidden="true" />
+                      <span className="cs-chip-label">Style</span>
+                      <span>{clipStyleName}</span>
+                    </button>
+                    <Toggle label="Emoji" value={draft.clipEmoji} onChange={(clipEmoji) => patch({ clipEmoji })} />
+                  </>
+                ) : null}
+                <Toggle label="Cut fillers and pauses" value={draft.clipTrimFillers} onChange={(clipTrimFillers) => patch({ clipTrimFillers })} />
+                <Toggle label="Brand kit" value={draft.clipUseBrandKit} onChange={(clipUseBrandKit) => {
+                  patch({ clipUseBrandKit });
+                  if (clipUseBrandKit && brand.kit && !brandKitSet) setSection("brand");
+                }} />
               </>
             ) : null}
             {showAspect ? <AspectPicker variant="chip" label="Aspect" value={draft.aspectRatio} options={model.aspectRatios.filter((a) => a !== "auto")} onChange={(aspectRatio) => patch({ aspectRatio })} /> : null}
@@ -763,7 +797,34 @@ export function StudioGenerator({
   ) : app !== "workflows" ? (
     <Empty icon={meta.icon} heading={meta.heading} body={meta.body} />
   ) : null;
-  const shownSection = section === "templates" && templateOutput ? "templates" : "results";
+  const shownSection: Section = section === "templates" && templateOutput ? "templates" : app === "clipping" && (section === "captions" || section === "brand") ? section : "results";
+  const clipSections = app === "clipping" ? [{ value: "captions" as const, label: "Captions" }, { value: "brand" as const, label: "Brand kit" }] : [];
+  const clipCaptionsPanel = app === "clipping" ? (
+    <div className="cap-studio">
+      <CaptionPreview
+        styleId={kitLook?.captionStyle || draft.clipCaptionStyle}
+        look={kitLook ? { text: kitLook.primaryColor, active: kitLook.accentColor, font: kitLook.captionFont } : undefined}
+        emoji={draft.clipEmoji ? "🔥" : undefined}
+        logo={kitLook?.logoUrl ? { url: kitLook.logoUrl, position: kitLook.logoPosition, opacity: kitLook.logoOpacity } : undefined}
+        label="Clip preview"
+      />
+      <div className="cap-studio-side">
+        <CaptionStylePicker
+          hideNone
+          title="Caption presets"
+          intro="Every clip's speech is burned in word by word in this style. Pick one to preview it."
+          value={draft.clipCaptionStyle}
+          onChange={(clipCaptionStyle) => patch({ clipCaptionStyle, clipCaptions: true })}
+        />
+        {!draft.clipCaptions ? <p className="cap-studio-note">Captions are off. Picking a preset turns them on.</p> : null}
+        {kitLook?.captionStyle ? (
+          <p className="cap-studio-note">
+            Brand kit is on, so clips use its {CAPTION_STYLES.find((style) => style.id === kitLook.captionStyle)?.name || "caption"} style. <button type="button" onClick={() => setSection("brand")}>Edit brand kit</button>
+          </p>
+        ) : null}
+      </div>
+    </div>
+  ) : null;
   return (
     <>
       <StudioLayout
@@ -787,11 +848,14 @@ export function StudioGenerator({
         tabs={[
           { value: "results", label: "Your creations", hint: historyCount ? String(historyCount) : undefined },
           ...(templateOutput ? [{ value: "templates" as const, label: "Templates" }] : []),
+          ...clipSections,
         ]}
         tab={shownSection}
-        onTab={(next) => setSection(next as "results" | "templates")}
+        onTab={(next) => setSection(next as Section)}
       >
-        {shownSection === "templates" && templateOutput ? (
+        {shownSection === "captions" ? clipCaptionsPanel : shownSection === "brand" ? (
+          <BrandKitEditor brand={brand} fallbackStyle={draft.clipCaptionStyle} onSaved={() => patch({ clipUseBrandKit: true })} />
+        ) : shownSection === "templates" && templateOutput ? (
           <LibraryTemplates
             output={templateOutput}
             onUse={(prompt) => {

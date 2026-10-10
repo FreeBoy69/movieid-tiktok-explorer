@@ -1,4 +1,5 @@
 Copyright 2020 The Anton Project Authors (https://github.com/googlefonts/AntonFont.git)
+Copyright 2013 Google LLC (Noto Emoji, https://github.com/google/fonts/tree/main/ofl/notoemoji; NotoEmoji.ttf is its wght=700 instance)
 
 This Font Software is licensed under the SIL Open Font License, Version 1.1.
 This license is copied below, and is also available with a FAQ at:

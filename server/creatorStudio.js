@@ -11,7 +11,9 @@ import net from "node:net";
 import { openRouterConfigured, openRouterRequest, requestOpenRouter } from "../src/utils/openRouterClient.js";
 import { withUsageUser } from "../src/utils/usageMeter.js";
 import { assetStoreConfigured, ensureFile, removeFile, saveFile } from "./assetStore.js";
-import { creatorCommand, musicCapability, publicMessage, streamOpenRouterAudio } from "./creatorWorkspace.js";
+import { captionFontBytes, creatorCommand, musicCapability, publicMessage, streamOpenRouterAudio } from "./creatorWorkspace.js";
+import { CAPTION_FONTS, captionBurnFilter, captionChunks, captionsAss, EMOJI_FONT, findCaptionStyle } from "../src/utils/captionStyles.js";
+import { bookendFilter, brandedCaptionStyle, cleanEmojiPicks, clipCaptionSegments, clipFinishFilters, clipWords, emojiMessages, keptDuration, keptSegments, LOGO_POSITIONS, trimFilter, withEmoji } from "./clipEdit.js";
 import { hostedVoiceProfiles, synthesizeHostedVoice } from "./hostedVoices.js";
 import { isVideoPageLink, youtubeThumbnailUrls } from "./linkThumbnails.js";
 import { AD_AVATARS, findFormat, findHook, findSetting } from "../src/utils/marketingPresets.js";
@@ -898,8 +900,8 @@ async function runClipping(userId, item, signal, report) {
       if (!found) throw fail("The video could not be downloaded", 502);
       source = path.join(dir, found);
     }
-    const probe = JSON.parse(await creatorCommand(process.env.FFPROBE_PATH || "ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "json", source], signal));
-    const duration = Number(probe.format?.duration);
+    const media = await probeMedia(source, signal);
+    const duration = media.duration;
     if (!Number.isFinite(duration) || duration < 20) throw fail("The video is too short to clip (under 20 seconds)");
     if (duration > 2 * 60 * 60) throw fail("Videos up to 2 hours can be clipped");
     await report("Transcribing");
@@ -938,42 +940,98 @@ ${lines}`,
     if (!clips.length) throw fail("No usable moments were found. Try another video or focus.", 422);
     const burnCaptions = s.clipCaptions && await ffmpegSupportsSubtitles(signal);
     if (s.clipCaptions && !burnCaptions) await report("Preparing caption files");
+    // The brand kit brings a logo, caption look, and intro/outro clips.
+    const kit = s.clipUseBrandKit ? await brandKit(userId) : null;
+    const logoFile = kit?.logo ? await readableFile(userId, kit.logo).catch(() => null) : null;
+    const bookends = [];
+    for (const [key, file] of [["intro", kit?.intro], ["outro", kit?.outro]]) {
+      if (!file) continue;
+      const found = await readableFile(userId, file).catch(() => null);
+      if (found) bookends.push({ key, file: found, ...(await probeMedia(found, signal)) });
+    }
+    const baseStyle = findCaptionStyle(kit?.captionStyle) || findCaptionStyle(s.clipCaptionStyle) || findCaptionStyle(DEFAULT_CLIP_CAPTION_STYLE);
+    const captionStyle = brandedCaptionStyle(baseStyle, kit, CAPTION_FONTS);
+    const [frameWidth, frameHeight] = CLIP_SIZES[clipAspect(s)] || [media.width || 1280, media.height || 720];
+    const fonts = new Map();
+    const fontBytes = async (file) => {
+      if (!fonts.has(file)) fonts.set(file, await captionFontBytes(file));
+      return fonts.get(file);
+    };
     const outputs = [];
     for (const [index, c] of clips.entries()) {
       await report(`Cutting clip ${index + 1} of ${clips.length}`);
       const target = path.join(dir, `clip-${index}.mp4`);
-      const captionFile = path.join(dir, `clip-${index}.srt`);
-      const subtitles = clipSubtitleFile(transcript.segments || [], c.start, c.end);
-      if (s.clipCaptions) await fs.writeFile(captionFile, subtitles);
-      const filters = [];
-      let filterArgs = [];
-      const framing = await clipFramingFilter(s, { source, c, dir, signal, report, index, total: clips.length });
-      if (framing) {
-        filters.push(framing.filter);
-        if (burnCaptions) {
-          filters.push(`${framing.label}subtitles='${escapeFilterPath(captionFile)}'[outv]`);
-        } else {
-          filters.push(`${framing.label}null[outv]`);
+      const captionFile = path.join(dir, `clip-${index}.${burnCaptions ? "ass" : "srt"}`);
+      // Filler and silence trimming runs on the source timeline first: the kept
+      // spans are joined into a temp file that framing and captions then work on.
+      let input = { file: source, start: c.start, length: c.end - c.start };
+      let spans = null;
+      if (s.clipTrimFillers) {
+        const kept = keptSegments(clipWords(transcript.segments || [], c.start, c.end), c.end - c.start);
+        if (kept.length > 1 || kept[0].start > 0 || kept[0].end < c.end - c.start) {
+          await report(`Trimming pauses in clip ${index + 1} of ${clips.length}`);
+          const trimmed = path.join(dir, `clip-${index}-trimmed.mp4`);
+          await creatorCommand(process.env.FFMPEG_PATH || "ffmpeg", [
+            "-y", "-ss", c.start.toFixed(3), "-t", (c.end - c.start).toFixed(3), "-i", source,
+            "-filter_complex", trimFilter(kept, { audio: media.audio }), "-map", "[kv]", ...(media.audio ? ["-map", "[ka]"] : []),
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-c:a", "aac", "-b:a", "192k", trimmed,
+          ], signal);
+          spans = kept;
+          input = { file: trimmed, start: 0, length: keptDuration(kept) };
         }
-        filterArgs = ["-filter_complex", filters.join(";"), "-map", "[outv]", "-map", "0:a?"];
-      } else {
-        if (burnCaptions) {
-          filters.push(`subtitles='${escapeFilterPath(captionFile)}'`);
-        }
-        if (filters.length) filterArgs = ["-vf", `${filters.join(",")},setsar=1`];
       }
+      const segments = clipCaptionSegments(transcript.segments || [], c.start, c.end, spans);
+      let captionFilter = "";
+      if (burnCaptions) {
+        let chunks = captionChunks(segments, input.length, captionStyle);
+        if (s.clipEmoji && chunks.length) chunks = withEmoji(chunks, await pickEmoji(chunks, signal));
+        const embedded = [];
+        const styleFont = CAPTION_FONTS[captionStyle.font];
+        const styleBytes = styleFont ? await fontBytes(styleFont) : null;
+        if (styleBytes) embedded.push({ file: styleFont, bytes: styleBytes });
+        if (chunks.some((chunk) => chunk.words.some((word) => word.emoji))) {
+          const emojiBytes = await fontBytes(EMOJI_FONT.file);
+          if (emojiBytes) embedded.push({ file: EMOJI_FONT.file, bytes: emojiBytes });
+          // Without the emoji face libass would draw empty boxes, so the emoji go.
+          else chunks = chunks.map((chunk) => ({ ...chunk, words: chunk.words.map(({ emoji, ...word }) => word) }));
+        }
+        await fs.writeFile(captionFile, captionsAss(chunks, captionStyle, { width: frameWidth, height: frameHeight }, { fonts: embedded }));
+        captionFilter = captionBurnFilter(captionFile);
+      }
+      // AI reframe, or Fill / Blurred fill / Fit, ends in [framed]; 16:9 keeps the source frame.
+      const framed = await clipFramingFilter(s, { source: input.file, c: { start: input.start, end: input.start + input.length }, dir, signal, report, index, total: clips.length });
+      const framing = framed ? framed.filter : "[0:v]setsar=1[framed]";
+      // Captions and the logo are appended to whatever framing produced.
+      const finish = clipFinishFilters("framed", { captionFilter, logo: logoFile ? { index: 1, position: kit.logoPosition, opacity: kit.logoOpacity } : null, width: frameWidth });
       await creatorCommand(process.env.FFMPEG_PATH || "ffmpeg", [
-        "-y", "-ss", c.start.toFixed(2), "-i", source, "-t", (c.end - c.start).toFixed(2),
-        ...filterArgs, "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", target,
+        "-y", "-ss", input.start.toFixed(3), "-t", input.length.toFixed(3), "-i", input.file, ...(logoFile ? ["-i", logoFile] : []),
+        "-filter_complex", [framing, ...finish.graph].join(";"), "-map", `[${finish.output}]`, "-map", "0:a?",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", target,
       ], signal);
+      let introLength = 0;
+      if (bookends.length) {
+        await report(`Adding your intro and outro to clip ${index + 1}`);
+        const cut = await probeMedia(target, signal);
+        const parts = [...bookends.filter((b) => b.key === "intro"), { file: target, ...cut }, ...bookends.filter((b) => b.key === "outro")];
+        introLength = parts[0].file === target ? 0 : Math.min(BOOKEND_MAX_SECONDS, parts[0].duration);
+        const joined = path.join(dir, `clip-${index}-branded.mp4`);
+        await creatorCommand(process.env.FFMPEG_PATH || "ffmpeg", [
+          "-y", ...parts.flatMap((part) => (part.file === target ? ["-i", part.file] : ["-t", String(BOOKEND_MAX_SECONDS), "-i", part.file])),
+          "-filter_complex", bookendFilter(parts.map((part) => ({ audio: part.audio, duration: part.file === target ? part.duration : Math.min(BOOKEND_MAX_SECONDS, part.duration) })), { width: cut.width || frameWidth, height: cut.height || frameHeight, fps: cut.fps }),
+          "-map", "[bv]", "-map", "[ba]", "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", joined,
+        ], signal);
+        await fs.rename(joined, target);
+      }
       outputs.push(await writeOutput(userId, await fs.readFile(target), "mp4", {
         title: clip(c.title, 90),
         caption: clip(c.hook, 160),
         start: c.start,
         end: c.end,
         score: Math.round(Number(c.score) || 0) || undefined,
+        ...(spans ? { trimmedSeconds: Math.round((c.end - c.start - input.length) * 10) / 10 } : {}),
       }));
       if (s.clipCaptions && !burnCaptions) {
+        const subtitles = clipSubtitleFile(segments.map((seg) => ({ ...seg, start: seg.start + introLength, end: seg.end + introLength })), 0, introLength + input.length);
         outputs.push(await writeOutput(userId, Buffer.from(subtitles, "utf8"), "srt", {
           title: `${clip(c.title, 80) || `Clip ${index + 1}`} captions`,
           start: c.start,
@@ -1038,9 +1096,6 @@ export function clipSubtitleFile(segments, clipStart, clipEnd) {
     .map((segment, index) => `${index + 1}\n${srtTime(segment.start - clipStart)} --> ${srtTime(segment.end - clipStart)}\n${segment.text}\n`)
     .join("\n");
 }
-function escapeFilterPath(file) {
-  return String(file).replace(/\\/g, "\\\\").replace(/:/g, "\\:").replace(/'/g, "\\'").replace(/,/g, "\\,").replace(/\[/g, "\\[").replace(/\]/g, "\\]");
-}
 async function ffmpegSupportsSubtitles(signal) {
   try {
     const filters = await creatorCommand(process.env.FFMPEG_PATH || "ffmpeg", ["-hide_banner", "-filters"], signal);
@@ -1049,6 +1104,73 @@ async function ffmpegSupportsSubtitles(signal) {
     return false;
   }
 }
+// Duration, picture size, frame rate, and whether there is sound.
+async function probeMedia(file, signal) {
+  const probe = JSON.parse(await creatorCommand(process.env.FFPROBE_PATH || "ffprobe", ["-v", "error", "-show_entries", "format=duration:stream=codec_type,width,height,r_frame_rate", "-of", "json", file], signal));
+  const streams = Array.isArray(probe.streams) ? probe.streams : [];
+  const video = streams.find((stream) => stream.codec_type === "video") || {};
+  const [num, den] = String(video.r_frame_rate || "").split("/").map(Number);
+  return {
+    duration: Number(probe.format?.duration),
+    width: Number(video.width) || 0,
+    height: Number(video.height) || 0,
+    fps: num > 0 && den > 0 ? Math.round((num / den) * 1000) / 1000 : 30,
+    audio: streams.some((stream) => stream.codec_type === "audio"),
+  };
+}
+// Emoji captions: one cheap text call per clip maps caption chunks to emoji.
+// The call is metered like every OpenRouter call (the job runs inside
+// withUsageUser); a failure only costs the emoji, never the clip.
+async function pickEmoji(chunks, signal) {
+  try {
+    const { value } = await requestOpenRouter({
+      kind: "text",
+      json: true,
+      maxTokens: 400,
+      temperature: 0.4,
+      signal,
+      messages: emojiMessages(chunks),
+      validate: (v) => {
+        if (!v || typeof v.emoji !== "object") throw new Error("No emoji returned");
+      },
+    });
+    return cleanEmojiPicks(value, chunks.length);
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    console.warn(`[creator-studio] emoji captions skipped: ${error instanceof Error ? error.message : error}`);
+    return new Map();
+  }
+}
+
+// ---------- Brand kit: one per user, kept as a studio JSON document ----------
+const DEFAULT_CLIP_CAPTION_STYLE = "hormozi";
+const BOOKEND_MAX_SECONDS = 15;
+const HEX_COLOR = /^#[0-9a-f]{6}$/i;
+async function brandKit(userId) {
+  return (await doc(userId, "brand-kit.json"))[0] || null;
+}
+/** A brand kit from the editor, cleaned: unknown files, styles, and fonts drop out. */
+export function normalizeBrandKit(body = {}) {
+  const file = (value, pattern) => (FILE_NAME.test(String(value || "")) && pattern.test(String(value)) ? String(value) : "");
+  const opacity = Number(body.logoOpacity);
+  return {
+    logo: file(body.logo, /\.(png|jpg|webp)$/),
+    logoPosition: LOGO_POSITIONS.includes(body.logoPosition) ? body.logoPosition : "top-right",
+    logoOpacity: Number.isFinite(opacity) ? Math.min(1, Math.max(0.1, Math.round(opacity * 100) / 100)) : 0.9,
+    primaryColor: HEX_COLOR.test(String(body.primaryColor || "")) ? String(body.primaryColor).toUpperCase() : "",
+    accentColor: HEX_COLOR.test(String(body.accentColor || "")) ? String(body.accentColor).toUpperCase() : "",
+    captionStyle: findCaptionStyle(body.captionStyle) ? String(body.captionStyle) : "",
+    captionFont: CAPTION_FONTS[body.captionFont] ? String(body.captionFont) : "",
+    intro: file(body.intro, /\.(mp4|mov|webm)$/),
+    outro: file(body.outro, /\.(mp4|mov|webm)$/),
+  };
+}
+const brandKitView = (kit) => ({
+  ...kit,
+  logoUrl: kit.logo ? studioFileUrl(kit.logo) : "",
+  introUrl: kit.intro ? studioFileUrl(kit.intro) : "",
+  outroUrl: kit.outro ? studioFileUrl(kit.outro) : "",
+});
 
 // Workflows: fixed multi-step pipelines that chain the studios.
 export const WORKFLOWS = {
@@ -1716,6 +1838,14 @@ export function normalizeRequest(body = {}) {
     clipFraming: ["auto", "crop", "blur", "fit"].includes(s.clipFraming) ? s.clipFraming : "auto",
     clipAspect: tab === "clipping" ? (["9:16", "1:1", "16:9"].includes(s.clipAspect) ? s.clipAspect : s.vertical === false ? "16:9" : "9:16") : undefined,
     clipCaptions: s.clipCaptions === true,
+    ...(tab === "clipping"
+      ? {
+          clipCaptionStyle: findCaptionStyle(s.clipCaptionStyle) ? String(s.clipCaptionStyle) : DEFAULT_CLIP_CAPTION_STYLE,
+          clipEmoji: s.clipEmoji === true,
+          clipTrimFillers: s.clipTrimFillers === true,
+          clipUseBrandKit: s.clipUseBrandKit === true,
+        }
+      : {}),
     vertical: s.vertical !== false,
     workflow: WORKFLOWS[s.workflow] ? s.workflow : undefined,
     script: clip(s.script, 3000) || undefined,
@@ -2218,6 +2348,27 @@ export function registerCreatorStudio(app, express) {
       if (assetStoreConfigured()) void removeFile(storeKey(userId, output.file));
     }
     res.json({ deleted: true });
+  }));
+
+  // Brand kit: the logo, caption look, and intro/outro AI Clipping can apply.
+  app.get("/api/studio/brand-kit", route(async (_req, res, userId) => {
+    const kit = await brandKit(userId);
+    res.json({ kit: kit ? brandKitView(kit) : null });
+  }));
+  app.put("/api/studio/brand-kit", route(async (req, res, userId) => {
+    const kit = normalizeBrandKit(req.body || {});
+    for (const name of [kit.logo, kit.intro, kit.outro].filter(Boolean)) await readableFile(userId, name);
+    if (kit.intro || kit.outro) {
+      for (const name of [kit.intro, kit.outro].filter(Boolean)) {
+        const media = await probeMedia(await readableFile(userId, name), AbortSignal.timeout(30000)).catch(() => null);
+        if (!media || !(media.duration > 0)) throw fail("That intro or outro couldn't be read. Upload an MP4, MOV, or WebM video.");
+        if (media.duration > BOOKEND_MAX_SECONDS + 0.5) throw fail(`Intros and outros can be up to ${BOOKEND_MAX_SECONDS} seconds`);
+      }
+    }
+    const list = await doc(userId, "brand-kit.json");
+    list.splice(0, list.length, { ...kit, updatedAt: new Date().toISOString() });
+    await saveDoc(userId, "brand-kit.json", 1);
+    res.json({ kit: brandKitView(list[0]) });
   }));
 
   app.get("/api/studio/marketing", route(async (_req, res, userId) => {

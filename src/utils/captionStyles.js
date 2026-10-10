@@ -42,6 +42,10 @@ export const CAPTION_FONTS = {
 // the weight in the family, so the ASS style has to ask for that exact name.
 export const CAPTION_FONT_FAMILY = { Poppins: "Poppins ExtraBold" };
 export const assFontFamily = (font) => CAPTION_FONT_FAMILY[font] || font;
+// Emoji captions: none of the caption faces carry emoji, and libass draws
+// outline glyphs only (colour bitmap emoji fonts render as nothing), so an
+// emoji is set in this monochrome face, embedded like the caption font.
+export const EMOJI_FONT = { family: "Noto Emoji", file: "NotoEmoji.ttf" };
 
 // size, outline and shadow are percentages of the frame width; y is the
 // vertical centre of the caption block as a percentage of the frame height.
@@ -437,12 +441,14 @@ export function captionsAss(chunks, style, { width, height }, { fonts = [] } = {
   ];
   const pos = `{\\an5\\pos(${Math.round(w / 2)},${Math.round((h * Number(style.y)) / 100)})}`;
   const line = (start, end, text) => `Dialogue: 0,${assTime(start)},${assTime(end)},Caption,,0,0,0,,${pos}${text}`;
+  // A word may carry an emoji (AI Clipping's emoji captions); it follows the word, set in the emoji face.
+  const emoji = (word) => (word.emoji ? ` {\\fn${EMOJI_FONT.family}}${assText(word.emoji)}{\\fn${assFontFamily(style.font)}}` : "");
   const events = [];
   for (const chunk of chunks) {
     const words = chunk.words.map((word) => ({ ...word, text: assText(word.text, style) })).filter((word) => word.text);
     if (!words.length) continue;
     if (style.animation === "none") {
-      events.push(line(chunk.start, chunk.end, words.map((word) => word.text).join(" ")));
+      events.push(line(chunk.start, chunk.end, words.map((word) => `${word.text}${emoji(word)}`).join(" ")));
       continue;
     }
     if (style.animation === "karaoke") {
@@ -450,7 +456,7 @@ export function captionsAss(chunks, style, { width, height }, { fonts = [] } = {
       // reaches to the next word's start and the last one to the chunk end.
       const parts = words.map((word, i) => {
         const until = i + 1 < words.length ? words[i + 1].start : Math.min(chunk.end, word.end + 0.3);
-        return `{\\kf${Math.max(1, Math.round((until - word.start) * 100))}}${word.text}`;
+        return `{\\kf${Math.max(1, Math.round((until - word.start) * 100))}}${word.text}${emoji(word)}`;
       });
       events.push(line(chunk.start, chunk.end, parts.join(" ")));
       continue;
@@ -460,7 +466,7 @@ export function captionsAss(chunks, style, { width, height }, { fonts = [] } = {
       const start = i === 0 ? chunk.start : word.start;
       const end = i + 1 < words.length ? Math.max(start + 0.05, words[i + 1].start) : chunk.end;
       if (end <= start) return;
-      events.push(line(start, end, words.map((other, j) => (j === i ? `${tag}${other.text}{\\r}` : other.text)).join(" ")));
+      events.push(line(start, end, words.map((other, j) => (j === i ? `${tag}${other.text}{\\r}` : other.text) + emoji(other)).join(" ")));
     });
   }
   return `${header.join("\n")}\n${events.join("\n")}\n`;

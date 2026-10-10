@@ -2677,7 +2677,7 @@ async function importStockClip(project, scene, pick, { aspect, variants = 1, max
   }
 }
 // Caption fonts ship in public/fonts/captions; the hosted bundle has only dist/.
-async function captionFontBytes(file) {
+export async function captionFontBytes(file) {
   for (const base of ["dist", "public"]) {
     const candidate = path.resolve(base, "fonts", "captions", file);
     const bytes = await fs.readFile(candidate).catch(() => null);

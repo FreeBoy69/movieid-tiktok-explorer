@@ -37,7 +37,7 @@
 
 export const MAIN_VIEWS = ["tools", "all-tools", "tool", "movie", "downloader", "tiktok", "youtube", "niches", "feed", "channels", "publish", "compile", "automation", "rewriter", "voiceover", "tts", "prompts", "discover", "projects", "create", "styles", "drama", "products", "studio", "vibe-edit", "account", "docs"] as const;
 export type MainView = (typeof MAIN_VIEWS)[number];
-export const ACCOUNT_SECTIONS = ["profile", "billing", "usage", "channels", "telegram", "developers", "security"] as const;
+export const ACCOUNT_SECTIONS = ["profile", "billing", "usage", "channels", "brand", "telegram", "developers", "security"] as const;
 export type AccountSection = (typeof ACCOUNT_SECTIONS)[number];
 export type ListTab = "collection" | "channel";
 export type TikTokSection = "analyze" | "saved";
