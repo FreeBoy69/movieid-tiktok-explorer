@@ -173,6 +173,9 @@ export function createLingbasePayments(env = process.env, fetchImpl = fetch) {
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || payload.ok === false) {
+      if (payload.error === "invalid_token") {
+        throw Object.assign(new Error("Your LingCloud payment session expired. Reconnect to continue."), { statusCode: 401, code: "lingbase_session_expired" });
+      }
       const error = new Error(String(payload.message || payload.error || "LingBase payments are unavailable."));
       error.statusCode = response.status >= 400 && response.status < 500 ? response.status : 502;
       throw error;

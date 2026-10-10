@@ -52,6 +52,12 @@ describe("LingBase billing", () => {
     });
   });
 
+  it("turns LingBase's invalid_token into a reconnect prompt", async () => {
+    const fetcher = vi.fn().mockResolvedValue({ ok: false, status: 401, json: async () => ({ ok: false, error: "invalid_token" }) });
+    const client = createLingbasePayments(env, fetcher as any);
+    await expect(client.orders(token)).rejects.toMatchObject({ statusCode: 401, code: "lingbase_session_expired" });
+  });
+
   it("keeps the embedded return URL stable so LingBase can reuse its minute key", () => {
     expect(embeddedCheckoutReturnUrl("https://autoyt.cc/")).toBe("https://autoyt.cc/?billing_return=1&session_id={CHECKOUT_SESSION_ID}");
   });

@@ -1062,7 +1062,7 @@ ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.up
         if (!session?.user) return res.status(401).json({ error: "Sign in required" });
         await handler(req, res, session.user, session);
       } catch (error) {
-        res.status(Number(error?.statusCode) || 500).json({ error: error instanceof Error ? error.message : "Request failed" });
+        res.status(Number(error?.statusCode) || 500).json({ error: error instanceof Error ? error.message : "Request failed", ...(error?.code ? { code: String(error.code) } : {}) });
       }
     };
   }

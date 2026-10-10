@@ -39,15 +39,23 @@ async function post(path: string, token: string, body: Record<string, unknown> =
     body: JSON.stringify(body),
   });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || "LingBase payments are unavailable.");
+  if (!response.ok) throw Object.assign(new Error(data.error || "LingBase payments are unavailable."), { code: data.code });
   return data;
 }
 
-async function ensureLingbaseSession(autoEmail: string, selection: Selection): Promise<string> {
+// The SDK keeps a stored session after its JWT expires; treat that as signed out.
+function tokenExpired(token: string) {
+  try {
+    const payload = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
+    return typeof payload.exp === "number" && payload.exp * 1000 <= Date.now() + 30_000;
+  } catch { return false; }
+}
+
+async function ensureLingbaseSession(autoEmail: string, selection: Selection, reconnect = false): Promise<string> {
   const client = await cloud();
   const lingUser = client.auth.getUser();
   const token = client.auth.getToken();
-  if (!token || lingUser?.email?.trim().toLowerCase() !== autoEmail.trim().toLowerCase()) {
+  if (reconnect || !token || tokenExpired(token) || lingUser?.email?.trim().toLowerCase() !== autoEmail.trim().toLowerCase()) {
     sessionStorage.setItem(SELECTION_KEY, JSON.stringify(selection));
     if (token) await client.auth.signOut();
     const returnUrl = new URL(window.location.href);
@@ -66,7 +74,10 @@ export async function startLingbaseCheckout(selection: Selection, autoEmail: str
   const body = selection.kind === "pack"
     ? { packId: selection.packId }
     : { planId: selection.planId, interval: selection.interval };
-  const data = await post("/api/billing/lingbase/checkout", token, body);
+  const data = await post("/api/billing/lingbase/checkout", token, body).catch(async (error) => {
+    if (error?.code !== "lingbase_session_expired") throw error;
+    return ensureLingbaseSession(autoEmail, selection, true) as never;
+  });
   const session = {
     sessionId: String(data.sessionId || ""),
     clientSecret: String(data.clientSecret || ""),
