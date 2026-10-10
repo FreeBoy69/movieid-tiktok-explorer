@@ -775,6 +775,8 @@
 /* The Juel button (its panel and styles load on first open; see JuelButton.tsx). */
 .juel-trigger { display: inline-flex; height: 34px; align-items: center; gap: 6px; padding: 0 12px; border: 1px solid var(--ah-line); border-radius: 999px; background: var(--ah-tile); color: var(--ah-text); font: 600 13px/1 Inter, system-ui, sans-serif; cursor: pointer; transition: background 0.18s ease, border-color 0.18s ease; }
 .juel-trigger svg { color: #f9dc0b; }
+/* Juel himself sits in the button: a little less padding on his side. */
+.juel-trigger:has(.juel-trigger-mascot) { padding-left: 7px; }
 .juel-trigger:hover,
 .juel-trigger.is-on { border-color: color-mix(in srgb, #f9dc0b 55%, transparent); background: color-mix(in srgb, #f9dc0b 12%, var(--ah-tile)); }
 @media (max-width: 760px) {

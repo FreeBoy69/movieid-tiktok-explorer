@@ -1,0 +1,465 @@
+/* Juel's colours and motion. Parts are SVG groups in JuelMascot.tsx; transform origins are in the
+   240 x 240 drawing's own units (transform-box: view-box). */
+.jm {
+  --jm-body: #f9d20b;
+  --jm-body-shade: #eaa612;
+  --jm-body-light: #fde985;
+  --jm-ink: #1f1c18;
+  --jm-white: #fffdf7;
+  --jm-eye-shade: #e1e3e6;
+  --jm-tongue: #e8675e;
+  --jm-sweat: #9fd3f5;
+  --jm-soft: #b9b6ae;
+  display: block;
+  overflow: visible;
+  flex: none;
+}
+:root[data-theme="dark"] .jm,
+html.dark .jm {
+  --jm-soft: #6f6c66;
+}
+.jm * {
+  transform-box: view-box;
+}
+
+/* ---------- Always: blinking, and a gentle sway ---------- */
+.jm .jm-eye {
+  animation: jm-blink 5.2s infinite;
+}
+.jm .jm-eye-back {
+  animation-delay: 0.04s;
+}
+@keyframes jm-blink {
+  0%, 93%, 100% { transform: scaleY(1); }
+  95.5% { transform: scaleY(0.08); }
+}
+.jm .jm-body {
+  transform-origin: 120px 200px;
+}
+.jm .jm-pupil {
+  transition: transform 260ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* A pose change pops, so the switch reads as a movement. */
+.jm.is-swap .jm-figure {
+  animation: jm-pop 320ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.jm .jm-figure {
+  transform-origin: 120px 220px;
+}
+@keyframes jm-pop {
+  0% { transform: scale(0.9, 1.06); }
+  60% { transform: scale(1.04, 0.97); }
+  100% { transform: scale(1); }
+}
+
+/* ---------- Poses ---------- */
+.jm[data-pose="idle"] .jm-body,
+.jm[data-pose="talk"] .jm-body {
+  animation: jm-breathe 3.6s ease-in-out infinite;
+}
+@keyframes jm-breathe {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-2.5px) scale(1.01, 0.99); }
+}
+
+/* Wave: the hand swings from the shoulder; the motion lines flicker with it. */
+.jm[data-pose="wave"] .jm-arm-r {
+  transform-origin: 178px 99px;
+  animation: jm-wave 0.9s cubic-bezier(0.45, 0, 0.55, 1) infinite alternate;
+}
+@keyframes jm-wave {
+  from { transform: rotate(-12deg); }
+  to { transform: rotate(14deg); }
+}
+.jm[data-pose="wave"] .jm-wave-lines {
+  animation: jm-flicker 0.9s ease-in-out infinite alternate;
+}
+@keyframes jm-flicker {
+  from { opacity: 0.25; }
+  to { opacity: 1; }
+}
+.jm[data-pose="wave"] .jm-body {
+  animation: jm-lean 1.8s ease-in-out infinite;
+}
+@keyframes jm-lean {
+  0%, 100% { transform: rotate(-2deg); }
+  50% { transform: rotate(2deg); }
+}
+
+/* Point: a small, eager jab toward what's being shown. */
+.jm[data-pose="point"] .jm-arm-r {
+  transform-origin: 178px 99px;
+  animation: jm-jab 1.1s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+@keyframes jm-jab {
+  0%, 100% { transform: translate(0, 0); }
+  35% { transform: translate(5px, -2px); }
+}
+.jm[data-pose="point"] .jm-body {
+  animation: jm-breathe 3.6s ease-in-out infinite;
+}
+
+/* Think: a tilt, eyes up, the dots of a thought appearing one by one. */
+.jm[data-pose="think"] .jm-body {
+  animation: jm-ponder 2.6s ease-in-out infinite;
+}
+@keyframes jm-ponder {
+  0%, 100% { transform: rotate(-3deg); }
+  50% { transform: rotate(-1deg) translateY(-1.5px); }
+}
+.jm[data-pose="think"] .jm-dots circle {
+  animation: jm-dot 1.5s ease-in-out infinite;
+}
+.jm[data-pose="think"] .jm-dots circle:nth-child(2) { animation-delay: 0.2s; }
+.jm[data-pose="think"] .jm-dots circle:nth-child(3) { animation-delay: 0.4s; }
+@keyframes jm-dot {
+  0%, 100% { opacity: 0.2; }
+  40% { opacity: 1; }
+}
+
+/* Talk: the mouth opens and closes; one hand gestures. */
+.jm[data-pose="talk"] .jm-mouth-open {
+  animation: jm-talk-open 0.34s steps(1, end) infinite;
+}
+.jm[data-pose="talk"] .jm-mouth-o {
+  animation: jm-talk-o 0.34s steps(1, end) infinite;
+}
+@keyframes jm-talk-open {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+@keyframes jm-talk-o {
+  0%, 100% { opacity: 0; }
+  50% { opacity: 1; }
+}
+.jm[data-pose="talk"] .jm-arm-r {
+  transform-origin: 178px 99px;
+  animation: jm-gesture 1.2s ease-in-out infinite;
+}
+@keyframes jm-gesture {
+  0%, 100% { transform: rotate(0); }
+  50% { transform: rotate(-9deg); }
+}
+
+/* Work: eyes scan, a foot taps, a gear turns. */
+.jm[data-pose="work"] .jm-pupil {
+  animation: jm-scan 1.8s ease-in-out infinite;
+}
+@keyframes jm-scan {
+  0%, 100% { transform: translateX(-4px); }
+  50% { transform: translateX(5px); }
+}
+.jm[data-pose="work"] .jm-leg-r {
+  animation: jm-tap 0.5s ease-in-out infinite alternate;
+}
+@keyframes jm-tap {
+  from { transform: rotate(0); }
+  to { transform: rotate(-8deg); }
+}
+.jm[data-pose="work"] .jm-gear {
+  animation: jm-spin 2.4s linear infinite;
+}
+@keyframes jm-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Cheer: hop, arms up, sparks twinkle. */
+.jm[data-pose="cheer"] .jm-figure {
+  animation: jm-hop 0.7s cubic-bezier(0.33, 0, 0.2, 1) infinite;
+}
+.jm[data-pose="cheer"].is-swap .jm-figure {
+  animation: jm-pop 320ms cubic-bezier(0.34, 1.56, 0.64, 1), jm-hop 0.7s 320ms cubic-bezier(0.33, 0, 0.2, 1) infinite;
+}
+@keyframes jm-hop {
+  0%, 100% { transform: translateY(0) scale(1, 1); }
+  15% { transform: translateY(0) scale(1.04, 0.95); }
+  50% { transform: translateY(-12px) scale(0.98, 1.03); }
+  85% { transform: translateY(0) scale(1.03, 0.97); }
+}
+.jm .jm-spark {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.jm[data-pose="cheer"] .jm-spark,
+.jm[data-pose="thumbs"] .jm-spark {
+  animation: jm-twinkle 1.1s ease-in-out infinite;
+}
+.jm .jm-spark:nth-child(2) { animation-delay: 0.3s; }
+.jm .jm-spark:nth-child(3) { animation-delay: 0.6s; }
+@keyframes jm-twinkle {
+  0%, 100% { transform: scale(0.55) rotate(0); opacity: 0.4; }
+  50% { transform: scale(1) rotate(25deg); opacity: 1; }
+}
+
+/* Thumbs up: a proud little bounce. */
+.jm[data-pose="thumbs"] .jm-arm-r {
+  transform-origin: 178px 99px;
+  animation: jm-proud 1.4s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+@keyframes jm-proud {
+  0%, 100% { transform: translateY(0); }
+  30% { transform: translateY(-4px) rotate(-4deg); }
+}
+
+/* Oops: a small shake and a bead of sweat. */
+.jm[data-pose="oops"] .jm-body {
+  animation: jm-shake 2.4s ease-in-out infinite;
+}
+@keyframes jm-shake {
+  0%, 60%, 100% { transform: translateX(0); }
+  64%, 72% { transform: translateX(-2.5px); }
+  68%, 76% { transform: translateX(2.5px); }
+}
+.jm[data-pose="oops"] .jm-sweat {
+  animation: jm-drip 2.4s ease-in infinite;
+}
+@keyframes jm-drip {
+  0%, 30% { transform: translateY(0); opacity: 1; }
+  80% { transform: translateY(10px); opacity: 0; }
+  100% { transform: translateY(0); opacity: 0; }
+}
+
+/* Listen: lean in, the sound arcs pulse. */
+.jm[data-pose="listen"] .jm-body {
+  animation: jm-lean-in 2s ease-in-out infinite;
+}
+@keyframes jm-lean-in {
+  0%, 100% { transform: rotate(-3deg); }
+  50% { transform: rotate(-5deg) translateY(-1px); }
+}
+.jm[data-pose="listen"] .jm-sound path {
+  animation: jm-flicker 0.8s ease-in-out infinite alternate;
+}
+.jm[data-pose="listen"] .jm-sound path:nth-child(2) { animation-delay: 0.25s; }
+
+/* Sleep: slow breathing, letters float up. */
+.jm[data-pose="sleep"] .jm-body {
+  animation: jm-snore 4s ease-in-out infinite;
+}
+@keyframes jm-snore {
+  0%, 100% { transform: scale(1, 1); }
+  50% { transform: scale(1.02, 0.98); }
+}
+.jm[data-pose="sleep"] .jm-zzz path {
+  animation: jm-float 3s ease-out infinite;
+}
+.jm[data-pose="sleep"] .jm-zzz path:nth-child(2) { animation-delay: 1.5s; }
+@keyframes jm-float {
+  0% { transform: translateY(6px); opacity: 0; }
+  30% { opacity: 1; }
+  100% { transform: translateY(-10px); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jm *,
+  .jm.is-swap .jm-figure {
+    animation: none !important;
+  }
+  .jm .jm-pupil {
+    transition: none;
+  }
+}
+
+/* ---------- Tours (JuelTour.tsx) ---------- */
+.jt {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+}
+.jt-catch {
+  position: absolute;
+  inset: 0;
+}
+.jt-dim {
+  position: absolute;
+  inset: 0;
+  background: rgb(10 11 12 / 0.55);
+  animation: jt-fade 260ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+/* The spotlight: a clear window cut by a huge shadow, gliding from stop to stop. */
+.jt-spot {
+  position: absolute;
+  border-radius: 16px;
+  box-shadow: 0 0 0 200vmax rgb(10 11 12 / 0.55), 0 0 0 2px rgb(249 220 11 / 0.9);
+  transition: top 480ms cubic-bezier(0.16, 1, 0.3, 1), left 480ms cubic-bezier(0.16, 1, 0.3, 1), width 480ms cubic-bezier(0.16, 1, 0.3, 1), height 480ms cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: none;
+  z-index: 1;
+}
+.jt-card {
+  position: fixed;
+  z-index: 2;
+  width: min(340px, calc(100vw - 32px));
+  padding: 20px 20px 16px;
+  border-radius: 20px;
+  background: var(--ui-panel, #fdfcfa);
+  color: var(--ui-text, #1b1b18);
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.12), 0 24px 60px -18px rgb(0 0 0 / 0.5);
+  outline: none;
+  transition: top 480ms cubic-bezier(0.16, 1, 0.3, 1), left 480ms cubic-bezier(0.16, 1, 0.3, 1);
+  animation: jt-rise 380ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.jt-card.is-phone {
+  top: auto;
+  right: 16px;
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  left: 16px;
+  width: auto;
+}
+/* Juel stands on the card's top-left corner. */
+.jt-mascot {
+  position: absolute;
+  top: -80px;
+  left: 6px;
+  filter: drop-shadow(0 6px 8px rgb(0 0 0 / 0.18));
+}
+.jt-card h2 {
+  margin: 0 30px 6px 0;
+  font-family: var(--font-serif, "Antonio", sans-serif);
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+}
+.jt-card p {
+  margin: 0;
+  color: var(--ui-text-muted, #5b5a55);
+  font-size: 14px;
+  line-height: 1.55;
+}
+.jt-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 0;
+  background: none;
+  color: var(--ui-text-muted, #5b5a55);
+  cursor: pointer;
+}
+.jt-close:hover {
+  background: var(--ui-hover, rgb(0 0 0 / 0.05));
+  color: var(--ui-text, #1b1b18);
+}
+.jt-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+}
+.jt-count {
+  margin-right: auto;
+  color: var(--ui-text-faint, #8a8880);
+  font: 500 12px/1 "JetBrains Mono", ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+}
+.jt-next,
+.jt-back,
+.jt-link {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 16px;
+  border: 0;
+  font: 600 13px/1 Inter, system-ui, sans-serif;
+  cursor: pointer;
+  transition: background-color 180ms ease, transform 180ms ease;
+}
+.jt-next {
+  background: #f9dc0b;
+  color: #1b1b18;
+}
+.jt-next:hover {
+  background: #f0d000;
+}
+.jt-next:active,
+.jt-back:active {
+  transform: scale(0.97);
+}
+.jt-back {
+  width: 36px;
+  justify-content: center;
+  padding: 0;
+  background: var(--ui-chip, #e3e0d9);
+  color: var(--ui-text, #1b1b18);
+}
+.jt-link {
+  margin-right: auto;
+  padding: 0 4px;
+  background: none;
+  color: var(--ui-text-muted, #5b5a55);
+}
+.jt-link:hover {
+  color: var(--ui-text, #1b1b18);
+}
+
+/* The one-time offer: Juel peeks in at the bottom corner. */
+.jt-offer {
+  position: fixed;
+  right: 24px;
+  bottom: calc(24px + env(safe-area-inset-bottom));
+  z-index: 1100;
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  animation: jt-peek 520ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.jt-offer-card {
+  width: 250px;
+  margin-bottom: 30px;
+  padding: 14px 14px 10px;
+  border-radius: 18px 18px 18px 6px;
+  background: var(--ui-panel, #fdfcfa);
+  color: var(--ui-text, #1b1b18);
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.1), 0 18px 40px -16px rgb(0 0 0 / 0.45);
+  order: 2;
+}
+.jt-offer-card p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.jt-offer-card .jt-actions {
+  margin-top: 10px;
+}
+.jt-offer-mascot {
+  order: 1;
+}
+@media (max-width: 640px) {
+  .jt-offer {
+    right: 12px;
+    left: 12px;
+    bottom: calc(88px + env(safe-area-inset-bottom));
+  }
+  .jt-offer-card {
+    flex: 1;
+    width: auto;
+  }
+  .jt-mascot {
+    top: -74px;
+  }
+}
+@keyframes jt-fade {
+  from { opacity: 0; }
+}
+@keyframes jt-rise {
+  from { opacity: 0; transform: translateY(10px) scale(0.98); }
+}
+@keyframes jt-peek {
+  from { opacity: 0; transform: translateY(40px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .jt-spot,
+  .jt-card {
+    transition: none;
+  }
+  .jt-card,
+  .jt-dim,
+  .jt-offer {
+    animation: none;
+  }
+}

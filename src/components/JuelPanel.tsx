@@ -9,6 +9,8 @@ import { AlertCircle, ArrowDown, ArrowUp, ArrowUpRight, Check, ChevronRight, Coi
 import { readDeepLink } from "../utils/tiktokRoute";
 import { toast } from "../utils/toast";
 import { FormattedChatText } from "./AgentStructuredContent";
+import { JuelMascot, type JuelPose, setJuelMood, useJuelMood } from "./JuelMascot";
+import { pageTour, startJuelTour } from "./JuelTour";
 import { AGENT_STARTERS, creditsToast, formatCredits, GenerationResult, type JuelAttachment, JuelReport, type JuelSpend, MediaResult, OperatorAnswer, useVoiceInput } from "./JuelParts";
 import "./JuelPanel.css";
 
@@ -277,12 +279,36 @@ export function JuelPanel({ onClose, embedded = false, headStart, leaving = fals
     (text) => setMessage((m) => [m.trim(), text].filter(Boolean).join(" ").slice(0, 4000)),
     (text) => toast.error(text),
   );
+  // Juel's character acts out what's happening: thinking, working, talking, then a moment of "done" or
+  // "oops" before settling back to idle. Every Juel on screen (the header's too) follows it.
+  const mood = useJuelMood();
+  // The page's own tour, offered under the greeting.
+  const [tour] = useState(() => pageTour());
+  const settling = useRef(0);
+  const settle = (pose: JuelPose, ms: number) => {
+    setJuelMood(pose);
+    window.clearTimeout(settling.current);
+    settling.current = window.setTimeout(() => {
+      settling.current = 0;
+      setJuelMood("idle");
+    }, ms);
+  };
+  useEffect(() => {
+    if (voice.state === "recording") setJuelMood("listen");
+    else if (voice.state === "transcribing") setJuelMood("think");
+    else if (!settling.current) setJuelMood("idle");
+  }, [voice.state]);
+  useEffect(() => () => {
+    window.clearTimeout(settling.current);
+    setJuelMood("idle");
+  }, []);
 
   const send = useCallback(async (override?: string, options: { editFrom?: number | null } = {}) => {
     const text = (override ?? message).trim();
     if (!text || sending) return;
     const from = options.editFrom !== undefined ? options.editFrom : editFrom;
     setSending(true);
+    setJuelMood("think");
     setError("");
     setMessage("");
     setEditFrom(null);
@@ -312,8 +338,13 @@ export function JuelPanel({ onClose, embedded = false, headStart, leaving = fals
         for (const line of lines) {
           if (!line.trim()) continue;
           const item = JSON.parse(line);
-          if (item.type === "reply") setLive((l) => (l ? { ...l, reply: String(item.text || "") } : l));
-          else if (item.type === "step") setLive((l) => (l ? { ...l, steps: [...l.steps, { specialist: item.specialist, text: item.text }] } : l));
+          if (item.type === "reply") {
+            setJuelMood("talk");
+            setLive((l) => (l ? { ...l, reply: String(item.text || "") } : l));
+          } else if (item.type === "step") {
+            setJuelMood("work");
+            setLive((l) => (l ? { ...l, steps: [...l.steps, { specialist: item.specialist, text: item.text }] } : l));
+          }
           else if (item.type === "spend") setLive((l) => (l ? { ...l, spends: [...l.spends, item.spend] } : l));
           else if (item.type === "attach") setLive((l) => (l ? { ...l, attachments: [...l.attachments, item.attachment] } : l));
           else if (item.type === "credits") {
@@ -321,6 +352,7 @@ export function JuelPanel({ onClose, embedded = false, headStart, leaving = fals
             setLive((l) => (l ? { ...l, spends: [...l.spends, { does: item.does, credits: Number(item.needed) || 0, status: "refused" }] } : l));
           } else if (item.type === "page") runOnPage(item.surface, item.actions);
           else if (item.type === "done") {
+            settle("thumbs", 2600);
             setThread(item.thread);
             remember(now, item.thread.id);
             announceChange();
@@ -334,11 +366,13 @@ export function JuelPanel({ onClose, embedded = false, headStart, leaving = fals
       } else {
         setMessage(text);
         setError(err instanceof Error ? err.message : "Juel couldn't answer");
+        settle("oops", 4000);
       }
     } finally {
       stopper.current = null;
       setSending(false);
       setLive(null);
+      if (!settling.current) setJuelMood("idle");
     }
   }, [message, sending, thread, context, editFrom]);
 
@@ -391,7 +425,7 @@ export function JuelPanel({ onClose, embedded = false, headStart, leaving = fals
     <aside ref={root} className={`juel${embedded ? " juel-embedded" : ""}${sidebar ? " has-side" : ""}`} role={embedded ? undefined : "dialog"} aria-label="Juel">
       <header className="juel-head">
         {headStart}
-        <span className="juel-title"><span className="juel-mark" aria-hidden="true"><Sparkles size={13} /></span>Juel</span>
+        <span className="juel-title"><span className="juel-mark" aria-hidden="true"><JuelMascot pose={mood} size={20} framing="bust" /></span>Juel</span>
         <span className="juel-thread-title" title={thread?.title || undefined}>{thread?.messages.length ? thread.title || "Conversation" : "New conversation"}</span>
         <button type="button" className={`juel-icon juel-history-btn${historyOpen ? " is-on" : ""}`} onClick={() => setHistoryOpen((o) => !o)} aria-label="Conversations" aria-expanded={historyOpen} title="Conversations"><History size={16} /></button>
         <button type="button" className="juel-icon" onClick={newChat} aria-label="New conversation" title="New conversation"><Plus size={16} /></button>
@@ -414,9 +448,15 @@ export function JuelPanel({ onClose, embedded = false, headStart, leaving = fals
         <div className="juel-thread">
           {!thread?.messages.length && !live ? (
             <div className="juel-empty" data-ready={ready ? undefined : "false"}>
-              <span className="juel-empty-mark" aria-hidden="true"><Sparkles size={20} /></span>
+              <JuelMascot pose={mood === "idle" ? "wave" : mood} size={112} followPointer={mood === "idle"} className="juel-empty-mascot" />
               <h2>{intro.title}</h2>
               <p>{intro.body}</p>
+              {tour ? (
+                <button type="button" className="juel-tour-start" onClick={() => { onClose?.(); window.setTimeout(() => startJuelTour(tour.id), 260); }}>
+                  Take a tour of {tour.label === "AutoYT" ? "AutoYT" : `the ${tour.label}`}
+                  <ArrowUpRight size={14} aria-hidden="true" />
+                </button>
+              ) : null}
               <div className="juel-starters">
                 {starters.map((s) => (
                   <button key={s.label} type="button" className="juel-starter" disabled={sending} onClick={() => void send(s.prompt)}>

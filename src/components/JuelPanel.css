@@ -142,7 +142,7 @@
    Replies are plain text on the page (no bubble), the user's messages are soft bubbles, what the
    specialists did folds into one line, credits sit quietly under the reply, and the composer floats. */
 .juel-head { min-height: 52px; padding: 8px 10px 8px 16px; }
-.juel-mark { display: grid; width: 22px; height: 22px; place-items: center; border-radius: 7px; background: var(--j-accent); color: var(--j-accent-ink); }
+.juel-mark { display: grid; width: 24px; height: 22px; place-items: center; }
 .juel-title svg { color: inherit; }
 .juel-thread-title { overflow: hidden; flex: 1; min-width: 0; color: var(--j-muted); font-size: 13px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
 .juel-body { position: relative; display: flex; min-height: 0; flex: 1; flex-direction: column; overflow-y: auto; scrollbar-gutter: stable; }
@@ -151,7 +151,9 @@
 
 /* Empty: a centred invitation with the page's quick prompts. */
 .juel-empty { display: flex; flex-direction: column; align-items: center; gap: 10px; margin: auto 0; padding: 24px 0; text-align: center; }
-.juel-empty-mark { display: grid; width: 44px; height: 44px; place-items: center; margin-bottom: 4px; border-radius: 14px; background: var(--j-accent); color: var(--j-accent-ink); box-shadow: 0 10px 24px -14px rgb(160 130 0 / 0.8); }
+.juel-empty-mascot { margin: -6px 0 2px -8px; }
+.juel-tour-start { display: inline-flex; align-items: center; gap: 6px; align-self: center; min-height: 32px; padding: 0 12px; border: 1px solid var(--j-line, rgb(128 128 128 / 0.2)); background: none; color: inherit; font: 600 13px/1 Inter, system-ui, sans-serif; cursor: pointer; transition: background-color 180ms ease; }
+.juel-tour-start:hover { background: color-mix(in srgb, #f9dc0b 14%, transparent); }
 .juel-empty h2 { margin: 0; color: var(--j-text); font-family: var(--font-serif, "Antonio", sans-serif); font-size: clamp(26px, 3.2vw, 32px); font-weight: 700; letter-spacing: -0.005em; line-height: 1.05; text-wrap: balance; }
 .juel-empty p { max-width: 46ch; margin: 0; color: var(--j-muted); font-size: 14px; line-height: 1.6; text-wrap: pretty; }
 .juel-starters { display: grid; width: 100%; max-width: 560px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; margin-top: 14px; }
