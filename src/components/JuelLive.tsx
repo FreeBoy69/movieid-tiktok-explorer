@@ -141,6 +141,43 @@ export function turnPause(transcript: string, gaps: number[], final = false): nu
   return Math.round((state === "done" ? (final ? 220 : 450) : final ? 450 : 800) * pace);
 }
 
+/** What a recording says. Gemini (/api/juel/hear) first; when it hasn't answered in 1.8 s a second
+ *  identical request races it (its slow tail is several seconds), and the Whisper route is the backup.
+ *  Credits running out (402) isn't retried. */
+async function hearRecording(blob: Blob): Promise<string> {
+  const type = blob.type || "application/octet-stream";
+  const controllers: AbortController[] = [];
+  const once = () => {
+    const controller = new AbortController();
+    controllers.push(controller);
+    return fetch("/api/juel/hear", { method: "POST", headers: { "Content-Type": type }, body: blob, signal: controller.signal }).then(async (response) => {
+      if (!response.ok) throw Object.assign(new Error("hear"), { status: response.status });
+      return String((await response.json().catch(() => ({}))).text || "");
+    });
+  };
+  const first = once();
+  const second = new Promise<string>((resolve, reject) => {
+    const timer = window.setTimeout(() => once().then(resolve, reject), 1800);
+    first.then(
+      () => window.clearTimeout(timer),
+      (error) => {
+        window.clearTimeout(timer);
+        if (error?.status === 402) reject(error);
+        else once().then(resolve, reject);
+      },
+    );
+  });
+  try {
+    return await Promise.any([first, second]);
+  } catch (error) {
+    if ((error as AggregateError)?.errors?.some((e: { status?: number }) => e?.status === 402)) return "";
+  } finally {
+    controllers.forEach((controller) => controller.abort());
+  }
+  const backup = await fetch("/api/automation/agents/chat/transcribe", { method: "POST", headers: { "Content-Type": type }, body: blob }).catch(() => null);
+  return backup?.ok ? String((await backup.json().catch(() => ({}))).text || "") : "";
+}
+
 /** Bands in the live waveform (drawn mirrored, so twice as many bars). */
 const WAVE_BANDS = 16;
 
@@ -311,6 +348,7 @@ export function JuelLive({
       void response?.body?.cancel().catch(() => undefined);
       return;
     }
+    if (timing.current.text && !timing.current.audio) timing.current.audio = performance.now();
     let finished = false;
     const done = () => {
       if (finished) return;
@@ -322,6 +360,11 @@ export function JuelLive({
       if (gen !== generation.current) return;
       if (queue.current.length) void playNext();
       else if (turnDone.current) {
+        const t = timing.current;
+        if (t.text && t.reply && t.audio) {
+          const s = (ms: number) => `${(Math.max(0, ms) / 1000).toFixed(1)} s`;
+          setLastTiming(`Heard ${s(t.text - t.end)} (${t.path}) · answer ${s(t.reply - t.text)} · voice ${s(t.audio - t.reply)}`);
+        }
         setSaying("");
         setJuelMood("idle");
         freshEars();
@@ -474,6 +517,7 @@ export function JuelLive({
   const cutOff = useRef(false);
   useEffect(() => {
     if (reply === null || cutOff.current) return;
+    if (reply && timing.current.text && !timing.current.reply) timing.current.reply = performance.now();
     turnDone.current = false;
     const text = speakable(reply);
     spokenUpTo.current = resumeAt(lastSeen.current, spokenUpTo.current, text);
@@ -527,12 +571,22 @@ export function JuelLive({
 
   // Set while a recording is being transcribed: that turn's words are on their way.
   const transcribing = useRef(false);
+  // A turn's recording is sent the moment you pause (300 ms), while the turn-end pause is still running:
+  // when you stay quiet, that answer is the turn's words and arrives ~0.45 s sooner; talking again drops it.
+  const early = useRef<{ promise: Promise<string>; turn: number } | null>(null);
+  const turnId = useRef(0);
+  const flushWait = useRef<((blob: Blob) => void) | null>(null);
+  // Where each turn's time went, shown under the controls once he has answered.
+  const timing = useRef({ end: 0, text: 0, reply: 0, audio: 0, path: "" });
+  const [lastTiming, setLastTiming] = useState("");
   const commit = useCallback((text: string, fromRecording = false) => {
     // One turn per thing you said: a second report of the same words (the recogniser and the recording
     // both finishing) is dropped.
     if (fromRecording ? !transcribing.current : phaseRef.current !== "listening" && phaseRef.current !== "hearing") return;
     transcribing.current = false;
     const said = text.trim();
+    timing.current = { end: voiceAt.current || performance.now(), text: performance.now(), reply: 0, audio: 0, path: fromRecording ? "transcribed" : "your phone's recogniser" };
+    early.current = null;
     transcript.current = "";
     gaps.current = [];
     setHeard("");
@@ -632,6 +686,8 @@ export function JuelLive({
           voiceAt.current = now;
           loudSince ||= now;
           quietSince = 0;
+          // Still talking: the recording sent at your last pause is out of date.
+          if (speaking && early.current) early.current = null;
           if (!speaking && now - loudSince > (phaseNow === "speaking" ? (voiceRef.current === INSTANT ? 450 : 280) : 120)) {
             speaking = true;
             // With a recogniser, interrupting waits for words that aren't his own (see onresult): loudness
@@ -645,6 +701,8 @@ export function JuelLive({
             if (recorder.current?.state === "inactive" && (phaseRef.current === "listening" || phaseRef.current === "hearing") && now - stoppedAt.current > 700) {
               chunks.current = [];
               discard.current = false;
+              turnId.current += 1;
+              early.current = null;
               recorder.current.start();
             }
           }
@@ -656,6 +714,23 @@ export function JuelLive({
           // With words from the recogniser, its own thought-aware timer decides; without any (a phone whose
           // recogniser hears nothing, or none at all) a short silence sends the recording to be transcribed.
           const silence = transcript.current ? Math.max(700, turnPause(transcript.current, gaps.current, true)) : 750;
+          // No words from the recogniser (a phone): send what you've said so far now, while the pause runs.
+          // The whole recording so far is one playable file, so nothing is cut out of it.
+          if (speaking && !early.current && !transcript.current && now - quietSince > 300 && recorder.current?.state === "recording") {
+            const turn = turnId.current;
+            const recording = recorder.current;
+            early.current = {
+              turn,
+              promise: new Promise<Blob>((resolve) => {
+                flushWait.current = resolve;
+                try {
+                  recording.requestData();
+                } catch {
+                  resolve(new Blob());
+                }
+              }).then((blob) => (blob.size < 2000 ? "" : hearRecording(blob))),
+            };
+          }
           if (speaking && now - quietSince > silence) {
             speaking = false;
             if (recorder.current?.state === "recording") {
@@ -764,10 +839,20 @@ export function JuelLive({
       }
       if (typeof MediaRecorder !== "undefined") {
         const rec = new MediaRecorder(stream.current);
-        rec.ondataavailable = (event) => event.data.size && chunks.current.push(event.data);
+        rec.ondataavailable = (event) => {
+          if (event.data.size) chunks.current.push(event.data);
+          const waiting = flushWait.current;
+          if (waiting) {
+            flushWait.current = null;
+            waiting(new Blob(chunks.current, { type: rec.mimeType || "audio/webm" }));
+          }
+        };
         rec.onstop = async () => {
           const blob = new Blob(chunks.current, { type: rec.mimeType || "audio/webm" });
           chunks.current = [];
+          // The answer for this turn's recording, when it was already sent at your last pause.
+          const sent = early.current && early.current.turn === turnId.current ? early.current.promise : null;
+          early.current = null;
           if (discard.current || !live.current) return;
           if (blob.size < 2000) {
             if (phaseRef.current === "hearing") go("listening");
@@ -777,12 +862,10 @@ export function JuelLive({
           transcribing.current = true;
           go("thinking");
           setJuelMood("think");
-          // Gemini hears the recording as recorded in about a second; the Whisper route is the backup.
-          const post = (url: string) => fetch(url, { method: "POST", headers: { "Content-Type": blob.type || "application/octet-stream" }, body: blob }).catch(() => null);
-          let response = await post("/api/juel/hear");
-          if (!response?.ok && response?.status !== 402) response = await post("/api/automation/agents/chat/transcribe");
-          const data = response?.ok ? await response.json().catch(() => ({})) : {};
-          const text = String(data.text || "");
+          const turn = turnId.current;
+          const text = (await sent) || (await hearRecording(blob));
+          // Stopped, ended, or a newer turn while it was heard: these words belong to nothing now.
+          if (!live.current || turn !== turnId.current || !transcribing.current) return;
           // A recording that caught only his voice is no turn.
           if (isEcho(text, saidWords.current) && saidWords.current.size) {
             transcribing.current = false;
@@ -858,6 +941,7 @@ export function JuelLive({
         <p className={`juel-live-hint${problem ? " is-problem" : ""}`} role="status" aria-live="polite">
           {hint}
         </p>
+        {lastTiming ? <p className="juel-live-timing">{lastTiming}</p> : null}
         <div className="juel-live-row">
           <label className="juel-live-voice" title="Juel's voice">
             <AudioLines size={13} aria-hidden="true" />
