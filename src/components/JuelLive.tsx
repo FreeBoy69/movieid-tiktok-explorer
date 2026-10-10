@@ -311,7 +311,10 @@ export function JuelLive({
     }
     return ctx.current;
   };
-  const setMouth = (value: number) => document.documentElement.style.setProperty("--jm-mouth", value.toFixed(3));
+  // On the live view itself, not the whole page: a variable on <html> changed every frame makes a phone
+  // restyle everything 60 times a second, and that jank starves the audio scheduling.
+  const root = useRef<HTMLDivElement | null>(null);
+  const setMouth = (value: number) => (root.current || document.documentElement).style.setProperty("--jm-mouth", value.toFixed(3));
 
   const fetchVoice = useCallback(
     (text: string) =>
@@ -392,6 +395,40 @@ export function JuelLive({
         },
       } as unknown as HTMLAudioElement;
       let last: AudioBufferSourceNode | null = null;
+      // A jitter buffer: phone networks deliver the stream in bursts, and playing each piece the moment it
+      // lands leaves gaps (stutter) whenever the next one is late. Hold LEAD seconds before the first
+      // sound, play in pieces of at least STEP, and when the stream runs dry wait for REFILL before going on.
+      const RATE = 24000;
+      const LEAD = 0.25;
+      const STEP = 0.1;
+      const REFILL = 0.15;
+      let pending: Int16Array[] = [];
+      let pendingLength = 0;
+      let started = false;
+      const schedule = (final: boolean) => {
+        if (!pendingLength) return;
+        const dry = !started || at < context.currentTime + 0.02;
+        const need = (!started ? LEAD : dry ? REFILL : STEP) * RATE;
+        if (!final && pendingLength < need) return;
+        const buffer = context.createBuffer(1, pendingLength, RATE);
+        const channel = buffer.getChannelData(0);
+        let offset = 0;
+        for (const piece of pending) {
+          for (let i = 0; i < piece.length; i++) channel[offset + i] = piece[i] / 32768;
+          offset += piece.length;
+        }
+        pending = [];
+        pendingLength = 0;
+        const source = context.createBufferSource();
+        source.buffer = buffer;
+        source.connect(outAnalyser.current!);
+        at = Math.max(at, context.currentTime + (dry ? 0.05 : 0.01));
+        source.start(at);
+        at += buffer.duration;
+        sources.push(source);
+        last = source;
+        started = true;
+      };
       try {
         for (;;) {
           const { value, done: ended } = await reader.read();
@@ -408,19 +445,12 @@ export function JuelLive({
             bytes = bytes.slice(0, -1);
           }
           if (!bytes.length) continue;
-          const samples = new Int16Array(bytes.buffer, bytes.byteOffset, bytes.length / 2);
-          const buffer = context.createBuffer(1, samples.length, 24000);
-          const channel = buffer.getChannelData(0);
-          for (let i = 0; i < samples.length; i++) channel[i] = samples[i] / 32768;
-          const source = context.createBufferSource();
-          source.buffer = buffer;
-          source.connect(outAnalyser.current!);
-          at = Math.max(at, context.currentTime + 0.03);
-          source.start(at);
-          at += buffer.duration;
-          sources.push(source);
-          last = source;
+          // Copied out: the stream may reuse its buffer for the next read.
+          pending.push(new Int16Array(bytes.slice().buffer));
+          pendingLength += bytes.length / 2;
+          schedule(false);
         }
+        if (!stopped) schedule(true);
       } catch {}
       if (stopped || gen !== generation.current) return;
       // Done when the last piece ends (or already has, if the stream ran slower than the speech).
@@ -922,7 +952,7 @@ export function JuelLive({
     : { starting: "Starting live mode", listening: muted ? "Unmute to talk" : "Say anything", hearing: "Listening", thinking: "Thinking", speaking: "Tap Juel to cut in", error: "Try again, or type to Juel instead" }[phase];
 
   return (
-    <div className="juel-live" data-phase={phase}>
+    <div className="juel-live" data-phase={phase} ref={root}>
       <div className="juel-live-stage" ref={stage} onClick={phase === "speaking" ? () => bargeIn() : undefined}>
         <div className="juel-live-aura" aria-hidden="true">
           <i />
