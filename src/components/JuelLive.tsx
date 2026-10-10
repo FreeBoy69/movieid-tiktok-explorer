@@ -630,7 +630,10 @@ export function JuelLive({
           quietSince ||= now;
           // A pause ends the recorded utterance. With the recogniser working it is thrown away (its own
           // timer ends the turn); with no words from it, the recording is transcribed.
-          if (speaking && now - quietSince > Math.max(SR ? 1300 : 0, turnPause(transcript.current, gaps.current, true))) {
+          // With words from the recogniser, its own thought-aware timer decides; without any (a phone whose
+          // recogniser hears nothing, or none at all) a short silence sends the recording to be transcribed.
+          const silence = transcript.current ? Math.max(700, turnPause(transcript.current, gaps.current, true)) : 750;
+          if (speaking && now - quietSince > silence) {
             speaking = false;
             if (recorder.current?.state === "recording") {
               discard.current = Boolean(SR && transcript.current);
@@ -655,7 +658,9 @@ export function JuelLive({
         rec.lang = navigator.language || "en-US";
         rec.onresult = (event) => {
           let p = phaseRef.current;
-          if (mutedRef.current || earsOff.current) return;
+          // A recording already on its way to the transcriber is this turn: late words from the recogniser
+          // would only send it twice.
+          if (mutedRef.current || earsOff.current || transcribing.current) return;
           // What's new in this result: his own words coming back are ignored while he talks and just after.
           let latest = "";
           for (let i = event.resultIndex; i < event.results.length; i++) latest += ` ${event.results[i][0].transcript}`;
