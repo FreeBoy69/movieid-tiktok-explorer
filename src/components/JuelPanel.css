@@ -1,14 +1,5 @@
 /* Juel: a floating card down the right of the app, set apart from the header by a gap. Dark by default,
    light with the app. It rises in with GSAP (JuelPanel.tsx). */
-.juel-trigger { display: inline-flex; height: 34px; align-items: center; gap: 6px; padding: 0 12px; border: 1px solid var(--ah-line); border-radius: 999px; background: var(--ah-tile); color: var(--ah-text); font: 600 13px/1 Inter, system-ui, sans-serif; cursor: pointer; transition: background 0.18s ease, border-color 0.18s ease; }
-.juel-trigger svg { color: #f9dc0b; }
-.juel-trigger:hover,
-.juel-trigger.is-on { border-color: color-mix(in srgb, #f9dc0b 55%, transparent); background: color-mix(in srgb, #f9dc0b 12%, var(--ah-tile)); }
-@media (max-width: 760px) {
-  .juel-trigger span { display: none; }
-  .juel-trigger { width: 34px; justify-content: center; padding: 0; }
-}
-
 .juel {
   --j-bg: #121417; --j-panel: #181b1f; --j-raised: #20242a; --j-line: rgb(255 255 255 / 0.09); --j-text: #eceae3; --j-muted: #a3a29b; --j-faint: #75746e; --j-accent: #f9dc0b; --j-accent-text: #f9dc0b; --j-accent-ink: #15130a; --j-danger: #ff8a7a;
   --j-gap: 10px;

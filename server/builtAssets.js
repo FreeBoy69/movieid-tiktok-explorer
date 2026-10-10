@@ -9,6 +9,7 @@
 import fs from "fs";
 import path from "path";
 import crypto from "crypto";
+import zlib from "zlib";
 
 const BLOCK = 512;
 
@@ -47,7 +48,33 @@ export function loadPackedAssets(distDir) {
   return entries;
 }
 
-/** Serve packed files under /assets the way express.static would: immutable caching, ETags, HEAD. */
+// Nothing in front of the app compresses, and the main script alone is ~900 KB; Brotli takes it to about
+// a quarter. Files are compressed the first time they're asked for, then kept with the entry.
+const COMPRESSIBLE = /\.(js|mjs|css|json|svg|txt|map|wasm)$/i;
+
+/** The best encoding this request accepts that's worth sending for the file: "br", "gzip", or "". */
+export function pickEncoding(acceptEncoding, name, size) {
+  if (size < 1024 || !COMPRESSIBLE.test(name)) return "";
+  const accepted = String(acceptEncoding || "").toLowerCase();
+  if (/\bbr\b/.test(accepted)) return "br";
+  if (/\bgzip\b/.test(accepted)) return "gzip";
+  return "";
+}
+
+/** The entry's bytes in that encoding (made once, then kept). */
+export function encodedBytes(entry, encoding) {
+  if (!encoding) return entry.bytes;
+  entry.encoded = entry.encoded || {};
+  if (!entry.encoded[encoding]) {
+    entry.encoded[encoding] = encoding === "br"
+      ? zlib.brotliCompressSync(entry.bytes, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 9, [zlib.constants.BROTLI_PARAM_SIZE_HINT]: entry.bytes.length } })
+      : zlib.gzipSync(entry.bytes, { level: 9 });
+  }
+  return entry.encoded[encoding];
+}
+
+/** Serve packed files under /assets the way express.static would: immutable caching, ETags, HEAD,
+ *  and Brotli or gzip when the browser takes it. */
 export function packedAssetsMiddleware(entries) {
   return (req, res, next) => {
     if (req.method !== "GET" && req.method !== "HEAD") return next();
@@ -55,11 +82,40 @@ export function packedAssetsMiddleware(entries) {
     const entry = entries.get(name);
     if (!entry) return next();
     res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
-    res.setHeader("ETag", entry.etag);
+    res.setHeader("Vary", "Accept-Encoding");
     res.type(path.extname(name));
-    if (req.headers["if-none-match"] === entry.etag) return res.status(304).end();
-    res.setHeader("Content-Length", entry.bytes.length);
+    const encoding = pickEncoding(req.headers["accept-encoding"], name, entry.bytes.length);
+    // Each encoding is a different body, so it gets its own validator.
+    const etag = encoding ? `${entry.etag.slice(0, -1)}-${encoding}"` : entry.etag;
+    res.setHeader("ETag", etag);
+    if (req.headers["if-none-match"] === etag) return res.status(304).end();
+    const body = encodedBytes(entry, encoding);
+    if (encoding) res.setHeader("Content-Encoding", encoding);
+    res.setHeader("Content-Length", body.length);
     if (req.method === "HEAD") return res.end();
-    return res.end(entry.bytes);
+    return res.end(body);
+  };
+}
+
+/** Compresses large JSON answers (niche searches, galleries, reports) for browsers that take it. Streams
+ *  and files are untouched: only `res.json` bodies of 8 KB or more. */
+export function compressJson() {
+  return (req, res, next) => {
+    const json = res.json.bind(res);
+    res.json = (body) => {
+      const accepted = req.headers["accept-encoding"];
+      const text = JSON.stringify(body);
+      const encoding = text === undefined || res.headersSent ? "" : pickEncoding(accepted, "body.json", Buffer.byteLength(text) >= 8192 ? 8192 : 0);
+      if (!encoding) return json(body);
+      const out = encoding === "br"
+        ? zlib.brotliCompressSync(text, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 5 } })
+        : zlib.gzipSync(text, { level: 6 });
+      if (!res.get("Content-Type")) res.setHeader("Content-Type", "application/json; charset=utf-8");
+      res.setHeader("Content-Encoding", encoding);
+      res.setHeader("Vary", "Accept-Encoding");
+      res.setHeader("Content-Length", out.length);
+      return res.end(req.method === "HEAD" ? undefined : out);
+    };
+    next();
   };
 }

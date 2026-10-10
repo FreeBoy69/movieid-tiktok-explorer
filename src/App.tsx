@@ -1,4 +1,5 @@
 import {
+  lazy,
   Suspense,
   useState,
   useCallback,
@@ -7,8 +8,6 @@ import {
   useRef,
   FormEvent,
 } from "react";
-import { useDropzone } from "react-dropzone";
-import { motion, AnimatePresence } from "motion/react";
 import { PageView } from "./components/PageView";
 import {
   Upload,
@@ -20,18 +19,18 @@ import {
 import { identifyMovie } from "./services/gemini";
 import { AuthSessionPayload, ExtractionState, MovieResult } from "./types";
 import { cn } from "./lib/utils";
-import { PickerDialog } from "./components/SourcePicker";
+const PickerDialog = lazy(() => import("./components/SourcePicker").then((m) => ({ default: m.PickerDialog })));
 import { PlatformGrid, socialPlatform } from "./components/SocialPlatforms";
 import { useChannels } from "./components/useChannels";
 import { toast } from "./utils/toast";
 import type { MainTab as MovieAnalysisTab } from "./components/MovieAnalysisTabs";
-import { handOffRemakeUpload } from "./components/AgentRemake";
+import { handOffRemakeUpload } from "./utils/agentRemake.js";
 import { GuestToolView, SignInDialog } from "./components/GuestToolView";
 import { AppHeader } from "./components/AppHeader";
-import { SiteNotice } from "./components/AccountServices";
+// Billing and account dialogs load just after the page, not before it.
+const SiteNotice = lazy(() => import("./components/AccountServices").then((m) => ({ default: m.SiteNotice })));
 import type { NavTarget } from "./utils/appNavigation";
 import { writePendingTemplate } from "./utils/promptTemplates";
-import { findShortfilmTemplate } from "./utils/shortfilmTemplates";
 import { navEntryFor } from "./utils/appNavigation";
 import { toolPageCopy } from "./components/guestToolCopy";
 import { BrandLoader } from "./components/BrandLoader";
@@ -441,8 +440,10 @@ function WorkspaceApp() {
       }
       // A template shortcut (Stickman Explainer) opens Create Video with that template preselected.
       if (target.shotTemplateId) {
-        const template = findShortfilmTemplate(target.shotTemplateId);
-        if (template) writePendingTemplate({ target: "create", title: template.name, prompt: "", aspect: template.aspect, shotTemplateId: template.id });
+        void import("./utils/shortfilmTemplates").then(({ findShortfilmTemplate }) => {
+          const template = findShortfilmTemplate(target.shotTemplateId!);
+          if (template) writePendingTemplate({ target: "create", title: template.name, prompt: "", aspect: template.aspect, shotTemplateId: template.id });
+        });
       }
       switchView(target.view as View);
     },
@@ -529,13 +530,47 @@ function WorkspaceApp() {
     [handleMovieIdentification],
   );
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    onDrop,
-    accept: { "video/*": [] },
-    multiple: false,
-    disabled: movieState.status === "processing",
-  } as any);
-  const dropzoneRootProps = getRootProps() as any;
+  // The drop area: click or Enter to browse, or drop a video on it (the browser's own drag and drop).
+  const [isDragActive, setDragActive] = useState(false);
+  const movieFileInput = useRef<HTMLInputElement>(null);
+  const movieBusy = movieState.status === "processing";
+  const pickVideo = (files: FileList | null) => {
+    const file = [...(files || [])].find((f) => f.type.startsWith("video/") || /\.(mp4|mov|webm|mkv|m4v)$/i.test(f.name));
+    if (file) void onDrop([file]);
+    else if (files?.length) toast.error("That isn't a video file. Try an MP4, MOV, or WebM.");
+  };
+  const dropzoneRootProps = {
+    role: "button",
+    tabIndex: 0,
+    "aria-label": "Choose or drop a video file",
+    onClick: () => !movieBusy && movieFileInput.current?.click(),
+    onKeyDown: (event: React.KeyboardEvent) => {
+      if ((event.key === "Enter" || event.key === " ") && !movieBusy) {
+        event.preventDefault();
+        movieFileInput.current?.click();
+      }
+    },
+    onDragOver: (event: React.DragEvent) => {
+      event.preventDefault();
+      if (!movieBusy) setDragActive(true);
+    },
+    onDragLeave: () => setDragActive(false),
+    onDrop: (event: React.DragEvent) => {
+      event.preventDefault();
+      setDragActive(false);
+      if (!movieBusy) pickVideo(event.dataTransfer.files);
+    },
+  };
+  const getInputProps = () => ({
+    ref: movieFileInput,
+    type: "file",
+    accept: "video/*",
+    hidden: true,
+    onChange: (event: React.ChangeEvent<HTMLInputElement>) => {
+      pickVideo(event.target.files);
+      event.target.value = "";
+    },
+  });
 
   // Signed out: real pages, but any action opens sign-in (src/utils/guestGuard.ts).
   const signedOut = !authLoading && !auth?.user;
@@ -563,7 +598,7 @@ function WorkspaceApp() {
 
   return (
     <div ref={workspaceRootRef} className={cn("relative flex h-dvh min-w-0 flex-col overflow-hidden", isDarkMode ? "bg-[var(--ui-bg)] text-white" : "bg-[var(--ui-bg)] text-[var(--ui-text)]")} data-build="compile-audio-20260502">
-      {!focusMode ? <SiteNotice theme={channelTheme} /> : null}
+      {!focusMode ? <Suspense fallback={null}><SiteNotice theme={channelTheme} /></Suspense> : null}
       {!focusMode ? <AppHeader
         view={activeView}
         studioTab={routeLink.view === "studio" ? routeLink.studioTab : undefined}
@@ -611,7 +646,7 @@ function WorkspaceApp() {
         <div className={cn("min-w-0", isEdgeToEdgeView ? cn("h-full w-full flex-1 overflow-hidden flex flex-col", isInsetEdgeView && "mx-auto max-w-[1440px]") : "mx-auto", !isEdgeToEdgeView && (["tools", "feed", "channels", "publish", "automation", "compile", "niches", "youtube"].includes(activeView) ? "max-w-[1280px]" : "max-w-[1000px]"))}>
           <PageBoundary theme={channelTheme} resetKey={activeView}>
           <Suspense fallback={<PageLoading theme={channelTheme} />}>
-          <AnimatePresence mode="wait">
+          <>
             {activeView === "docs" ? (
               // Public: the docs read the same signed in or not.
               <PageView key="docs-view" revealKey={routeLink.view === "docs" ? routeLink.docsPage || "home" : ""} className="h-full min-h-0 overflow-hidden">
@@ -708,8 +743,7 @@ function WorkspaceApp() {
                         </div>
                       </form>
 
-                      <motion.div
-                        layout
+                      <div
                         {...dropzoneRootProps}
                         className={cn(
                           "relative grid min-h-64 cursor-pointer place-items-center rounded-xl border border-dashed p-8 text-center transition",
@@ -729,19 +763,17 @@ function WorkspaceApp() {
                         {movieState.status === "processing" && (
                           <div className="absolute bottom-0 left-0 right-0 p-4">
                             <div className="h-1 w-full bg-[var(--ui-accent)]/10 rounded-full overflow-hidden">
-                              <motion.div className="h-full bg-[var(--ui-accent)]" initial={{ width: 0 }} animate={{ width: `${movieState.progress}%` }} />
+                              <div className="h-full bg-[var(--ui-accent)] transition-[width] duration-300" style={{ width: `${movieState.progress}%` }} />
                             </div>
                           </div>
                         )}
-                      </motion.div>
+                      </div>
                     </div>
                   )}
 
-                  <AnimatePresence mode="wait">
-                    {movieState.status === "done" && movieState.result ? (
-                      <ResultDisplay key="movie-result" result={movieState.result} onReset={() => setMovieState({ status: "idle", progress: 0, message: "" })} />
-                    ) : null}
-                  </AnimatePresence>
+                  {movieState.status === "done" && movieState.result ? (
+                    <ResultDisplay key="movie-result" result={movieState.result} onReset={() => setMovieState({ status: "idle", progress: 0, message: "" })} />
+                  ) : null}
                 </div>
               </PageView>
             ) : activeView === "tiktok" ? (
@@ -845,7 +877,7 @@ function WorkspaceApp() {
                 <div className="p-8 text-center text-[var(--ui-text)]/40">View not found</div>
               </PageView>
             )}
-          </AnimatePresence>
+          </>
           </Suspense>
           </PageBoundary>
         </div>
@@ -871,6 +903,7 @@ function AccountSwitcherModal({ auth, open, onClose, onRefresh, darkMode }: { au
 
   // The same grid pop-up every channel choice in the app uses.
   return (
+    <Suspense fallback={null}>
     <PickerDialog
       open={open}
       onClose={onClose}
@@ -914,6 +947,7 @@ function AccountSwitcherModal({ auth, open, onClose, onRefresh, darkMode }: { au
         </>
       }
     />
+    </Suspense>
   );
 }
 
@@ -921,7 +955,7 @@ function ResultDisplay({ result, onReset }: { key?: string; result: MovieResult;
   const [activeTab, setActiveTab] = useState<MovieAnalysisTab>("movie");
 
   return (
-    <motion.section initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="workspace-floating-shell relative flex h-full min-h-0 flex-col overflow-hidden bg-[var(--ui-panel)] text-[var(--ui-text)]">
+    <section className="ui-fade-in workspace-floating-shell relative flex h-full min-h-0 flex-col overflow-hidden bg-[var(--ui-panel)] text-[var(--ui-text)]">
       <header className="workspace-floating-header flex min-h-14 flex-col gap-2 px-4 py-2 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex min-w-0 flex-1 flex-col gap-2 lg:flex-row lg:items-center">
           <div className="flex min-w-0 shrink-0 items-center gap-3">
@@ -956,6 +990,6 @@ function ResultDisplay({ result, onReset }: { key?: string; result: MovieResult;
           <MovieAnalysisTabs result={result} hideTabs activeTab={activeTab} onTabChange={setActiveTab} />
         </div>
       </div>
-    </motion.section>
+    </section>
   );
 }

@@ -75,7 +75,7 @@ import { createAdminConsole } from "./server/adminConsole.js";
 import { hostedVoiceProfile, hostedVoiceProfiles, isHostedVoice, storeHostedAudio, synthesizeHostedVoice } from "./server/hostedVoices.js";
 import { canUseVoice, inFlightVoiceGeneration, reusableVoiceGeneration } from "./server/voiceOwners.js";
 import { registerNativeApp } from "./server/nativeApp.js";
-import { loadPackedAssets, packedAssetsMiddleware } from "./server/builtAssets.js";
+import { compressJson, loadPackedAssets, packedAssetsMiddleware } from "./server/builtAssets.js";
 import { registerVoicebox } from "./server/voicebox.js";
 import { registerDownloader } from "./server/downloader.js";
 import { registerVoiceStudio } from "./server/voiceStudio.js";
@@ -21107,6 +21107,8 @@ async function cachedReachDoctor() {
 }
 async function startServer() {
     const app = express();
+    // Large JSON answers go out Brotli/gzip-compressed (nothing in front of the app compresses).
+    app.use(compressJson());
     // The hosting edge sends Permissions-Policy: camera=(), microphone=(), which
     // blocks voice input (agent chat, voice cloning) and recording even after the
     // user allows the microphone. AutoYT's own pages may use both.

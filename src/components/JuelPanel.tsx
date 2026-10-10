@@ -128,34 +128,6 @@ const DEFAULT_STARTERS = [
   { label: "Make a recap", prompt: "Make a movie recap from a film link I'll paste" },
 ];
 
-export function JuelButton() {
-  const [open, setOpen] = useState(false);
-  // Kept mounted while it animates away, so closing sinks it instead of cutting it.
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => {
-    if (open) setMounted(true);
-  }, [open]);
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "j") {
-        event.preventDefault();
-        setOpen((o) => !o);
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
-  return (
-    <>
-      <button type="button" className={`juel-trigger${open ? " is-on" : ""}`} onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-label="Ask Juel (⌘J)" title="Ask Juel (⌘J)">
-        <Sparkles size={15} aria-hidden="true" />
-        <span>Juel</span>
-      </button>
-      {mounted ? createPortal(<JuelPanel onClose={() => setOpen(false)} leaving={!open} onLeft={() => setMounted(false)} />, document.body) : null}
-    </>
-  );
-}
-
 /** Juel's conversation. The header panel uses it; a page can embed it in place of its own chat, where it
  *  fills its container and has no close button. `headStart` goes at the head's start (a page's collapse). */
 export function JuelPanel({ onClose, embedded = false, headStart, leaving = false, onLeft }: { onClose?: () => void; embedded?: boolean; headStart?: ReactNode; leaving?: boolean; onLeft?: () => void }) {

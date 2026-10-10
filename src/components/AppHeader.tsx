@@ -1,10 +1,16 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Activity, ArrowRight, LayoutGrid, ChevronDown, ChevronRight, LifeBuoy, Loader2, LogOut, Menu, Moon, Search, Sun, Trash2, Users } from "lucide-react";
-import { BillingOnboarding, BillingReturnVerifier, DeleteAccountDialog, SupportDialog, TokenSummary } from "./AccountServices";
+// Billing and account pieces load just after the header, so the first page doesn't wait for them.
+const accountServices = () => import("./AccountServices");
+const BillingOnboarding = lazy(() => accountServices().then((m) => ({ default: m.BillingOnboarding })));
+const BillingReturnVerifier = lazy(() => accountServices().then((m) => ({ default: m.BillingReturnVerifier })));
+const DeleteAccountDialog = lazy(() => accountServices().then((m) => ({ default: m.DeleteAccountDialog })));
+const SupportDialog = lazy(() => accountServices().then((m) => ({ default: m.SupportDialog })));
+const TokenSummary = lazy(() => accountServices().then((m) => ({ default: m.TokenSummary })));
 import { ALL_NAV_ENTRIES, CREATE_HOME_ENTRY, isCurrentEntry, MENU_ONLY_NAV_IDS, PRIMARY_NAV_CHILDREN, PRIMARY_NAV_ENTRIES, TOOL_NAV_GROUPS, type NavEntry, type NavTarget } from "../utils/appNavigation";
 import type { MainView, StudioTab, ToolId } from "../utils/tiktokRoute";
-import { JuelButton } from "./JuelPanel";
+import { JuelButton } from "./JuelButton";
 import "./AppHeader.css";
 import { Segmented } from "./ui/controls";
 
@@ -278,7 +284,7 @@ export function AppHeader({
                   </span>
                   <ChevronRight size={16} className="ah-account-head-go" aria-hidden="true" />
                 </button>
-                <TokenSummary theme={theme} email={account.email} />
+                <Suspense fallback={null}><TokenSummary theme={theme} email={account.email} /></Suspense>
                 <button type="button" role="menuitem" onClick={(event) => { onOpenChannels(event.currentTarget.querySelector("svg")?.getBoundingClientRect() || event.currentTarget.getBoundingClientRect()); setAccountOpen(false); }}>
                   <Users size={16} />
                   <span>
@@ -300,8 +306,8 @@ export function AppHeader({
                 </button>
               </div>
             )}
-            <SupportDialog open={supportOpen} onClose={closeSupport} theme={theme} />
-            <DeleteAccountDialog open={deleteOpen} onClose={closeDelete} theme={theme} />
+            {supportOpen ? <Suspense fallback={null}><SupportDialog open={supportOpen} onClose={closeSupport} theme={theme} /></Suspense> : null}
+            {deleteOpen ? <Suspense fallback={null}><DeleteAccountDialog open={deleteOpen} onClose={closeDelete} theme={theme} /></Suspense> : null}
           </div> : <button type="button" className="ah-get-started" onClick={onSignIn}>Get started <ArrowRight size={15} aria-hidden="true" /></button>}
           <button type="button" className="ah-icon ah-menu" onClick={() => setMobileOpen(true)} aria-label="Open menu" aria-expanded={mobileOpen}>
             <Menu size={18} />
@@ -309,7 +315,7 @@ export function AppHeader({
         </div>
       </header>
 
-      {signedIn ? <><BillingReturnVerifier email={account.email} /><BillingOnboarding theme={theme} email={account.email} /></> : null}
+      {signedIn ? <Suspense fallback={null}><BillingReturnVerifier email={account.email} /><BillingOnboarding theme={theme} email={account.email} /></Suspense> : null}
       {searchOpen && <QuickSearch theme={theme} onClose={() => setSearchOpen(false)} onPick={go} />}
       {mobileOpen && <MobileMenu theme={theme} view={view} studioTab={studioTab} toolId={toolId} account={account} signedIn={signedIn} onSignIn={() => { setMobileOpen(false); onSignIn(); }} onLogout={() => { setMobileOpen(false); onLogout(); }} onSearch={() => { setMobileOpen(false); setSearchOpen(true); }} onClose={() => setMobileOpen(false)} onPick={go} onThemeChange={onThemeChange} />}
     </>

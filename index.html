@@ -17,9 +17,29 @@
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/site.webmanifest" />
+    <!-- Fonts start with the page (not after the app's stylesheet), and text shows at once in a fallback. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Antonio:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" media="print" onload="this.media='all'" />
+    <script>
+      // The saved theme before anything paints, so the first frame is the right colour.
+      try { document.documentElement.dataset.theme = localStorage.getItem("autoyt-theme") === "light" ? "light" : "dark"; } catch (e) { document.documentElement.dataset.theme = "dark"; }
+    </script>
+    <style>
+      /* What a phone shows while the app's code downloads: the page colour, the header strip, and the
+         logo breathing. React replaces it on its first render. */
+      html, body { margin: 0; background: #0e1012; }
+      html[data-theme="light"], html[data-theme="light"] body { background: #efede8; }
+      .boot { position: fixed; inset: 0; display: grid; place-items: center; }
+      .boot::before { content: ""; position: absolute; inset: 0 0 auto; height: 56px; border-bottom: 1px solid rgb(255 255 255 / 0.06); }
+      html[data-theme="light"] .boot::before { border-bottom-color: rgb(26 26 23 / 0.08); }
+      .boot img { width: 44px; height: 44px; border-radius: 12px; animation: boot-breathe 1.6s ease-in-out infinite; }
+      @keyframes boot-breathe { 50% { opacity: 0.45; transform: scale(0.94); } }
+      @media (prefers-reduced-motion: reduce) { .boot img { animation: none; } }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root"><div class="boot" aria-busy="true" aria-label="Loading AutoYT"><img src="/favicon.svg" alt="" /></div></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

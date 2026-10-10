@@ -3,14 +3,14 @@ import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import {Toaster} from './components/Toaster';
 import {DialogHost} from './components/ui/Dialog';
-import {installUsageNotices} from './components/AccountServices';
 import {installInputModality} from './utils/inputModality';
 import {installNativeShell, nativeAppReady} from './native/bootstrap';
 import {installChunkRecovery} from './utils/lazyPage';
 import './index.css';
 
 document.title = 'AutoYT';
-installUsageNotices();
+// Credit and plan notices for paid calls; installed straight after the first paint, not before it.
+void import('./components/AccountServices').then((m) => m.installUsageNotices());
 // Focus rings appear only during keyboard navigation (see index.css).
 installInputModality();
 // No-op on the web; inside the iOS/Android apps it wires up native sign-in, downloads and system bars.

@@ -5,15 +5,7 @@
 // Body Swap, Audio Studio).
 import { useEffect, useState } from "react";
 import { VoiceoverStudio } from "./VoiceoverStudio";
-
-// Old /voiceover links and background-job shortcuts hand the video over here.
-export const REMAKE_HANDOFF_KEY = "autoyt-remake-upload";
-export function handOffRemakeUpload(agentId: string | undefined, uploadId: string | undefined) {
-  if (!agentId || !uploadId) return;
-  try {
-    window.sessionStorage.setItem(REMAKE_HANDOFF_KEY, JSON.stringify({ agentId, uploadId, at: Date.now() }));
-  } catch {}
-}
+import { REMAKE_HANDOFF_KEY } from "../utils/agentRemake.js";
 function takeHandoff(agentId: string): string {
   try {
     const raw = window.sessionStorage.getItem(REMAKE_HANDOFF_KEY);

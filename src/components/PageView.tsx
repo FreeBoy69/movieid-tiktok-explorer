@@ -1,15 +1,13 @@
 // Every page enters and leaves the same way, so moving around AutoYT feels like one product.
 //
 // Entry: the page rises 14px out of a soft blur, and its main blocks (title, box, tabs, the first
-// cards) follow in a short cascade. Exit: a quick fade upward, so the next page isn't kept waiting.
-// GSAP runs both; AnimatePresence decides when a page leaves (usePresence), and the exit tells it
-// when it's gone. People who ask for less motion get a plain fade.
+// cards) follow in a short cascade, all with GSAP. The old page goes at once, so the next one never
+// waits for an exit (and the shell doesn't ship a second animation library). People who ask for less
+// motion get a plain fade.
 import { type ReactNode, useEffect, useLayoutEffect, useRef } from "react";
-import { usePresence } from "motion/react";
 import gsap from "gsap";
 
 const ENTER = { duration: 0.6, ease: "expo.out" };
-const EXIT = { duration: 0.2, ease: "power2.in" };
 const CASCADE = { y: 16, stagger: 0.055, duration: 0.7, ease: "expo.out", max: 8 };
 
 const reducedMotion = () => typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
@@ -46,7 +44,6 @@ function cascade(container: HTMLElement) {
  *  new without leaving (a studio's tab). `cascade={false}` for editors, whose parts manage themselves. */
 export function PageView({ children, className, revealKey, cascade: withCascade = true }: { children: ReactNode; className?: string; revealKey?: string; cascade?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
-  const [present, safeToRemove] = usePresence();
   const first = useRef(true);
 
   // Entry, before the first paint so nothing flashes in at full strength.
@@ -99,21 +96,6 @@ export function PageView({ children, className, revealKey, cascade: withCascade 
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [revealKey]);
-
-  // Exit: AnimatePresence keeps the page until this says it's gone.
-  useEffect(() => {
-    if (present) return;
-    const el = ref.current;
-    if (!el) {
-      safeToRemove?.();
-      return;
-    }
-    gsap.killTweensOf(el);
-    const out = reducedMotion()
-      ? gsap.to(el, { opacity: 0, duration: 0.12, onComplete: () => safeToRemove?.() })
-      : gsap.to(el, { opacity: 0, y: -8, filter: "blur(4px)", ...EXIT, onComplete: () => safeToRemove?.() });
-    return () => void out.kill();
-  }, [present, safeToRemove]);
 
   return (
     <div ref={ref} className={className} data-page-view="">

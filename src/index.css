@@ -1,15 +1,10 @@
-@import url('https://fonts.googleapis.com/css2?family=Antonio:wght@400;500;600;700&family=Bricolage+Grotesque:opsz,wdth,wght@10..48,75..100,200..800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+/* Web fonts load from index.html (preconnected, so they start with the page instead of after this file). */
 @import "tailwindcss";
 
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-serif: "Antonio", ui-sans-serif, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
-}
-
-.landing-display {
-  font-family: "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
-  letter-spacing: 0;
 }
 
 /* Shared UI surfaces (the Vibe Edit palette): warm paper in light, near-black in
@@ -687,3 +682,8 @@ button.plib-card-open,
   color: rgb(26 26 26 / 0.55);
 }
 .site-foot[data-theme="light"] a:hover { color: #1a1a1a; }
+
+/* A quick fade for panels that appear in place (the movie result). */
+.ui-fade-in { animation: ui-fade-in 0.25s ease-out both; }
+@keyframes ui-fade-in { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .ui-fade-in { animation: none; } }

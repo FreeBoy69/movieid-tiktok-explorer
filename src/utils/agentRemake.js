@@ -113,3 +113,14 @@ export function remakeJobBodies(remake, { seedJobId = "", narrationStyle = null,
     : null;
   return { voiceover, avatar };
 }
+
+// Old /voiceover links and background-job shortcuts hand a video to an agent's Remake tab. Kept here,
+// apart from the Remake tab itself, so the app shell can hand off without loading the whole studio.
+export const REMAKE_HANDOFF_KEY = "autoyt-remake-upload";
+/** @param {string | undefined} agentId @param {string | undefined} uploadId */
+export function handOffRemakeUpload(agentId, uploadId) {
+  if (!agentId || !uploadId) return;
+  try {
+    window.sessionStorage.setItem(REMAKE_HANDOFF_KEY, JSON.stringify({ agentId, uploadId, at: Date.now() }));
+  } catch {}
+}
