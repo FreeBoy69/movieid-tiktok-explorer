@@ -36,16 +36,28 @@ export function readPack(buf) {
   return files;
 }
 
-/** The packed assets next to the built page, or null when the scripts are plain files (local builds). */
+/** The packed assets next to the built page, or null when the scripts are plain files (local builds).
+ *  Files under previous/ are the build before this one (the bundle script fetches them from the live
+ *  app): a tab opened before the deploy still asks for them by name, so they're served under their own
+ *  names too, behind this build's. They're left out of the list the next build fetches, so one
+ *  generation is kept, not every one. */
 export function loadPackedAssets(distDir) {
   const file = path.join(distDir, "assets.pack");
   if (!fs.existsSync(file)) return null;
   const files = readPack(fs.readFileSync(file));
   const entries = new Map();
+  const entry = (bytes, previous) => ({ bytes, previous, etag: `"${crypto.createHash("sha1").update(bytes).digest("base64url").slice(0, 16)}"` });
+  for (const [name, bytes] of files) if (!name.startsWith("previous/")) entries.set(name, entry(bytes, false));
   for (const [name, bytes] of files) {
-    entries.set(name, { bytes, etag: `"${crypto.createHash("sha1").update(bytes).digest("base64url").slice(0, 16)}"` });
+    const bare = name.replace(/^previous\//, "");
+    if (name !== bare && !entries.has(bare)) entries.set(bare, entry(bytes, true));
   }
   return entries;
+}
+
+/** The names of this build's own files, one per line: what the next build fetches to keep. */
+export function currentAssetList(entries) {
+  return [...entries].filter(([, e]) => !e.previous).map(([name]) => name).sort().join("\n");
 }
 
 // Nothing in front of the app compresses, and the main script alone is ~900 KB; Brotli takes it to about
@@ -79,6 +91,10 @@ export function packedAssetsMiddleware(entries) {
   return (req, res, next) => {
     if (req.method !== "GET" && req.method !== "HEAD") return next();
     const name = decodeURIComponent(req.path.replace(/^\/+/, ""));
+    if (name === ".list") {
+      res.setHeader("Cache-Control", "no-store");
+      return res.type("text/plain").send(currentAssetList(entries));
+    }
     const entry = entries.get(name);
     if (!entry) return next();
     res.setHeader("Cache-Control", "public, max-age=31536000, immutable");

@@ -24,7 +24,6 @@ import {
   Heart,
   Layers3,
   LayoutDashboard,
-  MessagesSquare,
   History,
   FileChartColumn,
   LayoutList,
@@ -86,7 +85,8 @@ import { openBackgroundProcessCenter } from "./BackgroundProcessCenter";
 import { agentUploadMedia, buildAgentAnalyticsViz, readAgentUploadMetric } from "../utils/agentAnalyticsViz";
 import { PerformanceReportView, type AgentPerformanceReport } from "./AgentStructuredContent";
 import { MovieAnalysisTabs } from "./MovieAnalysisTabs";
-import { JuelDock, JuelPanel, onJuelChange, provideJuelContext, SideNav, SideNavItem, useSideOpen } from "./JuelPanel";
+import { openJuel } from "./JuelButton";
+import { JuelDock, onJuelChange, provideJuelContext, SideNav, SideNavItem, useSideOpen } from "./JuelPanel";
 import { SourcePicker, type SourceOption } from "./SourcePicker";
 import { SourcePoolUsage } from "./SourcePoolUsage";
 import { scheduleHourFromUtcLabel } from "../utils/automationDecisionPolicy.js";
@@ -154,7 +154,7 @@ const DEFAULT_SETTINGS = {
 };
 
 export type AutomationTab = "chat" | "overview" | "analytics" | "report" | "setup" | "voice" | "compile" | "uploads" | "runs";
-const JUEL_AGENT_TABS: AutomationTab[] = ["overview", "analytics", "report", "setup", "voice", "compile", "uploads", "runs", "chat"];
+const JUEL_AGENT_TABS: AutomationTab[] = ["overview", "analytics", "report", "setup", "voice", "compile", "uploads", "runs"];
 type SetupSubTab = "basics" | "source" | "schedule" | "learning" | "comments" | "safety";
 type AgentRunOptions = { stayInChat?: boolean; throwOnError?: boolean };
 
@@ -188,7 +188,6 @@ interface YouTubeMonetizationSnapshot {
 // report and the run log too, and Overview shows the latest runs.
 const TABS: Array<{ id: AutomationTab; label: string; icon: ReactNode }> = [
   { id: "overview", label: "Overview", icon: <LayoutList className="h-4 w-4" /> },
-  { id: "chat", label: "Chat", icon: <MessageSquare className="h-4 w-4" /> },
   { id: "uploads", label: "Uploads", icon: <Table2 className="h-4 w-4" /> },
   { id: "analytics", label: "Analytics", icon: <BarChart3 className="h-4 w-4" /> },
   { id: "setup", label: "Setup", icon: <Settings2 className="h-4 w-4" /> },
@@ -468,7 +467,13 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
   const [agents, setAgents] = useState<AutomationAgent[]>([]);
   const [routeAgent, setRouteAgent] = useState<AutomationAgent | null>(null);
   const [selectedId, setSelectedId] = useState("");
-  const [activeTab, setActiveTab] = useState<AutomationTab>(initialTab || "overview");
+  const [activeTab, setActiveTab] = useState<AutomationTab>(initialTab && initialTab !== "chat" ? initialTab : "overview");
+  // An agent's chat is Juel himself, in his own panel with this agent as context (see provideJuelContext):
+  // an old /agent/<slug>/chat link opens that panel over the overview.
+  useEffect(() => {
+    if (initialTab === "chat") openJuel();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [setupSubTab, setSetupSubTab] = useState<SetupSubTab>("basics");
   const [creatingNew, setCreatingNew] = useState(initialSlug === "new");
   const [createStep, setCreateStep] = useState(0);
@@ -538,6 +543,7 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
     || accounts[0]
     || null, [accounts, auth.activeAccount, form.youtubeAccountId, selectedAgent?.youtubeAccountId]);
   const selectAgentTab = useCallback((tab: AutomationTab) => {
+    if (tab === "chat") return openJuel();
     setActiveTab(tab);
     const currentAgent = selectedAgent || routeAgent || agents.find((item) => item.id === selectedId) || null;
     const slug = currentAgent?.slug || currentAgent?.id || (initialSlug && initialSlug !== "new" ? initialSlug : "");
@@ -1668,7 +1674,6 @@ function AgentHero({ agent, agents, compact: isCompact = false, tab, tabCounts, 
 // The agent's sections in its sidebar: the everyday ones, then the occasional tools.
 const SIDE_SECTIONS: Array<{ id: AutomationTab; label: string; icon: ReactNode }> = [
   { id: "overview", label: "Overview", icon: <LayoutDashboard size={18} strokeWidth={1.75} /> },
-  { id: "chat", label: "Chat", icon: <MessagesSquare size={18} strokeWidth={1.75} /> },
   { id: "uploads", label: "Uploads", icon: <Clapperboard size={18} strokeWidth={1.75} /> },
   { id: "analytics", label: "Analytics", icon: <BarChart3 size={18} strokeWidth={1.75} /> },
   { id: "setup", label: "Setup", icon: <Settings2 size={18} strokeWidth={1.75} /> },
@@ -1912,30 +1917,18 @@ function ExpandedAgentCard({
         </div>
       ) : null}
       <div className="ag-shell">
-      {!isDraft && agent && tab !== "chat" ? (
+      {!isDraft && agent ? (
         <SideNav open={sideOpen} onToggle={toggleSide} label="Agent" head={<AgentChannelSwitcher agents={agents} agent={agent} onSelect={onSelectAgent} theme={theme} />} rail={<AgentAvatar agent={agent} />}>
           <AgentNavRows tab={tab} counts={tabCounts} onTab={onSetActiveTab} />
         </SideNav>
       ) : null}
       <div className="ag-main">
-      {!isDraft && agent && tab === "chat" ? (
-        <AgentHero agent={agent} agents={agents} compact tab={tab} tabCounts={tabCounts} onTab={onSetActiveTab} onSelectAgent={onSelectAgent} theme={theme}
-          active={agentActive} statusBusy={statusBusy} locked={saving || !!deleting} onToggleStatus={() => void onSetStatus(agent.id, agentActive ? "paused" : "active")}
-          running={agentRunning} stopping={agentStopping} onRun={() => void onRun(agent.id)} onStop={() => void onStop(agent.id)}
-          onCreateAgent={onCreateAgent} onDelete={() => void onDelete(agent.id)} deleting={!!deleting} onRefresh={onRefreshAgent} />
-      ) : null}
-      <div data-agent-scroll className={cn("relative min-h-0 flex-1", tab === "chat" ? "flex overflow-hidden" : isDraft ? "overflow-y-auto p-4 pb-24 md:p-6 md:pb-28" : "ag-scroll overflow-y-auto pb-24 md:pb-28")}>
-        {!isDraft && agent && tab !== "chat" ? (
+      <div data-agent-scroll className={cn("relative min-h-0 flex-1", isDraft ? "overflow-y-auto p-4 pb-24 md:p-6 md:pb-28" : "ag-scroll overflow-y-auto pb-24 md:pb-28")}>
+        {!isDraft && agent ? (
           <AgentHero agent={agent} agents={agents} tab={tab} tabCounts={tabCounts} onTab={onSetActiveTab} onSelectAgent={onSelectAgent} theme={theme}
             active={agentActive} statusBusy={statusBusy} locked={saving || !!deleting} onToggleStatus={() => void onSetStatus(agent.id, agentActive ? "paused" : "active")}
             running={agentRunning} stopping={agentStopping} onRun={() => void onRun(agent.id)} onStop={() => void onStop(agent.id)}
             onCreateAgent={onCreateAgent} onDelete={() => void onDelete(agent.id)} deleting={!!deleting} onRefresh={onRefreshAgent} />
-        ) : null}
-        {tab === "chat" ? (
-          // The agent's chat is Juel: it consults this agent's own operator for anything about it.
-          <div className="agent-juel">
-            <JuelPanel embedded sidebar sideHead={agent ? <AgentChannelSwitcher agents={agents} agent={agent} onSelect={onSelectAgent} theme={theme} /> : undefined} sideRail={agent ? <AgentAvatar agent={agent} /> : undefined} sideNav={<AgentNavRows tab={tab} counts={tabCounts} onTab={onSetActiveTab} />} />
-          </div>
         ) : null}
         {tab === "overview" ? (
           <OverviewPanel
@@ -2046,10 +2039,10 @@ function ExpandedAgentCard({
         ) : null}
         {tab === "runs" ? <RunsPanel runs={runs} theme={theme} /> : null}
       </div>
-      {!isDraft && tab !== "chat" ? (
+      {!isDraft ? (
         <div className="agent-chat-global-dock pointer-events-none absolute inset-x-0 bottom-0 z-20 px-3 pb-3 pt-2 md:px-6 md:pb-4">
           <div className="pointer-events-auto mx-auto w-full max-w-4xl">
-            <JuelDock onOpen={() => onSetActiveTab("chat")} />
+            <JuelDock onOpen={openJuel} />
           </div>
         </div>
       ) : null}

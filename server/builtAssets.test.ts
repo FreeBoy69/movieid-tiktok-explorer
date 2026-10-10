@@ -102,6 +102,30 @@ describe("packed front-end assets", () => {
     expect(pickEncoding("gzip", "a.css", 50000)).toBe("gzip");
   });
 
+  it("serves the previous build's files behind this one's, and lists only this build's", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pack-"));
+    fs.mkdirSync(path.join(dir, "previous"));
+    fs.writeFileSync(path.join(dir, "index-new.js"), "new()");
+    fs.writeFileSync(path.join(dir, "Shared-same.js"), "current copy");
+    fs.writeFileSync(path.join(dir, "previous", "index-old.js"), "old()");
+    fs.writeFileSync(path.join(dir, "previous", "Shared-same.js"), "stale copy");
+    execFileSync("tar", ["--format=ustar", "-cf", path.join(dir, "assets.pack"), "index-new.js", "Shared-same.js", "previous/index-old.js", "previous/Shared-same.js"], { cwd: dir });
+    const { url, close } = await serve(dir);
+    try {
+      const text = async (name: string) => { const r = await fetch(`${url}/assets/${name}`); return [r.status, await r.text()] as const; };
+      // A tab from before the deploy still gets its script, by its old name.
+      expect(await text("index-old.js")).toEqual([200, "old()"]);
+      expect(await text("index-new.js")).toEqual([200, "new()"]);
+      // This build's copy wins over the kept one.
+      expect(await text("Shared-same.js")).toEqual([200, "current copy"]);
+      const list = await fetch(`${url}/assets/.list`);
+      expect(list.headers.get("cache-control")).toBe("no-store");
+      expect((await list.text()).split("\n")).toEqual(["Shared-same.js", "index-new.js"]);
+    } finally {
+      close();
+    }
+  });
+
   it("is absent for a plain local build", () => {
     expect(loadPackedAssets(fs.mkdtempSync(path.join(os.tmpdir(), "nopack-")))).toBeNull();
   });

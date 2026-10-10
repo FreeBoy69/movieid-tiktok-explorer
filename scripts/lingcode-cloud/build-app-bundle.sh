@@ -16,18 +16,38 @@ mkdir -p "$STAGE/src/utils" "$STAGE/scripts" "$STAGE/data" "$STAGE/dist"
 cp package.json package-lock.json server.js requirements.txt "$STAGE/"
 cp data/premium-niche-library.json data/format-library.json data/prompt-library.json data/image-prompts.json data/shortfilm-prompts.json data/seedance-prompts.json "$STAGE/data/"
 cp -R dist/. "$STAGE/dist/"
+# A tab opened before this deploy still asks for the previous build's scripts and styles by name
+# (pages load on demand), and without them the app reloads itself mid-task. They're fetched from the
+# live app's list and packed under previous/, which the server serves behind this build's files
+# (server/builtAssets.js). PREVIOUS_ASSETS_URL= skips this.
+PREVIOUS_ASSETS_URL=${PREVIOUS_ASSETS_URL-https://autoyt.cc/assets}
+if [ -n "$PREVIOUS_ASSETS_URL" ]; then
+  mkdir -p "$STAGE/dist/assets/previous"
+  if list=$(curl -fsS --max-time 20 "$PREVIOUS_ASSETS_URL/.list" 2>/dev/null); then
+    kept=0
+    while IFS= read -r name; do
+      printf '%s' "$name" | grep -Eq '^[A-Za-z0-9._-]+\.(js|css)$' || continue
+      [ -f "$STAGE/dist/assets/$name" ] && continue
+      if curl -fsS --max-time 30 -o "$STAGE/dist/assets/previous/$name" "$PREVIOUS_ASSETS_URL/$name"; then kept=$((kept + 1)); else rm -f "$STAGE/dist/assets/previous/$name"; fi
+    done <<< "$list"
+    echo "kept $kept scripts and styles of the live build for tabs opened before this deploy"
+  else
+    echo "no asset list at $PREVIOUS_ASSETS_URL (first deploy with it, or offline): nothing kept"
+  fi
+fi
 # Vite's hashed scripts and styles go into one file, dist/assets.pack, which the
 # server serves from memory (server/builtAssets.js). Pages load on demand, so
 # there are dozens of these, and each would count against the 500-file limit.
 # Images and fonts stay plain files: server code reads some of them from disk.
 (
   cd "$STAGE/dist/assets"
-  find . -maxdepth 1 -type f \( -name '*.js' -o -name '*.css' \) | sed 's|^\./||' > ../.packlist
+  find . -maxdepth 2 -type f \( -name '*.js' -o -name '*.css' \) | sed 's|^\./||' > ../.packlist
   if [ -s ../.packlist ]; then
     tar --format=ustar -cf ../assets.pack -T ../.packlist
     xargs rm -f < ../.packlist
   fi
   rm -f ../.packlist
+  rmdir previous 2>/dev/null || true
 )
 for f in src/utils/*.js; do
   case "$f" in *.test.*) ;; *) cp "$f" "$STAGE/src/utils/" ;; esac
