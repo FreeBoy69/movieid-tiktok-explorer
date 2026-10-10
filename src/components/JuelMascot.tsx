@@ -193,39 +193,76 @@ const SHOULDER_L: Pt = [61, 124];
 const SHOULDER_R: Pt = [178, 99];
 
 type HandShape = "open" | "fist" | "point" | "thumb";
-/** A cartoon hand drawn at the origin, fingers up; placed and turned with `transform`. */
+/** One finger: a line from its knuckle, rigged to bend at the knuckle (.jm-finger, numbered). */
+function Finger({ n, from, to, width = 6.5 }: { n: number; from: Pt; to: Pt; width?: number }) {
+  return (
+    <g className={`jm-finger jm-finger-${n}`} style={{ transformOrigin: `${from[0]}px ${from[1]}px` }}>
+      <line x1={from[0]} y1={from[1]} x2={to[0]} y2={to[1]} stroke={INK} strokeWidth={width} strokeLinecap="round" />
+    </g>
+  );
+}
+
+/** A cartoon hand drawn at the origin, fingers up; placed and turned with `transform`. Each finger is
+ *  its own joint, so poses can curl, spread, and wiggle them. */
 function Hand({ shape, transform }: { shape: HandShape; transform: string }) {
   return (
-    <g transform={transform} className="jm-hand">
+    <g transform={transform} className={`jm-hand is-${shape}`}>
       <circle r="9.5" fill={INK} />
       {shape === "open" ? (
-        <g stroke={INK} strokeWidth="6.5" strokeLinecap="round">
-          <line x1="-4" y1="-4" x2="-9" y2="-17" />
-          <line x1="0" y1="-5" x2="-1" y2="-20" />
-          <line x1="4" y1="-4" x2="7" y2="-18" />
-          <line x1="7" y1="-1" x2="15" y2="-10" />
-          <line x1="-8" y1="2" x2="-15" y2="-3" />
-        </g>
+        <>
+          <Finger n={1} from={[-8, 2]} to={[-15, -3]} />
+          <Finger n={2} from={[-4, -4]} to={[-9, -17]} />
+          <Finger n={3} from={[0, -5]} to={[-1, -20]} />
+          <Finger n={4} from={[4, -4]} to={[7, -18]} />
+          <Finger n={5} from={[7, -1]} to={[15, -10]} />
+        </>
       ) : shape === "point" ? (
-        <g stroke={INK} strokeWidth="6.5" strokeLinecap="round">
-          <line x1="0" y1="-5" x2="0" y2="-22" />
-          <line x1="-8" y1="1" x2="-14" y2="-4" />
-        </g>
+        <>
+          <Finger n={1} from={[-8, 1]} to={[-14, -4]} />
+          <Finger n={3} from={[0, -5]} to={[0, -22]} />
+        </>
       ) : shape === "thumb" ? (
-        <g stroke={INK} strokeWidth="7" strokeLinecap="round">
-          <line x1="-2" y1="-6" x2="-3" y2="-21" />
-        </g>
+        <Finger n={1} from={[-2, -6]} to={[-3, -21]} width={7} />
       ) : null}
     </g>
   );
 }
 
-/** An arm: a soft curve from the shoulder, ending in a hand. */
+const lerp = (a: Pt, b: Pt, t: number): Pt => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+const xy = (p: Pt) => `${p[0].toFixed(1)} ${p[1].toFixed(1)}`;
+
+/** An arm: a soft curve from the shoulder, ending in a hand. The curve is split at its middle (the same
+ *  curve, two halves), so it's rigged as an upper arm and a forearm that bends at the elbow, and a
+ *  wrist that turns the hand: .jm-upper turns at the shoulder, .jm-fore at the elbow, .jm-wrist at the hand. */
 function Arm({ from, mid, to, hand, angle, className }: { from: Pt; mid: Pt; to: Pt; hand: HandShape; angle: number; className: string }) {
+  const a = lerp(from, mid, 0.5);
+  const b = lerp(mid, to, 0.5);
+  const elbow = lerp(a, b, 0.5);
   return (
     <g className={className}>
-      <path d={`M${from[0]} ${from[1]} Q${mid[0]} ${mid[1]} ${to[0]} ${to[1]}`} fill="none" stroke={INK} strokeWidth="7" strokeLinecap="round" />
-      <Hand shape={hand} transform={`translate(${to[0]} ${to[1]}) rotate(${angle})`} />
+      <g className="jm-upper" style={{ transformOrigin: `${from[0]}px ${from[1]}px` }}>
+        <path d={`M${xy(from)} Q${xy(a)} ${xy(elbow)}`} fill="none" stroke={INK} strokeWidth="7" strokeLinecap="round" />
+        <g className="jm-fore" style={{ transformOrigin: `${elbow[0].toFixed(1)}px ${elbow[1].toFixed(1)}px` }}>
+          <path d={`M${xy(elbow)} Q${xy(b)} ${xy(to)}`} fill="none" stroke={INK} strokeWidth="7" strokeLinecap="round" />
+          <g className="jm-wrist" style={{ transformOrigin: `${to[0]}px ${to[1]}px` }}>
+            <Hand shape={hand} transform={`translate(${to[0]} ${to[1]}) rotate(${angle})`} />
+          </g>
+        </g>
+      </g>
+    </g>
+  );
+}
+
+/** A leg rigged at the hip and the knee: .jm-thigh turns at the hip, .jm-shin (with the foot) at the knee. */
+function Leg({ hip, ankle, foot }: { hip: Pt; ankle: Pt; foot: string }) {
+  const knee = lerp(hip, ankle, 0.5);
+  return (
+    <g className="jm-thigh" style={{ transformOrigin: `${hip[0]}px ${hip[1]}px` }}>
+      <path d={`M${xy(hip)} L${xy(knee)}`} stroke={INK} strokeWidth="7" strokeLinecap="round" />
+      <g className="jm-shin" style={{ transformOrigin: `${knee[0]}px ${knee[1]}px` }}>
+        <path d={`M${xy(knee)} L${xy(ankle)}`} stroke={INK} strokeWidth="7" strokeLinecap="round" />
+        <path d={foot} fill={INK} stroke={INK} strokeWidth="3" strokeLinejoin="round" />
+      </g>
     </g>
   );
 }
@@ -716,7 +753,9 @@ export type JuelMascotProps = {
   className?: string;
 };
 
-const LOOK: Partial<Record<JuelPose, Pt>> = { think: [-0.5, -0.8], oops: [0, 0.5], listen: [-0.7, -0.1], point: [0.8, -0.3], cheer: [0.2, -0.5], thumbs: [0.4, -0.2], wave: [0.35, -0.35], dance: [0.3, -0.4], float: [0, -0.6], flip: [0, -0.8], tada: [0.3, -0.4], jump: [0, -0.7], peek: [-0.4, -0.3], speak: [-0.4, 0] };
+/** Looking at the viewer (as he does while talking). */
+const AT_YOU: Pt = [-0.4, 0];
+const LOOK: Partial<Record<JuelPose, Pt>> = { think: [-0.5, -0.8], oops: [0, 0.5], listen: [-0.7, -0.1], point: [0.8, -0.3], cheer: [0.2, -0.5], thumbs: [0.4, -0.2], wave: [0.35, -0.35], dance: [0.3, -0.4], float: [0, -0.6], flip: [0, -0.8], tada: [0.3, -0.4], jump: [0, -0.7], peek: [-0.4, -0.3], speak: AT_YOU };
 
 export function JuelMascot({ pose = "idle", size = 120, framing = "full", flip = false, look, followPointer = false, title, className = "" }: JuelMascotProps) {
   const uid = useId().replace(/:/g, "");
@@ -756,7 +795,8 @@ export function JuelMascot({ pose = "idle", size = 120, framing = "full", flip =
   }, [followPointer, flip]);
 
   const face = faceOf(pose);
-  const eyes = pointer || look || face?.look || LOOK[pose] || [0.25, -0.25];
+  // By default he looks at you, the way he does while he talks; poses that look elsewhere say so in LOOK.
+  const eyes = pointer || look || face?.look || LOOK[pose] || AT_YOU;
   const closed = pose === "sleep";
   const arms = face ? face.arms || { left: DOWN_L, right: DOWN_R } : ARMS[pose as keyof typeof ARMS] || { left: DOWN_L, right: DOWN_R };
   const [frontEye, backEye]: [EyeKind, EyeKind] = face ? (Array.isArray(face.eyes) ? face.eyes : [face.eyes, face.eyes]) : ["open", "open"];
@@ -788,12 +828,10 @@ export function JuelMascot({ pose = "idle", size = 120, framing = "full", flip =
         {framing === "full" ? (
           <g className="jm-legs">
             <g className="jm-leg-l">
-              <path d="M100 168 L95 214" stroke={INK} strokeWidth="7" strokeLinecap="round" />
-              <path d="M74 224 Q76 211 92 211 L99 211 Q103 212 103 218 L103 224 Z" fill={INK} stroke={INK} strokeWidth="3" strokeLinejoin="round" />
+              <Leg hip={[100, 168]} ankle={[95, 214]} foot="M74 224 Q76 211 92 211 L99 211 Q103 212 103 218 L103 224 Z" />
             </g>
             <g className="jm-leg-r" style={{ transformOrigin: "136px 212px" }}>
-              <path d="M132 152 L137 214" stroke={INK} strokeWidth="7" strokeLinecap="round" />
-              <path d="M130 224 L130 218 Q130 212 135 211 L142 211 Q158 211 160 224 Z" fill={INK} stroke={INK} strokeWidth="3" strokeLinejoin="round" />
+              <Leg hip={[132, 152]} ankle={[137, 214]} foot="M130 224 L130 218 Q130 212 135 211 L142 211 Q158 211 160 224 Z" />
             </g>
           </g>
         ) : null}
