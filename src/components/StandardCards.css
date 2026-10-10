@@ -1,0 +1,52 @@
+/* Video, playlist, and channel cards across AutoYT (Compile, TikTok, Radar, Feed, Create Video, Juel),
+   in the studio layout's card language: media first in a rounded frame, words under it, --ui-* surfaces. */
+.std-card { position: relative; display: grid; min-width: 0; align-content: start; gap: 10px; }
+.std-card-hit { position: absolute; inset: 0; z-index: 1; padding: 0; border: 0; border-radius: 16px; background: transparent; cursor: pointer; }
+.std-card-media { position: relative; overflow: hidden; aspect-ratio: 9 / 16; border: 1px solid var(--ui-line); border-radius: 16px; background: var(--ui-sunken); transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s ease, border-color 0.2s ease; }
+.std-card.is-landscape .std-card-media { aspect-ratio: 16 / 9; }
+.std-card-media > img, .std-card-media > video { display: block; width: 100%; height: 100%; object-fit: cover; }
+.std-card:hover .std-card-media { transform: translateY(-2px); box-shadow: var(--ui-shadow); }
+.std-card-empty { display: grid; width: 100%; height: 100%; place-items: center; color: var(--ui-text-faint); }
+.std-card-tl { position: absolute; top: 10px; left: 10px; z-index: 2; display: flex; max-width: calc(100% - 70px); flex-direction: column; align-items: flex-start; gap: 6px; pointer-events: none; }
+.std-card-badge { max-width: 100%; overflow: hidden; padding: 4px 9px; border-radius: 999px; background: rgb(12 13 15 / 0.62); color: #fff; font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); font-variant-numeric: tabular-nums; }
+.std-card-tr { position: absolute; top: 10px; right: 10px; z-index: 3; }
+.std-card-overlay { position: absolute; inset: 0; z-index: 2; pointer-events: none; }
+.std-card-body { position: relative; display: grid; min-width: 0; gap: 2px; padding: 0 2px; pointer-events: none; }
+.std-card-top { margin-bottom: 4px; pointer-events: auto; }
+.std-card-title { display: -webkit-box; margin: 0; overflow: hidden; color: var(--ui-text); font: 600 14.5px/1.3 var(--font-sans); -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+.std-card-source { justify-self: start; max-width: 100%; margin: 2px 0 0; padding: 0; overflow: hidden; border: 0; background: none; color: var(--ui-text-muted); font: 500 13px/1.35 var(--font-sans); text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+button.std-card-source { position: relative; z-index: 2; cursor: pointer; pointer-events: auto; text-underline-offset: 3px; }
+button.std-card-source:hover { color: var(--ui-text); text-decoration: underline; }
+.std-card-meta { margin: 0; overflow: hidden; color: var(--ui-text-faint); font-size: 12.5px; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.std-card-desc { display: -webkit-box; margin: 2px 0 0; overflow: hidden; color: var(--ui-text-muted); font-size: 12.5px; line-height: 1.4; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+/* A selected card (callers add ring classes): the ring goes on the still, not around the words. */
+.std-card[class*="ring-"] { --tw-ring-shadow: 0 0 #0000 !important; box-shadow: none !important; }
+.std-card[class*="ring-"] .std-card-media { border-color: var(--ui-accent); box-shadow: 0 0 0 2px var(--ui-accent); }
+
+.std-channel { position: relative; display: flex; min-width: 0; flex-direction: column; gap: 12px; padding: 16px; border: 1px solid var(--ui-line); border-radius: 18px; background: var(--ui-panel); box-shadow: var(--ui-shadow-soft); color: var(--ui-text); transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s ease, border-color 0.2s ease; }
+.std-channel:hover { transform: translateY(-2px); border-color: var(--ui-line-strong); box-shadow: var(--ui-shadow); }
+.std-channel .std-card-hit { border-radius: 18px; }
+.std-channel-head { position: relative; display: flex; min-width: 0; align-items: center; gap: 12px; pointer-events: none; }
+.std-channel-avatar { display: grid; width: 48px; height: 48px; flex: none; place-items: center; overflow: hidden; border-radius: 50%; background: var(--ui-sunken); color: var(--ui-text-faint); box-shadow: 0 0 0 1px var(--ui-line); }
+.std-channel-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.std-channel-name { min-width: 0; flex: 1; }
+.std-channel-name h3 { margin: 0; overflow: hidden; font: 600 15px/1.3 var(--font-sans); text-overflow: ellipsis; white-space: nowrap; }
+.std-channel-name p { margin: 2px 0 0; overflow: hidden; color: var(--ui-text-muted); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.std-channel-tr { position: relative; z-index: 2; flex: none; pointer-events: auto; }
+.std-channel-go { flex: none; color: var(--ui-text-faint); transition: color 0.2s ease, transform 0.25s cubic-bezier(0.16, 1, 0.3, 1); }
+.std-channel:hover .std-channel-go { color: var(--ui-text); transform: translate(1px, -1px); }
+.std-channel-desc { display: -webkit-box; margin: 0; overflow: hidden; color: var(--ui-text-muted); font-size: 13px; line-height: 1.45; -webkit-line-clamp: 2; -webkit-box-orient: vertical; pointer-events: none; }
+.std-channel-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; margin: auto 0 0; padding-top: 12px; border-top: 1px solid var(--ui-line); pointer-events: none; }
+.std-channel-metrics div { min-width: 0; }
+.std-channel-metrics dt { overflow: hidden; color: var(--ui-text-faint); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.std-channel-metrics dd { margin: 1px 0 0; overflow: hidden; color: var(--ui-text); font-size: 15px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.std-channel-metrics dd.is-accent { color: var(--ui-accent-text); }
+.std-channel-actions { position: relative; z-index: 2; }
+@media (prefers-reduced-motion: reduce) {
+  .std-card-media, .std-channel, .std-channel-go { transition: none; }
+}
+/* A round select toggle on a card's still (Compile): empty ring, then the accent with a check. */
+.std-card-check { position: relative; display: grid; width: 32px; height: 32px; place-items: center; border-radius: 50%; background: rgb(12 13 15 / 0.45); box-shadow: inset 0 0 0 2px rgb(255 255 255 / 0.85); color: transparent; cursor: pointer; backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); transition: background 0.18s ease, box-shadow 0.18s ease, transform 0.18s cubic-bezier(0.16, 1, 0.3, 1); }
+.std-card-check input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; }
+.std-card-check:hover { transform: scale(1.06); }
+.std-card-check.is-on { background: var(--ui-accent); box-shadow: 0 2px 8px rgb(0 0 0 / 0.35); color: var(--ui-accent-ink); }

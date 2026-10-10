@@ -1,6 +1,7 @@
 import { ArrowUpRight, ListVideo, PlaySquare, Users, Youtube } from "lucide-react";
 import { ReactNode, type MouseEvent } from "react";
 import { cn } from "../lib/utils";
+import "./StandardCards.css";
 
 export type CardTheme = "light" | "dark";
 
@@ -24,8 +25,12 @@ export type StandardVideoCardProps = {
   className?: string;
   imageClassName?: string;
   ariaLabel?: string;
+  /** The still's shape: portrait (TikTok, Shorts) or landscape (YouTube videos). Defaults by the image. */
+  shape?: "portrait" | "landscape";
 };
 
+/** A video card in the studio layout's card language (LayoutCard): the still first, rounded and framed,
+ *  with the title and byline under it. Overlays (a checkbox, a badge) sit on the still. */
 export function StandardVideoCard({
   title,
   source,
@@ -42,61 +47,39 @@ export function StandardVideoCard({
   topRight,
   contentTop,
   overlay,
-  theme = "light",
   className,
   imageClassName,
   ariaLabel,
+  shape,
 }: StandardVideoCardProps) {
   const label = ariaLabel || `Open ${title || "video"}`;
-  const interactionClass = "absolute inset-0 z-[1] rounded-2xl outline-none";
-
+  // YouTube's stills are 16:9; cropping them into a tall frame cut most of the picture away.
+  const landscape = shape ? shape === "landscape" : /ytimg\.com|youtube\.com|ggpht\.com/.test(imageUrl || "") || /\baspect-video\b/.test(className || "");
   return (
-    <article
-      className={cn(
-        "group relative isolate aspect-[9/16] min-w-0 overflow-hidden rounded-2xl shadow-[0_14px_36px_-24px_rgba(15,23,42,0.8)] ring-1 transition duration-300 hover:-translate-y-1 hover:shadow-[0_22px_48px_-24px_rgba(15,23,42,0.9)]",
-        theme === "dark" ? "bg-[#151923] ring-white/10" : "bg-[#111827] ring-[#1A1A1A]/8",
-        className,
-      )}
-    >
+    <article className={cn("std-card", landscape && "is-landscape", className?.replace(/\baspect-video\b/, ""))}>
       {href ? (
-        <a href={href} target="_blank" rel="noreferrer" className={interactionClass} aria-label={label} />
+        <a href={href} target="_blank" rel="noreferrer" className="std-card-hit" aria-label={label} />
       ) : onOpen ? (
-        <button type="button" onClick={onOpen} className={interactionClass} aria-label={label} />
+        <button type="button" onClick={onOpen} className="std-card-hit" aria-label={label} />
       ) : null}
-
-      <div className="absolute inset-0 z-0 overflow-hidden">
+      <div className="std-card-media">
         {media || (imageUrl ? (
-          <img
-            src={imageUrl}
-            alt=""
-            className={cn("h-full w-full object-cover transition duration-500 group-hover:scale-105", imageClassName)}
-            referrerPolicy="no-referrer"
-            loading="lazy"
-          />
+          <img src={imageUrl} alt="" className={imageClassName} referrerPolicy="no-referrer" loading="lazy" decoding="async" />
         ) : (
-          fallback || <div className="grid h-full place-items-center bg-[#111827]"><PlaySquare className="h-8 w-8 text-[#f9dc0b]" /></div>
+          fallback || <span className="std-card-empty"><PlaySquare className="h-7 w-7" /></span>
         ))}
+        {topLeft || badge ? <div className="std-card-tl">{topLeft || <span className="std-card-badge">{badge}</span>}</div> : null}
+        {topRight ? <div className="std-card-tr">{topRight}</div> : null}
+        {overlay ? <div className="std-card-overlay">{overlay}</div> : null}
       </div>
-
-      <div className="pointer-events-none absolute inset-0 z-[2] bg-[linear-gradient(180deg,rgba(0,0,0,0.18)_0%,rgba(0,0,0,0.02)_34%,rgba(0,0,0,0.86)_100%)] transition duration-300 group-hover:bg-[linear-gradient(180deg,rgba(0,0,0,0.22)_0%,rgba(0,0,0,0.06)_34%,rgba(0,0,0,0.9)_100%)]" />
-
-      {(topLeft || badge) ? (
-        <div className="pointer-events-none absolute left-3 top-3 z-10 flex max-w-[calc(100%-5rem)] flex-col items-start gap-1.5">
-          {topLeft || <span className="max-w-full truncate rounded-full bg-[#f9dc0b] px-2.5 py-1 text-xs font-black text-[#1A1A1A] shadow-sm">{badge}</span>}
-        </div>
-      ) : null}
-
-      {topRight ? <div className="absolute right-3 top-3 z-20">{topRight}</div> : null}
-      {overlay ? <div className="pointer-events-none absolute inset-0 z-20">{overlay}</div> : null}
-
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 p-4 text-white">
-        {contentTop ? <div className="mb-2">{contentTop}</div> : null}
+      <div className="std-card-body">
+        {contentTop ? <div className="std-card-top">{contentTop}</div> : null}
+        <h3 className="std-card-title">{title || "Untitled video"}</h3>
         {source ? onSourceClick ? (
-          <button type="button" onClick={onSourceClick} className="pointer-events-auto mb-1 block max-w-full truncate text-left text-[10px] font-black uppercase tracking-widest text-[#f9dc0b] underline-offset-2 hover:underline">{source}</button>
-        ) : <p className="mb-1 truncate text-[10px] font-black uppercase tracking-widest text-[#f9dc0b]">{source}</p> : null}
-        <h3 className="line-clamp-2 text-[15px] font-black leading-snug tracking-[-0.01em]">{title || "Untitled video"}</h3>
-        {description ? <p className="mt-1 line-clamp-2 text-[11px] font-semibold leading-4 text-white/68">{description}</p> : null}
-        {meta ? <p className="mt-1.5 line-clamp-1 text-[11px] font-semibold text-white/72">{meta}</p> : null}
+          <button type="button" onClick={onSourceClick} className="std-card-source">{source}</button>
+        ) : <p className="std-card-source">{source}</p> : null}
+        {meta ? <p className="std-card-meta">{meta}</p> : null}
+        {description ? <p className="std-card-desc">{description}</p> : null}
       </div>
     </article>
   );
@@ -133,7 +116,7 @@ export function StandardPlaylistCard({
       meta={meta}
       imageUrl={imageUrl}
       media={media}
-      fallback={<div className="grid h-full place-items-center bg-[#111827]"><ListVideo className="h-9 w-9 text-[#f9dc0b]" /></div>}
+      fallback={<span className="std-card-empty"><ListVideo className="h-8 w-8" /></span>}
       onOpen={onOpen}
       topRight={topRight}
       theme={theme}
@@ -166,6 +149,7 @@ export type StandardChannelCardProps = {
   className?: string;
 };
 
+/** A channel card: its picture and name, the handle under it, a few numbers, and its actions. */
 export function StandardChannelCard({
   title,
   url,
@@ -176,7 +160,6 @@ export function StandardChannelCard({
   platform = "youtube",
   description,
   metrics = [],
-  theme = "light",
   actions,
   topRight,
   onOpen,
@@ -185,51 +168,35 @@ export function StandardChannelCard({
   const platformLabel = platform.toLowerCase() === "tiktok" ? "TikTok" : "YouTube";
   const PlatformIcon = platformLabel === "YouTube" ? Youtube : Users;
   const label = `Open ${title || `${platformLabel} channel`}`;
-
   return (
-    <article className={cn(
-      "group relative isolate aspect-square min-w-0 overflow-hidden rounded-lg border p-3 text-left shadow-[0_10px_26px_-22px_rgba(15,23,42,0.65)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_16px_34px_-22px_rgba(15,23,42,0.75)]",
-      theme === "dark" ? "border-white/10 bg-[#151916] text-[#F8F5E8]" : "border-[#1A1A1A]/10 bg-white text-[#1A1A1A]",
-      className,
-    )}>
+    <article className={cn("std-channel", className)}>
       {url ? (
-        <a href={url} target="_blank" rel="noreferrer" className="absolute inset-0 z-[1] rounded-lg outline-none" aria-label={label} />
+        <a href={url} target="_blank" rel="noreferrer" className="std-card-hit" aria-label={label} />
       ) : onOpen ? (
-        <button type="button" onClick={onOpen} className="absolute inset-0 z-[1] rounded-lg outline-none" aria-label={label} />
+        <button type="button" onClick={onOpen} className="std-card-hit" aria-label={label} />
       ) : null}
-
-      <div className="pointer-events-none relative z-10 flex h-full min-h-0 flex-col">
-        <div className="flex items-start justify-between gap-2">
-          <div className={cn("grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-lg border", theme === "dark" ? "border-white/12 bg-white/7" : "border-[#1A1A1A]/10 bg-[#F4F5F2]")}>
-          {media || (thumbnailUrl ? (
-            <img src={thumbnailUrl} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" loading="lazy" />
-          ) : (
-            <PlatformIcon className="h-5 w-5 text-[#b89f00]" />
-          ))}
-          </div>
-          {topRight ? <div className="pointer-events-auto relative z-20">{topRight}</div> : (
-            <span className={cn("grid h-7 w-7 place-items-center rounded-lg", theme === "dark" ? "bg-white/7 text-[#F8F5E8]/55" : "bg-[#1A1A1A]/5 text-[#1A1A1A]/45")}>
-              {url ? <ArrowUpRight className="h-3.5 w-3.5" /> : <PlatformIcon className="h-3.5 w-3.5" />}
-            </span>
-          )}
+      <div className="std-channel-head">
+        <span className="std-channel-avatar">
+          {media || (thumbnailUrl ? <img src={thumbnailUrl} alt="" referrerPolicy="no-referrer" loading="lazy" decoding="async" /> : <PlatformIcon className="h-5 w-5" />)}
+        </span>
+        <div className="std-channel-name">
+          <h3>{title || `${platformLabel} channel`}</h3>
+          {handle || meta ? <p>{handle || meta}</p> : null}
         </div>
-
-        <h3 className="mt-3 line-clamp-2 text-sm font-black leading-[1.25]">{title || `${platformLabel} channel`}</h3>
-        {handle || meta ? <p className={cn("mt-1 truncate text-[10px] font-bold", theme === "dark" ? "text-[#F8F5E8]/48" : "text-[#1A1A1A]/48")}>{handle || meta}</p> : null}
-        {description ? <p className={cn("mt-1 line-clamp-1 text-[10px] font-semibold", theme === "dark" ? "text-[#F8F5E8]/40" : "text-[#1A1A1A]/42")}>{description}</p> : null}
-
-        {metrics.length ? (
-          <div className={cn("mt-auto grid grid-cols-2 gap-1 border-t pt-2 text-[9px] font-bold", theme === "dark" ? "border-white/10 text-[#F8F5E8]/45" : "border-[#1A1A1A]/8 text-[#1A1A1A]/45")}>
-            {metrics.slice(0, actions ? 2 : 4).map((metric) => (
-              <span key={`${metric.label}-${metric.value}`} className="min-w-0 truncate">
-                <strong className={metric.accent ? "text-[#b89f00]" : theme === "dark" ? "text-[#F8F5E8]" : "text-[#1A1A1A]"}>{metric.value}</strong>{metric.label ? <span className="block truncate">{metric.label}</span> : null}
-              </span>
-            ))}
-          </div>
-        ) : null}
-
-        {actions ? <div className="pointer-events-auto relative z-20 mt-2">{actions}</div> : null}
+        {topRight ? <div className="std-channel-tr">{topRight}</div> : url ? <ArrowUpRight className="std-channel-go h-4 w-4" aria-hidden="true" /> : null}
       </div>
+      {description ? <p className="std-channel-desc">{description}</p> : null}
+      {metrics.length ? (
+        <dl className="std-channel-metrics">
+          {metrics.slice(0, actions ? 2 : 4).map((metric) => (
+            <div key={`${metric.label}-${metric.value}`}>
+              <dt>{metric.label}</dt>
+              <dd className={metric.accent ? "is-accent" : undefined}>{metric.value}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : null}
+      {actions ? <div className="std-channel-actions">{actions}</div> : null}
     </article>
   );
 }

@@ -1,5 +1,5 @@
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, ArrowLeft, Clock3, Film, Heart, Loader2, MessageCircle, Play, RefreshCw, Scissors, Search, Share2, Sparkles, User, Youtube, Zap } from "lucide-react";
+import { AlertCircle, ArrowLeft, Check, Clock3, Film, Heart, Loader2, MessageCircle, Play, RefreshCw, Scissors, Search, Share2, Sparkles, User, Youtube, Zap } from "lucide-react";
 import { AuthSessionPayload, ConnectedYouTubeAccount, MovieResult, YouTubePlaylistSummary } from "../types";
 import { TikTokPlaylist, TikTokVideo, fetchTikTokPlaylist } from "../services/tiktok";
 import { cn } from "../lib/utils";
@@ -1012,8 +1012,9 @@ export function CompilationStudio({
               fallback={<div className="grid h-full w-full place-items-center text-[var(--ui-accent-text)]"><Film className="h-8 w-8" /></div>}
               onOpen={() => openPreview(video)}
               badge={selected ? "Selected" : formatDuration(durationSeconds(video))}
-              topRight={<label className="grid h-11 w-11 place-items-center rounded-lg bg-black/65 text-white shadow-md ring-1 ring-white/20 backdrop-blur-sm" onClick={(event) => event.stopPropagation()} title="Add to compilation">
-                  <input type="checkbox" checked={selected} onChange={() => toggleClip(video)} className="ui-check" aria-label="Add clip to compilation" />
+              topRight={<label className={`std-card-check${selected ? " is-on" : ""}`} onClick={(event) => event.stopPropagation()} title={selected ? "Remove from compilation" : "Add to compilation"}>
+                  <input type="checkbox" checked={selected} onChange={() => toggleClip(video)} aria-label="Add clip to compilation" />
+                  <Check className="h-4 w-4" aria-hidden="true" />
                 </label>}
               className={selected ? "ring-2 ring-[var(--ui-accent)]" : undefined}
             />
