@@ -5,6 +5,7 @@
 // while the current one plays), his mouth follows the voice's loudness, and talking over him stops him.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AudioLines, Mic, MicOff, PhoneOff, Square } from "lucide-react";
+import { micRecorder } from "../utils/micTape";
 import { JuelMascot, type JuelPose, setJuelMood } from "./JuelMascot";
 
 type Phase = "starting" | "listening" | "hearing" | "thinking" | "speaking" | "error";
@@ -821,7 +822,8 @@ export function JuelLive({
       void context.resume();
       const analyser = context.createAnalyser();
       analyser.fftSize = 1024;
-      context.createMediaStreamSource(stream.current).connect(analyser);
+      const micSource = context.createMediaStreamSource(stream.current);
+      micSource.connect(analyser);
       const buffer = new Float32Array(analyser.fftSize);
       const outBuffer = new Float32Array(512);
       // The waveform: 16 voice bands (120 Hz to 4.5 kHz, log-spaced), mirrored so the low voice sits in
@@ -880,7 +882,8 @@ export function JuelLive({
               turnId.current += 1;
               early.current = null;
               recorder.current.start();
-              recordedAt.current = performance.now();
+              // The tape's recording starts with the moment before you spoke.
+              recordedAt.current = performance.now() - ((recorder.current as { prerollMs?: number }).prerollMs || 0);
             }
           }
         } else {
@@ -1016,10 +1019,14 @@ export function JuelLive({
           rec.start();
         } catch {}
       }
-      if (typeof MediaRecorder !== "undefined") {
-        const rec = new MediaRecorder(stream.current);
+      // The tape where the browser has AudioWorklet (see micTape), MediaRecorder elsewhere.
+      const tape = await micRecorder(context, micSource);
+      if (!live.current) return;
+      if (tape || typeof MediaRecorder !== "undefined") {
+        const rec = tape || new MediaRecorder(stream.current);
         rec.ondataavailable = (event) => {
-          if (event.data.size) chunks.current.push(event.data);
+          // The tape hands over the whole recording each time; MediaRecorder hands over the next piece.
+          if (event.data.size) chunks.current = tape ? [event.data] : [...chunks.current, event.data];
           const waiting = flushWait.current;
           if (waiting) {
             flushWait.current = null;
