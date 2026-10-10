@@ -832,7 +832,7 @@ Return JSON only: {"read":["METHOD /path", ...], "calls":[{"method":"GET","path"
 /** One turn of a Juel conversation. Returns { reply, steps, board }; `shown` says what the caller shows
  *  under the reply (an operator's report, generations).
  *  `onReply` gets the reply's text so far while the model writes it.
- *  @param {{ message: string, history?: Array<{ role: string, content: string }>, context?: any, admin?: boolean, think: (prompt: string, options?: { onText?: (text: string) => void }) => Promise<any>, call: (call: any) => Promise<any>, page?: (action: any) => Promise<any>, show?: (items: any[], specialist: string) => number, onStep?: (step: { specialist: string, text: string }) => void, onReply?: (text: string) => void, shown?: () => string }} turn */
+ *  @param {{ message: string, history?: Array<{ role: string, content: string }>, context?: any, admin?: boolean, live?: boolean, think: (prompt: string, options?: { onText?: (text: string) => void, kind?: string }) => Promise<any>, call: (call: any) => Promise<any>, page?: (action: any) => Promise<any>, show?: (items: any[], specialist: string) => number, onStep?: (step: { specialist: string, text: string }) => void, onReply?: (text: string) => void, shown?: () => string }} turn */
 export async function juelTurn({ message, history = [], context = {}, admin = false, live = false, think, call, page, show, onStep, onReply, shown }) {
   // Live (spoken) mode: the quick text model, so his first words come in about a second, not five.
   const quick = live ? { kind: "text" } : {};
