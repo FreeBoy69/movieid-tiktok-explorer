@@ -888,6 +888,23 @@ Return JSON only: {"reply":"...", "report": {"title":"...", "cards":[{"label":".
   return { reply: joined(String(final?.reply || "").trim() || board.map((b) => b.note).join(" ")), steps, board, report: cleanReport(final?.report) };
 }
 
+// Gemini model+key pairs that hit a quota (429), and until when: every later sentence skips them instead of
+// spending a round trip to be refused again. A free-tier key allows 10 voice requests a day per model, so one
+// busy morning left each sentence waiting on four refusals before the backup voice.
+const quotaUntil = new Map();
+const quotaKey = (model, key) => `${model}|${key.slice(-8)}`;
+export function quotaBlocked(model, key, now = Date.now()) {
+  return (quotaUntil.get(quotaKey(model, key)) || 0) > now;
+}
+/** Remembers a 429 for its retryDelay ("27774s"), or a minute when Gemini doesn't say. */
+export async function noteQuota(response, model, key, now = Date.now()) {
+  if (response?.status !== 429) return;
+  const body = await response.json().catch(() => ({}));
+  const delay = body?.error?.details?.find((detail) => detail?.retryDelay)?.retryDelay;
+  const seconds = Number(String(delay || "").replace(/s$/, "")) || 60;
+  quotaUntil.set(quotaKey(model, key), now + seconds * 1000);
+}
+
 /** Juel's HD voice, streamed straight from Gemini: raw 24 kHz 16-bit mono PCM handed to `onAudio` as it
  *  arrives, so the first word plays in under a second (a whole sentence through OpenRouter took 7 to 9).
  *  Tries the configured (lite) model then the full one, each with the main then the backup key, until one speaks. */
@@ -899,6 +916,7 @@ export async function streamGeminiSpeech({ text, voice, onAudio, signal = undefi
   let lastError = new Error("Juel's voice isn't available right now.");
   for (const model of models) {
     for (const key of keys) {
+      if (quotaBlocked(model, key)) continue;
       await guardUsage("gemini", { operation: "speech", model });
       const response = await fetchImpl(`https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse`, {
         method: "POST",
@@ -911,6 +929,7 @@ export async function streamGeminiSpeech({ text, voice, onAudio, signal = undefi
       });
       if (!response?.ok || !response.body) {
         if (response) lastError = new Error(`Gemini speech failed (${response.status})`);
+        await noteQuota(response, model, key);
         signal?.throwIfAborted();
         continue;
       }
@@ -971,6 +990,16 @@ export function spokenWords(text) {
     .trim();
 }
 
+/** A transcript that can't fit in the recording is made up: on noise or a clip it can't read, Gemini returns
+ *  a stock sentence ("I'm not sure if I'm going to be able to make it to the meeting today" for a "hi").
+ *  Fast speech runs about 4 words a second; "" when the words outrun the recording. */
+export function plausibleWords(text, recordingMs) {
+  const ms = Number(recordingMs);
+  if (!text || !Number.isFinite(ms) || ms <= 0) return text;
+  const words = String(text).split(/\s+/).filter(Boolean).length;
+  return words <= 2 + (ms / 1000) * 4.5 ? text : "";
+}
+
 /** What was said in a short recording, from Gemini (about a second, where the old Whisper route took
  *  several): the recording goes inline as recorded, no conversion. "" when nobody spoke. */
 export async function hearWithGemini({ audio, mimeType, signal = undefined, fetchImpl = fetch, env = process.env }) {
@@ -979,6 +1008,7 @@ export async function hearWithGemini({ audio, mimeType, signal = undefined, fetc
   const model = String(env.JUEL_HEAR_MODEL || "gemini-3.1-flash-lite").trim();
   let lastError = new Error("Juel couldn't hear that.");
   for (const key of keys) {
+    if (quotaBlocked(model, key)) continue;
     await guardUsage("gemini", { operation: "transcription", model });
     const response = await fetchImpl(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
       method: "POST",
@@ -995,6 +1025,7 @@ export async function hearWithGemini({ audio, mimeType, signal = undefined, fetc
     });
     if (!response?.ok) {
       if (response) lastError = new Error(`Gemini transcription failed (${response.status})`);
+      await noteQuota(response, model, key);
       signal?.throwIfAborted();
       continue;
     }
@@ -1605,12 +1636,21 @@ export function registerJuel(app, deps) {
     const voice = /^[A-Za-z]{3,20}$/.test(String(req.body?.voice || "")) ? String(req.body.voice) : "Puck";
     // Streamed: the audio goes out as Gemini makes it. Falls back to the whole-sentence voice below when
     // it can't start.
+    const stop = new AbortController();
+    res.on("close", () => {
+      if (!res.writableEnded) stop.abort(new Error("Stopped."));
+    });
+    let started = false;
+    // Raw PCM out as it comes, for the live view's streamed player.
+    const streamPcm = (pcm) => {
+      if (!started) {
+        started = true;
+        res.setHeader("Content-Type", "audio/L16; rate=24000; channels=1");
+        res.setHeader("Cache-Control", "no-store");
+      }
+      res.write(pcm);
+    };
     if (req.body?.stream === true) {
-      const stop = new AbortController();
-      res.on("close", () => {
-        if (!res.writableEnded) stop.abort(new Error("Stopped."));
-      });
-      let started = false;
       try {
         await deps.withUsage(who.userId, "juel", () => streamGeminiSpeech({
           // The sentence alone. The lite TTS model reads a delivery note in front of it out loud ("Say
@@ -1620,14 +1660,7 @@ export function registerJuel(app, deps) {
           text,
           voice,
           signal: stop.signal,
-          onAudio: (pcm) => {
-            if (!started) {
-              started = true;
-              res.setHeader("Content-Type", "audio/L16; rate=24000; channels=1");
-              res.setHeader("Cache-Control", "no-store");
-            }
-            res.write(pcm);
-          },
+          onAudio: streamPcm,
         }));
         return res.end();
       } catch (error) {
@@ -1637,11 +1670,14 @@ export function registerJuel(app, deps) {
       }
     }
     try {
-      const spoken = await synthesizeHostedVoice({ profileId: `openrouter:${voice}`, text, signal: AbortSignal.timeout(45000) });
+      // Streamed too when asked: the live view keeps one player, and the voice starts with its first bytes.
+      const spoken = await synthesizeHostedVoice({ profileId: `openrouter:${voice}`, text, signal: AbortSignal.any([stop.signal, AbortSignal.timeout(45000)]), onPcm: req.body?.stream === true ? streamPcm : undefined });
+      if (started) return res.end();
       res.setHeader("Content-Type", spoken.contentType);
       res.setHeader("Cache-Control", "no-store");
       res.end(spoken.audio);
     } catch (error) {
+      if (started || stop.signal.aborted) return res.end();
       const blocked = error?.name === "UsageBlockedError";
       res.status(blocked ? error.status || 402 : 502).json({ error: blocked ? error.message : "Juel's voice isn't available right now." });
     }
@@ -1667,7 +1703,9 @@ export function registerJuel(app, deps) {
     if (!size) return res.status(400).json({ error: "The recording was empty." });
     try {
       const heard = await deps.withUsage(who.userId, "juel", () => hearWithGemini({ audio: Buffer.concat(chunks), mimeType, signal: AbortSignal.timeout(20000) }));
-      res.json({ text: heard.text });
+      const text = plausibleWords(heard.text, req.headers["x-recording-ms"]);
+      if (text !== heard.text) console.warn(`[juel] dropped a made-up hearing (${req.headers["x-recording-ms"]} ms): ${heard.text.slice(0, 120)}`);
+      res.json({ text });
     } catch (error) {
       const blocked = error?.name === "UsageBlockedError";
       if (!blocked) console.warn(`[juel] hearing failed: ${error instanceof Error ? error.message : error}`);

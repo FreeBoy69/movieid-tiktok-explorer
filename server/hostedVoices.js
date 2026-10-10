@@ -101,8 +101,9 @@ export function pcmToWav(pcm, sampleRate = 24000, channels = 1) {
   return Buffer.concat([header, pcm]);
 }
 
-// Synthesizes one chunk of narration. Returns WAV bytes.
-export async function synthesizeHostedVoice({ profileId, text, direction = "", signal = undefined, fetchImpl = fetch, env = process.env }) {
+// Synthesizes one chunk of narration. Returns WAV bytes. With `onPcm`, 24 kHz mono PCM is also handed over
+// as it arrives (the first bytes come ~3.5 s in, the rest in well under a second).
+export async function synthesizeHostedVoice({ profileId, text, direction = "", signal = undefined, fetchImpl = fetch, env = process.env, onPcm = undefined }) {
   const chain = aiProviderChain(env);
   if (!chain.length) throw new Error("Hosted voices aren't set up on this server.");
   const rest = String(profileId).slice(PREFIX.length);
@@ -146,13 +147,22 @@ export async function synthesizeHostedVoice({ profileId, text, direction = "", s
     if (provider === chain.at(-1)) throw error;
     console.warn(`[videorouter] speech fell back to OpenRouter: ${error.message}`);
   }
-  const bytes = Buffer.from(await response.arrayBuffer());
-  if (bytes.length < 200) throw new Error("The voice model returned no audio. Try again.");
-  meterUsage({ provider: providerName, model, operation: "speech", units: Math.max(1, Math.ceil(String(text).length / 1000)) });
-  if (format === "mp3") return { audio: bytes, extension: "mp3", contentType: "audio/mpeg" };
   const type = response.headers.get("content-type") || "";
   const rate = Number(type.match(/rate=(\d+)/)?.[1]) || 24000;
   const channels = Number(type.match(/channels=(\d+)/)?.[1]) || 1;
+  let bytes;
+  if (onPcm && format === "pcm" && rate === 24000 && channels === 1 && response.body) {
+    const parts = [];
+    for await (const chunk of response.body) {
+      const part = Buffer.from(chunk);
+      parts.push(part);
+      onPcm(part);
+    }
+    bytes = Buffer.concat(parts);
+  } else bytes = Buffer.from(await response.arrayBuffer());
+  if (bytes.length < 200) throw new Error("The voice model returned no audio. Try again.");
+  meterUsage({ provider: providerName, model, operation: "speech", units: Math.max(1, Math.ceil(String(text).length / 1000)) });
+  if (format === "mp3") return { audio: bytes, extension: "mp3", contentType: "audio/mpeg" };
   return { audio: pcmToWav(bytes, rate, channels), extension: "wav", contentType: "audio/wav" };
 }
 

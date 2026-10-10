@@ -403,6 +403,26 @@ describe("Juel's streamed voice", () => {
   it("says so when there's no key", async () => {
     await expect(streamGeminiSpeech({ text: "Hi", voice: "Puck", env: {} as any, onAudio: () => undefined })).rejects.toThrow("isn't set up");
   });
+
+  it("skips a model and key that ran out of quota until Gemini says to retry", async () => {
+    const tried: string[] = [];
+    const quota = { error: { code: 429, details: [{ "@type": "type.googleapis.com/google.rpc.RetryInfo", retryDelay: "27774s" }] } };
+    const speak = () => streamGeminiSpeech({
+      text: "Hi", voice: "Puck", env: { GEMINI_API_KEY: "quota-a", GEMINI_API_KEY_BACKUP: "quota-b" } as any,
+      fetchImpl: (async (url: string, init: any) => {
+        tried.push(`${url.includes("lite") ? "lite" : "full"}/${init.headers["x-goog-api-key"]}`);
+        return url.includes("lite") ? Response.json(quota, { status: 429 }) : sse([audio([9])]);
+      }) as any,
+      onAudio: () => undefined,
+    });
+    await speak();
+    await speak();
+    // The second sentence goes straight to the model that can still speak.
+    expect(tried).toEqual(["lite/quota-a", "lite/quota-b", "full/quota-a", "full/quota-a"]);
+    const { quotaBlocked } = await import("./juel.js");
+    expect(quotaBlocked("gemini-3.8-flash-lite-tts", "quota-a")).toBe(true);
+    expect(quotaBlocked("gemini-3.8-flash-lite-tts", "quota-a", Date.now() + 27775 * 1000)).toBe(false);
+  });
 });
 
 describe("Juel's hearing", () => {
@@ -424,6 +444,16 @@ describe("Juel's hearing", () => {
     // A time you actually say stays.
     expect(spokenWords("Meet me at 6:30 tonight")).toBe("Meet me at 6:30 tonight");
     expect(spokenWords("00:00:01.200 Post it now")).toBe("Post it now");
+  });
+
+  it("drops words that can't fit in the recording (made up from noise)", async () => {
+    const { plausibleWords } = await import("./juel.js");
+    const stock = "I'm not sure if I'm going to be able to make it to the meeting today";
+    expect(plausibleWords(stock, 1100)).toBe("");
+    expect(plausibleWords("Hi.", 900)).toBe("Hi.");
+    expect(plausibleWords(stock, 4000)).toBe(stock);
+    // No length sent (an older page): kept as heard.
+    expect(plausibleWords(stock, undefined)).toBe(stock);
   });
 
   it("sends the recording to Gemini as recorded and returns only the words", async () => {

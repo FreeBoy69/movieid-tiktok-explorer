@@ -203,14 +203,15 @@ export function turnPause(transcript: string, gaps: number[], final = false): nu
 
 /** What a recording says. Gemini (/api/juel/hear) first; when it hasn't answered in 1.8 s a second
  *  identical request races it (its slow tail is several seconds), and the Whisper route is the backup.
- *  Credits running out (402) isn't retried. */
-async function hearRecording(blob: Blob): Promise<string> {
+ *  Credits running out (402) isn't retried. `ms` is how long the recording runs: the server drops words that
+ *  can't fit in it (made up from noise). */
+async function hearRecording(blob: Blob, ms: number): Promise<string> {
   const type = blob.type || "application/octet-stream";
   const controllers: AbortController[] = [];
   const once = () => {
     const controller = new AbortController();
     controllers.push(controller);
-    return fetch("/api/juel/hear", { method: "POST", headers: { "Content-Type": type }, body: blob, signal: controller.signal }).then(async (response) => {
+    return fetch("/api/juel/hear", { method: "POST", headers: { "Content-Type": type, "X-Recording-Ms": String(Math.round(ms)) }, body: blob, signal: controller.signal }).then(async (response) => {
       if (!response.ok) throw Object.assign(new Error("hear"), { status: response.status });
       return String((await response.json().catch(() => ({}))).text || "");
     });
@@ -743,6 +744,7 @@ export function JuelLive({
   // when you stay quiet, that answer is the turn's words and arrives ~0.45 s sooner; talking again drops it.
   const early = useRef<{ promise: Promise<string>; turn: number } | null>(null);
   const turnId = useRef(0);
+  const recordedAt = useRef(0);
   const flushWait = useRef<((blob: Blob) => void) | null>(null);
   // Where each turn's time went, shown under the controls once he has answered.
   const timing = useRef({ end: 0, text: 0, reply: 0, audio: 0, path: "" });
@@ -875,6 +877,7 @@ export function JuelLive({
               turnId.current += 1;
               early.current = null;
               recorder.current.start();
+              recordedAt.current = performance.now();
             }
           }
         } else {
@@ -899,7 +902,7 @@ export function JuelLive({
                 } catch {
                   resolve(new Blob());
                 }
-              }).then((blob) => (blob.size < 2000 ? "" : hearRecording(blob))),
+              }).then((blob) => (blob.size < 2000 ? "" : hearRecording(blob, performance.now() - recordedAt.current))),
             };
           }
           if (speaking && now - quietSince > silence) {
@@ -1034,7 +1037,7 @@ export function JuelLive({
           go("thinking");
           setJuelMood("think");
           const turn = turnId.current;
-          const text = (await sent) || (await hearRecording(blob));
+          const text = (await sent) || (await hearRecording(blob, performance.now() - recordedAt.current));
           // Stopped, ended, or a newer turn while it was heard: these words belong to nothing now.
           if (!live.current || turn !== turnId.current || !transcribing.current) return;
           // A recording that caught only his voice is no turn.

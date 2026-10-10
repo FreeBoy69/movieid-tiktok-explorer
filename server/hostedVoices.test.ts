@@ -34,6 +34,25 @@ describe("hosted voices", () => {
     expect(result.audio.readUInt32LE(24)).toBe(22050);
   });
 
+  it("hands 24 kHz PCM over as it arrives when asked, and still returns the whole WAV", async () => {
+    const got: number[] = [];
+    const result = await synthesizeHostedVoice({
+      profileId: "openrouter:google/gemini-3.1-flash-tts-preview:Puck",
+      text: "Hello there",
+      env: { OPENROUTER_API_KEY: "k" },
+      onPcm: (pcm: Buffer) => got.push(pcm.length),
+      fetchImpl: (async () => new Response(new ReadableStream({
+        start(c) {
+          c.enqueue(new Uint8Array(301));
+          c.enqueue(new Uint8Array(199));
+          c.close();
+        },
+      }), { status: 200, headers: { "content-type": "audio/pcm;rate=24000;channels=1" } })) as any,
+    });
+    expect(got).toEqual([301, 199]);
+    expect(result.audio.length).toBe(44 + 500);
+  });
+
   it("steers Gemini delivery with a leading direction and other models with instructions", async () => {
     const sent: any[] = [];
     const fetchImpl = (async (_url: string, init: any) => {
