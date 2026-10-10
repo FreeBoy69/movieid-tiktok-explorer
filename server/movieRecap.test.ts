@@ -272,6 +272,28 @@ describe("recap files", () => {
 });
 
 describe("long recaps run in film order", () => {
+  it("lets a dense line reach back to its own moment, never into the line before's or the next line's", async () => {
+    const { lineWindows } = await import("./movieRecap.js");
+    // Lines whose words point at 97, 125 and 150 s, with stretches pushed forward by the 3.2x layout.
+    const beats = [
+      { id: "l1", from: 90, to: 140, seconds: 15, centre: 97 },
+      { id: "l2", from: 140, to: 190, seconds: 15, centre: 125 },
+      { id: "l3", from: 190, to: 240, seconds: 15, centre: 150 },
+    ] as any;
+    const w = lineWindows(beats, 8700);
+    // Line 2 now covers the cup (119 s) and the note (127-133 s), starting after line 1's moment.
+    expect(w[1].from).toBeLessThanOrEqual(119);
+    expect(w[1].from).toBeGreaterThan(97);
+    expect(w[2].from).toBeLessThanOrEqual(150 - 12);
+    expect(w[2].from).toBeGreaterThan(125);
+    // Forward edges stay where they were, and a line without a centre keeps its stretch.
+    expect(w.map((x: any) => x.to)).toEqual(beats.map((b: any, k: number) => Math.max(b.to, w[k].to)));
+    expect(lineWindows([{ id: "x", from: 300, to: 360, seconds: 10 }] as any, 8700)[0].from).toBeLessThanOrEqual(300);
+    // The long-recap matcher windows use the same reach.
+    expect(chronologicalWindows(beats, 8700, true)[1].from).toBeLessThanOrEqual(119);
+  });
+
+
   it("never lets a line's stretch start before the line before it", () => {
     const beats = [{ from: 600, to: 700, seconds: 12 }, { from: 400, to: 500, seconds: 12 }, { from: 900, to: 1000, seconds: 12 }] as any;
     const long = chronologicalWindows(beats, 6000, true);
@@ -668,8 +690,8 @@ describe("opening on the best shots", () => {
     expect(lengths.length).toBeGreaterThanOrEqual(4);
   });
 
-  it("ranks clips as a hook with Jev and opens a recap without an intro on the best", async () => {
-    const { rankCaptivating, openOnBest } = await import("./movieRecap.js");
+  it("ranks clips as a hook with Jev (for an intro montage)", async () => {
+    const { rankCaptivating } = await import("./movieRecap.js");
     const analysis = { shots: [{ i: 0, t: 10 }, { i: 1, t: 100 }, { i: 2, t: 200 }] } as any;
     const described = { 0: "two people chat at a table", "tag:0": { s: "medium", a: false }, 1: "a terrified woman screams as the bridge snaps", "tag:1": { s: "close", a: true }, 2: "a mountain at dawn", "tag:2": { s: "wide", a: false } } as any;
     const edit = { cuts: [{ beatId: "b0", start: 8.5, duration: 3 }, { beatId: "b1", start: 98.5, duration: 3.5 }, { beatId: "b2", start: 198.5, duration: 3 }] } as any;
@@ -677,11 +699,6 @@ describe("opening on the best shots", () => {
     const jev = async (items: any[]) => [...items].sort((a, b) => (b.shows.includes("screams") ? 1 : 0) - (a.shows.includes("screams") ? 1 : 0));
     const order = await rankCaptivating({ script: { long: { beats: [] } }, film: { title: "F" } } as any, analysis, described, edit, { jev: jev as any });
     expect(order[0]).toBe(1);
-    const built = { plan: { formats: { long: { cuts: [{ start: 8.5, end: 11.5, duration: 3 }, { start: 98.5, end: 102, duration: 3.5 }, { start: 198.5, end: 201.5, duration: 3 }] } } }, edit: { long: edit }, stats: {} } as any;
-    const out = openOnBest({ script: { long: { beats: [{ id: "b0" }] } } } as any, built, order);
-    expect(out.plan.formats.long.cuts[0].start).toBeGreaterThanOrEqual(98.5);
-    expect(out.plan.formats.long.cuts[0].end).toBeLessThanOrEqual(102);
-    expect(out.edit.long.cuts[0].hook).toBe(true);
   });
 
   it("asks the vision model about borderline jump cuts only", async () => {

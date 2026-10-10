@@ -48,6 +48,29 @@ export function cutLengths(duration, { minClip = 3, maxClip = 4 } = {}, random =
   return rounded;
 }
 
+/**
+ * One matched frame per cut. The anchors were matched to a first pass's cuts; when this pass splits the beat
+ * differently, each cut takes the anchor whose cut covered the same point in the narration, so a count
+ * mismatch no longer drops every match (the cuts then spread evenly and ran ahead of the words).
+ * @param {Array<number | null> | undefined} anchors @param {number[]} lengths
+ */
+export function alignedAnchors(anchors, lengths) {
+  if (!Array.isArray(anchors) || !anchors.length || !lengths.length) return null;
+  if (anchors.length === lengths.length) return [...anchors];
+  const total = lengths.reduce((sum, l) => sum + l, 0) || 1;
+  const out = [];
+  let at = 0;
+  let previous = -1;
+  for (const length of lengths) {
+    const k = Math.min(anchors.length - 1, Math.floor(((at + length / 2) / total) * anchors.length));
+    // Two cuts landing on one anchor: the second has no frame of its own.
+    out.push(k === previous ? null : anchors[k]);
+    previous = k;
+    at += length;
+  }
+  return out;
+}
+
 function overlaps(used, start, end, pad) {
   return used.some((range) => start < range.end + pad && end > range.start - pad);
 }
@@ -125,7 +148,9 @@ export function planRecapCuts(input) {
     // A beat may set its own cut lengths (an intro montage plays quick cuts).
     // A beat may set its own cut lengths (an intro montage cuts on its narration's phrasing) or limits.
     const given = Array.isArray(beat.lengths) && beat.lengths.length && Math.abs(beat.lengths.reduce((sum, l) => sum + l, 0) - (Number(beat.duration) || 0)) < 0.01 ? [...beat.lengths] : null;
-    const lengths = given || cutLengths(Number(beat.duration) || 0, { ...options, ...(beat.minClip ? { minClip: beat.minClip } : {}), ...(beat.maxClip ? { maxClip: beat.maxClip } : {}) }, random);
+    // Lengths come from the beat's own random stream: gap draws (one per cut, and fast-cut splits add cuts)
+    // must not shift later beats' lengths, or the cuts matched on a first pass no longer line up.
+    const lengths = given || cutLengths(Number(beat.duration) || 0, { ...options, ...(beat.minClip ? { minClip: beat.minClip } : {}), ...(beat.maxClip ? { maxClip: beat.maxClip } : {}) }, rng(`${input.seed}:${beat.id}`));
     if (!lengths.length) continue;
     const lastUsable = film - endGuard;
     const from = Math.max(startGuard, Math.min(Number(beat.from) || 0, lastUsable - 1));
@@ -143,7 +168,7 @@ export function planRecapCuts(input) {
     previousFrom = from;
     // Matched frames per cut; a cut shortened to fit a fast shot hands its leftover time to a new cut, which
     // has no frame of its own.
-    const cutAnchors = Array.isArray(beat.cutAnchors) && beat.cutAnchors.length === lengths.length ? [...beat.cutAnchors] : null;
+    const cutAnchors = alignedAnchors(beat.cutAnchors, lengths);
     for (let i = 0; i < lengths.length; i++) {
       let length = lengths[i];
       // In a fast-cut scene (an action climax: shots of about a second) no shot holds a 2-4 s cut, and

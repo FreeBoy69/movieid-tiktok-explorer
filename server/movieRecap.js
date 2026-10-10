@@ -1091,7 +1091,9 @@ export function placeScript(script, analysis, described) {
       const spanOf = new Map(inOrder.map((k, n) => [k, spans[n]]));
       out[format] = { ...script[format], beats: beats.map((beat, k) => {
         const span = free[k] ? placed[k] : spanOf.get(k);
-        return { ...beat, from: Math.round(span.from), to: Math.round(span.to), placed: true, ...(free[k] ? { teaser: true } : {}) };
+        // `centre` is where the line's words point: its window reaches back to it (see lineWindows) when the
+        // shared-out stretch was pushed past it by dense lines before.
+        return { ...beat, from: Math.round(span.from), to: Math.round(span.to), placed: true, ...(free[k] ? { teaser: true } : { centre: Math.round(placed[k].centre) }) };
       }) };
     } else {
       out[format] = { ...script[format], beats: beats.map((beat, k) => (placed[k].moved ? { ...beat, from: Math.round(placed[k].from), to: Math.round(placed[k].to), placed: true } : beat)) };
@@ -1111,6 +1113,10 @@ export function teaserLines(beats) {
   for (let k = 0; k <= last; k++) free[k] = true;
   return free;
 }
+
+/** Bumped whenever matching or planning changes, so a re-render matches again instead of reusing the
+ *  cached frames (2: cuts follow the words, line windows reach back to their own moments, no opening hook). */
+export const MATCHING_VERSION = 2;
 
 /** Film each line's cuts need: its cuts, the film skipped between them (1.5-5 s), and the short camera
  *  shots passed over to keep each cut inside one shot. Measured on Fall 2 (median shot 2.1 s): a cut
@@ -1369,6 +1375,29 @@ function captionLines(beats, pauses = PAUSE, { maxWords = 6, maxChars = 40 } = {
 }
 
 /** The stretch of film a beat may cut from: its own range, widened until it can hold its cuts and gaps. */
+/** How far before its shared-out stretch a line may reach for its own moment (where its words point). */
+const REACH_BACK = 20;
+/**
+ * Each long-recap line's window: its stretch, reaching back to where its words point when dense lines
+ * before it pushed the stretch past that. Lines 1-3 of Spider-Man: Brand New Day all describe film 95-150 s;
+ * with stretches of 3.2x their narration, line 2 ("Peter holds a paper cup… unfolds a note") started at
+ * 142 s, past the cup and the note, and said "paper cup" over Spider-Man on a ledge. The reach stops short
+ * of the line before's own moment, and the forward edge never moves, so no line takes the next one's
+ * frames (the Fall 2 rule); the chronological order of cuts keeps them in film order.
+ */
+export function lineWindows(beats, film) {
+  let previousCentre = -Infinity;
+  return beats.map((beat) => {
+    const window = beatWindow(beat, film);
+    if (beat.teaser || !Number.isFinite(beat.centre)) return window;
+    const centre = beat.centre;
+    const floor = Number.isFinite(previousCentre) ? (previousCentre + centre) / 2 : -Infinity;
+    previousCentre = centre;
+    const from = Math.max(1, floor, Math.min(window.from, centre - REACH_BACK));
+    return { ...window, from: Math.min(window.from, from) };
+  });
+}
+
 function beatWindow(beat, film) {
   const duration = beat.seconds + PAUSE;
   const need = duration * 2.6 + 8;
@@ -1436,6 +1465,7 @@ export function buildRecapPlan(project, analysis, matches = {}) {
     const beats = project.script[format]?.beats || [];
     // The opening keeps up a quicker pace: the first two story lines cut at 1.5-2.5 s.
     const opening = new Set(beats.filter((beat) => !beat.teaser).slice(0, 2).map((beat) => beat.id));
+    const windows = format === "long" ? lineWindows(beats, film) : beats.map((beat) => beatWindow(beat, film));
     const planned = planRecapCuts({
       seed: `${project.id}-${format}`,
       filmDuration: film,
@@ -1448,9 +1478,9 @@ export function buildRecapPlan(project, analysis, matches = {}) {
       avoid: [...(analysis.avoid || []), ...emptyUnlessMatched(analysis.emptySpans, matches[format])],
       shotCuts: analysis.shotCuts,
       sourceScale: project.options.transforms?.speed ? 1.05 : 1,
-      beats: beats.map((beat) => {
+      beats: beats.map((beat, k) => {
         // Each cut needs 2-4 s plus a skipped gap, so a beat needs about 2.5x its length of film.
-        const { from, to, duration } = beatWindow(beat, film);
+        const { from, to, duration } = windows[k];
         return { id: beat.id, duration, from, to, anchors: beat.shots.map(shotTime).filter((t) => t !== undefined), cutAnchors: matches[format]?.[beat.id], ...(beat.teaser ? { free: true, minClip: INTRO_CUT[0], maxClip: INTRO_CUT[1], lengths: phraseCutLengths(beat.text, duration, INTRO_CUT[0], INTRO_CUT[1]) } : opening.has(beat.id) ? { minClip: 1.5, maxClip: 2.5 } : {}) };
       }),
     });
@@ -1605,7 +1635,7 @@ export async function matchCutsToFrames(project, analysis, described, firstEdit,
         try {
           const { value } = await request({
             kind: "text", model, json: true, maxTokens: 4000, temperature: 0.2, reasoningEffort: "low", signal,
-            messages: [{ role: "user", content: `You are editing a movie recap. For every CUT, pick the one FRAME (by its # number, from that line's list) that best shows what the narrator says during that cut: the same character, action, object, or place. What is said matters more than where the frame sits in the film. Strongly prefer [close] and [medium] frames where someone is doing something [action]; use [wide] only when nothing closer fits. Pick a [no person] frame (an object or place alone) only when the words name that object or place. When the words describe an action (someone falls, jumps, is shot, attacked, or killed), pick the frame of that moment itself, even if it is [dark] or [graphic]: dark frames get brightened and graphic ones play in black and white. Between frames that match equally, prefer one that isn't [dark]. [subtitled] frames carry the film's own subtitles, which get blurred out: pick one only when it is clearly the best match. ${chronological ? "This is a full recap told in film order: frames are listed in film order, and each cut's frame must come at or after the frame of the cut before it, including across lines. Never go back to an earlier scene unless the line itself says so (a flashback or a memory)." : "Prefer frames in story order within a line."} Never pick the same frame twice or two frames less than 6 seconds apart in one line.\n\n${brief}\n\nReturn JSON only: {"lines":[{"id":"<line id>","cuts":[<frame number for cut 1>, ...]}]} with exactly one frame per cut.` }],
+            messages: [{ role: "user", content: `You are editing a movie recap. For every CUT, pick the one FRAME (by its # number, from that line's list) that best shows what the narrator says during that cut: the same character, action, object, or place. What is said matters more than where the frame sits in the film. Strongly prefer [close] and [medium] frames where someone is doing something [action]; use [wide] only when nothing closer fits. Pick a [no person] frame (an object or place alone) only when the words name that object or place. When the words describe an action (someone falls, jumps, is shot, attacked, or killed), pick the frame of that moment itself, even if it is [dark] or [graphic]: dark frames get brightened and graphic ones play in black and white. Between frames that match equally, prefer one that isn't [dark]. [subtitled] frames carry the film's own subtitles, which get blurred out: pick one only when it is clearly the best match. ${chronological ? "This is a full recap told in film order: frames are listed in film order, and each cut's frame must come at or after the frame of the cut before it, including across lines. Never go back to an earlier scene unless the line itself says so (a flashback or a memory)." : "Prefer frames in story order within a line."} Never pick the same frame for two cuts, but neighbouring frames are fine: while the narrator stays on one moment, several cuts in a row should stay on that moment (different frames of it). Each cut shows what is said during that cut, never what the narrator says next: the picture must not run ahead of the words.\n\n${brief}\n\nReturn JSON only: {"lines":[{"id":"<line id>","cuts":[<frame number for cut 1>, ...]}]} with exactly one frame per cut.` }],
             validate: (v) => { if (!Array.isArray(listOf(v, "lines"))) throw new Error("No lines"); },
           });
           for (const line of listOf(value, "lines")) {
@@ -1682,8 +1712,9 @@ async function rankCutsWithJev(tasks, chosen, analysis, described, { signal, jev
 /** Each line's stretch of film, made to move forward through the film for a long recap. */
 export function chronologicalWindows(beats, film, chronological) {
   let floor = 0;
-  return beats.map((beat) => {
-    const window = beatWindow(beat, film);
+  const reached = chronological ? lineWindows(beats, film) : beats.map((beat) => beatWindow(beat, film));
+  return beats.map((beat, k) => {
+    const window = reached[k];
     // The opening teaser previews later moments: it keeps its own stretch and doesn't move the order.
     if (!chronological || beat.teaser) return window;
     const from = Math.max(window.from, floor);
@@ -2343,19 +2374,6 @@ export function phraseCutLengths(text, duration, min = 1.4, max = 2.6) {
   return rounded;
 }
 
-/** A recap without an intro opens on its most captivating clip. */
-export function openOnBest(project, built, order, format = "long") {
-  const plan = built.plan.formats[format];
-  const edit = built.edit[format];
-  if (!plan?.cuts.length || !edit || (project.script[format]?.beats || []).some((beat) => beat.teaser)) return built;
-  const first = plan.cuts[0];
-  const best = order.map((i) => ({ i, cut: plan.cuts[i] })).find(({ i, cut }) => i > 0 && cut && cut.end - cut.start >= first.duration - 0.01);
-  if (!best) return built;
-  const start = best.cut.start + (best.cut.end - best.cut.start - first.duration) / 2;
-  const cuts = [{ ...first, start: Math.round(start * 1000) / 1000, end: Math.round((start + first.duration) * 1000) / 1000, flip: false, ...(best.cut.bw ? { bw: true } : {}) }, ...plan.cuts.slice(1)];
-  const editCuts = [{ ...edit.cuts[0], start: cuts[0].start, hook: true }, ...edit.cuts.slice(1)];
-  return { ...built, plan: { ...built.plan, formats: { ...built.plan.formats, [format]: { ...plan, cuts } } }, edit: { ...built.edit, [format]: { ...edit, cuts: editCuts } } };
-}
 /** Cut lengths for the intro montage: quick cuts of the best shots (seconds, shortest and longest). */
 const INTRO_CUT = [0.9, 1.6];
 
@@ -2698,7 +2716,7 @@ async function stagePlanAndRender(userId, project, signal) {
     await save(userId, project, { script: placeScript(project.script, analysis, described) });
     // Matching and the checks are paid AI steps: a retry or re-render with the same script and settings
     // reuses what they found instead of paying for them again.
-    const cacheKey = crypto.createHash("sha1").update(JSON.stringify([project.script, project.options, analysis.shotCuts?.length || 0])).digest("hex");
+    const cacheKey = crypto.createHash("sha1").update(JSON.stringify([MATCHING_VERSION, project.script, project.options, analysis.shotCuts?.length || 0])).digest("hex");
     const cached = await readJson(userId, project.id, "plan-cache.json", null);
     const reuse = cached?.key === cacheKey ? cached : null;
     const look = (times) => lookAt(userId, project, times, signal);
@@ -2742,9 +2760,10 @@ async function stagePlanAndRender(userId, project, signal) {
       rethrowBlocked(error);
       console.warn(`[movie-recap] jump-cut check skipped: ${error.message}`);
     }
-    // The opening: Jev ranks the clips as a hook; an intro plays the top four or five, a recap without one
-    // opens on the best.
-    if (edit.long) {
+    // The opening: with an intro, Jev ranks the clips as a hook and the intro plays the top four or five.
+    // Without one the recap opens on its first line's own footage: a "best" shot from later in the film put
+    // a different character over "The movie begins in a dim room" (Spider-Man: Brand New Day).
+    if (edit.long && (project.script.long?.beats || []).some((beat) => beat.teaser)) {
       await report(userId, project, "Choosing the opening shots", 0.8335);
       const order = await rankCaptivating(project, analysis, described, edit.long, { look, signal }).catch((error) => {
         if (signal.aborted) throw error;
@@ -2753,7 +2772,6 @@ async function stagePlanAndRender(userId, project, signal) {
         return null;
       });
       ({ plan, stats, edit } = fillTeaserMontage(project, { plan, stats, edit }, "long", order, described, analysis));
-      if (order) ({ plan, stats, edit } = openOnBest(project, { plan, stats, edit }, order));
     }
     if (plan.formats.short?.cuts.length) {
       await report(userId, project, "Checking the main character is centred in every Short cut", 0.835);
