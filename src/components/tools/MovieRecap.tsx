@@ -695,14 +695,14 @@ function RecapBar({ title, meta, onBack, actions }: { title: string; meta?: stri
   );
 }
 
-// Narration uses fast voices only: Kokoro voices on our media server (about twice as fast as real time),
-// then hosted cloud voices. Cloned voices run on the same CPU about 13 times slower than real time (a
-// 10-minute recap took two hours), so they aren't offered here.
+// Narration uses fast voices only: preset voices on our media server (KittenTTS mini, about three times
+// faster than real time), then hosted cloud voices. Cloned voices (KittenTTS 2) run on the same CPU four
+// to six times slower than real time, too slow for a whole recap, so they aren't offered here.
 const isLocalVoice = (voice: VoiceProfile) => !voice.id.startsWith("openrouter:");
-const isKokoro = (voice: VoiceProfile) => /kokoro/i.test(`${voice.presetEngine || ""} ${voice.defaultEngine || ""}`);
+const isFastLocal = (voice: VoiceProfile) => /kitten-mini|kokoro/i.test(`${voice.presetEngine || ""} ${voice.defaultEngine || ""}`);
 function narrationVoices(profiles: VoiceProfile[]) {
   const ready = profiles.filter(isVoiceReady);
-  return [...ready.filter(isKokoro), ...ready.filter((voice) => !isLocalVoice(voice))];
+  return [...ready.filter(isFastLocal), ...ready.filter((voice) => !isLocalVoice(voice))];
 }
 /** The recap's narrator when it is still offered, else the first fast voice. */
 const offeredVoice = (list: VoiceProfile[], voiceId: string) => (list.some((v) => v.id === voiceId) ? voiceId : list[0]?.id || "");
@@ -732,8 +732,8 @@ function RetryWithVoice({ recap, onRetry }: { recap: Recap; onRetry: (voiceId?: 
 }
 
 function VoiceSpeedNote({ voice, minutes }: { voice?: VoiceProfile; minutes: number }) {
-  if (!voice || !isKokoro(voice)) return null;
-  const estimate = Math.max(1, Math.round(minutes * 0.6));
+  if (!voice || !isFastLocal(voice)) return null;
+  const estimate = Math.max(1, Math.round(minutes * 0.4));
   return <p className="mt-note">Narrated on our own server, about {estimate} minute{estimate === 1 ? "" : "s"} of recording.</p>;
 }
 

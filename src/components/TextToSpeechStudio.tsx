@@ -21,8 +21,7 @@ import "./CreatorStudio.css";
 import "./AudioStudio.css";
 import { VoicePicker } from "./VoicePicker";
 import { AudioPlayer } from "./AudioPlayer";
-import { FieldPicker, LanguagePicker, languageName, VOICEBOX_LANGUAGES } from "./LanguagePicker";
-import { VOICE_ENGINES } from "../utils/voiceEngines";
+import { LanguagePicker, languageName, VOICEBOX_LANGUAGES } from "./LanguagePicker";
 import { confirm } from "./ui/Dialog";
 import { SearchField, Segmented, Tabs } from "./ui/controls";
 
@@ -53,9 +52,9 @@ export type Generation = {
 };
 
 const FALLBACK_VOICES: VoiceProfile[] = [
-  { id: "demo-prime", name: "Prime", description: "Narration voice, good for recaps", language: "en", voiceType: "preset", defaultEngine: "kokoro" },
-  { id: "demo-story", name: "Storyline", description: "Warm explainer tone", language: "en", voiceType: "preset", defaultEngine: "kokoro" },
-  { id: "demo-energy", name: "Momentum", description: "Fast short-form delivery", language: "en", voiceType: "preset", defaultEngine: "kokoro" },
+  { id: "demo-prime", name: "Prime", description: "Narration voice, good for recaps", language: "en", voiceType: "preset", defaultEngine: "kitten-mini" },
+  { id: "demo-story", name: "Storyline", description: "Warm explainer tone", language: "en", voiceType: "preset", defaultEngine: "kitten-mini" },
+  { id: "demo-energy", name: "Momentum", description: "Fast short-form delivery", language: "en", voiceType: "preset", defaultEngine: "kitten-mini" },
 ];
 
 const STUDIO_TABS: Array<{ id: StudioTab; label: string; icon: typeof Volume2 }> = [
@@ -94,7 +93,7 @@ export function TextToSpeechStudio({ theme = "light", initialText = "" }: { them
   const [selectedVoiceId, setSelectedVoiceId] = useState("");
   const [text, setText] = useState("Jack entered the arena knowing one mistake would end the duel.");
   const [language, setLanguage] = useState("en");
-  const [engine, setEngine] = useState("kokoro");
+  const [engine, setEngine] = useState("kitten-mini");
   const [loadingVoices, setLoadingVoices] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState("");
@@ -208,7 +207,6 @@ export function TextToSpeechStudio({ theme = "light", initialText = "" }: { them
           text,
           language,
           engine,
-          modelSize: engine === "qwen-0.6b" ? "0.6B" : "1.7B",
         }),
       });
       const data = await readJson(response, "Speech generation failed");
@@ -400,7 +398,6 @@ function GenerateTab(props: {
   });
   const words = props.text.trim() ? props.text.trim().split(/\s+/).length : 0;
   // Hosted voices pick their own model, so the engine menu only shows for studio voices.
-  const hosted = selectedVoiceId.startsWith("openrouter:");
   const blockedReason = !props.online ? "No voices loaded yet. Refresh voices." : !selectedVoiceId ? "Choose a voice first." : !props.text.trim() ? "" : "";
   return (
     <form onSubmit={(event) => void props.generateSpeech(event)} className="as-generate">
@@ -451,12 +448,6 @@ function GenerateTab(props: {
                 }}
               />
             </label>
-            {hosted ? null : (
-              <div className="as-field">
-                <span>Engine</span>
-                <FieldPicker value={props.engine} onChange={props.setEngine} options={VOICE_ENGINES} label="Engine" />
-              </div>
-            )}
             <div className="as-field">
               <span>Language</span>
               <LanguagePicker value={props.language} onChange={props.setLanguage} only={VOICEBOX_LANGUAGES} />

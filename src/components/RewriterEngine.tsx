@@ -22,8 +22,7 @@ import { useErrorToast } from "../utils/toast";
 import { loadVoiceProfiles } from "../utils/voiceProfiles";
 import { VoicePicker } from "./VoicePicker";
 import { AudioPlayer } from "./AudioPlayer";
-import { FieldPicker, LanguagePicker, VOICEBOX_LANGUAGES } from "./LanguagePicker";
-import { engineOptions } from "../utils/voiceEngines";
+import { LanguagePicker, VOICEBOX_LANGUAGES } from "./LanguagePicker";
 import { FileDrop } from "./FileDrop";
 
 interface Props {
@@ -66,8 +65,8 @@ type AudioItem = {
 type EditorTab = "script" | "settings" | "history" | "downloads";
 
 const FALLBACK_VOICES: VoiceProfile[] = [
-  { id: "demo-prime", name: "Prime", description: "Fast recap narrator", language: "en", defaultEngine: "kokoro" },
-  { id: "demo-story", name: "Storyline", description: "Warm explainer voice", language: "en", defaultEngine: "kokoro" },
+  { id: "demo-prime", name: "Prime", description: "Fast recap narrator", language: "en", defaultEngine: "kitten-mini" },
+  { id: "demo-story", name: "Storyline", description: "Warm explainer voice", language: "en", defaultEngine: "kitten-mini" },
 ];
 
 
@@ -114,7 +113,7 @@ export function RewriterEngine({ initialTranscript = "", phases = [], onBack }: 
   const [generatingAudio, setGeneratingAudio] = useState(false);
   const [profiles, setProfiles] = useState<VoiceProfile[]>([]);
   const [selectedVoiceId, setSelectedVoiceId] = useState("");
-  const [engine, setEngine] = useState("kokoro");
+  const [engine, setEngine] = useState("kitten-mini");
   const [language, setLanguage] = useState("en");
   const [speed, setSpeed] = useState(60);
   const [stability, setStability] = useState(50);
@@ -280,7 +279,6 @@ export function RewriterEngine({ initialTranscript = "", phases = [], onBack }: 
           text: activeVersion.content,
           language,
           engine: selectedVoice.defaultEngine || engine,
-          modelSize: engine === "qwen-0.6b" ? "0.6B" : "1.7B",
           waitForCompletion: false,
         }),
       });
@@ -557,10 +555,6 @@ function SettingsPanel(props: {
       <div className="block">
         <span className="mb-2 block text-sm font-semibold underline decoration-dotted underline-offset-4">Voice</span>
         <VoicePicker voices={props.voices} value={props.selectedVoiceId} onChange={props.setSelectedVoiceId} />
-      </div>
-      <div className="block">
-        <span className="mb-2 block text-sm font-semibold underline decoration-dotted underline-offset-4">Engine</span>
-        <FieldPicker value={props.engine} onChange={props.setEngine} options={engineOptions(["kokoro", "qwen", "qwen-0.6b", "chatterbox_turbo"])} label="Engine" />
       </div>
       <div className="block">
         <span className="mb-2 block text-sm font-semibold underline decoration-dotted underline-offset-4">Language</span>

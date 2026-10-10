@@ -28,7 +28,7 @@ export const LANGUAGES: Language[] = [
   { code: "sw", name: "Swahili", native: "Kiswahili", locale: "sw-KE" },
 ];
 
-// What the self-hosted voice engines (Voicebox: Kokoro and Qwen) speak.
+// What our self-hosted voices (KittenTTS) are offered in.
 export const VOICEBOX_LANGUAGES = ["en", "zh", "ja", "ko", "de", "fr", "es", "pt", "it", "sw"];
 
 const base = (value: string) => value.toLowerCase().split(/[-_]/)[0];

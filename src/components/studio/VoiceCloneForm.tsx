@@ -35,7 +35,7 @@ export async function cloneVoiceProfile({ sample, filename, name, description = 
   try {
     onStage?.("Creating the voice");
     const profile = await json(
-      await fetch(VOICE_PROFILES_ROUTE, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: name.trim().slice(0, 100) || generateVoiceName(), description, language, voiceType: "cloned", defaultEngine: "qwen" }) }),
+      await fetch(VOICE_PROFILES_ROUTE, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: name.trim().slice(0, 100) || generateVoiceName(), description, language, voiceType: "cloned", defaultEngine: "kitten" }) }),
       "Couldn't create the voice",
     );
     created = String(profile.profile?.id || "");

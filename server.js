@@ -11985,25 +11985,16 @@ function normalizeVoiceboxProfile(profile) {
         raw: profile,
     };
 }
+// The voice service (KittenVoice on the media server) speaks with KittenTTS: KittenTTS 2 for cloned
+// voices, the mini model for presets. Engine names from before (Voicebox's Qwen, Kokoro, Chatterbox…)
+// still arrive from saved projects and map onto those two.
 function normalizeVoiceboxEngine(value) {
     const raw = String(value || "").trim().toLowerCase().replace(/[\s_]+/g, "-");
     if (!raw)
         return "";
-    if (raw.includes("qwen-custom"))
-        return "qwen_custom_voice";
-    if (raw.includes("chatterbox-turbo"))
-        return "chatterbox_turbo";
-    if (raw.includes("chatterbox"))
-        return "chatterbox";
-    if (raw.includes("luxtts"))
-        return "luxtts";
-    if (raw.includes("kokoro"))
-        return "kokoro";
-    if (raw.includes("tada"))
-        return "tada";
-    if (raw.includes("qwen"))
-        return "qwen";
-    return String(value || "").trim();
+    if (raw.includes("kitten-mini") || raw.includes("kokoro"))
+        return "kitten-mini";
+    return "kitten";
 }
 function voiceboxProfileIsReady(profile) {
     return Boolean(profile?.id) && (String(profile.voiceType || "").toLowerCase() !== "cloned" || Number(profile.sampleCount || 0) > 0);
@@ -12048,7 +12039,7 @@ async function generateVoiceboxSpeech(input = {}) {
         language: String(input.language || "en").trim() || "en",
         model_size: voiceboxModelSize(),
     };
-    const engine = normalizeVoiceboxEngine(input.engine || input.defaultEngine || input.default_engine || profile.defaultEngine || (String(profile.voiceType || "").toLowerCase() === "cloned" ? "qwen" : ""));
+    const engine = normalizeVoiceboxEngine(input.engine || input.defaultEngine || input.default_engine || profile.defaultEngine || (String(profile.voiceType || "").toLowerCase() === "cloned" ? "kitten" : ""));
     if (engine)
         payload.engine = engine;
     const instruct = String(input.instruct || "").trim();
@@ -16605,7 +16596,7 @@ async function createDramaVoiceClone(name, samplePath, referenceText, descriptio
         const { data: profileData } = await voiceboxJson("/profiles", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ name: humanVoiceName(name, await takenVoiceNames()).slice(0, 100), description: String(description || DRAMA_VOICE_DESCRIPTION).slice(0, 300), language: "en", voice_type: "cloned", default_engine: "qwen" }),
+            body: JSON.stringify({ name: humanVoiceName(name, await takenVoiceNames()).slice(0, 100), description: String(description || DRAMA_VOICE_DESCRIPTION).slice(0, 300), language: "en", voice_type: "cloned", default_engine: "kitten" }),
         });
         const profile = normalizeVoiceboxProfile(profileData);
         if (!profile.id)
@@ -16669,7 +16660,7 @@ async function createVoiceProfileFromMedia(sourcePath, workspace, body) {
             description: `${buildSourceVoiceProfileDescription(body.sourceUploadId)} [autoyt-scan:opening-${Math.round(maximumOpeningSeconds)}s] [autoyt-sample:${Math.round(sampleWindow.duration)}s-at-${Math.round(sampleWindow.start)}s]`,
             language: "en",
             voice_type: "cloned",
-            default_engine: "qwen",
+            default_engine: "kitten",
         }),
     });
     const profile = normalizeVoiceboxProfile(profileData);
@@ -16736,8 +16727,7 @@ async function generateVoiceStudioNarration(script, workspace, options = {}) {
     const chunks = splitVoiceoverText(script);
     if (!chunks.length)
         throw new Error("No narration text was available for voice generation.");
-    // Callers like Create Video pass only a voice ID. Without the profile the
-    // engine defaulted to "qwen", which Voicebox rejects for Kokoro presets.
+    // Callers like Create Video pass only a voice ID; the profile says which engine speaks it.
     if (!options.profile && options.profileId) {
         const profile = await findVoiceboxProfile(options.profileId);
         if (!profile)
@@ -16755,7 +16745,7 @@ async function generateVoiceStudioNarration(script, workspace, options = {}) {
         let generated = null;
         const requestedEngines = Array.isArray(options.engineCandidates) && options.engineCandidates.length
             ? options.engineCandidates
-            : [options.profile?.defaultEngine || "qwen"];
+            : [options.profile?.defaultEngine || "kitten"];
         const engineCandidates = requestedEngines.map(normalizeVoiceboxEngine).filter(Boolean);
         let lastGenerationError = null;
         for (let attempt = 0; attempt < engineCandidates.length; attempt += 1) {
@@ -16923,7 +16913,7 @@ async function createTemporarySceneVoiceProfile(sourceAudioPath, workspace, scen
             description,
             language: options.language || "en",
             voice_type: "cloned",
-            default_engine: "qwen",
+            default_engine: "kitten",
         }),
     });
     const profile = normalizeVoiceboxProfile(profileData);
@@ -17519,7 +17509,7 @@ async function runVoiceStudioProcess(job) {
             sourceUploadId: upload.id,
             sourceDuration,
             generationTimeoutMs: 5 * 60 * 1000,
-            engineCandidates: body.preserveCharacterVoices === false ? [profile.defaultEngine || "qwen", profile.defaultEngine || "qwen"] : null,
+            engineCandidates: body.preserveCharacterVoices === false ? [profile.defaultEngine || "kitten", profile.defaultEngine || "kitten"] : null,
             instruct: body.preserveCharacterVoices === false ? "Speak clearly at a brisk, natural pace. Keep pauses short and do not draw out words." : "",
             onSceneProgress: ({ completed, total, current }) => {
                 const fraction = total > 0 ? completed / total : 0;
