@@ -2,7 +2,7 @@
 // agent chat's report, cards, live blocks, specialist checks, settings changes, and one-click actions) and
 // the generations Juel started, previewed as they finish. Also the credits toast and voice input.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Activity, AlertCircle, ArrowUpRight, BarChart3, Bot, CheckCircle2, ChevronDown, Clock3, Coins, Eye, Layers3, Loader2, Navigation, Play, RefreshCw, Settings2, Sparkles, Square, TrendingUp } from "lucide-react";
+import { Activity, AlertCircle, ArrowUpRight, BarChart3, Bot, Check, CheckCircle2, ChevronDown, ChevronRight, Clock3, Coins, Eye, Layers3, Loader2, Navigation, Play, RefreshCw, Settings2, Sparkles, Square, TrendingUp } from "lucide-react";
 import { AgentChatBlocks, FormattedChatText, type AgentChatBlock } from "./AgentStructuredContent";
 import { AudioPlayer } from "./AudioPlayer";
 import { VideoPlayer } from "./VideoPlayer";
@@ -35,6 +35,8 @@ export type MediaAttachment = { kind: "media"; items: Array<{ type: "image" | "v
 export type ReportAttachment = { kind: "report"; title: string; cards: ReportCard[]; table: { columns: string[]; rows: string[][] } | null };
 export type JuelAttachment = OperatorAttachment | GenerationAttachment | MediaAttachment | ReportAttachment;
 export type JuelSpend = { specialist?: string; does: string; credits: number; status: "started" | "refused" };
+/** One thing Juel did in a turn: a route call (or a page action), what it touched, whether it worked, and its cost. */
+export type JuelReceipt = { kind?: "page"; type?: string; specialist?: string; method?: string; route?: string; path?: string; risk?: string; does?: string; ok: boolean; status?: number; credits?: number; refused?: string; error?: string; touched?: string[]; why?: string; ms?: number };
 
 const theme = (): "light" | "dark" => (document.documentElement.dataset.theme === "light" ? "light" : "dark");
 export const formatCredits = (n: number) => Math.max(0, Math.round(n)).toLocaleString("en-US");
@@ -308,6 +310,63 @@ export function OperatorAnswer({ answer, onAsk }: { answer: OperatorAttachment; 
         </div>
       ) : null}
     </section>
+  );
+}
+
+// ---------- Receipts: what Juel did in a turn ----------
+
+const RISK_LABEL: Record<string, string> = { read: "Read", change: "Change", paid: "Paid", publish: "Publish", delete: "Delete" };
+
+/** "3 actions · ≈120 credits · 1 refused": credits only when something spent them, failures counted. */
+export function receiptSummary(receipts: JuelReceipt[]) {
+  const credits = receipts.filter((r) => r.ok).reduce((sum, r) => sum + (Number(r.credits) || 0), 0);
+  const refused = receipts.filter((r) => !r.ok && r.refused).length;
+  const failed = receipts.filter((r) => !r.ok && !r.refused).length;
+  return [
+    `${receipts.length} action${receipts.length === 1 ? "" : "s"}`,
+    credits > 0 ? `≈${formatCredits(credits)} credits` : "",
+    refused ? `${refused} refused` : "",
+    failed ? `${failed} failed` : "",
+  ].filter(Boolean).join(" · ");
+}
+
+/** Under a reply: every route Juel called and page action it sent, collapsed until asked for. */
+export function JuelReceipts({ receipts }: { receipts?: JuelReceipt[] }) {
+  if (!receipts?.length) return null;
+  const trouble = receipts.some((r) => !r.ok);
+  return (
+    <details className="juel-activity juel-receipts">
+      <summary>
+        <ChevronRight size={14} className="juel-chev" aria-hidden="true" />
+        <span>What Juel did</span>
+        <span className={`juel-who${trouble ? " is-warn" : ""}`}>{receiptSummary(receipts)}</span>
+      </summary>
+      <ol className="juel-receipt-list">
+        {receipts.map((r, i) => {
+          const page = r.kind === "page";
+          const risk = page ? "page" : r.risk || "unknown";
+          const where = page ? `On the open page: ${r.type}` : `${r.method || ""} ${r.path || r.route || ""}`.trim();
+          const outcome = r.ok ? "" : r.refused || r.error || (r.status ? `Failed (${r.status})` : "Failed");
+          return (
+            <li key={i} className={`juel-receipt${r.ok ? "" : " is-failed"}`}>
+              <span className="juel-risk" data-risk={risk}>{page ? "Page" : RISK_LABEL[risk] || "Other"}</span>
+              <div className="juel-receipt-main">
+                <p className="juel-receipt-does">{r.does || r.route || r.type}</p>
+                <p className="juel-receipt-meta">
+                  <span className="juel-receipt-path">{where}</span>
+                  {r.touched?.length ? <span className="juel-receipt-ids">{r.touched.join(", ")}</span> : null}
+                </p>
+                {outcome ? <p className="juel-receipt-why"><AlertCircle size={12} aria-hidden="true" />{outcome}</p> : null}
+              </div>
+              <span className="juel-receipt-end">
+                {r.ok ? <Check size={13} className="juel-receipt-ok" role="img" aria-label={page ? "Sent" : `Done${r.status ? ` (${r.status})` : ""}`} /> : null}
+                {r.credits ? <span className="juel-receipt-cost">≈{formatCredits(r.credits)}</span> : null}
+              </span>
+            </li>
+          );
+        })}
+      </ol>
+    </details>
   );
 }
 

@@ -207,6 +207,28 @@
 @keyframes juel-breathe { 50% { opacity: 0.55; } }
 .juel-elapsed { flex: none; color: var(--j-faint); font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 11.5px; font-variant-numeric: tabular-nums; }
 
+/* Receipts: every route Juel called for a reply, its risk, what it touched, and what it cost. */
+.juel-receipts .juel-who.is-warn { color: var(--j-danger); }
+.juel-receipt-list { display: grid; margin: 8px 0 2px; padding: 2px 4px; border: 1px solid var(--j-line); border-radius: 12px; background: var(--j-panel); list-style: none; font-size: 12.5px; line-height: 1.45; }
+.juel-receipt { display: grid; grid-template-columns: 58px minmax(0, 1fr) auto; align-items: start; gap: 10px; padding: 8px 8px; }
+.juel-receipt + .juel-receipt { border-top: 1px solid var(--j-line); }
+.juel-risk { justify-self: start; margin-top: 1px; padding: 1px 7px; border-radius: 999px; background: var(--j-raised); color: var(--j-muted); font-size: 10.5px; font-weight: 700; letter-spacing: 0.02em; white-space: nowrap; }
+.juel-risk[data-risk="paid"] { background: color-mix(in srgb, var(--j-accent) 16%, transparent); color: var(--j-accent-text); }
+.juel-risk[data-risk="publish"],
+.juel-risk[data-risk="delete"] { background: color-mix(in srgb, var(--j-danger) 14%, transparent); color: var(--j-danger); }
+.juel-receipt-main { display: grid; min-width: 0; gap: 2px; }
+.juel-receipt-main p { margin: 0; }
+.juel-receipt-does { color: var(--j-text); overflow-wrap: anywhere; }
+.juel-receipt-meta { display: flex; min-width: 0; flex-wrap: wrap; gap: 2px 8px; color: var(--j-faint); font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 11px; }
+.juel-receipt-path { overflow: hidden; min-width: 0; max-width: 100%; text-overflow: ellipsis; white-space: nowrap; }
+.juel-receipt-ids { color: var(--j-muted); overflow-wrap: anywhere; }
+.juel-receipt-why { display: flex; align-items: flex-start; gap: 5px; color: var(--j-danger); }
+.juel-receipt-why svg { flex: none; margin-top: 3px; }
+.juel-receipt-end { display: inline-flex; align-items: center; gap: 6px; margin-top: 1px; }
+.juel-receipt-ok { color: #3fb950; }
+:root[data-theme="light"] .juel-receipt-ok { color: #1f7a35; }
+.juel-receipt-cost { color: var(--j-text); font-weight: 650; font-variant-numeric: tabular-nums; }
+
 /* Under a reply: copy and ask again, then the credits it took. */
 .juel-foot { display: flex; min-height: 28px; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; margin-top: -4px; }
 .juel-tools { display: flex; gap: 2px; opacity: 0; transition: opacity 0.18s ease; }

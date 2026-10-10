@@ -743,6 +743,88 @@ WATCHING A VIDEO: when the user shares a video link (or an upload) and asks what
   },
 };
 
+// ---------- Receipts: what Juel actually did in a turn, shown under his reply ----------
+
+export const MAX_RECEIPTS = 40;
+const receiptText = (value, max) => String(value ?? "").replace(/\s+/g, " ").trim().slice(0, max);
+const idLike = (value) => (typeof value === "string" || typeof value === "number") && /^[\w.:-]{1,80}$/.test(String(value));
+
+/** The ids a call touched: its path params, then an obvious id in the response (data.id, or the id of
+ *  a record it returned, such as data.generation.id or data.recap.id). At most 3, ids only. */
+export function touchedIds(params = {}, data = null) {
+  const found = [];
+  const add = (value) => {
+    if (found.length < 3 && idLike(value) && !found.includes(String(value))) found.push(String(value).slice(0, 60));
+  };
+  for (const value of Object.values(params || {})) add(value);
+  if (data && typeof data === "object" && !Array.isArray(data)) {
+    add(data.id);
+    for (const value of Object.values(data)) if (value && typeof value === "object" && !Array.isArray(value)) add(value.id);
+  }
+  return found;
+}
+
+/** Wraps a turn's `call` and `page` once, so every attempt (nested specialist consults included) leaves
+ *  a receipt: the route, its risk and plain description, the ids it touched, whether it worked or why
+ *  it was refused, and its credit estimate. Never request bodies, tokens, or response payloads.
+ *  @param {{ call: (c: any) => Promise<any>, page?: (a: any) => Promise<any>, pageActions?: () => Record<string, any>, now?: () => number, max?: number }} tools */
+export function withReceipts({ call, page, pageActions = () => ({}), now = Date.now, max = MAX_RECEIPTS }) {
+  const receipts = [];
+  const keep = (receipt) => {
+    if (receipts.length < max) receipts.push(receipt);
+  };
+  const recordedCall = async (c) => {
+    const started = now();
+    const method = String(c?.method || "GET").toUpperCase();
+    const path = receiptText(String(c?.path || "").split("?")[0], 200);
+    const hit = matchRoute(method, path);
+    const base = {
+      at: new Date(started).toISOString(),
+      specialist: receiptText(c?.specialist, 40),
+      method,
+      route: hit?.key || `${method} ${path}`,
+      path,
+      risk: hit && !hit.excluded ? hit.risk : "",
+      does: hit && !hit.excluded ? receiptText(hit.does, 160) : "",
+      why: receiptText(c?.why, 140),
+    };
+    try {
+      const result = await call(c);
+      const status = Number(result?.status) || 0;
+      const failed = status >= 400 && typeof result?.data?.error === "string" ? receiptText(result.data.error, 160) : "";
+      keep({ ...base, ok: status > 0 && status < 400, status, credits: Number(result?.credits) || 0, ...(failed ? { error: failed } : {}), touched: touchedIds(hit?.params, status < 400 ? result?.data : null), ms: now() - started });
+      return result;
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      keep({ ...base, ok: false, status: 0, credits: Number(error?.credits) || 0, refused: receiptText(reason, 160), touched: touchedIds(hit?.params), ms: now() - started });
+      throw error;
+    }
+  };
+  const recordedPage = page && (async (a) => {
+    const type = receiptText(a?.type, 60);
+    const about = receiptText(pageActions()?.[a?.type]?.about, 160);
+    try {
+      const result = await page(a);
+      keep({ kind: "page", type, does: about, specialist: receiptText(a?.specialist, 40), ok: true, credits: Number(result?.credits) || 0 });
+      return result;
+    } catch (error) {
+      keep({ kind: "page", type, does: about, specialist: receiptText(a?.specialist, 40), ok: false, credits: Number(error?.credits) || 0, refused: receiptText(error instanceof Error ? error.message : error, 160) });
+      throw error;
+    }
+  });
+  return { call: recordedCall, page: recordedPage, receipts };
+}
+
+/** One line per receipt, for outside agents: "GET /api/recaps → 200", "POST /api/recaps (paid, ≈120 credits) → 201 rcp_1". */
+export function receiptLines(receipts = []) {
+  return receipts.map((r) => {
+    const head = r.kind === "page" ? `page action ${r.type}` : r.route;
+    const tags = [r.risk && r.risk !== "read" ? r.risk : "", r.credits ? `≈${r.credits} credits` : ""].filter(Boolean).join(", ");
+    const outcome = r.refused ? `refused: ${r.refused}` : r.kind === "page" ? "sent" : String(r.status);
+    return `${head}${tags ? ` (${tags})` : ""} → ${outcome}${r.touched?.length ? ` ${r.touched.join(", ")}` : ""}`;
+  });
+}
+
 const MAX_ROUNDS = 4;
 const MAX_ASKS = 3;
 
@@ -1554,7 +1636,7 @@ export function registerJuel(app, deps) {
       if (short) {
         spends.push({ specialist, does, credits, status: "refused" });
         send({ type: "credits", does, ...short });
-        throw new JuelRefusal(`Not enough credits. ${short.message}`, "credits");
+        throw Object.assign(new JuelRefusal(`Not enough credits. ${short.message}`, "credits"), { credits });
       }
     };
     const spent = (does, credits, specialist) => {
@@ -1639,6 +1721,9 @@ export function registerJuel(app, deps) {
       send({ type: "page", surface, actions: [{ type, args }] });
       return { sent: true, credits };
     };
+    // Every call and page action of the turn (nested consults too) leaves a receipt under the reply.
+    const recorded = withReceipts({ call, page, pageActions: () => context.clientTools?.actions || {} });
+    const receipts = recorded.receipts;
     // Low reasoning effort keeps each step quick; a step that hangs gives up after a minute per provider.
     const think = (prompt, extra = {}) => deps.generateJson(prompt, { maxTokens: 2500, signal: stop.signal, reasoningEffort: "low", timeoutMs: 60000, ...extra });
     const shown = () => attachments.map((a) => (a.kind === "operator" ? "the agent operator's full answer (report, cards, buttons)" : a.kind === "media" ? `${a.items.length} picture/video/audio item(s) a specialist showed` : `the ${a.tab || "studio"} generation it started`)).join("; ");
@@ -1654,17 +1739,17 @@ export function registerJuel(app, deps) {
           urlsIn(open.data, seen);
         }
       }
-      const turn = await deps.withUsage(who.userId, "juel", () => juelTurn({ message, history: thread.messages, context, admin: who.admin, live, think, call, page, show, shown, onStep: (s) => send({ type: "step", ...s }), onReply: (text) => send({ type: "reply", text }) }));
+      const turn = await deps.withUsage(who.userId, "juel", () => juelTurn({ message, history: thread.messages, context, admin: who.admin, live, think, call: recorded.call, page: recorded.page, show, shown, onStep: (s) => send({ type: "step", ...s }), onReply: (text) => send({ type: "reply", text }) }));
       // The answer is final: live mode speaks the rest now instead of waiting for the save.
       send({ type: "said", text: turn.reply });
       if (turn.report) attach(turn.report);
       // What the turn has actually charged so far (Juel's own thinking included); long jobs keep charging after.
       const after = before ? await snapshot(who.userId) : null;
       const charged = before && after ? Math.max(0, Math.round((Number(after.periodUsed) - Number(before.periodUsed)) / 100)) : null;
-      thread.messages.push({ role: "user", content: message, at }, { role: "assistant", content: turn.reply, steps: turn.steps, ...(spends.length ? { spends } : {}), ...(attachments.length ? { attachments } : {}), ...(applied ? { applied } : {}), ...(charged ? { charged } : {}), at: new Date().toISOString() });
+      thread.messages.push({ role: "user", content: message, at }, { role: "assistant", content: turn.reply, steps: turn.steps, ...(spends.length ? { spends } : {}), ...(receipts.length ? { receipts } : {}), ...(attachments.length ? { attachments } : {}), ...(applied ? { applied } : {}), ...(charged ? { charged } : {}), at: new Date().toISOString() });
     } catch (error) {
       const stopped = stop.signal.aborted;
-      thread.messages.push({ role: "user", content: message, at }, { role: "assistant", content: stopped ? "Stopped." : `Something went wrong: ${error instanceof Error ? error.message : error}`, ...(stopped ? { stopped: true } : { error: true }), ...(spends.length ? { spends } : {}), ...(attachments.length ? { attachments } : {}), at: new Date().toISOString() });
+      thread.messages.push({ role: "user", content: message, at }, { role: "assistant", content: stopped ? "Stopped." : `Something went wrong: ${error instanceof Error ? error.message : error}`, ...(stopped ? { stopped: true } : { error: true }), ...(spends.length ? { spends } : {}), ...(receipts.length ? { receipts } : {}), ...(attachments.length ? { attachments } : {}), at: new Date().toISOString() });
     }
     trimThread(thread);
     thread.updatedAt = new Date().toISOString();
@@ -1894,6 +1979,7 @@ export function registerJuel(app, deps) {
             refused: (last.spends || []).filter((s) => s.status === "refused").map((s) => ({ what: s.does, needs: s.credits })),
             charged_so_far: last.charged || 0,
           },
+          receipts: receiptLines(last.receipts || []),
           media: attachments.filter((a) => a.kind === "media").flatMap((a) => a.items.map((i) => ({ ...i, url: absolute(i.url) }))),
           generations: attachments.filter((a) => a.kind === "generation").map((a) => ({ id: a.id, app: a.tab, prompt: a.prompt, status_url: absolute(`/api/studio/generations?tab=${encodeURIComponent(a.tab)}`) })),
           reports: attachments.filter((a) => a.kind === "report" || a.kind === "operator").map((a) => (a.kind === "report" ? { title: a.title, cards: a.cards, table: a.table } : { title: a.presentation?.title || "The agent's answer", answer: a.reply, cards: a.presentation?.cards?.length ? a.presentation.cards : a.cards, buttons: a.actions.map((x) => x.label), applied: a.applied })),

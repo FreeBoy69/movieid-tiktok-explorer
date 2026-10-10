@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { callRoute, cleanReport, streamGeminiSpeech, cleanShows, creditShortfall, estimateCredits, JUEL_COSTS, JUEL_EXCLUDED, JUEL_RISKS, JUEL_ROUTES, JUEL_SPECIALISTS, juelTools, juelTurn, matchRoute, partialReply, MCP_TOOLS, mcpRespond, openApiSpec, pageActionCredits, pageTools, spendsCredits, tokenRefusal, urlsIn } from "./juel.js";
+import { callRoute, cleanReport, streamGeminiSpeech, cleanShows, creditShortfall, estimateCredits, JUEL_COSTS, JUEL_EXCLUDED, JUEL_RISKS, JUEL_ROUTES, JUEL_SPECIALISTS, juelTools, juelTurn, JuelRefusal, matchRoute, MAX_RECEIPTS, receiptLines, touchedIds, withReceipts, partialReply, MCP_TOOLS, mcpRespond, openApiSpec, pageActionCredits, pageTools, spendsCredits, tokenRefusal, urlsIn } from "./juel.js";
 
 /** Every route the server registers, as "METHOD /path". */
 function registeredRoutes() {
@@ -230,6 +230,89 @@ describe("Juel's turn", () => {
     const think = async () => ({ reply: "Hi! I can make recaps, edits, posts and more.", plan: [] });
     const turn = await juelTurn({ message: "hi", think, call: async () => ({}) });
     expect(turn.reply).toContain("Hi!");
+  });
+});
+
+describe("Juel's receipts", () => {
+  const think = (plan: Record<string, any>) => async (prompt: string) => {
+    if (prompt.includes("Plan the turn")) return { plan: plan.manager };
+    if (prompt.includes("Write the reply")) return { reply: "Done." };
+    for (const [name, steps] of Object.entries(plan)) if (prompt.includes(`the ${name} specialist`)) return steps.shift() || { done: true, note: "ok" };
+    return { done: true, note: "ok" };
+  };
+
+  it("records each call with its route, risk, description, touched ids, credits, and nothing of the body or payload", async () => {
+    let t = 1000;
+    const inner = async (c: any) => {
+      t += 25;
+      if (c.method === "POST") return { status: 201, data: { recap: { id: "rcp_9", script: "SECRET SCRIPT" }, token: "tok_secret" }, credits: 120 };
+      return { status: 200, data: { id: "rcp_1", title: "Private title" }, credits: 0 };
+    };
+    const recorded = withReceipts({ call: inner, now: () => t });
+    await recorded.call({ method: "GET", path: "/api/recaps/rcp_1?x=1", why: "Reading the recap", specialist: "recap" });
+    await recorded.call({ method: "POST", path: "/api/recaps", body: { film: "https://secret.example/film.mp4", apiKey: "sk-123" }, why: "Start it", specialist: "recap" });
+    const [read, made] = recorded.receipts;
+    expect(read).toMatchObject({ specialist: "recap", method: "GET", route: "GET /api/recaps/:id", path: "/api/recaps/rcp_1", risk: "read", ok: true, status: 200, credits: 0, touched: ["rcp_1"], why: "Reading the recap", ms: 25 });
+    expect(read.does).toBe(JUEL_ROUTES["GET /api/recaps/:id"][2]);
+    expect(made).toMatchObject({ route: "POST /api/recaps", risk: "paid", ok: true, status: 201, credits: 120, touched: ["rcp_9"] });
+    const text = JSON.stringify(recorded.receipts);
+    for (const leak of ["SECRET SCRIPT", "tok_secret", "secret.example", "sk-123", "Private title"]) expect(text).not.toContain(leak);
+    expect(receiptLines(recorded.receipts)).toEqual(["GET /api/recaps/:id → 200 rcp_1", "POST /api/recaps (paid, ≈120 credits) → 201 rcp_9"]);
+  });
+
+  it("records refusals with the reason and the quoted credits, and still throws", async () => {
+    const recorded = withReceipts({
+      call: async (c: any) => {
+        if (c.path.startsWith("/api/nope")) throw new JuelRefusal("Juel has no tool for GET /api/nope.", "unknown");
+        throw Object.assign(new JuelRefusal("Not enough credits. This needs about 120 credits and you have 5.", "credits"), { credits: 120 });
+      },
+    });
+    await expect(recorded.call({ method: "POST", path: "/api/recaps/rcp_1/render", specialist: "publisher" })).rejects.toThrow("Not enough credits");
+    await expect(recorded.call({ method: "GET", path: "/api/nope" })).rejects.toThrow("no tool");
+    expect(recorded.receipts[0]).toMatchObject({ route: "POST /api/recaps/:id/render", ok: false, status: 0, credits: 120, touched: ["rcp_1"], refused: expect.stringContaining("Not enough credits") });
+    expect(recorded.receipts[1]).toMatchObject({ route: "GET /api/nope", risk: "", does: "", ok: false, refused: expect.stringContaining("no tool") });
+    expect(receiptLines(recorded.receipts)[0]).toBe("POST /api/recaps/:id/render (paid, ≈120 credits) → refused: Not enough credits. This needs about 120 credits and you have 5. rcp_1");
+  });
+
+  it("keeps a route's own error when it answers 4xx", async () => {
+    const recorded = withReceipts({ call: async () => ({ status: 403, data: { error: "Your token can't spend credits." }, credits: 0 }) });
+    await recorded.call({ method: "POST", path: "/api/recaps" });
+    expect(recorded.receipts[0]).toMatchObject({ ok: false, status: 403, error: "Your token can't spend credits.", touched: [] });
+  });
+
+  it("captures nested specialist consults and page actions in one turn", async () => {
+    const clientTools = pageTools({ specialist: "editor", actions: { add_text: { args: "{text}", about: "Put a title on screen", risk: "change" } } });
+    const inner = async (c: any) => ({ status: 200, data: { id: c.path.split("/").pop() }, credits: 0 });
+    const recorded = withReceipts({ call: inner, page: async () => ({ sent: true, credits: 0 }), pageActions: () => clientTools.actions });
+    await juelTurn({
+      message: "Check and title it",
+      context: { surface: "editor", clientTools },
+      think: think({
+        manager: [{ specialist: "recap", task: "Look" }, { specialist: "editor", task: "Title" }],
+        Recap: [{ calls: [{ method: "GET", path: "/api/recaps/rcp_1", why: "Look" }], ask: { specialist: "research", question: "Trending?" }, done: true, note: "seen" }],
+        Research: [{ calls: [{ method: "GET", path: "/api/recaps" }], done: true, note: "yes" }],
+        Editor: [{ page: [{ type: "add_text", args: { text: "SECRET TITLE" } }], done: true, note: "titled" }],
+      }),
+      call: recorded.call,
+      page: recorded.page,
+    });
+    expect(recorded.receipts.map((r: any) => r.kind === "page" ? `page ${r.type}` : `${r.specialist} ${r.route}`)).toEqual(["recap GET /api/recaps/:id", "research GET /api/recaps", "page add_text"]);
+    expect(recorded.receipts[2]).toMatchObject({ kind: "page", type: "add_text", does: "Put a title on screen", specialist: "editor", ok: true, credits: 0 });
+    expect(JSON.stringify(recorded.receipts)).not.toContain("SECRET TITLE");
+  });
+
+  it("stops at the cap and clips long strings", async () => {
+    const recorded = withReceipts({ call: async () => ({ status: 200, data: {} }) });
+    for (let i = 0; i < MAX_RECEIPTS + 5; i++) await recorded.call({ method: "GET", path: "/api/recaps", why: "x".repeat(500) });
+    expect(recorded.receipts).toHaveLength(MAX_RECEIPTS);
+    expect(recorded.receipts[0].why.length).toBeLessThanOrEqual(140);
+  });
+
+  it("takes touched ids from path params and an obvious created id, at most 3, ids only", () => {
+    expect(touchedIds({ id: "ep_1", job: "j2" }, { generation: { id: "gen_3" }, recap: { id: "rcp_4" } })).toEqual(["ep_1", "j2", "gen_3"]);
+    expect(touchedIds({}, { id: "rcp_1", generation: { id: "rcp_1" } })).toEqual(["rcp_1"]);
+    expect(touchedIds({}, { id: "has spaces and <html>", items: [{ id: "x" }] })).toEqual([]);
+    expect(touchedIds({}, null)).toEqual([]);
   });
 });
 

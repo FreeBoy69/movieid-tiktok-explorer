@@ -12,12 +12,12 @@ import { FormattedChatText } from "./AgentStructuredContent";
 import { JuelMascot, type JuelPose, playJuel, reactionTo, setJuelMood, useJuelMood } from "./JuelMascot";
 import { JuelLive } from "./JuelLive";
 import { pageTour, startJuelTour } from "./JuelTour";
-import { AGENT_STARTERS, creditsToast, formatCredits, GenerationResult, type JuelAttachment, JuelReport, type JuelSpend, MediaResult, OperatorAnswer, useVoiceInput } from "./JuelParts";
+import { AGENT_STARTERS, creditsToast, formatCredits, GenerationResult, type JuelAttachment, type JuelReceipt, JuelReceipts, JuelReport, type JuelSpend, MediaResult, OperatorAnswer, useVoiceInput } from "./JuelParts";
 import "./JuelPanel.css";
 
 type PageAction = { type: string; args: Record<string, unknown> };
 type Step = { specialist: string; text: string };
-type Message = { role: "user" | "assistant"; content: string; steps?: Step[]; spends?: JuelSpend[]; attachments?: JuelAttachment[]; applied?: number; charged?: number; error?: boolean; stopped?: boolean; at: string };
+type Message = { role: "user" | "assistant"; content: string; steps?: Step[]; spends?: JuelSpend[]; receipts?: JuelReceipt[]; attachments?: JuelAttachment[]; applied?: number; charged?: number; error?: boolean; stopped?: boolean; at: string };
 type Thread = { id: string; title: string; surface?: string; entityId?: string; messages: Message[] };
 type ThreadSummary = { id: string; title: string; surface: string; entityId: string; updatedAt: string };
 type Live = { text: string; reply: string; steps: Step[]; spends: JuelSpend[]; attachments: JuelAttachment[]; startedAt: number; said?: boolean };
@@ -535,6 +535,7 @@ export function JuelPanel({ onClose, embedded = false, headStart, leaving = fals
               {m.content ? <div className="juel-text"><FormattedChatText content={m.content} theme={document.documentElement.dataset.theme === "light" ? "light" : "dark"} /></div> : null}
               {m.applied ? <p className="juel-applied"><Check size={13} aria-hidden="true" />Made {m.applied} edit{m.applied === 1 ? "" : "s"} on the page</p> : null}
               <Attachments items={m.attachments} onAsk={(text) => void send(text)} />
+              <JuelReceipts receipts={m.receipts} />
               <div className="juel-foot">
                 <div className="juel-tools">
                   <button type="button" className="juel-tool" onClick={() => void copy(m.content, i)} aria-label="Copy reply" title="Copy">{copied === i ? <Check size={14} /> : <Copy size={14} />}</button>
