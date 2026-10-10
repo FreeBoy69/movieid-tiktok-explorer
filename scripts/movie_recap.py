@@ -1585,7 +1585,7 @@ def run_proxy(args):
         lower = ["nice", "-n", "15"] + (["ionice", "-c3"] if shutil.which("ionice") else [])
         cmd = lower + [
             "ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-nostats", "-progress", "pipe:1", "-threads", "2", "-i", movie,
-            "-map", "0:v:0", "-map", f"0:a:{track}?", "-vf", "scale='min(854,iw)':-2", "-c:v", "libx264", "-preset", "veryfast", "-crf", "31",
+            "-map", "0:v:0", "-map", f"0:a:{track}?", "-map_chapters", "-1", "-map_metadata", "-1", "-vf", "scale='min(854,iw)':-2", "-c:v", "libx264", "-preset", "veryfast", "-crf", "31",
             "-g", "30", "-keyint_min", "30", "-sc_threshold", "0", "-pix_fmt", "yuv420p", "-threads", "2",
             "-c:a", "aac", "-ac", "2", "-b:a", "96k", "-movflags", "+faststart", partial,
         ]
