@@ -4,7 +4,7 @@
 import { cameraOptions } from "./cameraShots.js";
 
 export const CAMERA_SPRITE_COLUMNS = 6;
-export const CAMERA_TILE = { width: 800, height: 450 };
+export const CAMERA_TILE = { width: 400, height: 225 };
 
 /** Where an option's tile sits in its group's sprite, or null for an unknown id. */
 export function cameraSprite(group, id) {
