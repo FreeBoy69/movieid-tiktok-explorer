@@ -22,6 +22,7 @@ import { PROMO_MODEL, PROMO_STAGES, runPromoFilm } from "./promoStudio.js";
 import { captureSite, promoRendererAvailable, renderPromo } from "./promoRenderer.js";
 import { findPromoSubject, findPromoTemplate, PROMO_ASPECTS, PROMO_DURATIONS } from "../src/utils/promoPresets.js";
 import { findPromoStyle } from "../src/utils/promoStyles.js";
+import { analyzeClipFraming, buildReframeFilter } from "./clipReframe.js";
 import { recordingFrames, runExplainerFilm, runExplainerPlan } from "./explainerStudio.js";
 import { compactDesignHtml, DESIGN_CANVASES, designHtmlMessages, designPlanMessages, designSettings, extractDesignDocument, extractJsonObject, imageSize, inlineDesignAssets, listDesignLayers, normalizeDesignPlan, sanitizeDesignHtml, validateDesignHtml } from "./editableDesign.js";
 import { STUDIO_PERSONAS } from "./juel.js";
@@ -946,21 +947,16 @@ ${lines}`,
       if (s.clipCaptions) await fs.writeFile(captionFile, subtitles);
       const filters = [];
       let filterArgs = [];
-      if (s.vertical !== false && s.clipFraming === "blur") {
-        const background = "[0:v]split=2[bg][fg];[bg]scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,gblur=sigma=24[bg];[fg]scale=720:1280:force_original_aspect_ratio=decrease[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1[base]";
-        filters.push(background);
+      const framing = await clipFramingFilter(s, { source, c, dir, signal, report, index, total: clips.length });
+      if (framing) {
+        filters.push(framing.filter);
         if (burnCaptions) {
-          filters.push(`[base]subtitles='${escapeFilterPath(captionFile)}'[outv]`);
+          filters.push(`${framing.label}subtitles='${escapeFilterPath(captionFile)}'[outv]`);
         } else {
-          filters.push("[base]null[outv]");
+          filters.push(`${framing.label}null[outv]`);
         }
         filterArgs = ["-filter_complex", filters.join(";"), "-map", "[outv]", "-map", "0:a?"];
       } else {
-        if (s.vertical !== false) {
-          filters.push(s.clipFraming === "fit"
-            ? "scale=720:1280:force_original_aspect_ratio=decrease,pad=720:1280:(ow-iw)/2:(oh-ih)/2:color=black"
-            : "crop='min(iw,ih*9/16)':ih,scale=720:1280:force_original_aspect_ratio=decrease,pad=720:1280:(ow-iw)/2:(oh-ih)/2");
-        }
         if (burnCaptions) {
           filters.push(`subtitles='${escapeFilterPath(captionFile)}'`);
         }
@@ -989,6 +985,39 @@ ${lines}`,
   } finally {
     await fs.rm(dir, { recursive: true, force: true });
   }
+}
+
+// ---------- Clip framing ----------
+const CLIP_SIZES = { "9:16": [720, 1280], "1:1": [1080, 1080] };
+// Returns a -filter_complex chain ending in a label, or null to keep the source frame.
+// Captions are applied after the label.
+async function clipFramingFilter(s, { source, c, dir, signal, report, index, total }) {
+  const size = CLIP_SIZES[clipAspect(s)];
+  if (!size) return null;
+  const [outW, outH] = size;
+  const label = "[framed]";
+  if (s.clipFraming === "blur") {
+    return { label, filter: `[0:v]split=2[bg][fg];[bg]scale=${outW}:${outH}:force_original_aspect_ratio=increase,crop=${outW}:${outH},gblur=sigma=24[bg];[fg]scale=${outW}:${outH}:force_original_aspect_ratio=decrease[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1${label}` };
+  }
+  if (s.clipFraming === "fit") {
+    return { label, filter: `[0:v]scale=${outW}:${outH}:force_original_aspect_ratio=decrease,pad=${outW}:${outH}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1${label}` };
+  }
+  if (s.clipFraming === "auto") {
+    await report(`Reframing clip ${index + 1} of ${total}`);
+    try {
+      const analysis = await analyzeClipFraming({ source, start: c.start, end: c.end, dir, signal });
+      return buildReframeFilter(analysis, { width: analysis.width, height: analysis.height, duration: c.end - c.start, outW, outH, label });
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      console.warn("Clip reframe failed, using a centre crop:", error.message);
+    }
+  }
+  return buildReframeFilter(null, { outW, outH, label });
+}
+
+function clipAspect(s) {
+  if (s.clipAspect) return s.clipAspect;
+  return s.vertical === false ? "16:9" : "9:16";
 }
 
 function srtTime(seconds) {
@@ -1684,7 +1713,8 @@ export function normalizeRequest(body = {}) {
     lyrics: clip(s.lyrics, 3000) || undefined,
     style: clip(s.style, 300) || undefined,
     clipLength: ["short", "medium", "long"].includes(s.clipLength) ? s.clipLength : undefined,
-    clipFraming: ["crop", "blur", "fit"].includes(s.clipFraming) ? s.clipFraming : "crop",
+    clipFraming: ["auto", "crop", "blur", "fit"].includes(s.clipFraming) ? s.clipFraming : "auto",
+    clipAspect: tab === "clipping" ? (["9:16", "1:1", "16:9"].includes(s.clipAspect) ? s.clipAspect : s.vertical === false ? "16:9" : "9:16") : undefined,
     clipCaptions: s.clipCaptions === true,
     vertical: s.vertical !== false,
     workflow: WORKFLOWS[s.workflow] ? s.workflow : undefined,

@@ -327,7 +327,7 @@ function MediaTile({ tile, handlers, now, onOpen }: { tile: Extract<Tile, { kind
       {media === "image" ? (
         <img src={output.url} alt={output.caption || item.prompt.slice(0, 160) || "Generated image"} loading="lazy" />
       ) : media === "video" ? (
-        <video ref={video} src={output.url} muted loop playsInline preload="metadata" style={item.tab === "clipping" && s.vertical !== false ? { aspectRatio: "9 / 16" } : undefined} />
+        <video ref={video} src={output.url} muted loop playsInline preload="metadata" style={item.tab === "clipping" && s.vertical !== false ? { aspectRatio: s.clipAspect === "1:1" ? "1 / 1" : "9 / 16" } : undefined} />
       ) : (
         <MotionFrame url={output.url} title={`Motion graphic: ${item.prompt.slice(0, 80)}`} aspect={s.aspectRatio} />
       )}

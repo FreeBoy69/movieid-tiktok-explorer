@@ -6,7 +6,7 @@ describe("AI clipping settings", () => {
     expect(normalizeRequest({ tab: "clipping", settings: { clipFraming: "blur", clipCaptions: true } }).settings)
       .toMatchObject({ clipFraming: "blur", clipCaptions: true });
     expect(normalizeRequest({ tab: "clipping", settings: { clipFraming: "invalid", clipCaptions: "yes" } }).settings)
-      .toMatchObject({ clipFraming: "crop", clipCaptions: false });
+      .toMatchObject({ clipFraming: "auto", clipCaptions: false });
   });
 
   it("clips Whisper segments to the selected moment and makes SRT times relative", () => {
