@@ -82,7 +82,7 @@ describe("AgentChatBlocks", () => {
     expect(screen.getByText("9")).toBeInTheDocument();
     const channelLink = screen.getByRole("link", { name: /Cinema Lab/i });
     expect(channelLink).toHaveAttribute("href", "https://www.youtube.com/@cinemalab");
-    expect(channelLink.closest("article")).toHaveClass("aspect-square");
+    expect(channelLink.closest("article")).toHaveClass("std-channel");
     expect(channelLink.closest("article")?.querySelector("img")).toHaveAttribute("src", "https://images.example.com/cinema-lab.jpg");
     expect(screen.getByRole("link", { name: "Open The ending nobody expected" })).toHaveAttribute("href", "https://www.youtube.com/watch?v=video-1");
     expect(screen.getByRole("button", { name: /^Play / })).toBeInTheDocument();
