@@ -10,6 +10,12 @@
   --jm-tongue: #e8675e;
   --jm-sweat: #9fd3f5;
   --jm-soft: #b9b6ae;
+  --jm-heart: #ef4b5c;
+  --jm-star: #ffc21a;
+  --jm-blush: rgb(255 120 140 / 0.6);
+  --jm-angry: #e2402e;
+  --jm-boom: #ff9a3c;
+  --jm-hat: #7b6cf6;
   display: block;
   overflow: visible;
   flex: none;
@@ -17,6 +23,8 @@
 :root[data-theme="dark"] .jm,
 html.dark .jm {
   --jm-soft: #6f6c66;
+  /* A light rim, like a sticker, so his black arms and legs read on dark surfaces. */
+  filter: drop-shadow(0 0 0.7px rgb(255 255 255 / 0.9)) drop-shadow(0 0 2.5px rgb(255 255 255 / 0.22));
 }
 .jm * {
   transform-box: view-box;
@@ -251,6 +259,345 @@ html.dark .jm {
   100% { transform: translateY(-10px); opacity: 0; }
 }
 
+/* ---------- Animation presets (playJuel) ---------- */
+/* Dance: on a 128 BPM beat (469 ms), two beats per loop. Sway with a hop on the downbeat; the arms swap. */
+.jm[data-pose="dance"] .jm-figure {
+  animation: jm-dance 938ms cubic-bezier(0.37, 0, 0.63, 1) infinite;
+}
+@keyframes jm-dance {
+  0%, 100% { transform: translateY(0) rotate(-6deg); }
+  12% { transform: translateY(-9px) rotate(-3deg) scale(0.98, 1.03); }
+  25% { transform: translateY(0) rotate(0) scale(1.04, 0.96); }
+  50% { transform: translateY(0) rotate(6deg); }
+  62% { transform: translateY(-9px) rotate(3deg) scale(0.98, 1.03); }
+  75% { transform: translateY(0) rotate(0) scale(1.04, 0.96); }
+}
+.jm[data-pose="dance"] .jm-arm-l {
+  transform-origin: 61px 124px;
+  animation: jm-arm-swap 938ms cubic-bezier(0.37, 0, 0.63, 1) infinite;
+}
+.jm[data-pose="dance"] .jm-arm-r {
+  transform-origin: 178px 99px;
+  animation: jm-arm-swap 938ms cubic-bezier(0.37, 0, 0.63, 1) infinite reverse;
+}
+@keyframes jm-arm-swap {
+  0%, 100% { transform: rotate(0); }
+  50% { transform: rotate(-26deg); }
+}
+.jm[data-pose="dance"] .jm-notes {
+  animation: jm-float 1.876s ease-out infinite;
+}
+.jm[data-pose="dance"] .jm-leg-r {
+  animation: jm-tap 469ms ease-in-out infinite alternate;
+}
+
+/* Wiggle: a pleased little shimmy. */
+.jm[data-pose="wiggle"] .jm-body {
+  animation: jm-wiggle 0.6s ease-in-out infinite;
+}
+@keyframes jm-wiggle {
+  0%, 100% { transform: rotate(-5deg) skewX(2deg); }
+  50% { transform: rotate(5deg) skewX(-2deg); }
+}
+
+/* Float: lifts off the ground and hovers; the shadow breathes with him. */
+.jm[data-pose="float"] .jm-figure {
+  animation: jm-hover 2.4s ease-in-out infinite;
+}
+@keyframes jm-hover {
+  0%, 100% { transform: translateY(-6px); }
+  50% { transform: translateY(-16px); }
+}
+.jm[data-pose="float"] .jm-float-shadow {
+  transform-origin: 120px 232px;
+  animation: jm-shadow 2.4s ease-in-out infinite;
+}
+@keyframes jm-shadow {
+  0%, 100% { transform: scaleX(0.9); opacity: 0.35; }
+  50% { transform: scaleX(0.7); opacity: 0.2; }
+}
+
+/* Flip: crouch (anticipation), launch, a full turn in the air, land with a squash. */
+.jm[data-pose="flip"] .jm-figure {
+  transform-origin: 120px 120px;
+  animation: jm-flip 1.1s cubic-bezier(0.3, 0, 0.2, 1) both;
+}
+@keyframes jm-flip {
+  0% { transform: translateY(0) rotate(0) scale(1); }
+  16% { transform: translateY(8px) rotate(0) scale(1.08, 0.86); }
+  32% { transform: translateY(-46px) rotate(-90deg) scale(0.96, 1.05); }
+  58% { transform: translateY(-58px) rotate(-270deg); }
+  76% { transform: translateY(0) rotate(-360deg) scale(1.1, 0.88); }
+  88% { transform: translateY(-4px) rotate(-360deg) scale(0.97, 1.03); }
+  100% { transform: translateY(0) rotate(-360deg) scale(1); }
+}
+
+/* Spin: turns to face the other way and back, with a hop. */
+.jm[data-pose="spin"] .jm-figure {
+  transform-origin: 120px 120px;
+  animation: jm-turn 0.9s cubic-bezier(0.45, 0, 0.2, 1) both;
+}
+@keyframes jm-turn {
+  0% { transform: scaleX(1) translateY(0); }
+  25% { transform: scaleX(0.05) translateY(-10px); }
+  50% { transform: scaleX(-1) translateY(-12px); }
+  75% { transform: scaleX(0.05) translateY(-6px); }
+  100% { transform: scaleX(1) translateY(0); }
+}
+
+/* Jump: a quick hop of surprise. */
+.jm[data-pose="jump"] .jm-figure {
+  animation: jm-jump 0.7s cubic-bezier(0.3, 0, 0.2, 1) both;
+}
+@keyframes jm-jump {
+  0% { transform: translateY(0) scale(1); }
+  18% { transform: translateY(4px) scale(1.07, 0.9); }
+  50% { transform: translateY(-30px) scale(0.95, 1.06); }
+  82% { transform: translateY(0) scale(1.06, 0.93); }
+  100% { transform: translateY(0) scale(1); }
+}
+
+/* Nod and head shake: yes and no, twice each. */
+.jm[data-pose="nod"] .jm-body {
+  transform-origin: 120px 190px;
+  animation: jm-nod 0.9s ease-in-out both;
+}
+@keyframes jm-nod {
+  0%, 50%, 100% { transform: rotate(0) translateY(0); }
+  25%, 75% { transform: rotate(7deg) translateY(4px); }
+}
+.jm[data-pose="shake"] .jm-body {
+  animation: jm-no 0.9s ease-in-out both;
+}
+@keyframes jm-no {
+  0%, 100% { transform: rotate(0); }
+  16%, 50%, 84% { transform: rotate(-7deg); }
+  33%, 67% { transform: rotate(7deg); }
+}
+.jm[data-pose="shake"] .jm-pupil {
+  animation: jm-scan 0.45s ease-in-out 2;
+}
+
+/* Ta-da: grows a little, arms out, sparks. */
+.jm[data-pose="tada"] .jm-figure {
+  animation: jm-tada 1.3s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+@keyframes jm-tada {
+  0% { transform: scale(0.92); }
+  30% { transform: scale(1.12) translateY(-6px); }
+  60%, 100% { transform: scale(1) translateY(0); }
+}
+.jm[data-pose="tada"] .jm-spark,
+.jm[data-pose="flip"] .jm-spark {
+  animation: jm-twinkle 0.65s ease-in-out infinite;
+}
+
+/* Peek: pops up from below and says hello. */
+.jm[data-pose="peek"] .jm-figure {
+  animation: jm-peek 1.1s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+@keyframes jm-peek {
+  0% { transform: translateY(70%) scale(0.9); opacity: 0; }
+  55% { transform: translateY(-4%) scale(1.02); opacity: 1; }
+  100% { transform: translateY(0) scale(1); }
+}
+.jm[data-pose="peek"] .jm-arm-r {
+  transform-origin: 178px 99px;
+  animation: jm-wave 0.45s cubic-bezier(0.45, 0, 0.55, 1) 0.5s 2 alternate;
+}
+
+/* Speak: the mouth opens with the voice (--jm-mouth, 0 to 1, set from the audio), with a small bob. */
+.jm[data-pose="speak"] .jm-mouth-speak {
+  transform: scale(calc(0.8 + var(--jm-mouth, 0) * 0.35), calc(0.12 + var(--jm-mouth, 0) * 1.05));
+  transition: transform 60ms linear;
+}
+.jm[data-pose="speak"] .jm-body {
+  transform: translateY(calc(var(--jm-mouth, 0) * -3px)) rotate(calc(var(--jm-mouth, 0) * -2deg));
+  transition: transform 90ms ease-out;
+}
+.jm[data-pose="speak"] .jm-arm-r {
+  transform-origin: 178px 99px;
+  animation: jm-gesture 1.6s ease-in-out infinite;
+}
+
+/* ---------- Emotions ---------- */
+.jm.is-emotion .jm-body {
+  animation: jm-breathe 3.6s ease-in-out infinite;
+}
+/* Laughing: shakes with laughter, tears of joy fly. */
+.jm[data-pose="laugh"] .jm-body {
+  animation: jm-chuckle 0.36s ease-in-out infinite;
+}
+@keyframes jm-chuckle {
+  0%, 100% { transform: translateY(0) rotate(-2deg); }
+  50% { transform: translateY(-3px) rotate(2deg); }
+}
+.jm[data-pose="laugh"] .jm-joy path {
+  animation: jm-fling 0.9s ease-out infinite;
+}
+.jm[data-pose="laugh"] .jm-joy path:nth-child(2) { animation-delay: 0.45s; }
+@keyframes jm-fling {
+  0% { transform: translate(0, 0); opacity: 1; }
+  100% { transform: translate(-10px, 14px); opacity: 0; }
+}
+/* In love, kiss: float, hearts rise and beat. */
+.jm[data-pose="love"] .jm-figure { animation: jm-hover 2.4s ease-in-out infinite; }
+.jm .jm-hearts path,
+.jm .jm-kiss-heart {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: jm-heartbeat 0.9s ease-in-out infinite;
+}
+.jm .jm-hearts path:nth-child(2) { animation-delay: 0.3s; }
+.jm .jm-hearts path:nth-child(3) { animation-delay: 0.6s; }
+@keyframes jm-heartbeat {
+  0%, 100% { transform: scale(0.85) translateY(0); }
+  30% { transform: scale(1.12) translateY(-3px); }
+}
+.jm .jm-eye-icon path {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: jm-heartbeat 0.9s ease-in-out infinite;
+}
+/* Party: bounces under the hat while confetti falls. */
+.jm[data-pose="party"] .jm-figure { animation: jm-hop 0.7s cubic-bezier(0.33, 0, 0.2, 1) infinite; }
+.jm[data-pose="party"] .jm-confetti rect {
+  animation: jm-confetti 1.4s linear infinite;
+}
+.jm[data-pose="party"] .jm-confetti rect:nth-child(odd) { animation-delay: 0.7s; }
+@keyframes jm-confetti {
+  0% { transform: translateY(-6px); opacity: 0; }
+  20% { opacity: 1; }
+  100% { transform: translateY(26px); opacity: 0; }
+}
+.jm[data-pose="starstruck"] .jm-figure { animation: jm-hop 0.9s cubic-bezier(0.33, 0, 0.2, 1) infinite; }
+.jm[data-pose="starstruck"] .jm-spark { animation: jm-twinkle 0.7s ease-in-out infinite; }
+.jm[data-pose="proud"] .jm-figure { animation: jm-puff 1.6s ease-in-out infinite; }
+@keyframes jm-puff {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.04, 1.02) translateY(-2px); }
+}
+.jm[data-pose="proud"] .jm-puffs circle,
+.jm[data-pose="furious"] .jm-steam circle {
+  animation: jm-float 1.2s ease-out infinite;
+}
+.jm[data-pose="proud"] .jm-puffs circle:nth-child(2),
+.jm[data-pose="furious"] .jm-steam circle:nth-child(even) { animation-delay: 0.4s; }
+.jm[data-pose="silly"] .jm-body { animation: jm-wiggle 0.5s ease-in-out infinite; }
+.jm[data-pose="cool"] .jm-body { animation: jm-lean 2.6s ease-in-out infinite; }
+.jm[data-pose="wink"] .jm-body { animation: jm-nod 1.8s ease-in-out infinite; }
+.jm[data-pose="happy"] .jm-figure { animation: jm-hover 2.8s ease-in-out infinite; }
+/* Surprised, shocked, mind blown: a jolt; the ! and the blast pop. */
+.jm[data-pose="surprised"] .jm-figure,
+.jm[data-pose="shocked"] .jm-figure {
+  animation: jm-jolt 1.6s cubic-bezier(0.3, 0, 0.2, 1) infinite;
+}
+@keyframes jm-jolt {
+  0%, 30%, 100% { transform: translateY(0) scale(1); }
+  8% { transform: translateY(-10px) scale(0.96, 1.06); }
+  16% { transform: translateY(0) scale(1.04, 0.96); }
+}
+.jm .jm-exclaim,
+.jm .jm-question {
+  animation: jm-bob 1.2s ease-in-out infinite;
+}
+@keyframes jm-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+.jm[data-pose="mindblown"] .jm-boom {
+  transform-origin: 120px 30px;
+  animation: jm-boom 1.4s cubic-bezier(0.34, 1.56, 0.64, 1) infinite;
+}
+@keyframes jm-boom {
+  0% { transform: scale(0.3); opacity: 0; }
+  35% { transform: scale(1.1); opacity: 1; }
+  70%, 100% { transform: scale(1); opacity: 0.9; }
+}
+.jm[data-pose="confused"] .jm-body { animation: jm-ponder 2.2s ease-in-out infinite; }
+.jm[data-pose="skeptical"] .jm-body { animation: jm-lean-in 3s ease-in-out infinite; }
+.jm[data-pose="eyeroll"] .jm-pupil { animation: jm-roll 2.4s ease-in-out infinite; }
+@keyframes jm-roll {
+  0%, 100% { transform: translate(-3px, 0); }
+  50% { transform: translate(3px, -2px); }
+}
+.jm[data-pose="bored"] .jm-body { animation: jm-snore 4s ease-in-out infinite; }
+/* Sad and crying: a slow droop, and sobs; tears fall. */
+.jm[data-pose="sad"] .jm-body {
+  transform-origin: 120px 200px;
+  animation: jm-droop 3.2s ease-in-out infinite;
+}
+@keyframes jm-droop {
+  0%, 100% { transform: rotate(2deg) translateY(2px); }
+  50% { transform: rotate(4deg) translateY(4px); }
+}
+.jm[data-pose="sad"] .jm-tear { animation: jm-fall 1.8s ease-in infinite; }
+@keyframes jm-fall {
+  0% { transform: translateY(-4px); opacity: 0; }
+  20% { opacity: 1; }
+  100% { transform: translateY(26px); opacity: 0; }
+}
+.jm[data-pose="cry"] .jm-body { animation: jm-sob 0.5s ease-in-out infinite; }
+@keyframes jm-sob {
+  0%, 100% { transform: translateY(0) scale(1, 1); }
+  50% { transform: translateY(2px) scale(1.02, 0.97); }
+}
+.jm[data-pose="cry"] .jm-stream path {
+  stroke-dasharray: 8 10;
+  animation: jm-stream 0.5s linear infinite;
+}
+@keyframes jm-stream {
+  to { stroke-dashoffset: -18; }
+}
+.jm[data-pose="embarrassed"] .jm-blush,
+.jm[data-pose="shy"] .jm-blush,
+.jm[data-pose="kiss"] .jm-blush {
+  animation: jm-glow 1.6s ease-in-out infinite;
+}
+@keyframes jm-glow {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+.jm[data-pose="shy"] .jm-body { animation: jm-lean 2.8s ease-in-out infinite; }
+.jm .jm-sweat-drop { animation: jm-drip 2.4s ease-in infinite; }
+/* Nervous and scared: a shiver. */
+.jm[data-pose="nervous"] .jm-body,
+.jm[data-pose="scared"] .jm-body {
+  animation: jm-shiver 0.14s linear infinite;
+}
+@keyframes jm-shiver {
+  0%, 100% { transform: translateX(-1px); }
+  50% { transform: translateX(1px); }
+}
+/* Angry and furious: a tremble; the anger mark pulses. */
+.jm[data-pose="angry"] .jm-body { animation: jm-shake 1.6s ease-in-out infinite; }
+.jm[data-pose="furious"] .jm-body { animation: jm-shiver 0.1s linear infinite; }
+.jm .jm-vein {
+  transform-origin: 156px 77px;
+  animation: jm-pulse 0.7s ease-in-out infinite;
+}
+@keyframes jm-pulse {
+  0%, 100% { transform: scale(0.9); }
+  50% { transform: scale(1.15); }
+}
+/* Dizzy and knocked out: sway, spinning eyes, stars circling. */
+.jm[data-pose="dizzy"] .jm-body,
+.jm[data-pose="ko"] .jm-body {
+  animation: jm-sway 2s ease-in-out infinite;
+}
+@keyframes jm-sway {
+  0%, 100% { transform: rotate(-6deg); }
+  50% { transform: rotate(6deg); }
+}
+.jm .jm-spiral { animation: jm-spin 1.2s linear infinite; }
+.jm .jm-orbit { animation: jm-orbit 1.6s linear infinite; }
+@keyframes jm-orbit {
+  from { transform: rotate(0); }
+  to { transform: rotate(360deg); }
+}
+.jm[data-pose="sick"] .jm-body { animation: jm-sway 3s ease-in-out infinite; }
+.jm[data-pose="facepalm"] .jm-body { animation: jm-snore 3s ease-in-out infinite; }
+
 @media (prefers-reduced-motion: reduce) {
   .jm *,
   .jm.is-swap .jm-figure {
@@ -461,5 +808,77 @@ html.dark .jm {
   .jt-dim,
   .jt-offer {
     animation: none;
+  }
+}
+
+/* ---------- Floating Juel (desktop): bottom right, drag him up or down ---------- */
+.juel-float {
+  position: fixed;
+  right: max(18px, env(safe-area-inset-right));
+  bottom: calc(14px + env(safe-area-inset-bottom) + var(--juel-lift, 0px));
+  z-index: 1150;
+  display: grid;
+  width: 92px;
+  height: 96px;
+  place-items: end center;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: grab;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: opacity 220ms ease, transform 320ms cubic-bezier(0.16, 1, 0.3, 1), bottom 320ms cubic-bezier(0.16, 1, 0.3, 1);
+  animation: jt-peek 620ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+/* The ground he stands on. */
+.juel-float::before {
+  content: "";
+  position: absolute;
+  bottom: 4px;
+  left: 50%;
+  width: 54px;
+  height: 9px;
+  border-radius: 50%;
+  background: rgb(0 0 0 / 0.16);
+  filter: blur(3px);
+  transform: translateX(-50%);
+}
+.juel-float .jm {
+  position: relative;
+  filter: drop-shadow(0 6px 10px rgb(0 0 0 / 0.14));
+}
+.juel-float:hover {
+  transform: translateY(-3px);
+}
+.juel-float:active {
+  cursor: grabbing;
+}
+/* With the panel open he comes down to stand right under it. */
+.juel-float.is-on {
+  bottom: calc(14px + env(safe-area-inset-bottom));
+}
+.juel-float.is-hidden {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(24px);
+}
+@media (max-width: 760px) {
+  .juel-float {
+    display: none;
+  }
+}
+@media (min-width: 761px) {
+  header .juel-trigger {
+    display: none;
+  }
+  /* The panel ends above Juel's head. */
+  .juel:not(.juel-embedded) {
+    bottom: 112px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .juel-float {
+    animation: none;
+    transition: opacity 120ms ease;
   }
 }

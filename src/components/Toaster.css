@@ -185,3 +185,12 @@
   .toast, .toast.is-leaving { animation-duration: 1ms; }
   .toast-timer { display: none; }
 }
+
+/* Juel stands in for the icon: his column is as wide as he is. */
+.toast:has(.toast-juel) {
+  grid-template-columns: 34px 1fr 28px;
+  gap: 10px;
+}
+.toast-juel {
+  margin-top: -4px;
+}

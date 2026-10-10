@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { CircleAlert, CircleCheck, Coins, Info, X } from "lucide-react";
+import { X } from "lucide-react";
 import { toast, useToasts, type Toast } from "../utils/toast";
+import { JuelMascot, reactJuel, type JuelPose } from "./JuelMascot";
 import "./Toaster.css";
 
-const ICONS = { error: CircleAlert, success: CircleCheck, info: Info, credits: Coins };
+// Juel delivers every toast, with the face that fits it; the floating Juel reacts too.
+const FACE: Record<Toast["tone"], JuelPose> = { error: "nervous", success: "happy", info: "wink", credits: "sad" };
 const credits = (n: number) => `${Math.max(0, Math.round(n)).toLocaleString("en-US")}`;
 
 export function Toaster() {
@@ -22,7 +24,9 @@ function ToastItem({ item }: { item: Toast }) {
   const [leaving, setLeaving] = useState(false);
   const left = useRef(item.duration);
   const started = useRef(Date.now());
-  const Icon = ICONS[item.tone];
+  useEffect(() => {
+    reactJuel(item.tone === "success" ? "party" : FACE[item.tone], item.tone === "success" ? 2000 : 2600);
+  }, [item.id]);
 
   const close = () => {
     setLeaving(true);
@@ -51,7 +55,7 @@ function ToastItem({ item }: { item: Toast }) {
       style={{ ["--toast-ms" as string]: `${item.duration}ms` }}
       data-paused={paused || undefined}
     >
-      <Icon className="toast-icon" size={18} aria-hidden="true" />
+      <JuelMascot pose={FACE[item.tone]} size={30} framing="bust" className="toast-juel" />
       <div className="toast-body">
         {item.title ? <strong>{item.title}</strong> : null}
         <p>

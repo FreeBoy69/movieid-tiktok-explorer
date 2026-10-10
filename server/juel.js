@@ -5,6 +5,7 @@
 // The same catalogue is the public API: personal access tokens call these routes (scoped by risk) and the
 // MCP server at /mcp gives AI agents Juel and the whole API.
 import { createHash, randomBytes } from "node:crypto";
+import { synthesizeHostedVoice } from "./hostedVoices.js";
 
 /** The specialists the manager hands work to. Their briefs go into the manager's prompt. */
 export const JUEL_SPECIALISTS = {
@@ -387,6 +388,7 @@ export const JUEL_EXCLUDED = {
   "GET /api/voicebox/profiles/:id/preview": "audio stream for a media player",
   "GET /api/voicebox/status": "health check",
   "GET /api/recaps/source/:token/:name": "signed download link for the media worker",
+  "POST /api/juel/speak": "Juel's own voice in live mode",
   "GET /internal/exec/:id/events": "internal worker endpoint",
   "GET /internal/exec/:id/input": "internal worker endpoint",
   "GET /internal/exec/claim": "internal worker endpoint",
@@ -1460,6 +1462,24 @@ export function registerJuel(app, deps) {
     send({ type: "done", thread });
     return thread;
   }
+
+  // Juel's voice in live mode: one sentence at a time, so he speaks while the reply is still being written.
+  app.post("/api/juel/speak", async (req, res) => {
+    const who = await signedIn(req, res);
+    if (!who) return;
+    const text = String(req.body?.text || "").replace(/\s+/g, " ").trim().slice(0, 600);
+    if (!text) return res.status(400).json({ error: "Nothing to say." });
+    const voice = /^[A-Za-z]{3,20}$/.test(String(req.body?.voice || "")) ? String(req.body.voice) : "Puck";
+    try {
+      const spoken = await synthesizeHostedVoice({ profileId: `openrouter:${voice}`, text, direction: "Say this in a warm, upbeat, conversational way, like a friendly helper", signal: AbortSignal.timeout(45000) });
+      res.setHeader("Content-Type", spoken.contentType);
+      res.setHeader("Cache-Control", "no-store");
+      res.end(spoken.audio);
+    } catch (error) {
+      const blocked = error?.name === "UsageBlockedError";
+      res.status(blocked ? error.status || 402 : 502).json({ error: blocked ? error.message : "Juel's voice isn't available right now." });
+    }
+  });
 
   app.post("/api/juel/chat", async (req, res) => {
     const who = await signedIn(req, res);

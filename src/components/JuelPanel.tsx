@@ -5,11 +5,12 @@
 import { FormEvent, type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import gsap from "gsap";
-import { AlertCircle, ArrowDown, ArrowUp, ArrowUpRight, Check, ChevronRight, Coins, Copy, History, Loader2, MapPin, Mic, PanelLeftClose, PanelLeftOpen, Pencil, Plus, RotateCcw, Search, Sparkles, Square, Trash2, X } from "lucide-react";
+import { AlertCircle, ArrowDown, AudioLines, ArrowUp, ArrowUpRight, Check, ChevronRight, Coins, Copy, History, Loader2, MapPin, Mic, PanelLeftClose, PanelLeftOpen, Pencil, Plus, RotateCcw, Search, Sparkles, Square, Trash2, X } from "lucide-react";
 import { readDeepLink } from "../utils/tiktokRoute";
 import { toast } from "../utils/toast";
 import { FormattedChatText } from "./AgentStructuredContent";
-import { JuelMascot, type JuelPose, setJuelMood, useJuelMood } from "./JuelMascot";
+import { JuelMascot, type JuelPose, playJuel, reactionTo, setJuelMood, useJuelMood } from "./JuelMascot";
+import { JuelLive } from "./JuelLive";
 import { pageTour, startJuelTour } from "./JuelTour";
 import { AGENT_STARTERS, creditsToast, formatCredits, GenerationResult, type JuelAttachment, JuelReport, type JuelSpend, MediaResult, OperatorAnswer, useVoiceInput } from "./JuelParts";
 import "./JuelPanel.css";
@@ -138,6 +139,8 @@ export function JuelPanel({ onClose, embedded = false, headStart, leaving = fals
   const [editFrom, setEditFrom] = useState<number | null>(null);
   const [sending, setSending] = useState(false);
   const [live, setLive] = useState<Live | null>(null);
+  // Live mode: talk with Juel out loud (JuelLive.tsx).
+  const [liveMode, setLiveMode] = useState(false);
   const [error, setError] = useState("");
   const [announced, setAnnounced] = useState<JuelContext | null>(lastContext);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -308,7 +311,14 @@ export function JuelPanel({ onClose, embedded = false, headStart, leaving = fals
     if (!text || sending) return;
     const from = options.editFrom !== undefined ? options.editFrom : editFrom;
     setSending(true);
-    setJuelMood("think");
+    // Juel reacts to what you say: asked to dance, he dances while he answers.
+    const reaction = reactionTo(text, "user");
+    // A dance plays out before he goes back to acting out the reply.
+    const busyUntil = reaction === "dance" ? Date.now() + 5600 : 0;
+    if (reaction === "dance" || reaction === "flip") playJuel(reaction, reaction === "dance" ? 5600 : 1100);
+    else if (reaction && reaction !== "wave") playJuel(reaction, 1400);
+    else setJuelMood("think");
+    if (reaction && reaction !== "dance" && reaction !== "wave") window.setTimeout(() => setJuelMood("think"), 1400);
     setError("");
     setMessage("");
     setEditFrom(null);
@@ -339,10 +349,10 @@ export function JuelPanel({ onClose, embedded = false, headStart, leaving = fals
           if (!line.trim()) continue;
           const item = JSON.parse(line);
           if (item.type === "reply") {
-            setJuelMood("talk");
+            if (Date.now() > busyUntil) setJuelMood("talk");
             setLive((l) => (l ? { ...l, reply: String(item.text || "") } : l));
           } else if (item.type === "step") {
-            setJuelMood("work");
+            if (Date.now() > busyUntil) setJuelMood("work");
             setLive((l) => (l ? { ...l, steps: [...l.steps, { specialist: item.specialist, text: item.text }] } : l));
           }
           else if (item.type === "spend") setLive((l) => (l ? { ...l, spends: [...l.spends, item.spend] } : l));
@@ -352,7 +362,9 @@ export function JuelPanel({ onClose, embedded = false, headStart, leaving = fals
             setLive((l) => (l ? { ...l, spends: [...l.spends, { does: item.does, credits: Number(item.needed) || 0, status: "refused" }] } : l));
           } else if (item.type === "page") runOnPage(item.surface, item.actions);
           else if (item.type === "done") {
-            settle("thumbs", 2600);
+            // How the reply ended shows on his face: a party for something posted, sad for an apology.
+            const said = [...(item.thread?.messages || [])].reverse().find((m: { role: string }) => m.role !== "user")?.content || "";
+            settle(reactionTo(said, "juel") || "thumbs", 2600);
             setThread(item.thread);
             remember(now, item.thread.id);
             announceChange();
@@ -427,6 +439,10 @@ export function JuelPanel({ onClose, embedded = false, headStart, leaving = fals
         {headStart}
         <span className="juel-title"><span className="juel-mark" aria-hidden="true"><JuelMascot pose={mood} size={20} framing="bust" /></span>Juel</span>
         <span className="juel-thread-title" title={thread?.title || undefined}>{thread?.messages.length ? thread.title || "Conversation" : "New conversation"}</span>
+        <button type="button" className={`juel-live-toggle${liveMode ? " is-on" : ""}`} onClick={() => setLiveMode((on) => !on)} aria-pressed={liveMode} title={liveMode ? "Back to the chat" : "Talk with Juel out loud"}>
+          <AudioLines size={15} aria-hidden="true" />
+          Live
+        </button>
         <button type="button" className={`juel-icon juel-history-btn${historyOpen ? " is-on" : ""}`} onClick={() => setHistoryOpen((o) => !o)} aria-label="Conversations" aria-expanded={historyOpen} title="Conversations"><History size={16} /></button>
         <button type="button" className="juel-icon" onClick={newChat} aria-label="New conversation" title="New conversation"><Plus size={16} /></button>
         {onClose ? <button type="button" className="juel-icon" onClick={onClose} aria-label="Close Juel" title="Close (Esc)"><X size={16} /></button> : null}
@@ -444,6 +460,16 @@ export function JuelPanel({ onClose, embedded = false, headStart, leaving = fals
           onDeleted={(id) => thread?.id === id && newChat()}
         />
       ) : null}
+      {liveMode ? (
+        <JuelLive
+          reply={live ? live.reply : null}
+          sending={sending}
+          lastReply={[...(thread?.messages || [])].reverse().find((m) => m.role !== "user")?.content || ""}
+          ask={(text) => void send(text)}
+          interrupt={() => stopper.current?.abort()}
+          onEnd={() => setLiveMode(false)}
+        />
+      ) : (<>
       <div className="juel-body" ref={body} onScroll={onScroll}>
         <div className="juel-thread">
           {!thread?.messages.length && !live ? (
@@ -547,6 +573,7 @@ export function JuelPanel({ onClose, embedded = false, headStart, leaving = fals
           )}
         </div>
       </form>
+      </>)}
     </aside>
   );
   if (!sidebar) return panel;

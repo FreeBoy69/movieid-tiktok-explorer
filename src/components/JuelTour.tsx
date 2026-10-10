@@ -29,7 +29,7 @@ export const TOURS: Tour[] = [
       { target: ".sl-box", title: "Start with an idea", body: "Describe an image or a video here and press send. Switch between Image and Video, and pick a model, right in the box." },
       { target: ".ah-nav", title: "Every studio, one bar", body: "Create Video, Create Drama, the Image, Video and Audio studios, Agents and Tools all live up here." },
       { target: ".ah-search", title: "Jump anywhere", body: "Search every studio and tool by name. Press ⌘K from any page." },
-      { target: ".juel-trigger", title: "And me, any time", body: "Ask me to find a niche, write a script, make a video or post it. I show what each paid step costs before I run it." },
+      { target: ".juel-float, .juel-trigger", title: "And me, any time", body: "Ask me to find a niche, write a script, make a video or post it. I show what each paid step costs before I run it." },
       { target: ".ah-account", title: "Your account", body: "Credits, plan, connected channels and settings are in here." },
       { title: "That's the tour", body: "Ask me for help whenever you're stuck, and every page with a tour can show it again from my panel.", pose: "thumbs" },
     ],
@@ -56,7 +56,7 @@ export const TOURS: Tour[] = [
       { title: "Making a video", body: "A video is made in steps, from the title to the export. I'll show you the flow.", pose: "wave" },
       { target: ".maker-stagebar", title: "One step at a time", body: "Title, script, description, voiceover, soundtrack, visuals, thumbnail and export. A tick means a step is done." },
       { target: ".maker-gen-head", title: "Generate, then edit", body: "Each step has its own Generate button. What it makes is yours to edit before you move on." },
-      { target: ".juel-trigger", title: "Stuck on a step?", body: "Ask me to write a hook, change the voice or regenerate a scene. I can work on this project with you.", pose: "thumbs" },
+      { target: ".juel-float, .juel-trigger", title: "Stuck on a step?", body: "Ask me to write a hook, change the voice or regenerate a scene. I can work on this project with you.", pose: "thumbs" },
     ],
   },
   {
@@ -96,6 +96,15 @@ export function pageTour(): Tour | null {
 }
 
 type Rect = { top: number; left: number; width: number; height: number };
+/** The first element matching `selector` that is actually on screen (the floating Juel on desktop, the
+ *  header's Juel button on phones). */
+function findTarget(selector: string): HTMLElement | null {
+  for (const element of Array.from(document.querySelectorAll<HTMLElement>(selector))) {
+    const box = element.getBoundingClientRect();
+    if (box.width > 0 && box.height > 0 && getComputedStyle(element).visibility !== "hidden") return element;
+  }
+  return null;
+}
 const PAD = 8;
 
 /** The tour runner and the one-time offer. Mounted once (inside the header's Juel button). */
@@ -166,7 +175,7 @@ export default function JuelTourHost() {
 
 function TourRunner({ tour, index, setIndex, onEnd }: { tour: Tour; index: number; setIndex: (n: number) => void; onEnd: (how: "done" | "skipped") => void }) {
   // Steps whose element isn't on the page are left out.
-  const [steps] = useState(() => tour.steps.filter((step) => !step.target || document.querySelector(step.target)));
+  const [steps] = useState(() => tour.steps.filter((step) => !step.target || findTarget(step.target)));
   const step = steps[Math.min(index, steps.length - 1)];
   const [rect, setRect] = useState<Rect | null>(null);
   const card = useRef<HTMLDivElement | null>(null);
@@ -174,14 +183,14 @@ function TourRunner({ tour, index, setIndex, onEnd }: { tour: Tour; index: numbe
   const last = index >= steps.length - 1;
 
   const measure = useCallback(() => {
-    const element = step?.target ? (document.querySelector(step.target) as HTMLElement | null) : null;
+    const element = step?.target ? findTarget(step.target) : null;
     if (!element) return setRect(null);
     const box = element.getBoundingClientRect();
     setRect({ top: box.top - PAD, left: box.left - PAD, width: box.width + PAD * 2, height: box.height + PAD * 2 });
   }, [step]);
 
   useLayoutEffect(() => {
-    const element = step?.target ? (document.querySelector(step.target) as HTMLElement | null) : null;
+    const element = step?.target ? findTarget(step.target) : null;
     element?.scrollIntoView({ block: "center", inline: "nearest", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
     measure();
     // Scrolling into view takes a moment: measure again as it settles.
