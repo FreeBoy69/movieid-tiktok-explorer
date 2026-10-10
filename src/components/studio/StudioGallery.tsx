@@ -17,9 +17,15 @@ import {
   Sparkles,
   Square,
   Trash2,
+  Upload,
   X,
 } from "lucide-react";
 import { AudioPlayer } from "../AudioPlayer";
+import { Dialog } from "../ui/Dialog";
+import { PickerDialog } from "../SourcePicker";
+import { socialPlatform } from "../SocialPlatforms";
+import { YouTubePublishFields } from "../YouTubePublishForm";
+import type { AuthSessionPayload, ConnectedYouTubeAccount } from "../../types";
 import { MotionPreview } from "./MotionPreview";
 import { writeDeepLink } from "../../utils/tiktokRoute";
 import { type Asset, elapsed, type Generation, type Output, timeAgo } from "./studioShared";
@@ -137,12 +143,119 @@ function Actions({ item, output, handlers, onClose }: { item: Generation; output
       {output && item.tab === "explainer" && item.captions ? (
         <a className="ui-icon-btn cs-icon" href={`${item.captions.url}?download=1`} aria-label="Download captions (SRT)" title="Download captions (SRT)" onClick={(event) => event.stopPropagation()}><Captions className="h-3.5 w-3.5" /></a>
       ) : null}
+      {output && item.tab === "clipping" && kind === "video" ? <PostClip output={output} /> : null}
       <button type="button" className="ui-icon-btn cs-icon" aria-label="Reuse settings" title="Reuse settings" onClick={act(() => { onClose?.(); handlers.onReuse(item); })}><RotateCcw className="h-3.5 w-3.5" /></button>
       {output ? (
         <a className="ui-icon-btn cs-icon" href={`${output.url}?download=1`} aria-label="Download" title="Download" onClick={(event) => event.stopPropagation()}><Download className="h-3.5 w-3.5" /></a>
       ) : null}
       <button type="button" className="ui-icon-btn cs-icon" aria-label="Delete" title="Delete" onClick={act(() => { onClose?.(); handlers.onDelete(item); })}><Trash2 className="h-3.5 w-3.5" /></button>
     </div>
+  );
+}
+
+// Post one clip to a connected channel through the same upload route Channel
+// Management uses: YouTube directly (or Zernio as its backup), TikTok via Zernio.
+export function PostClip({ output }: { output: Output }) {
+  const [open, setOpen] = useState(false);
+  const [channels, setChannels] = useState<ConnectedYouTubeAccount[] | null>(null);
+  const [accountId, setAccountId] = useState("");
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [tags, setTags] = useState("");
+  const [privacy, setPrivacy] = useState("public");
+  const [when, setWhen] = useState("");
+  const [posting, setPosting] = useState(false);
+  const channel = channels?.find((c) => c.id === accountId);
+  useEffect(() => {
+    if (!open || channels) return;
+    fetch("/api/auth/session", { cache: "no-store" })
+      .then((response) => response.json() as Promise<AuthSessionPayload>)
+      .then((data) => setChannels(data.accounts || []))
+      .catch(() => { setChannels([]); toast.error("Couldn't load your channels"); });
+  }, [open, channels]);
+  const start = (event: MouseEvent) => {
+    event.stopPropagation();
+    setTitle((output.title || "").slice(0, 100));
+    setDescription(output.caption || "");
+    setAccountId("");
+    setWhen("");
+    setOpen(true);
+  };
+  const post = async () => {
+    setPosting(true);
+    try {
+      const file = await fetch(output.url, { credentials: "same-origin" });
+      if (!file.ok) throw new Error("Couldn't read the clip");
+      const params = new URLSearchParams({ accountId, title: title.trim(), description, tags, privacyStatus: privacy });
+      if (when) params.set("publishAt", new Date(when).toISOString());
+      const response = await fetch(`/api/youtube/videos/upload?${params.toString()}`, {
+        method: "POST",
+        headers: { "Content-Type": "video/mp4" },
+        body: await file.blob(),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Couldn't post the clip");
+      const name = channel?.channelTitle || "your channel";
+      toast.success(when ? `Scheduled on ${name}` : `Posted to ${name}`);
+      setOpen(false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Couldn't post the clip");
+    } finally {
+      setPosting(false);
+    }
+  };
+  // The earliest schedule the server accepts is a couple of minutes out.
+  const earliest = new Date(Date.now() + 5 * 60_000 - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+  // The dialogs portal out, but React still bubbles their clicks and keys to the
+  // tile (opens the lightbox) and the lightbox (arrows switch clips): stop them here.
+  const contain = (event: { stopPropagation: () => void }) => event.stopPropagation();
+  return (
+    <span style={{ display: "contents" }} onClick={contain} onKeyDown={contain}>
+      <button type="button" className="ui-icon-btn cs-icon" aria-label="Post to a channel" title="Post to a channel" onClick={start}><Upload className="h-3.5 w-3.5" /></button>
+      <PickerDialog
+        open={open && !accountId}
+        onClose={() => setOpen(false)}
+        title="Post to a channel"
+        loading={!channels}
+        emptyText="No channels are connected. Connect one from the channel menu at the top."
+        items={(channels || []).map((c) => ({ value: c.id, label: c.channelTitle, imageUrl: c.thumbnailUrl || undefined, kind: "channel" as const, platform: c.platform, meta: `${socialPlatform(c.platform)?.label || c.platform || "YouTube"}${c.channelHandle ? ` · ${c.channelHandle}` : ""}` }))}
+        onChoose={(choice) => setAccountId(choice.value)}
+      />
+      {open && accountId ? (
+        <Dialog
+          title={`Post to ${channel?.channelTitle || "channel"}`}
+          size="sm"
+          dismissible={!posting}
+          onClose={() => { if (!posting) setOpen(false); }}
+          footer={
+            <>
+              <button type="button" className="ui-btn" disabled={posting} onClick={() => setAccountId("")}>Another channel</button>
+              <button type="button" className="ui-btn is-primary" disabled={posting || !title.trim()} onClick={() => void post()}>
+                {posting ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Upload className="h-4 w-4" aria-hidden="true" />}
+                {when ? "Schedule" : "Post now"}
+              </button>
+            </>
+          }
+        >
+          <YouTubePublishFields
+            theme={document.documentElement.dataset.theme === "light" ? "light" : "dark"}
+            title={title}
+            onTitleChange={setTitle}
+            description={description}
+            onDescriptionChange={setDescription}
+            tags={tags}
+            onTagsChange={setTags}
+            privacyStatus={privacy}
+            onPrivacyStatusChange={setPrivacy}
+          >
+            <label className="ytp-field">
+              <span className="ytp-label-row"><span className="ytp-label">Schedule</span><span className="ytp-count">Leave empty to post now</span></span>
+              <input className="ui-input" type="datetime-local" min={earliest} value={when} onChange={(event) => setWhen(event.target.value)} />
+            </label>
+          </YouTubePublishFields>
+        </Dialog>
+      ) : null}
+    </span>
   );
 }
 

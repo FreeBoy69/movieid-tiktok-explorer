@@ -22284,7 +22284,11 @@ WHERE user_id = ${sqlString(session.user.id)}
                 uploadBody = fs.readFileSync(preparedUploadFile);
             }
             const uploadContentType = postAsShort ? "video/mp4" : String(req.headers["content-type"] || "application/octet-stream");
+            // Optional schedule: YouTube publishes it privately until then; Zernio queues it.
+            const publishAtMs = Date.parse(String(req.query.publishAt || ""));
+            const publishAt = Number.isFinite(publishAtMs) && publishAtMs > Date.now() + 60_000 ? new Date(publishAtMs).toISOString() : "";
             const result = await uploadYouTubeVideo(account, {
+                publishAt,
                 title,
                 description: String(req.query.description || ""),
                 tags: safeYouTubeTags(req.query.tags),
