@@ -390,6 +390,7 @@ export const JUEL_EXCLUDED = {
   "GET /api/voicebox/status": "health check",
   "GET /api/recaps/source/:token/:name": "signed download link for the media worker",
   "POST /api/juel/speak": "Juel's own voice in live mode",
+  "POST /api/juel/hear": "Juel's own hearing in live mode (a turn's recording to text)",
   "GET /internal/exec/:id/events": "internal worker endpoint",
   "GET /internal/exec/:id/input": "internal worker endpoint",
   "GET /internal/exec/claim": "internal worker endpoint",
@@ -941,6 +942,49 @@ export async function streamGeminiSpeech({ text, voice, onAudio, signal = undefi
       if (sent) return { model, bytes: sent };
       lastError = new Error("Gemini returned no audio.");
     }
+  }
+  throw lastError;
+}
+
+/** The audio types Gemini reads inline, from what browsers record (Chrome: webm/opus, Safari: mp4/aac). */
+export function hearingMime(contentType) {
+  const type = String(contentType || "").split(";")[0].trim().toLowerCase();
+  if (/^(audio|video)\/webm$/.test(type)) return "audio/webm";
+  if (/^(audio|video)\/(mp4|x-m4a|m4a)$/.test(type)) return "audio/mp4";
+  if (/^audio\/(ogg|wav|x-wav|wave|mpeg|mp3|aac|flac|aiff)$/.test(type)) return type.replace("x-wav", "wav").replace("wave", "wav").replace("mp3", "mpeg");
+  return "";
+}
+
+/** What was said in a short recording, from Gemini (about a second, where the old Whisper route took
+ *  several): the recording goes inline as recorded, no conversion. "" when nobody spoke. */
+export async function hearWithGemini({ audio, mimeType, signal = undefined, fetchImpl = fetch, env = process.env }) {
+  const keys = [env.GEMINI_API_KEY, env.GEMINI_API_KEY_BACKUP || env.GEMINI_BACKUP_API_KEY].map((k) => String(k || "").replace(/^["']|["']$/g, "").trim()).filter(Boolean);
+  if (!keys.length) throw new Error("Juel's hearing isn't set up on this server.");
+  const model = String(env.JUEL_HEAR_MODEL || "gemini-3.1-flash-lite").trim();
+  let lastError = new Error("Juel couldn't hear that.");
+  for (const key of keys) {
+    await guardUsage("gemini", { operation: "transcription", model });
+    const response = await fetchImpl(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+      body: JSON.stringify({
+        contents: [{ parts: [{ inlineData: { mimeType, data: Buffer.from(audio).toString("base64") } }, { text: "Transcribe exactly what the speaker says, in the language they speak. Output only their words, with no notes. If nobody speaks, output nothing." }] }],
+        generationConfig: { temperature: 0, maxOutputTokens: 400 },
+      }),
+      signal,
+    }).catch((error) => {
+      lastError = error;
+      return null;
+    });
+    if (!response?.ok) {
+      if (response) lastError = new Error(`Gemini transcription failed (${response.status})`);
+      signal?.throwIfAborted();
+      continue;
+    }
+    const data = await response.json();
+    if (data.usageMetadata) meterUsage({ provider: "gemini", model, operation: "transcription", usage: data.usageMetadata });
+    const text = (data.candidates?.[0]?.content?.parts || []).map((part) => (part.thought ? "" : part.text || "")).join("").replace(/\s+/g, " ").trim();
+    return { text, model };
   }
   throw lastError;
 }
@@ -1548,7 +1592,11 @@ export function registerJuel(app, deps) {
       let started = false;
       try {
         await deps.withUsage(who.userId, "juel", () => streamGeminiSpeech({
-          text: `Say warmly and upbeat, like a friendly helper: ${text}`,
+          // The sentence alone. The lite TTS model reads a delivery note in front of it out loud ("Say
+          // cheerfully" 3 of 3 times, the old "Say warmly and upbeat, like a friendly helper" 1 of 3), it
+          // rejects a systemInstruction, and plain text starts no slower (~1.1 s to first audio either way,
+          // measured 2026-10-10). The voice the user picked carries the tone.
+          text,
           voice,
           signal: stop.signal,
           onAudio: (pcm) => {
@@ -1568,13 +1616,41 @@ export function registerJuel(app, deps) {
       }
     }
     try {
-      const spoken = await synthesizeHostedVoice({ profileId: `openrouter:${voice}`, text, direction: "Say this in a warm, upbeat, conversational way, like a friendly helper", signal: AbortSignal.timeout(45000) });
+      const spoken = await synthesizeHostedVoice({ profileId: `openrouter:${voice}`, text, signal: AbortSignal.timeout(45000) });
       res.setHeader("Content-Type", spoken.contentType);
       res.setHeader("Cache-Control", "no-store");
       res.end(spoken.audio);
     } catch (error) {
       const blocked = error?.name === "UsageBlockedError";
       res.status(blocked ? error.status || 402 : 502).json({ error: blocked ? error.message : "Juel's voice isn't available right now." });
+    }
+  });
+
+  // Juel's ears in live mode where the browser can't transcribe: the turn's recording, as recorded.
+  app.post("/api/juel/hear", async (req, res) => {
+    const who = await signedIn(req, res);
+    if (!who) return;
+    const mimeType = hearingMime(req.headers["content-type"]);
+    if (!mimeType) return res.status(415).json({ error: "That recording format isn't supported." });
+    const chunks = [];
+    let size = 0;
+    try {
+      for await (const chunk of req) {
+        size += chunk.length;
+        if (size > 8 * 1024 * 1024) return res.status(413).json({ error: "That recording is too long. Keep a turn under a minute." });
+        chunks.push(chunk);
+      }
+    } catch {
+      return res.status(400).json({ error: "The recording didn't arrive." });
+    }
+    if (!size) return res.status(400).json({ error: "The recording was empty." });
+    try {
+      const heard = await deps.withUsage(who.userId, "juel", () => hearWithGemini({ audio: Buffer.concat(chunks), mimeType, signal: AbortSignal.timeout(20000) }));
+      res.json({ text: heard.text });
+    } catch (error) {
+      const blocked = error?.name === "UsageBlockedError";
+      if (!blocked) console.warn(`[juel] hearing failed: ${error instanceof Error ? error.message : error}`);
+      res.status(blocked ? error.status || 402 : 502).json({ error: blocked ? error.message : "Juel couldn't hear that." });
     }
   });
 

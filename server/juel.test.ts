@@ -404,3 +404,28 @@ describe("Juel's streamed voice", () => {
     await expect(streamGeminiSpeech({ text: "Hi", voice: "Puck", env: {} as any, onAudio: () => undefined })).rejects.toThrow("isn't set up");
   });
 });
+
+describe("Juel's hearing", () => {
+  it("reads the browser's recording formats inline and refuses others", async () => {
+    const { hearingMime } = await import("./juel.js");
+    expect(hearingMime("audio/webm;codecs=opus")).toBe("audio/webm");
+    expect(hearingMime("video/webm")).toBe("audio/webm");
+    expect(hearingMime("audio/mp4")).toBe("audio/mp4");
+    expect(hearingMime("audio/x-wav")).toBe("audio/wav");
+    expect(hearingMime("application/pdf")).toBe("");
+  });
+
+  it("sends the recording to Gemini as recorded and returns only the words", async () => {
+    const { hearWithGemini } = await import("./juel.js");
+    const sent: any[] = [];
+    const fetchImpl = (async (url: string, init: any) => {
+      sent.push({ url, body: JSON.parse(init.body) });
+      return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: "  When does the next video   go out? " }] } }] }), { status: 200 });
+    }) as any;
+    const heard = await hearWithGemini({ audio: Buffer.from("opus-bytes"), mimeType: "audio/webm", fetchImpl, env: { GEMINI_API_KEY: "k" } as any });
+    expect(heard.text).toBe("When does the next video go out?");
+    expect(sent[0].url).toContain("gemini-3.1-flash-lite:generateContent");
+    expect(sent[0].body.contents[0].parts[0].inlineData).toEqual({ mimeType: "audio/webm", data: Buffer.from("opus-bytes").toString("base64") });
+  });
+});
+

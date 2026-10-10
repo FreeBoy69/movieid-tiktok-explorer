@@ -740,7 +740,10 @@ export function JuelLive({
           transcribing.current = true;
           go("thinking");
           setJuelMood("think");
-          const response = await fetch("/api/automation/agents/chat/transcribe", { method: "POST", headers: { "Content-Type": blob.type || "application/octet-stream" }, body: blob }).catch(() => null);
+          // Gemini hears the recording as recorded in about a second; the Whisper route is the backup.
+          const post = (url: string) => fetch(url, { method: "POST", headers: { "Content-Type": blob.type || "application/octet-stream" }, body: blob }).catch(() => null);
+          let response = await post("/api/juel/hear");
+          if (!response?.ok && response?.status !== 402) response = await post("/api/automation/agents/chat/transcribe");
           const data = response?.ok ? await response.json().catch(() => ({})) : {};
           const text = String(data.text || "");
           // A recording that caught only his voice is no turn.
