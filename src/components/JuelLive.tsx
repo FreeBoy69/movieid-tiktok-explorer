@@ -141,6 +141,9 @@ export function turnPause(transcript: string, gaps: number[], final = false): nu
   return Math.round((state === "done" ? (final ? 220 : 450) : final ? 450 : 800) * pace);
 }
 
+/** Bands in the live waveform (drawn mirrored, so twice as many bars). */
+const WAVE_BANDS = 16;
+
 export function JuelLive({
   reply,
   sending,
@@ -198,6 +201,7 @@ export function JuelLive({
   // The reply the thread ended on before this turn: never spoken again as this turn's answer.
   const replyBefore = useRef("");
   const stage = useRef<HTMLDivElement | null>(null);
+  const wave = useRef<HTMLDivElement | null>(null);
   const phaseRef = useRef<Phase>("starting");
   const recognition = useRef<Recognition | null>(null);
   // The recogniser keeps everything it heard since it started (Juel's own voice included): a clean
@@ -590,6 +594,25 @@ export function JuelLive({
       context.createMediaStreamSource(stream.current).connect(analyser);
       const buffer = new Float32Array(analyser.fftSize);
       const outBuffer = new Float32Array(512);
+      // The waveform: 16 voice bands (120 Hz to 4.5 kHz, log-spaced), mirrored so the low voice sits in
+      // the middle. Your mic while you talk, his voice while he speaks.
+      const micFreq = new Uint8Array(analyser.frequencyBinCount);
+      const outFreq = new Uint8Array(outAnalyser.current?.frequencyBinCount || 256);
+      const bandsOf = (node: AnalyserNode) => Array.from({ length: WAVE_BANDS + 1 }, (_, i) => Math.max(1, Math.round((120 * Math.pow(4500 / 120, i / WAVE_BANDS)) / (context.sampleRate / node.fftSize))));
+      const micEdges = bandsOf(analyser);
+      const outEdges = outAnalyser.current ? bandsOf(outAnalyser.current) : micEdges;
+      const bars = wave.current ? Array.from(wave.current.children) as HTMLElement[] : [];
+      const drawWave = (data: Uint8Array, edges: number[], gain: number) => {
+        for (let band = 0; band < WAVE_BANDS; band++) {
+          let peak = 0;
+          for (let bin = edges[band]; bin < Math.max(edges[band] + 1, edges[band + 1]); bin++) peak = Math.max(peak, data[bin] || 0);
+          const height = (0.08 + 0.92 * Math.pow(Math.min(1, (peak / 255) * gain), 1.6)).toFixed(3);
+          const left = bars[WAVE_BANDS - 1 - band];
+          const right = bars[WAVE_BANDS + band];
+          if (left) left.style.transform = `scaleY(${height})`;
+          if (right) right.style.transform = `scaleY(${height})`;
+        }
+      };
       // One loop: the mic's loudness for turn-taking and barge-in, the voice's loudness for the mouth.
       const tick = () => {
         frame = requestAnimationFrame(tick);
@@ -642,6 +665,15 @@ export function JuelLive({
           }
         }
         stage.current?.style.setProperty("--live-level", Math.min(1, rms * 18).toFixed(3));
+        if (bars.length) {
+          if (outAnalyser.current && playing.current) {
+            outAnalyser.current.getByteFrequencyData(outFreq);
+            drawWave(outFreq, outEdges, 1.05);
+          } else if (!mutedRef.current) {
+            analyser.getByteFrequencyData(micFreq);
+            drawWave(micFreq, micEdges, 1.15);
+          } else drawWave(new Uint8Array(1), micEdges, 0);
+        }
         if (outAnalyser.current && playing.current) {
           outAnalyser.current.getFloatTimeDomainData(outBuffer);
           let out = 0;
@@ -815,6 +847,9 @@ export function JuelLive({
           <i />
         </div>
         <JuelMascot pose={pose} size={184} followPointer={phase === "listening"} title="Juel" />
+      </div>
+      <div className="juel-live-wave" ref={wave} data-who={phase === "speaking" ? "juel" : "you"} aria-hidden="true">
+        {Array.from({ length: WAVE_BANDS * 2 }, (_, i) => <i key={i} />)}
       </div>
       <p key={`${who}:${caption}`} className="juel-live-caption" data-who={who} aria-live="polite">
         {caption.charAt(0).toUpperCase() + caption.slice(1)}

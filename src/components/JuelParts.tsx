@@ -479,7 +479,10 @@ export function useVoiceInput(onText: (text: string) => void, onError: (message:
         if (!blob.size) return setState("idle");
         setState("transcribing");
         try {
-          const response = await fetch("/api/automation/agents/chat/transcribe", { method: "POST", headers: { "Content-Type": blob.type || "application/octet-stream" }, body: blob, signal: AbortSignal.timeout(90000) });
+          // The same fast ears as live mode (Gemini, about a second); the Whisper route is the backup.
+          const send = (url: string, ms: number) => fetch(url, { method: "POST", headers: { "Content-Type": blob.type || "application/octet-stream" }, body: blob, signal: AbortSignal.timeout(ms) });
+          let response = await send("/api/juel/hear", 25000).catch(() => null);
+          if (!response?.ok && response?.status !== 402) response = await send("/api/automation/agents/chat/transcribe", 90000);
           const data = await response.json().catch(() => ({}));
           if (!response.ok) throw new Error(String(data.error || "Voice transcription failed"));
           const text = String(data.text || "").replace(/\s+/g, " ").trim();

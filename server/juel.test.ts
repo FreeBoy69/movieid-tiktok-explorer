@@ -415,12 +415,23 @@ describe("Juel's hearing", () => {
     expect(hearingMime("application/pdf")).toBe("");
   });
 
+  it("keeps only the spoken words when a transcript comes back with time codes", async () => {
+    const { spokenWords } = await import("./juel.js");
+    expect(spokenWords("[00:01] When does the next video go out?")).toBe("When does the next video go out?");
+    expect(spokenWords("00:00 - 00:03 Make a thumbnail 00:03 - 00:05 for the heist recap")).toBe("Make a thumbnail for the heist recap");
+    expect(spokenWords("(0:02.5) Post it at six [music]")).toBe("Post it at six");
+    expect(spokenWords("Speaker 1: hello there")).toBe("hello there");
+    // A time you actually say stays.
+    expect(spokenWords("Meet me at 6:30 tonight")).toBe("Meet me at 6:30 tonight");
+    expect(spokenWords("00:00:01.200 Post it now")).toBe("Post it now");
+  });
+
   it("sends the recording to Gemini as recorded and returns only the words", async () => {
     const { hearWithGemini } = await import("./juel.js");
     const sent: any[] = [];
     const fetchImpl = (async (url: string, init: any) => {
       sent.push({ url, body: JSON.parse(init.body) });
-      return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: "  When does the next video   go out? " }] } }] }), { status: 200 });
+      return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify({ text: "  [00:00] When does the next video   go out? " }) }] } }] }), { status: 200 });
     }) as any;
     const heard = await hearWithGemini({ audio: Buffer.from("opus-bytes"), mimeType: "audio/webm", fetchImpl, env: { GEMINI_API_KEY: "k" } as any });
     expect(heard.text).toBe("When does the next video go out?");

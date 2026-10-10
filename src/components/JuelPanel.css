@@ -372,6 +372,12 @@
 @keyframes lv-ribbon { from { transform: translateY(18%) rotate(-14deg) scaleX(0.9); } to { transform: translateY(-26%) rotate(12deg) scaleX(1.06); } }
 /* Thinking: the halo swirls faster. */
 .juel-live[data-phase="thinking"] .juel-live-aura i { animation-duration: 1.5s; }
+/* The live waveform: your voice while you talk, his while he speaks (JuelLive's audio loop sets each bar). */
+.juel-live-wave { display: flex; height: 46px; align-items: center; justify-content: center; gap: 3px; margin: 2px auto 0; color: var(--j-text); opacity: 0.85; }
+.juel-live-wave[data-who="juel"] { color: var(--j-accent-text); opacity: 1; }
+.juel-live-wave i { width: 4px; height: 100%; flex: none; border-radius: 3px; background: currentColor; transform: scaleY(0.08); transition: transform 70ms linear; }
+.juel-live[data-phase="thinking"] .juel-live-wave, .juel-live[data-phase="starting"] .juel-live-wave, .juel-live[data-phase="error"] .juel-live-wave { opacity: 0.3; }
+@media (prefers-reduced-motion: reduce) { .juel-live-wave i { transition: none; } }
 .juel-live-caption {
   display: -webkit-box; width: 100%; max-width: 19ch; min-height: 2.24em; margin: 18px 0 20px; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 4;
   color: var(--lv-ink); font-weight: 700; font-size: 26px; line-height: 1.12; letter-spacing: -0.03em; text-wrap: balance;

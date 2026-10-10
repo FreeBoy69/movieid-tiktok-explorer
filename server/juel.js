@@ -955,6 +955,22 @@ export function hearingMime(contentType) {
   return "";
 }
 
+/** Just the spoken words: drops time codes ("[00:01]", "00:00 - 00:03", "(0:02.5)"), speaker labels, and
+ *  bracketed notes like "[music]" that transcripts sometimes carry. */
+export function spokenWords(text) {
+  const time = String.raw`\d{1,2}:\d{2}(?::\d{2})?(?:[.,]\d+)?`;
+  return String(text || "")
+    // Time codes, not times you say: bracketed ones, ranges, a code opening a line, and full hh:mm:ss.
+    .replace(new RegExp(String.raw`[[(]\s*${time}\s*(?:(?:-|–|—|-->)\s*${time}\s*)?[\])]`, "g"), " ")
+    .replace(new RegExp(String.raw`\b${time}\s*(?:-|–|—|-->)\s*${time}\b`, "g"), " ")
+    .replace(new RegExp(String.raw`^\s*${time}\b\s*[-–—:|]?`, "gm"), " ")
+    .replace(/\b\d{2}:\d{2}:\d{2}(?:[.,]\d+)?\b/g, " ")
+    .replace(/^\s*(?:speaker\s*\d+|user|you)\s*:/gim, " ")
+    .replace(/\[(?:music|noise|silence|inaudible|laughter|background[^\]]*)\]/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 /** What was said in a short recording, from Gemini (about a second, where the old Whisper route took
  *  several): the recording goes inline as recorded, no conversion. "" when nobody spoke. */
 export async function hearWithGemini({ audio, mimeType, signal = undefined, fetchImpl = fetch, env = process.env }) {
@@ -968,8 +984,9 @@ export async function hearWithGemini({ audio, mimeType, signal = undefined, fetc
       method: "POST",
       headers: { "Content-Type": "application/json", "x-goog-api-key": key },
       body: JSON.stringify({
-        contents: [{ parts: [{ inlineData: { mimeType, data: Buffer.from(audio).toString("base64") } }, { text: "Transcribe exactly what the speaker says, in the language they speak. Output only their words, with no notes. If nobody speaks, output nothing." }] }],
-        generationConfig: { temperature: 0, maxOutputTokens: 400 },
+        contents: [{ parts: [{ inlineData: { mimeType, data: Buffer.from(audio).toString("base64") } }, { text: "Transcribe exactly what the speaker says, in the language they speak, as plain running text: no timestamps, no time codes, no speaker labels, no notes. If nobody speaks, return an empty string." }] }],
+        // A JSON answer with only the words: left to itself the model sometimes writes "[00:01] …" lines.
+        generationConfig: { temperature: 0, maxOutputTokens: 400, responseMimeType: "application/json", responseSchema: { type: "OBJECT", properties: { text: { type: "STRING" } }, required: ["text"] } },
       }),
       signal,
     }).catch((error) => {
@@ -983,8 +1000,12 @@ export async function hearWithGemini({ audio, mimeType, signal = undefined, fetc
     }
     const data = await response.json();
     if (data.usageMetadata) meterUsage({ provider: "gemini", model, operation: "transcription", usage: data.usageMetadata });
-    const text = (data.candidates?.[0]?.content?.parts || []).map((part) => (part.thought ? "" : part.text || "")).join("").replace(/\s+/g, " ").trim();
-    return { text, model };
+    const raw = (data.candidates?.[0]?.content?.parts || []).map((part) => (part.thought ? "" : part.text || "")).join("");
+    let words = raw;
+    try {
+      words = String(JSON.parse(raw)?.text ?? "");
+    } catch {}
+    return { text: spokenWords(words), model };
   }
   throw lastError;
 }
