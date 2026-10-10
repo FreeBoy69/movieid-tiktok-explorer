@@ -356,3 +356,16 @@
 .juel-live-mic.is-off { background: var(--j-danger); border-color: var(--j-danger); color: #fff; }
 .juel-live-end { display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 18px; border: 0; background: var(--j-text); color: var(--j-bg); font-weight: 650; }
 @media (prefers-reduced-motion: reduce) { .juel-live-ring { animation: none; } }
+
+/* Live mode on a phone is a call: the whole screen, no headers, Juel in the middle and the controls in
+   thumb reach. "End" goes back to the chat. */
+@media (max-width: 760px) {
+  .juel.is-live, .juel.juel-embedded.is-live { position: fixed; inset: 0; z-index: 1250; width: auto; height: 100dvh; border: 0; border-radius: 0; background: var(--j-bg); box-shadow: none; }
+  .juel.is-live .juel-head, .juel.is-live .juel-side { display: none; }
+  .juel.is-live .juel-live { justify-content: center; gap: 16px; padding: calc(env(safe-area-inset-top) + 24px) 20px calc(env(safe-area-inset-bottom) + 20px); }
+  .juel.is-live .juel-live-stage { margin-top: auto; }
+  .juel.is-live .juel-live-stage .jm { width: min(240px, 58vw); height: auto; }
+  .juel.is-live .juel-live-status { font-size: 17px; }
+  .juel.is-live .juel-live-captions { max-width: 520px; }
+  .juel.is-live .juel-live-controls { width: 100%; justify-content: center; flex-wrap: wrap; }
+}

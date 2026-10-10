@@ -435,7 +435,7 @@ export function JuelPanel({ onClose, embedded = false, headStart, leaving = fals
   const intro = context.intro || { title: "Ask Juel anything in AutoYT", body: "It works with a team of specialists (recaps, editing, publishing, research, and more), runs what you ask straight away, and shows what each paid step costs in credits." };
 
   const panel = (
-    <aside ref={root} className={`juel${embedded ? " juel-embedded" : ""}${sidebar ? " has-side" : ""}`} role={embedded ? undefined : "dialog"} aria-label="Juel">
+    <aside ref={root} className={`juel${embedded ? " juel-embedded" : ""}${sidebar ? " has-side" : ""}${liveMode ? " is-live" : ""}`} role={embedded ? undefined : "dialog"} aria-label="Juel">
       <header className="juel-head">
         {headStart}
         <span className="juel-title"><span className="juel-mark" aria-hidden="true"><JuelMascot pose={mood} size={20} framing="bust" /></span>Juel</span>
