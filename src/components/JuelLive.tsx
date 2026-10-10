@@ -100,6 +100,7 @@ export function JuelLive({
   ask,
   interrupt,
   onEnd,
+  error = "",
 }: {
   /** The reply as it streams (null when no turn is running). */
   reply: string | null;
@@ -109,6 +110,8 @@ export function JuelLive({
   ask: (text: string) => void;
   interrupt: () => void;
   onEnd: () => void;
+  /** Why the last turn failed, if it did (the panel's error). */
+  error?: string;
 }) {
   const [phase, setPhase] = useState<Phase>("starting");
   const [heard, setHeard] = useState("");
@@ -131,6 +134,13 @@ export function JuelLive({
   askRef.current = ask;
   const interruptRef = useRef(interrupt);
   interruptRef.current = interrupt;
+  const errorRef = useRef(error);
+  errorRef.current = error;
+  const lastReplyRef = useRef(lastReply);
+  lastReplyRef.current = lastReply;
+  // The reply the thread ended on before this turn: never spoken again as this turn's answer.
+  const replyBefore = useRef("");
+  const stage = useRef<HTMLDivElement | null>(null);
   const phaseRef = useRef<Phase>("starting");
   const recognition = useRef<Recognition | null>(null);
   // The recogniser keeps everything it heard since it started (Juel's own voice included): a clean
@@ -222,6 +232,9 @@ export function JuelLive({
     // The browser's own voice (the instant choice, or when an HD voice failed): the mouth opens on each
     // word as it is spoken and closes between words.
     if ("speechSynthesis" in window) {
+      // A stuck earlier utterance blocks new ones in Chrome: clear it first.
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.resume?.();
       const utterance = new SpeechSynthesisUtterance(item.text);
       utterance.voice = browserVoice();
       utterance.rate = 1.04;
@@ -238,10 +251,17 @@ export function JuelLive({
         setMouth(open);
       }, 45);
       playing.current = { pause: () => window.speechSynthesis.cancel() } as unknown as HTMLAudioElement;
-      utterance.onend = utterance.onerror = () => {
+      // Some browsers never report the end: move on after the sentence's likely length.
+      let ended = false;
+      const finish = () => {
+        if (ended) return;
+        ended = true;
         window.clearInterval(timer);
+        window.clearTimeout(guard);
         done();
       };
+      const guard = window.setTimeout(finish, 2500 + item.text.split(/\s+/).length * 480);
+      utterance.onend = utterance.onerror = finish;
       window.speechSynthesis.speak(utterance);
     } else done();
   }, []);
@@ -288,9 +308,21 @@ export function JuelLive({
       return;
     }
     if (turnDone.current) return;
-    // The turn finished: the final text decides what's left to say.
     turnDone.current = true;
-    const text = speakable(lastReply || lastSeen.current);
+    const streamed = lastSeen.current;
+    lastSeen.current = "";
+    // The finished reply, unless it's still the previous turn's (the turn failed before answering).
+    const final = lastReply && lastReply !== replyBefore.current ? speakable(lastReply) : "";
+    const text = final || streamed;
+    if (!text) {
+      // No answer came: say why instead of going quiet.
+      const why = errorRef.current || "I couldn't get an answer just now. Try saying it again.";
+      setProblem(why);
+      spokenUpTo.current = 0;
+      enqueue([`Sorry. ${why}`]);
+      return;
+    }
+    setProblem("");
     const { sentences } = nextSentences(text, Math.min(spokenUpTo.current, text.length), true);
     spokenUpTo.current = 0;
     if (sentences.length) enqueue(sentences);
@@ -305,6 +337,10 @@ export function JuelLive({
   const endTimer = useRef(0);
   const recorder = useRef<MediaRecorder | null>(null);
   const chunks = useRef<Blob[]>([]);
+  // Every utterance is also recorded. If the browser's recogniser produced no words for it (a network or
+  // language problem it doesn't report), the recording goes to the transcriber instead, so Juel still
+  // answers. When the recogniser did its job the recording is thrown away.
+  const discard = useRef(false);
   const live = useRef(true);
 
   const commit = useCallback((text: string) => {
@@ -316,6 +352,10 @@ export function JuelLive({
     spokenUpTo.current = 0;
     spokenTotal.current = 0;
     turnDone.current = false;
+    replyBefore.current = lastReplyRef.current;
+    lastSeen.current = "";
+    discard.current = true;
+    if (recorder.current?.state === "recording") recorder.current.stop();
     go("thinking");
     askRef.current(said);
   }, []);
@@ -386,20 +426,26 @@ export function JuelLive({
               setJuelMood("listen");
               go("hearing");
             }
-            if (!SR && recorder.current?.state === "inactive") {
+            if (recorder.current?.state === "inactive" && (phaseRef.current === "listening" || phaseRef.current === "hearing")) {
               chunks.current = [];
+              discard.current = false;
               recorder.current.start();
             }
           }
         } else {
           loudSince = 0;
           quietSince ||= now;
-          // Without speech recognition, a pause ends the recorded utterance.
-          if (speaking && !SR && now - quietSince > turnPause("", gaps.current)) {
+          // A pause ends the recorded utterance. With the recogniser working it is thrown away (its own
+          // timer ends the turn); with no words from it, the recording is transcribed.
+          if (speaking && now - quietSince > Math.max(SR ? 1300 : 0, turnPause(transcript.current, gaps.current))) {
             speaking = false;
-            if (recorder.current?.state === "recording") recorder.current.stop();
-          } else if (speaking && SR && now - quietSince > 400) speaking = false;
+            if (recorder.current?.state === "recording") {
+              discard.current = Boolean(SR && transcript.current);
+              recorder.current.stop();
+            }
+          }
         }
+        stage.current?.style.setProperty("--live-level", Math.min(1, rms * 18).toFixed(3));
         if (outAnalyser.current && playing.current) {
           outAnalyser.current.getFloatTimeDomainData(outBuffer);
           let out = 0;
@@ -451,6 +497,7 @@ export function JuelLive({
           if (live.current) window.setTimeout(() => live.current && (() => { try { rec.start(); } catch {} })(), 150);
         };
         rec.onerror = (event) => {
+          if (event.error === "language-not-supported") rec.lang = "en-US";
           if (event.error === "not-allowed" || event.error === "service-not-allowed") {
             setProblem("Speech recognition is blocked in this browser. Allow the microphone, or type to Juel instead.");
             go("error");
@@ -460,14 +507,19 @@ export function JuelLive({
         try {
           rec.start();
         } catch {}
-      } else if (typeof MediaRecorder !== "undefined") {
-        // No speech recognition: each utterance is recorded and sent to the transcriber.
+      }
+      if (typeof MediaRecorder !== "undefined") {
         const rec = new MediaRecorder(stream.current);
         rec.ondataavailable = (event) => event.data.size && chunks.current.push(event.data);
         rec.onstop = async () => {
           const blob = new Blob(chunks.current, { type: rec.mimeType || "audio/webm" });
           chunks.current = [];
-          if (blob.size < 2000 || !live.current) return go("listening");
+          if (discard.current || !live.current) return;
+          if (blob.size < 2000) {
+            if (phaseRef.current === "hearing") go("listening");
+            return;
+          }
+          if (phaseRef.current !== "hearing" && phaseRef.current !== "listening") return;
           go("thinking");
           setJuelMood("think");
           const response = await fetch("/api/automation/agents/chat/transcribe", { method: "POST", headers: { "Content-Type": blob.type || "application/octet-stream" }, body: blob }).catch(() => null);
@@ -475,7 +527,7 @@ export function JuelLive({
           commit(String(data.text || ""));
         };
         recorder.current = rec;
-      } else {
+      } else if (!SR) {
         setProblem("This browser can't listen. Type to Juel instead.");
         return go("error");
       }
@@ -517,7 +569,7 @@ export function JuelLive({
 
   return (
     <div className="juel-live" data-phase={phase}>
-      <div className="juel-live-stage">
+      <div className="juel-live-stage" ref={stage}>
         <JuelMascot pose={pose} size={200} followPointer={phase === "listening"} title="Juel" />
         {phase === "hearing" || phase === "listening" ? <span className="juel-live-ring" aria-hidden="true" /> : null}
       </div>

@@ -339,8 +339,8 @@
 .juel-head .juel-live-toggle + .juel-history-btn { margin-left: 0; }
 .juel-live { display: flex; flex: 1; min-height: 0; flex-direction: column; align-items: center; gap: 12px; padding: 20px 20px 16px; overflow-y: auto; text-align: center; }
 .juel-live-stage { position: relative; display: grid; place-items: center; margin-top: 8px; }
-.juel-live-ring { position: absolute; inset: 22% 14% 6%; z-index: -1; border-radius: 50%; background: radial-gradient(circle, color-mix(in srgb, var(--j-accent) 30%, transparent), transparent 70%); animation: juel-live-pulse 1.8s ease-in-out infinite; }
-.juel-live[data-phase="hearing"] .juel-live-ring { animation-duration: 0.9s; }
+/* The glow behind Juel follows your microphone's level, so you can see he hears you. */
+.juel-live-ring { position: absolute; inset: 22% 14% 6%; z-index: -1; border-radius: 50%; background: radial-gradient(circle, color-mix(in srgb, var(--j-accent) 34%, transparent), transparent 70%); transform: scale(calc(0.8 + var(--live-level, 0) * 0.5)); opacity: calc(0.45 + var(--live-level, 0) * 0.55); transition: transform 90ms linear, opacity 90ms linear; }
 @keyframes juel-live-pulse { 0%, 100% { transform: scale(0.85); opacity: 0.6; } 50% { transform: scale(1.05); opacity: 1; } }
 .juel-live-status { margin: 0; color: var(--j-text); font-weight: 650; font-size: 15px; }
 .juel-live[data-phase="error"] .juel-live-status { color: var(--j-danger); font-weight: 500; max-width: 34ch; }

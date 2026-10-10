@@ -468,6 +468,7 @@ export function JuelPanel({ onClose, embedded = false, headStart, leaving = fals
           ask={(text) => void send(text)}
           interrupt={() => stopper.current?.abort()}
           onEnd={() => setLiveMode(false)}
+          error={error}
         />
       ) : (<>
       <div className="juel-body" ref={body} onScroll={onScroll}>
