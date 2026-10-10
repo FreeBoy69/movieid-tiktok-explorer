@@ -2937,7 +2937,42 @@ export function cutLook(planCut = {}, index = 0) {
 /** A recap's Vibe project with its cuts on the film itself: every clip that knows its film time plays from
  *  the proxy at that time (in/out are film seconds), with the cut's look. Clips without a film time stay on
  *  the cut picture. */
-export function withFilm(doc, project, proxy, planCuts = []) {
+/** The film second shown at timeline time `t` on the base track, or null over a gap or a non-film clip. */
+function filmSecondAt(clips, t) {
+  const clip = clips.find((c) => c.track === 0 && c.assetId === FILM_ASSET && t >= c.start - 1e-6 && t < c.start + (c.out - c.in) - 1e-6);
+  return clip ? Math.round((clip.in + (t - clip.start)) * 1000) / 1000 : null;
+}
+
+/** Graphics batches from a recap's saved graphics summary: per template, its events in plan order. */
+export function summaryBatches(events = []) {
+  const byType = new Map();
+  // Summary order is the plan's event order, which is how graphicsBatches numbers each template's rows.
+  for (const e of events || []) {
+    if (!e?.type || !Number.isFinite(Number(e.start))) continue;
+    if (!byType.has(e.type)) byType.set(e.type, []);
+    byType.get(e.type).push({ start: Number(e.start) });
+  }
+  return [...byType.entries()].map(([type, list]) => ({ type, events: list }));
+}
+
+const GRAPHIC_LABELS = { title: () => "Title card", subscribe: () => "Subscribe", name: (label) => `Name card${label ? `: ${label}` : ""}` };
+/** The recap's motion graphics as timeline markers the export draws them at: the plan's batches (rows in
+ *  template order), labelled from the saved summary. Name cards remember the film second under them. */
+export function graphicMarkers(clips, batches = [], summary = []) {
+  const markers = [];
+  for (const batch of batches) {
+    const labels = summary.filter((e) => e.type === batch.type);
+    (batch.events || []).forEach((event, row) => {
+      const time = Number(event.start);
+      if (!Number.isFinite(time) || !GRAPHIC_LABELS[batch.type]) return;
+      const source = batch.type === "name" ? filmSecondAt(clips, time) : null;
+      markers.push({ id: `gfx-${batch.type}-${row}`, time: Math.round(time * 1000) / 1000, label: clip(GRAPHIC_LABELS[batch.type](labels[row]?.label || ""), 60), graphic: { type: batch.type, row, ...(source !== null ? { source } : {}) } });
+    });
+  }
+  return markers.sort((a, b) => a.time - b.time);
+}
+
+export function withFilm(doc, project, proxy, planCuts = [], planGraphics = []) {
   const asset = filmAsset(project, proxy);
   if (!asset.duration) return doc;
   const zoom = 1 + zoomPercent(project.options?.transforms?.zoomPct, project.options?.transforms?.zoom === false ? 0 : 10) / 100;
@@ -2950,11 +2985,19 @@ export function withFilm(doc, project, proxy, planCuts = []) {
     // The film copy carries the film's sound, which a recap never uses.
     return { ...clip, assetId: FILM_ASSET, in: Math.round(start * 1000) / 1000, out: Math.round((start + length) * 1000) / 1000, muted: true, look: cutLook(planCuts[index] || {}, Number.isFinite(index) ? index : 0) };
   });
+  // The title, name cards, and subscribe graphic come back on export from the film; markers show where.
+  // Placed once (doc.source.graphics); after that the markers are the editor's to move or delete.
+  const hasGraphics = Boolean(doc.source?.graphics) || (doc.markers || []).some((m) => m.graphic);
+  // The plan cache is written before the graphics are made, so the saved summary (every event in time order,
+  // rows numbered per template the way graphicsBatches numbers them) stands in when the plan has none.
+  const batches = planGraphics.length ? planGraphics : summaryBatches(project.graphics?.events);
+  const markers = hasGraphics ? doc.markers : [...(doc.markers || []), ...graphicMarkers(clips, batches, project.graphics?.events || [])];
   return {
     ...doc,
     assets: [...doc.assets.filter((a) => a.id !== FILM_ASSET), asset],
     clips,
-    source: { ...(doc.source || {}), kind: "recap", recapId: project.id, film: true, zoom: Math.round(zoom * 1000) / 1000 },
+    ...(markers.length ? { markers } : {}),
+    source: { ...(doc.source || {}), kind: "recap", recapId: project.id, film: true, graphics: true, zoom: Math.round(zoom * 1000) / 1000 },
   };
 }
 
@@ -2975,8 +3018,30 @@ export function filmRenderRequest(doc, format = "long") {
   const clips = doc.clips.filter((c) => films.has(c.assetId) && c.out > c.in).sort((a, b) => a.track - b.track || a.start - b.start);
   const cuts = clips.map((c) => ({ start: Math.round(c.in * 1000) / 1000, end: Math.round(c.out * 1000) / 1000, ...(c.look?.flip ? { flip: true } : {}), ...(c.look?.bw ? { bw: true } : {}), ...(c.look?.freeze ? { freeze: true } : {}), ...(c.look?.subs ? { subs: true } : {}), ...(Number.isInteger(c.look?.seed) ? { seed: c.look.seed } : {}) }));
   const offsets = pictureOffsets(cuts.map((c) => c.end - c.start));
-  const name = `edit-${crypto.createHash("sha1").update(JSON.stringify([format, cuts])).digest("hex").slice(0, 16)}`;
-  return { name, format, cuts, map: clips.map((c, k) => ({ id: c.id, offset: offsets[k], length: c.out - c.in })) };
+  const map = clips.map((c, k) => ({ id: c.id, offset: offsets[k], length: c.out - c.in }));
+  const graphics = editGraphics(doc, clips, map);
+  const name = `edit-${crypto.createHash("sha1").update(JSON.stringify([format, cuts, graphics])).digest("hex").slice(0, 16)}`;
+  return { name, format, cuts, map, ...(graphics.length ? { graphics } : {}) };
+}
+
+/** The recap graphics an edit keeps, at their place in the rendered picture: each graphic marker over a base
+ *  film clip, minus name cards whose shot changed (they'd name someone who isn't there). */
+export function editGraphics(doc, clips, map) {
+  const at = new Map(map.map((m) => [m.id, m]));
+  const byType = new Map();
+  for (const marker of doc.markers || []) {
+    if (!marker.graphic) continue;
+    const clip = clips.find((c) => c.track === 0 && marker.time >= c.start - 1e-6 && marker.time < c.start + (c.out - c.in) - 1e-6);
+    if (!clip || !at.has(clip.id)) continue;
+    if (marker.graphic.type === "name") {
+      const shown = clip.in + (marker.time - clip.start);
+      if (!Number.isFinite(marker.graphic.source) || Math.abs(shown - marker.graphic.source) > 1) continue;
+    }
+    const start = Math.round((at.get(clip.id).offset + (marker.time - clip.start)) * 1000) / 1000;
+    if (!byType.has(marker.graphic.type)) byType.set(marker.graphic.type, []);
+    byType.get(marker.graphic.type).push({ row: marker.graphic.row, start });
+  }
+  return [...byType.entries()].map(([type, events]) => ({ type, events: events.sort((a, b) => a.start - b.start) }));
 }
 
 /** The project with its film clips moved onto the rendered picture (same timeline places and lengths). */
@@ -3003,13 +3068,19 @@ export async function prepareRecapExport(job, doc, report = (_value, _message) =
   const signal = job.controller?.signal;
   const recapId = String(doc.source.recapId || "");
   const project = await loadRecap(job.userId, recapId);
+  // An edit moved onto the film before graphics markers existed gets them now, so its export keeps the title,
+  // name cards, and subscribe graphic a normal render has.
+  if (!doc.source.graphics) {
+    const events = project.graphics?.events || [];
+    doc = { ...doc, markers: [...(doc.markers || []), ...graphicMarkers(doc.clips, summaryBatches(events), events)].sort((a, b) => a.time - b.time), source: { ...doc.source, graphics: true } };
+  }
   const request = filmRenderRequest(doc, doc.source.format === "short" ? "short" : "long");
   const ask = (args) => run([...args, "--project", project.id], { timeoutMs: 2 * 60 * 1000, signal });
   let status = await ask(["picture-status", "--name", request.name]);
   if (status.state !== "done") {
     report(0.01, "Cutting your edit from the film");
     try {
-      await ask(["start-picture", "--options", JSON.stringify({ name: request.name, format: request.format, cuts: request.cuts })]);
+      await ask(["start-picture", "--options", JSON.stringify({ name: request.name, format: request.format, cuts: request.cuts, ...(request.graphics ? { graphics: request.graphics } : {}) })]);
     } catch (error) {
       if (/no longer on the media worker/i.test(String(error?.message))) {
         job.warning = "The original film is no longer on the media server, so this export uses the editing copy (lower quality). Re-analyze the film for a full-quality export.";
@@ -3131,7 +3202,7 @@ async function stageFinish(userId, project, signal) {
     const { picture, narration } = media[format];
     if (!picture || !narration) continue;
     const built = recapVibeProject(project, format, picture, narration, music);
-    const doc = proxy?.state === "done" ? withFilm(built, project, proxy, planFormats[format]?.cuts || []) : built;
+    const doc = proxy?.state === "done" ? withFilm(built, project, proxy, planFormats[format]?.cuts || [], planFormats[format]?.graphics || []) : built;
     await saveVibeProject(userId, doc);
     vibe[format] = doc.id;
   }
@@ -3796,7 +3867,8 @@ export function registerMovieRecap(app) {
     const proxy = await filmProxy(project, { start: true, keep: true });
     if (proxy.state !== "done") return res.status(202).json({ state: proxy.state, progress: Number(proxy.progress) || 0, ...(proxy.error ? { error: proxy.error } : {}) });
     const planFormats = (await readJson(userId, project.id, "plan-cache.json", null))?.final?.plan?.formats || {};
-    const next = withFilm(doc, project, proxy, planFormats[doc.source.format === "short" ? "short" : "long"]?.cuts || []);
+    const plan = planFormats[doc.source.format === "short" ? "short" : "long"] || {};
+    const next = withFilm(doc, project, proxy, plan.cuts || [], plan.graphics || []);
     next.updatedAt = Date.now();
     await saveVibeProject(userId, next);
     res.json({ state: "done", project: next });

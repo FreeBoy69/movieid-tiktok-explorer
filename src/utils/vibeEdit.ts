@@ -213,6 +213,10 @@ export interface VibeMarker {
   id: string;
   time: number;
   label?: string;
+  /** A recap motion graphic (title card, name card, subscribe) the export lays over the picture here: its
+   *  template, its row in the recap's graphics, and for a name card the film second under it when placed
+   *  (the card is dropped if a different shot ends up there). Delete the marker to leave the graphic out. */
+  graphic?: { type: string; row: number; source?: number };
 }
 
 export type TrackKind = "video" | "audio" | "text" | "cue";
@@ -299,7 +303,7 @@ export function normalizeProject(raw: Partial<VibeProject> | null | undefined): 
     captions,
     markers: (Array.isArray(raw.markers) ? raw.markers : [])
       .filter((m) => m && m.id && Number.isFinite(Number(m.time)) && Number(m.time) >= 0)
-      .map((m) => ({ id: String(m.id), time: Number(m.time), ...(m.label ? { label: String(m.label).slice(0, 60) } : {}) }))
+      .map((m) => ({ id: String(m.id), time: Number(m.time), ...(m.label ? { label: String(m.label).slice(0, 60) } : {}), ...(m.graphic && typeof m.graphic.type === "string" && Number.isInteger(m.graphic.row) ? { graphic: { type: m.graphic.type, row: m.graphic.row, ...(Number.isFinite(Number(m.graphic.source)) ? { source: Number(m.graphic.source) } : {}) } } : {}) }))
       .sort((a, b) => a.time - b.time),
   };
 }

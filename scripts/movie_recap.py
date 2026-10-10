@@ -125,16 +125,62 @@ def movie_path(pdir):
 
 
 def sweep_old():
-    if not os.path.isdir(ROOT):
+    if os.path.isdir(ROOT):
+        for name in os.listdir(ROOT):
+            full = os.path.join(ROOT, name)
+            try:
+                status = read_json(os.path.join(full, "status.json"), {}) or {}
+                if os.path.isdir(full) and os.path.getmtime(full) < time.time() - keep_days(full) * 86400 and status.get("state") != "running":
+                    shutil.rmtree(full, ignore_errors=True)
+            except OSError:
+                pass
+    sweep_media()
+
+
+# Media made from a job's film (the editing copy, edited pictures, swapped shots, unfinished parts) goes when
+# its job does: without the film they can't be rebuilt or extended. Finished recaps, their picture tracks and
+# narration stay: downloads and older edits point at them.
+DERIVED_MEDIA = re.compile(r"^(film-proxy\.mp4|edit-[a-z0-9-]+\.mp4|recut-[a-z0-9-]+\.mp4|.*\.part(\.mp4)?)$")
+
+
+def sweep_media(now=None):
+    now = time.time() if now is None else now
+    if not os.path.isdir(MEDIA_ROOT):
+        return []
+    removed = []
+    for name in os.listdir(MEDIA_ROOT):
+        folder = os.path.join(MEDIA_ROOT, name)
+        # A job that still has its folder is in use (or within its keep window): leave its media alone.
+        if not PROJECT_ID.match(name) or not os.path.isdir(folder) or os.path.isdir(os.path.join(ROOT, name)):
+            continue
+        for file in os.listdir(folder):
+            full = os.path.join(folder, file)
+            try:
+                # The job's folder is gone; a file still gets the full editing window from when it was made or
+                # last touched, so an edit the job outlived by a few days isn't cut off mid-export.
+                if DERIVED_MEDIA.match(file) and os.path.isfile(full) and os.path.getmtime(full) < now - EDIT_KEEP_DAYS * 86400:
+                    os.remove(full)
+                    removed.append(os.path.join(name, file))
+            except OSError:
+                pass
+    return removed
+
+
+SWEEP_EVERY = 6 * 3600
+
+
+def sweep_now_and_then():
+    """Runs the sweeps at most every six hours, from whatever command comes in (there's no timer)."""
+    stamp = os.path.join(ROOT, ".swept")
+    try:
+        if os.path.exists(stamp) and os.path.getmtime(stamp) > time.time() - SWEEP_EVERY:
+            return
+        os.makedirs(ROOT, exist_ok=True)
+        with open(stamp, "w", encoding="utf-8") as handle:
+            handle.write(str(int(time.time())))
+    except OSError:
         return
-    for name in os.listdir(ROOT):
-        full = os.path.join(ROOT, name)
-        try:
-            status = read_json(os.path.join(full, "status.json"), {}) or {}
-            if os.path.isdir(full) and os.path.getmtime(full) < time.time() - keep_days(full) * 86400 and status.get("state") != "running":
-                shutil.rmtree(full, ignore_errors=True)
-        except OSError:
-            pass
+    sweep_old()
 
 
 def keep_days(full):
@@ -963,11 +1009,43 @@ def cut_clips(movie, plan, fmt, cuts, work, report=None):
     return [os.path.join(work, f"c{index:04d}.mp4") for index in range(len(cuts))], frame_counts
 
 
-def cut_picture(movie, plan, fmt, cuts, work, report=None):
-    """An edited cut list as one picture-only video (no graphics, narration, or captions: Vibe Edit adds those)."""
+def edit_graphics(graphics, source, work):
+    """The recap's motion graphics an edit keeps, ready for render_graphics: a copy of the job's graphics folder
+    whose batch rows are only the kept ones, and batches whose events are picture times. `graphics` is
+    [{type, events: [{row, start}]}] from the app; returns (audio_dir, batches) or (None, []) when there are none."""
+    if not graphics or not os.path.isdir(source):
+        return None, []
+    folder = os.path.join(work, "gfx")
+    target = os.path.join(folder, "graphics")
+    shutil.rmtree(folder, ignore_errors=True)
+    shutil.copytree(source, target)
+    batches = []
+    for batch in graphics:
+        kind = re.sub(r"[^a-z]", "", str(batch.get("type", "")))
+        rows = read_json(os.path.join(source, f"{kind}.json"), None) if kind else None
+        if not isinstance(rows, list):
+            continue
+        events = [e for e in (batch.get("events") or []) if isinstance(e.get("row"), int) and 0 <= e["row"] < len(rows)]
+        if not events:
+            continue
+        write_json(os.path.join(target, f"{kind}.json"), [rows[e["row"]] for e in events])
+        batches.append({"type": kind, "events": [{"start": float(e["start"])} for e in events]})
+    return (folder, batches) if batches else (None, [])
+
+
+def cut_picture(movie, plan, fmt, cuts, work, report=None, graphics=None, graphics_dir=None):
+    """An edited cut list as one picture-only video, with the recap's motion graphics the edit kept (narration,
+    captions, and texts are Vibe Edit's)."""
     shutil.rmtree(work, ignore_errors=True)
     os.makedirs(work, exist_ok=True)
-    clip_paths, _ = cut_clips(movie, plan, fmt, cuts, work, report)
+    clip_paths, frame_counts = cut_clips(movie, plan, fmt, cuts, work, report)
+    audio_dir, batches = edit_graphics(graphics, graphics_dir or "", work)
+    if batches:
+        clip_starts, at = [], 0
+        for count in frame_counts:
+            clip_starts.append(at / FPS)
+            at += count
+        overlay_graphics(clip_paths, clip_starts, frame_counts, render_graphics(batches, audio_dir, work))
     listing = os.path.join(work, "cuts.txt")
     with open(listing, "w", encoding="utf-8") as handle:
         handle.write("\n".join(f"file '{path_}'" for path_ in clip_paths) + "\n")
@@ -1574,7 +1652,8 @@ def cmd_start_picture(args):
     cuts = [c for c in (o.get("cuts") or []) if float(c.get("end", 0)) > float(c.get("start", 0))]
     if not cuts:
         return emit({"error": "There are no film clips to render."})
-    write_json(os.path.join(pdir, f"{name}.request.json"), {"format": "short" if o.get("format") == "short" else "long", "cuts": cuts})
+    graphics = [b for b in (o.get("graphics") or []) if isinstance(b, dict)]
+    write_json(os.path.join(pdir, f"{name}.request.json"), {"format": "short" if o.get("format") == "short" else "long", "cuts": cuts, "graphics": graphics})
     write_json(os.path.join(pdir, f"{name}.status.json"), {"state": "running", "progress": 0.0, "updatedAt": time.time()})
     spawn_detached(pdir, "run-picture", ["--project", args.project, "--name", name], pid_name=f"{name}.pid")
     emit({"started": True, "name": name})
@@ -1598,7 +1677,7 @@ def run_picture(args):
             write_json(status_path, {"state": "running", "progress": round(0.95 * done / max(1, total), 3), "updatedAt": time.time()})
 
         work = os.path.join(pdir, "render", name)
-        picture = cut_picture(movie, plan, fmt, cuts, work, report)
+        picture = cut_picture(movie, plan, fmt, cuts, work, report, graphics=request.get("graphics"), graphics_dir=os.path.join(pdir, "audio", "graphics"))
         os.makedirs(os.path.join(pdir, "render"), exist_ok=True)
         os.replace(picture, os.path.join(pdir, "render", f"{name}.mp4"))
         shutil.rmtree(work, ignore_errors=True)
@@ -1685,6 +1764,8 @@ def main():
             os.utime(os.path.join(ROOT, args.project))
         except OSError:
             pass
+    if args.command not in ("run-analyze", "run-render", "run-proxy", "run-picture", "transcribe-chunk"):
+        sweep_now_and_then()
     commands[args.command](args)
 
 

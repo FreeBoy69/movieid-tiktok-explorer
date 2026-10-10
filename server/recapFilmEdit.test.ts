@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { FILM_ASSET, filmRenderRequest, keepPinned, onRenderedPicture, storyboardBeat, pictureOffsets, prepareRecapExport, withFilm } from "./movieRecap.js";
+import { FILM_ASSET, filmRenderRequest, graphicMarkers, keepPinned, onRenderedPicture, storyboardBeat, pictureOffsets, prepareRecapExport, summaryBatches, withFilm } from "./movieRecap.js";
 
 const project = {
   id: "rcp_film1",
@@ -113,6 +113,63 @@ describe("recap edits on the film", () => {
   });
 });
 
+
+describe("recap motion graphics in an edit", () => {
+  // The title over the first cut, a name card over the second (Peter at film 95.3 + 0.5), subscribe over the third.
+  const graphics = { events: [{ type: "title", start: 0.4, label: "Spider-Man" }, { type: "name", start: 3, label: "Peter Parker" }, { type: "subscribe", start: 5, label: "" }] };
+  const withGraphics = { ...project, graphics };
+  const filmDoc = () => withFilm(pictureDoc(), withGraphics, proxy, [{}, {}, {}]);
+
+  it("marks where the title, name cards, and subscribe graphic go, once", () => {
+    const doc = filmDoc();
+    expect(doc.markers.map((m: any) => [m.time, m.label, m.graphic.type, m.graphic.row])).toEqual([[0.4, "Title card", "title", 0], [3, "Name card: Peter Parker", "name", 0], [5, "Subscribe", "subscribe", 0]]);
+    // The name card remembers the film second under it: cut1 starts at film 95.3 at timeline 2.5.
+    expect(doc.markers[1].graphic.source).toBeCloseTo(95.8, 3);
+    expect(doc.source.graphics).toBe(true);
+    // Moving the edit onto the film again doesn't bring back a marker the editor deleted.
+    const trimmed = { ...doc, markers: doc.markers.filter((m: any) => m.graphic.type !== "subscribe") };
+    expect(withFilm(trimmed, withGraphics, proxy).markers.filter((m: any) => m.graphic)).toHaveLength(2);
+  });
+
+  it("numbers rows per template in the plan's order, as the worker's batch files do", () => {
+    expect(summaryBatches([{ type: "name", start: 9 }, { type: "title", start: 1 }, { type: "name", start: 4 }])).toEqual([{ type: "name", events: [{ start: 9 }, { start: 4 }] }, { type: "title", events: [{ start: 1 }] }]);
+    expect(graphicMarkers([], [{ type: "name", events: [{ start: 9 }, { start: 4 }] }], [{ type: "name", label: "A" }, { type: "name", label: "B" }]).map((m: any) => [m.label, m.graphic.row])).toEqual([["Name card: B", 1], ["Name card: A", 0]]);
+  });
+
+  it("sends kept graphics at their place in the rendered picture, dropping a name card whose shot changed", () => {
+    const doc = filmDoc();
+    const request = filmRenderRequest(doc);
+    expect(request.graphics).toEqual([
+      { type: "title", events: [{ row: 0, start: 0.4 }] },
+      { type: "name", events: [{ row: 0, start: request.map[1].offset + 0.5 }] },
+      { type: "subscribe", events: [{ row: 0, start: request.map[2] ? request.map[2].offset + 0.2 : 5 }] },
+    ].filter((b) => b.type !== "subscribe" || request.map[2]));
+    // A different shot under the name card: the card would name someone who isn't there, so it's left out.
+    const swapped = { ...doc, clips: doc.clips.map((c: any) => (c.id === "cut1" ? { ...c, in: 2000, out: 2002.3 } : c)) };
+    const changed = filmRenderRequest(swapped);
+    expect(changed.graphics?.some((b: any) => b.type === "name")).toBe(false);
+    expect(changed.name).not.toBe(request.name);
+    // A deleted marker leaves its graphic out.
+    const noTitle = filmRenderRequest({ ...doc, markers: doc.markers.filter((m: any) => m.graphic.type !== "title") });
+    expect(noTitle.graphics?.some((b: any) => b.type === "title")).toBe(false);
+  });
+
+  it("gives an edit from before the markers its graphics on export, and hands them to the worker", async () => {
+    const doc = withFilm(pictureDoc(), project, proxy, [{}, {}, {}]);
+    const older = { ...doc, markers: [], source: { ...doc.source, graphics: undefined } };
+    const calls: string[][] = [];
+    const run = async (args: string[]) => {
+      calls.push(args);
+      if (args[0] === "picture-status") return calls.length > 2 ? { state: "done", path: "rcp_film1/edit-2.mp4", duration: 4.8 } : { state: "missing" };
+      return { started: true };
+    };
+    const ready = await prepareRecapExport({ userId: "u1", controller: new AbortController() } as any, older, () => {}, { loadRecap: async () => withGraphics, run, wait: async () => {} });
+    const options = JSON.parse(calls[1][calls[1].indexOf("--options") + 1]);
+    expect(options.graphics.map((b: any) => b.type)).toEqual(["title", "name"]);
+    expect(ready.markers.filter((m: any) => m.graphic)).toHaveLength(3);
+  });
+});
+
 describe("the worker keeps an edited recap's film longer", () => {
   it("sweeps idle jobs after 4 days, edited ones after 14", () => {
     let python = "python3";
@@ -135,8 +192,63 @@ describe("the worker keeps an edited recap's film longer", () => {
     make("rcp_edited0002", 15, true);
     make("rcp_fresh00001", 1);
     const script = path.resolve("scripts/movie_recap.py");
-    execFileSync(python, ["-c", `import importlib.util,sys;spec=importlib.util.spec_from_file_location("m",${JSON.stringify(script)});m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m);m.sweep_old()`], { env: { ...process.env, MOVIE_RECAP_DIR: root } });
+    const media = fs.mkdtempSync(path.join(os.tmpdir(), "recap-media-"));
+    execFileSync(python, ["-c", `import importlib.util,sys;spec=importlib.util.spec_from_file_location("m",${JSON.stringify(script)});m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m);m.sweep_old()`], { env: { ...process.env, MOVIE_RECAP_DIR: root, MOVIE_RECAP_MEDIA: media } });
     expect(fs.readdirSync(root).sort()).toEqual(["rcp_edited0001", "rcp_fresh00001"]);
     fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(media, { recursive: true, force: true });
+  });
+
+  it("removes media made from a film once its job is gone and the editing window has passed, never finished recaps", () => {
+    let python = "python3";
+    try {
+      execFileSync(python, ["--version"]);
+    } catch {
+      return;
+    }
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "recap-jobs-"));
+    const media = fs.mkdtempSync(path.join(os.tmpdir(), "recap-media-"));
+    const day = 86400;
+    const file = (folder: string, name: string, ageDays: number) => {
+      fs.mkdirSync(path.join(media, folder), { recursive: true });
+      const full = path.join(media, folder, name);
+      fs.writeFileSync(full, "x");
+      const t = Date.now() / 1000 - ageDays * day;
+      fs.utimesSync(full, t, t);
+    };
+    // Job gone, files old: the derived ones go, the finished recap and its picture track stay.
+    for (const name of ["film-proxy.mp4", "edit-abc123.mp4", "recut-abc123.mp4", "film-proxy.mp4.part.mp4", "recap-long.mp4", "picture-long.mp4", "narration-long.m4a"]) file("rcp_gone000001", name, 20);
+    // Job gone, files recent: kept for the editing window.
+    file("rcp_recent0001", "film-proxy.mp4", 3);
+    // Job still there: its media stays whatever its age.
+    fs.mkdirSync(path.join(root, "rcp_alive00001"));
+    file("rcp_alive00001", "film-proxy.mp4", 30);
+    const script = path.resolve("scripts/movie_recap.py");
+    execFileSync(python, ["-c", `import importlib.util,sys;spec=importlib.util.spec_from_file_location("m",${JSON.stringify(script)});m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m);m.sweep_media()`], { env: { ...process.env, MOVIE_RECAP_DIR: root, MOVIE_RECAP_MEDIA: media } });
+    expect(fs.readdirSync(path.join(media, "rcp_gone000001")).sort()).toEqual(["narration-long.m4a", "picture-long.mp4", "recap-long.mp4"]);
+    expect(fs.readdirSync(path.join(media, "rcp_recent0001"))).toEqual(["film-proxy.mp4"]);
+    expect(fs.readdirSync(path.join(media, "rcp_alive00001"))).toEqual(["film-proxy.mp4"]);
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(media, { recursive: true, force: true });
+  });
+
+  it("keeps only an edit's graphics rows, at their picture times", () => {
+    let python = "python3";
+    try {
+      execFileSync(python, ["--version"]);
+    } catch {
+      return;
+    }
+    const work = fs.mkdtempSync(path.join(os.tmpdir(), "recap-gfx-"));
+    const source = path.join(work, "src");
+    fs.mkdirSync(source);
+    fs.writeFileSync(path.join(source, "name.html"), "<html></html>");
+    fs.writeFileSync(path.join(source, "name.json"), JSON.stringify([{ name: "Peter" }, { name: "May" }, { name: "Bruce" }]));
+    const script = path.resolve("scripts/movie_recap.py");
+    const out = execFileSync(python, ["-c", `import importlib.util,json;spec=importlib.util.spec_from_file_location("m",${JSON.stringify(script)});m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m);d,b=m.edit_graphics([{"type":"name","events":[{"row":2,"start":1.5},{"row":0,"start":9}]},{"type":"title","events":[{"row":0,"start":0}]}],${JSON.stringify(source)},${JSON.stringify(work)});print(json.dumps({"dir":d,"batches":b,"rows":json.load(open(d+"/graphics/name.json"))}))`]).toString();
+    const result = JSON.parse(out);
+    expect(result.batches).toEqual([{ type: "name", events: [{ start: 1.5 }, { start: 9 }] }]);
+    expect(result.rows).toEqual([{ name: "Bruce" }, { name: "Peter" }]);
+    fs.rmSync(work, { recursive: true, force: true });
   });
 });
