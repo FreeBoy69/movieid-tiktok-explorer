@@ -26,7 +26,7 @@ import {
   LayoutList,
   ListChecks,
   Loader2,
-  Menu,
+  MoreHorizontal,
   MessageCircle,
   MessageSquare,
   Mic,
@@ -89,7 +89,7 @@ import { scheduleHourFromUtcLabel } from "../utils/automationDecisionPolicy.js";
 import "./AutomationAgents.css";
 import { type PlaylistMode, PlaylistControl, SCHEDULED_VISIBILITY_OPTIONS, VisibilityControl } from "./YouTubePublishForm";
 import { choose, confirm, Dialog } from "./ui/Dialog";
-import { EmptyState, Notice as SharedNotice, Switch } from "./ui/controls";
+import { EmptyState, Notice as SharedNotice, Switch, Tabs } from "./ui/controls";
 import { OrientationPicker } from "./OrientationPicker";
 import { BrandLoader } from "./BrandLoader";
 
@@ -179,19 +179,18 @@ interface YouTubeMonetizationSnapshot {
   topVideos?: MonetizationMetricRow[];
 }
 
+// The agent's tabs. Report and Run log aren't in the bar: they open from their links
+// (/agent/<slug>/report, /runs) and Juel answers both; Overview shows the latest runs.
 const TABS: Array<{ id: AutomationTab; label: string; icon: ReactNode }> = [
-  { id: "chat", label: "Chat", icon: <MessageSquare className="h-4 w-4" /> },
   { id: "overview", label: "Overview", icon: <LayoutList className="h-4 w-4" /> },
-  { id: "setup", label: "Setup", icon: <Settings2 className="h-4 w-4" /> },
+  { id: "chat", label: "Chat", icon: <MessageSquare className="h-4 w-4" /> },
   { id: "uploads", label: "Uploads", icon: <Table2 className="h-4 w-4" /> },
   { id: "analytics", label: "Analytics", icon: <BarChart3 className="h-4 w-4" /> },
-  { id: "report", label: "Report", icon: <TrendingUp className="h-4 w-4" /> },
-  { id: "runs", label: "Run log", icon: <Clock3 className="h-4 w-4" /> },
+  { id: "setup", label: "Setup", icon: <Settings2 className="h-4 w-4" /> },
   { id: "voice", label: "Remake", icon: <AudioLines className="h-4 w-4" /> },
   { id: "compile", label: "Compile", icon: <Layers3 className="h-4 w-4" /> },
 ];
-/** Everyday tabs come first in the agent menu; the rest sit below a divider. */
-const PRIMARY_TAB_COUNT = 5;
+const TAB_TITLES: Partial<Record<AutomationTab, string>> = { report: "Report", runs: "Run log" };
 
 type SetupSectionId = "essentials" | "format" | "sources" | "socials" | "learning" | "comments" | "compilations" | "rights";
 
@@ -1167,26 +1166,13 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
   }
 
   if (!accounts.length) {
-    return (
-      <div className="mx-auto max-w-xl p-4 md:p-8">
-        <Notice title="Connect a publish channel first" body="An agent needs somewhere to post. Connect a YouTube channel or TikTok account, then come back to create your first agent." />
-        <button
-          type="button"
-          onClick={() => writeDeepLink({ view: "channels" })}
-          className="mt-4 inline-flex h-11 items-center gap-2 rounded-xl bg-[var(--ui-accent)] px-5 text-sm font-black text-[var(--ui-accent-ink)] shadow-sm transition hover:bg-[var(--ui-text)] hover:text-[var(--ui-panel)] active:scale-[0.98]"
-        >
-          <Youtube className="h-4 w-4" />
-          Open Channel Management
-          <ArrowUpRight className="h-4 w-4" />
-        </button>
-      </div>
-    );
+    return <AgentsIntro needsChannel onAction={() => writeDeepLink({ view: "channels" })} />;
   }
 
   return (
-    <div className={cn("relative flex h-full min-h-0 flex-col overflow-hidden", !detailOpen && "workspace-floating-shell", theme === "dark" ? "bg-[var(--ui-bg)] text-[var(--ui-text)]" : "bg-[var(--ui-bg)] text-[var(--ui-text)]")}>
+    <div className={cn("relative flex h-full min-h-0 flex-col overflow-hidden", !detailOpen && agents.length > 0 && "workspace-floating-shell", theme === "dark" ? "bg-[var(--ui-bg)] text-[var(--ui-text)]" : "bg-[var(--ui-bg)] text-[var(--ui-text)]")}>
       {/* ── Sticky top bar ── */}
-      {!detailOpen ? (
+      {!detailOpen && agents.length ? (
       <header className="workspace-floating-header flex min-h-12 flex-wrap items-center gap-2 px-3 py-2 sm:px-4">
         <Bot className="h-4 w-4 text-[var(--ui-accent-text)]" />
         <span className="text-sm font-black text-[var(--ui-text)]">Automation</span>
@@ -1526,26 +1512,155 @@ function AgentBoard({
           <p className="mt-3 text-sm font-bold text-[var(--ui-text)]/60">Opening your agent workspace</p>
         </div>
       ) : (
-        <EmptyAgentCard onCreate={onCreateAgent} />
+        <AgentsIntro onAction={onCreateAgent} />
       )}
     </section>
   );
 }
 
-function EmptyAgentCard({ onCreate }: { onCreate: () => void }) {
+/** The Agents page before there's an agent: the studio layout's title and intro, then one card with
+ *  what an agent does and the way in (connect a channel first, or create the agent). */
+function AgentsIntro({ needsChannel = false, onAction }: { needsChannel?: boolean; onAction: () => void }) {
   return (
-    <div className="col-span-full rounded-[1.35rem] border border-dashed border-[var(--ui-line-strong)] bg-[var(--ui-panel)] shadow-sm agent-empty-card">
-      <EmptyState
-        icon={<Bot className="h-5 w-5" />}
-        title="No agents yet"
-        body="An agent watches a TikTok or YouTube source, identifies each movie, and republishes clips to your channel on a schedule."
-      >
-        <button type="button" onClick={onCreate} className="ui-btn is-primary">
-          <Plus className="h-4 w-4" />
-          Create your first agent
-        </button>
-      </EmptyState>
+    <div className="ag-intro-page">
+      <header className="ag-hero-head">
+        <h1 className="ag-title">Agents</h1>
+        <p className="ag-intro">Agents run your channels. Each one watches a source, picks the clips worth posting, identifies the film, and publishes on the schedule you set.</p>
+      </header>
+      <section className="ag-welcome">
+        <img src="/assets/explore/automation.webp" alt="" className="ag-welcome-art" loading="lazy" decoding="async" />
+        <div className="ag-welcome-body">
+          <h2>{needsChannel ? "Connect a channel to post to" : "Create your first agent"}</h2>
+          <p>{needsChannel ? "An agent needs somewhere to publish. Connect a YouTube channel or a TikTok account, then come back and set up the agent." : "Choose the channel it posts to and where it finds videos. It takes about two minutes, and nothing posts until you switch it on."}</p>
+          <ul className="ag-welcome-points">
+            <li><CheckCircle2 className="h-4 w-4" />Finds clips in TikTok and YouTube sources you pick</li>
+            <li><CheckCircle2 className="h-4 w-4" />Names the film and writes the title and description</li>
+            <li><CheckCircle2 className="h-4 w-4" />Posts on your schedule and learns what performs</li>
+          </ul>
+          <button type="button" className="ui-btn is-primary" onClick={onAction}>
+            {needsChannel ? <Youtube className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+            {needsChannel ? "Connect a channel" : "Create an agent"}
+          </button>
+        </div>
+      </section>
     </div>
+  );
+}
+
+type AgentHeroProps = {
+  agent: AutomationAgent;
+  agents: AutomationAgent[];
+  compact?: boolean;
+  tab: AutomationTab;
+  tabCounts: Partial<Record<AutomationTab, number>>;
+  onTab: (tab: AutomationTab) => void;
+  onSelectAgent: (agent: AutomationAgent) => void;
+  theme: "light" | "dark";
+  active: boolean;
+  statusBusy: boolean;
+  locked: boolean;
+  onToggleStatus: () => void;
+  running: boolean;
+  stopping: boolean;
+  onRun: () => void;
+  onStop: () => void;
+  onCreateAgent: () => void;
+  onDelete: () => void;
+  deleting: boolean;
+  onRefresh: () => void;
+};
+
+/** What the agent does, in one line: where it posts, how often, and when the next video goes out. */
+function agentSummary(agent: AutomationAgent, active: boolean): string {
+  const settings = agent.settings;
+  const times = settings?.scheduleTimes || [];
+  const perDay = settings?.maxPostsPerDay || 1;
+  const parts = [
+    agent.channelTitle ? `Posts to ${agent.channelTitle}` : "",
+    times.length ? `${perDay === 1 ? "one video" : `${perDay} videos`} a day at ${times.length > 1 ? `${times.slice(0, -1).join(", ")} and ${times[times.length - 1]}` : times[0]}` : "posts when you run it",
+    active ? `next one ${agentNextRunLabel(agent)}` : "paused",
+  ].filter(Boolean);
+  return parts.join(" · ");
+}
+
+/** The agent's header, laid out like every studio: its name as the title, what it does underneath,
+ *  its switches on the right, and the sections as rounded tabs. Compact (chat, compile) keeps the
+ *  bar and the tabs so those full-height tools get the room. */
+function AgentHero({ agent, agents, compact: isCompact = false, tab, tabCounts, onTab, onSelectAgent, theme, active, statusBusy, locked, onToggleStatus, running, stopping, onRun, onStop, onCreateAgent, onDelete, deleting, onRefresh }: AgentHeroProps) {
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!moreOpen) return;
+    const onDown = (event: PointerEvent) => !moreRef.current?.contains(event.target as Node) && setMoreOpen(false);
+    const onKey = (event: KeyboardEvent) => event.key === "Escape" && setMoreOpen(false);
+    document.addEventListener("pointerdown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [moreOpen]);
+  const pick = (run: () => void) => () => {
+    setMoreOpen(false);
+    run();
+  };
+  const options = TABS.map((item) => {
+    const count = tabCounts[item.id];
+    return { value: item.id, label: item.label, icon: item.icon, hint: typeof count === "number" && count > 0 ? compact(count) : undefined };
+  });
+  // Report and Run log open from links; the bar shows where you are without adding them as tabs.
+  const offBar = TAB_TITLES[tab];
+  return (
+    <header className={cn("ag-hero", isCompact && "is-compact")}>
+      <div className="ag-hero-bar">
+        <AgentChannelSwitcher agents={agents} agent={agent} onSelect={onSelectAgent} theme={theme} />
+        <div className="ag-hero-actions">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={active}
+            aria-label={active ? "Agent is active. Pause it" : "Agent is paused. Activate it"}
+            title={active ? "Pause the agent" : "Activate the agent"}
+            disabled={statusBusy || locked}
+            onClick={onToggleStatus}
+            className={cn("ag-status", active && "is-on")}
+          >
+            {statusBusy ? <Loader2 className="h-3.5 w-3.5 ui-spin" /> : <span className="ag-status-dot" aria-hidden="true" />}
+            {active ? "Active" : "Paused"}
+          </button>
+          <button type="button" className={cn("ui-btn is-sm", running ? "is-danger" : "is-primary")} onClick={running ? onStop : onRun} disabled={stopping || locked}>
+            {stopping ? <Loader2 className="h-3.5 w-3.5 ui-spin" /> : running ? <Square className="h-3.5 w-3.5 fill-current" /> : <Play className="h-3.5 w-3.5 fill-current" />}
+            <span>{stopping ? "Stopping" : running ? "Stop run" : "Run now"}</span>
+          </button>
+          <div className="ag-more" ref={moreRef}>
+            <button type="button" className="ag-icon" aria-label="More agent actions" aria-expanded={moreOpen} aria-haspopup="menu" onClick={() => setMoreOpen((open) => !open)}>
+              <MoreHorizontal className="h-4 w-4" />
+            </button>
+            {moreOpen ? (
+              <div className="ag-menu" role="menu">
+                <button type="button" role="menuitem" onClick={pick(onCreateAgent)}><Plus className="h-4 w-4" />New agent</button>
+                <button type="button" role="menuitem" onClick={pick(onRefresh)}><RefreshCw className="h-4 w-4" />Refresh</button>
+                <button type="button" role="menuitem" onClick={pick(() => onTab("runs"))}><Clock3 className="h-4 w-4" />Run log</button>
+                <button type="button" role="menuitem" onClick={pick(() => onTab("report"))}><TrendingUp className="h-4 w-4" />Performance report</button>
+                <button type="button" role="menuitem" onClick={pick(openBackgroundProcessCenter)}><Activity className="h-4 w-4" />Background activity</button>
+                <hr />
+                <button type="button" role="menuitem" className="is-danger" disabled={deleting || running || locked} onClick={pick(onDelete)}>{deleting ? <Loader2 className="h-4 w-4 ui-spin" /> : <Trash2 className="h-4 w-4" />}Delete agent</button>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </div>
+      {!isCompact ? (
+        <div className="ag-hero-head">
+          <h1 className="ag-title">{agent.name || agent.channelTitle || "Your agent"}</h1>
+          <p className="ag-intro">{agentSummary(agent, active)}</p>
+        </div>
+      ) : null}
+      <div className="ag-tabs-row">
+        <Tabs className="ui-tabs is-pill ag-tabs" label="Agent sections" value={offBar ? ("" as AutomationTab) : tab} options={options} onChange={onTab} />
+        {offBar ? <span className="ag-offbar">{offBar}</span> : null}
+      </div>
+    </header>
   );
 }
 
@@ -1707,7 +1822,6 @@ function ExpandedAgentCard({
   const isDraft = !agent;
   const tab = isDraft ? "setup" : activeTab;
   const isDark = theme === "dark";
-  const [navOpen, setNavOpen] = useState(false);
   const currentCreateStep = AGENT_CREATE_STEPS[Math.min(createStep, AGENT_CREATE_STEPS.length - 1)];
   const headerSubline = `Step ${Math.min(createStep + 1, AGENT_CREATE_STEPS.length)} of ${AGENT_CREATE_STEPS.length} · ${currentCreateStep.hint}`;
   const tabCounts: Partial<Record<AutomationTab, number>> = { uploads: uploads.length, runs: runs.length };
@@ -1716,151 +1830,62 @@ function ExpandedAgentCard({
   const agentActive = agent?.status === "active";
   const statusBusy = Boolean(agent && togglingStatus === agent.id);
 
-  useEffect(() => {
-    if (!navOpen) return;
-    const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") setNavOpen(false); };
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [navOpen]);
-
   return (
-    <article className={cn("workspace-floating-shell relative flex h-full flex-col overflow-hidden", isDark ? "bg-[var(--ui-bg)] text-[var(--ui-text)]" : "bg-[var(--ui-bg)] text-[var(--ui-text)]")}>
-      {/* ── Agent detail header ── */}
-      <div className="workspace-floating-header relative px-2 py-1.5 md:px-3">
-        <div className="flex min-w-0 items-center gap-1.5">
-          <div className="flex min-w-0 flex-1 items-center gap-2">
-            {isDraft ? (
-              <button type="button" onClick={onBackToAgents} className={cn("grid h-8 w-8 shrink-0 place-items-center rounded-lg transition active:scale-[0.98]", isDark ? "text-[var(--ui-text)]/70 hover:bg-[var(--ui-text)]/8 hover:text-[var(--ui-text)]" : "text-[var(--ui-text)]/70 hover:bg-[var(--ui-panel)] hover:text-[var(--ui-text)]")} aria-label="Back to agents">
-                <ArrowLeft className="h-4 w-4" />
-              </button>
-            ) : null}
-            {agent ? <AgentChannelSwitcher agents={agents} agent={agent} onSelect={onSelectAgent} theme={theme} /> : null}
-            {isDraft ? (
-              <div className="min-w-0">
-                <h3 className={cn("truncate text-sm font-bold leading-tight md:text-base", isDark ? "text-[var(--ui-text)]" : "text-[var(--ui-text)]")}>New agent</h3>
-                <p className={cn("mt-0.5 truncate text-[11px] font-semibold", isDark ? "text-[var(--ui-text)]/55" : "text-[var(--ui-text)]/55")}>{headerSubline}</p>
-              </div>
-            ) : null}
-            {!isDraft ? (
-              <button
-                type="button"
-                role="switch"
-                aria-checked={agentActive}
-                aria-label={agentActive ? "Agent is active. Pause it" : "Agent is paused. Activate it"}
-                title={agentActive ? "Pause the agent" : "Activate the agent"}
-                disabled={statusBusy || saving || !!deleting}
-                onClick={() => agent && void onSetStatus(agent.id, agentActive ? "paused" : "active")}
-                className={cn(
-                  "inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full border px-2 text-[9px] font-black uppercase tracking-wider transition active:scale-[0.98] disabled:opacity-60",
-                  agentActive
-                    ? "border-[var(--ui-accent-text)]/20 bg-[var(--ui-accent)] text-[var(--ui-accent-ink)] hover:bg-[var(--ui-accent-hover)]"
-                    : isDark ? "border-[var(--ui-line-strong)] bg-[var(--ui-text)]/10 text-[var(--ui-text)]/70 hover:bg-[var(--ui-text)]/16" : "border-[var(--ui-line)] bg-[var(--ui-text)]/6 text-[var(--ui-text)]/60 hover:bg-[var(--ui-text)]/10",
-                )}
-              >
-                {statusBusy ? <Loader2 className="h-3 w-3 ui-spin" /> : <span className={cn("h-1.5 w-1.5 rounded-full", agentActive ? "bg-[var(--ui-text)]" : "bg-current opacity-60")} />}
-                {agentActive ? "Active" : "Paused"}
-              </button>
-            ) : null}
-          </div>
-          <div className="ml-auto flex shrink-0 items-center gap-1.5">
-            {!isDraft ? (
-            <button
-              type="button"
-              onClick={() => setNavOpen((open) => !open)}
-              aria-expanded={navOpen}
-              aria-label={navOpen ? "Close agent tools" : "Open agent tools"}
-              title="Agent tools"
-              className={cn(
-                "grid h-8 w-8 shrink-0 place-items-center rounded-lg border transition active:scale-[0.98]",
-                navOpen
-                  ? "border-[var(--ui-accent)] bg-[var(--ui-accent)] text-[var(--ui-accent-ink)]"
-                  : isDark ? "border-[var(--ui-line-strong)] text-[var(--ui-text)]/70 hover:bg-[var(--ui-text)]/8" : "border-[var(--ui-line-strong)] text-[var(--ui-text)]/60 hover:bg-[var(--ui-panel)]",
-              )}
-            >
-              <Menu className="h-4 w-4" />
-            </button>
-            ) : null}
-          </div>
-        </div>
-        {navOpen ? (
-          <nav
-            className={cn("absolute right-3 top-[calc(100%+0.25rem)] z-30 grid w-56 gap-1 rounded-lg border p-1.5 shadow-[0_18px_45px_rgba(26,26,26,0.18)]", isDark ? "border-[var(--ui-line-strong)] bg-[var(--ui-panel)] text-[var(--ui-text)]" : "border-[var(--ui-line)] bg-[var(--ui-panel)] text-[var(--ui-text)]")}
-            aria-label="Agent tools"
-          >
-            {TABS.map((item, index) => {
-              const disabled = isDraft && item.id !== "setup";
-              const count = isDraft ? undefined : tabCounts[item.id];
-              const active = tab === item.id;
-              return (
+    <article className={cn("relative flex h-full flex-col overflow-hidden", isDraft && "workspace-floating-shell", isDark ? "bg-[var(--ui-bg)] text-[var(--ui-text)]" : "bg-[var(--ui-bg)] text-[var(--ui-text)]")}>
+      {/* ── Agent header: the studio layout's title, summary, actions, and tabs ── */}
+      {isDraft ? (
+        <div className="workspace-floating-header relative px-2 py-1.5 md:px-3">
+          <div className="flex min-w-0 items-center gap-1.5">
+            <div className="flex min-w-0 flex-1 items-center gap-2">
+              {isDraft ? (
+                <button type="button" onClick={onBackToAgents} className={cn("grid h-8 w-8 shrink-0 place-items-center rounded-lg transition active:scale-[0.98]", isDark ? "text-[var(--ui-text)]/70 hover:bg-[var(--ui-text)]/8 hover:text-[var(--ui-text)]" : "text-[var(--ui-text)]/70 hover:bg-[var(--ui-panel)] hover:text-[var(--ui-text)]")} aria-label="Back to agents">
+                  <ArrowLeft className="h-4 w-4" />
+                </button>
+              ) : null}
+              {agent ? <AgentChannelSwitcher agents={agents} agent={agent} onSelect={onSelectAgent} theme={theme} /> : null}
+              {isDraft ? (
+                <div className="min-w-0">
+                  <h3 className={cn("truncate text-sm font-bold leading-tight md:text-base", isDark ? "text-[var(--ui-text)]" : "text-[var(--ui-text)]")}>New agent</h3>
+                  <p className={cn("mt-0.5 truncate text-[11px] font-semibold", isDark ? "text-[var(--ui-text)]/55" : "text-[var(--ui-text)]/55")}>{headerSubline}</p>
+                </div>
+              ) : null}
+              {!isDraft ? (
                 <button
-                  key={item.id}
                   type="button"
-                  disabled={disabled}
-                  onClick={() => {
-                    onSetActiveTab(item.id);
-                    setNavOpen(false);
-                  }}
+                  role="switch"
+                  aria-checked={agentActive}
+                  aria-label={agentActive ? "Agent is active. Pause it" : "Agent is paused. Activate it"}
+                  title={agentActive ? "Pause the agent" : "Activate the agent"}
+                  disabled={statusBusy || saving || !!deleting}
+                  onClick={() => agent && void onSetStatus(agent.id, agentActive ? "paused" : "active")}
                   className={cn(
-                    "flex h-10 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-35",
-                    index === PRIMARY_TAB_COUNT && (isDark ? "mt-1 border-t border-[var(--ui-line)] pt-1" : "mt-1 border-t border-[var(--ui-line)] pt-1"),
-                    active
-                      ? "bg-[var(--ui-accent)] text-[var(--ui-accent-ink)]"
-                      : isDark ? "text-[var(--ui-text)]/72 hover:bg-[var(--ui-text)]/8 hover:text-[var(--ui-text)]" : "text-[var(--ui-text)]/70 hover:bg-[var(--ui-text)]/5 hover:text-[var(--ui-text)]",
+                    "inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full border px-2 text-[9px] font-black uppercase tracking-wider transition active:scale-[0.98] disabled:opacity-60",
+                    agentActive
+                      ? "border-[var(--ui-accent-text)]/20 bg-[var(--ui-accent)] text-[var(--ui-accent-ink)] hover:bg-[var(--ui-accent-hover)]"
+                      : isDark ? "border-[var(--ui-line-strong)] bg-[var(--ui-text)]/10 text-[var(--ui-text)]/70 hover:bg-[var(--ui-text)]/16" : "border-[var(--ui-line)] bg-[var(--ui-text)]/6 text-[var(--ui-text)]/60 hover:bg-[var(--ui-text)]/10",
                   )}
                 >
-                  {item.icon}
-                  <span className="min-w-0 flex-1 truncate">{item.label}</span>
-                  {typeof count === "number" && count > 0 ? (
-                    <span className={cn("rounded-full px-1.5 py-0.5 text-[10px] font-black tabular-nums", active ? "bg-[var(--ui-text)]/10 text-[var(--ui-text)]" : isDark ? "bg-[var(--ui-text)]/10 text-[var(--ui-text)]/60" : "bg-[var(--ui-text)]/6 text-[var(--ui-text)]/55")}>{count}</span>
-                  ) : null}
+                  {statusBusy ? <Loader2 className="h-3 w-3 ui-spin" /> : <span className={cn("h-1.5 w-1.5 rounded-full", agentActive ? "bg-[var(--ui-text)]" : "bg-current opacity-60")} />}
+                  {agentActive ? "Active" : "Paused"}
                 </button>
-              );
-            })}
-            {!isDraft ? (
-              <div className={cn("mt-1 grid gap-1 border-t pt-1", isDark ? "border-[var(--ui-line)]" : "border-[var(--ui-line)]")}>
-                <button type="button" onClick={() => { setNavOpen(false); onCreateAgent(); }} className={cn("flex h-10 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-xs font-bold transition", isDark ? "text-[var(--ui-text)]/72 hover:bg-[var(--ui-text)]/8 hover:text-[var(--ui-text)]" : "text-[var(--ui-text)]/70 hover:bg-[var(--ui-text)]/5 hover:text-[var(--ui-text)]")}>
-                  <Plus className="h-4 w-4" />
-                  <span>New agent</span>
-                </button>
-                <button type="button" onClick={() => { setNavOpen(false); if (agent) void (agentRunning ? onStop(agent.id) : onRun(agent.id)); }} disabled={saving || agentStopping} className={cn("flex h-10 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-45", agentRunning ? (isDark ? "text-red-200 hover:bg-red-500/10" : "text-red-700 hover:bg-red-50") : (isDark ? "text-[var(--ui-text)]/72 hover:bg-[var(--ui-text)]/8 hover:text-[var(--ui-text)]" : "text-[var(--ui-text)]/70 hover:bg-[var(--ui-text)]/5 hover:text-[var(--ui-text)]"))} aria-label={agentRunning ? "Stop candidate run" : "Run candidate"}>
-                  {agentStopping ? <Loader2 className="h-4 w-4 ui-spin" /> : agentRunning ? <Square className="h-4 w-4 fill-current" /> : <Play className="h-4 w-4" />}
-                  <span>{agentStopping ? "Stopping" : agentRunning ? "Stop candidate run" : "Run candidate"}</span>
-                </button>
-                <button type="button" onClick={() => { setNavOpen(false); if (agent) void onDelete(agent.id); }} disabled={!!deleting || agentRunning || saving} className={cn("flex h-10 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-45", isDark ? "text-red-200 hover:bg-red-500/10" : "text-red-700 hover:bg-red-50")} aria-label="Delete agent">
-                  {deleting ? <Loader2 className="h-4 w-4 ui-spin" /> : <Trash2 className="h-4 w-4" />}
-                  <span>Delete agent</span>
-                </button>
-              </div>
-            ) : null}
-            <div className={cn("mt-1 grid gap-1 border-t pt-1", isDark ? "border-[var(--ui-line)]" : "border-[var(--ui-line)]")}>
-              <button
-                type="button"
-                onClick={() => {
-                  setNavOpen(false);
-                  onRefreshAgent();
-                }}
-                className={cn("flex h-10 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-xs font-semibold transition", isDark ? "text-[var(--ui-text)]/72 hover:bg-[var(--ui-text)]/8 hover:text-[var(--ui-text)]" : "text-[var(--ui-text)]/70 hover:bg-[var(--ui-text)]/5 hover:text-[var(--ui-text)]")}
-              >
-                <RefreshCw className="h-4 w-4" />
-                <span>Refresh agent</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  openBackgroundProcessCenter();
-                  setNavOpen(false);
-                }}
-                className={cn("flex h-10 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-xs font-semibold transition md:hidden", isDark ? "text-[var(--ui-text)]/72 hover:bg-[var(--ui-text)]/8 hover:text-[var(--ui-text)]" : "text-[var(--ui-text)]/70 hover:bg-[var(--ui-text)]/5 hover:text-[var(--ui-text)]")}
-              >
-                <Activity className="h-4 w-4" />
-                <span>Background activity</span>
-              </button>
+              ) : null}
             </div>
-          </nav>
+          </div>
+        </div>
+      ) : null}
+      {!isDraft && agent && (tab === "chat" || tab === "compile") ? (
+        <AgentHero agent={agent} agents={agents} compact tab={tab} tabCounts={tabCounts} onTab={onSetActiveTab} onSelectAgent={onSelectAgent} theme={theme}
+          active={agentActive} statusBusy={statusBusy} locked={saving || !!deleting} onToggleStatus={() => void onSetStatus(agent.id, agentActive ? "paused" : "active")}
+          running={agentRunning} stopping={agentStopping} onRun={() => void onRun(agent.id)} onStop={() => void onStop(agent.id)}
+          onCreateAgent={onCreateAgent} onDelete={() => void onDelete(agent.id)} deleting={!!deleting} onRefresh={onRefreshAgent} />
+      ) : null}
+      <div data-agent-scroll className={cn("relative min-h-0 flex-1", tab === "chat" ? "flex overflow-hidden" : tab === "compile" ? "overflow-hidden pb-24" : isDraft ? "overflow-y-auto p-4 pb-24 md:p-6 md:pb-28" : "ag-scroll overflow-y-auto pb-24 md:pb-28")}>
+        {!isDraft && agent && tab !== "chat" && tab !== "compile" ? (
+          <AgentHero agent={agent} agents={agents} tab={tab} tabCounts={tabCounts} onTab={onSetActiveTab} onSelectAgent={onSelectAgent} theme={theme}
+            active={agentActive} statusBusy={statusBusy} locked={saving || !!deleting} onToggleStatus={() => void onSetStatus(agent.id, agentActive ? "paused" : "active")}
+            running={agentRunning} stopping={agentStopping} onRun={() => void onRun(agent.id)} onStop={() => void onStop(agent.id)}
+            onCreateAgent={onCreateAgent} onDelete={() => void onDelete(agent.id)} deleting={!!deleting} onRefresh={onRefreshAgent} />
         ) : null}
-      </div>
-
-      <div data-agent-scroll className={cn("relative min-h-0 flex-1", tab === "chat" ? "flex overflow-hidden" : tab === "compile" ? "overflow-hidden pb-24" : "overflow-y-auto p-4 pb-24 md:p-6 md:pb-28")}>
         {tab === "chat" ? (
           // The agent's chat is Juel: it consults this agent's own operator for anything about it.
           <div className="agent-juel">
@@ -1887,9 +1912,7 @@ function ExpandedAgentCard({
         {tab === "report" ? (
           <section className="space-y-4 pb-8">
             <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--ui-accent-text)]">Agent intelligence</p>
-              <h2 className={cn("mt-1 font-serif text-2xl font-bold md:text-3xl", getAgentTheme(theme).text)}>Performance report</h2>
-              <p className={cn("mt-1 max-w-2xl text-sm leading-6", getAgentTheme(theme).muted)}>What the last 30 days say about this channel: which source channels earn views, which to throttle, and what the agent recommends next.</p>
+              <p className={cn("max-w-2xl text-sm leading-6", getAgentTheme(theme).muted)}>What the last 30 days say about this channel: which source channels earn views, which to throttle, and what the agent recommends next.</p>
             </div>
             <AgentReportPanel report={agentReport} theme={theme} />
           </section>
@@ -2002,7 +2025,6 @@ type OverviewPanelProps = {
 };
 
 function OverviewPanel({ agent, uploads, runs, successfulRuns, onSetup, onUploads, onRun, running, stopping, theme }: OverviewPanelProps) {
-  const tokens = getAgentTheme(theme);
   const latestUpload = uploads[0] || null;
   const latestPreview = useMemo(() => latestUpload ? buildAgentAnalyticsViz([latestUpload], []).rankedUploads[0] : null, [latestUpload]);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -2013,80 +2035,92 @@ function OverviewPanel({ agent, uploads, runs, successfulRuns, onSetup, onUpload
   const gettingStarted = agentGettingStartedSteps({ uploadCount: uploads.length, status: agent?.status });
   const incomplete = gettingStarted.filter((step) => !step.done);
 
+  const publishing = publishModeLabel(settings?.publishMode);
   return (
-    <div className="space-y-5 pb-6">
-      <section className={cn("rounded-2xl border p-5 md:p-6", tokens.surface)}>
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <OverviewValue theme={theme} label="Next run" value={nextRun} />
-          <OverviewValue theme={theme} label="Cadence" value={settings ? `${settings.maxPostsPerDay || 1}/day · ${schedule}` : "Not set"} />
-          <OverviewValue theme={theme} label="Uploads" value={compact(uploads.length)} />
-          <OverviewValue theme={theme} label="Views" value={compact(views)} />
-        </div>
-
-        <div className={cn("mt-5 flex flex-wrap items-center gap-2 border-t pt-5", tokens.divider)}>
-          <button type="button" onClick={onSetup} className="ui-btn is-primary is-sm"><Settings2 className="h-3.5 w-3.5" />Edit setup</button>
-          <button type="button" onClick={onUploads} className={cn("inline-flex h-9 items-center gap-2 rounded-lg border px-3.5 text-xs font-black transition", theme === "dark" ? "border-white/16 text-white/75 hover:bg-white/8" : "border-[var(--ui-line-strong)] text-[var(--ui-text)]/72 hover:bg-[var(--ui-bg)]")}><Table2 className="h-3.5 w-3.5" />Open uploads</button>
-          {!uploads.length && agent ? <button type="button" onClick={() => void onRun(agent.id)} disabled={running || stopping} className={cn("ml-auto inline-flex h-9 items-center gap-2 rounded-lg px-3.5 text-xs font-black transition disabled:opacity-50", theme === "dark" ? "text-white/75 hover:bg-white/8" : "text-[var(--ui-text)]/65 hover:bg-[var(--ui-bg)]")}><Play className="h-3.5 w-3.5" />{stopping ? "Stopping" : running ? "Running" : "Run candidate"}</button> : null}
-        </div>
-      </section>
-
+    <div className="ag-overview">
       {incomplete.length ? (
-        <section className={cn("rounded-2xl border px-5 py-4", theme === "dark" ? "border-[var(--ui-accent)]/22 bg-[var(--ui-accent-soft)]" : "border-[var(--ui-accent)]/70 bg-[var(--ui-accent-soft)]")}>
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className={cn("text-xs font-black", tokens.text)}>Setup progress</p>
-            <span className={cn("text-[11px] font-bold", tokens.muted)}>{gettingStarted.length - incomplete.length}/{gettingStarted.length}</span>
-          </div>
-          <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2">
-            {gettingStarted.map((step) => <span key={step.id} className={cn("inline-flex items-center gap-1.5 text-xs font-semibold", step.done ? tokens.muted : tokens.text)}>{step.done ? <CheckCircle2 className="h-3.5 w-3.5 text-[var(--ui-accent-text)]" /> : <span className="h-1.5 w-1.5 rounded-full bg-[var(--ui-accent)]" />}{step.label}</span>)}
-          </div>
+        <section className="ag-progress" aria-label="Setup progress">
+          <strong>Finish setting up</strong>
+          <span className="ag-progress-count">{gettingStarted.length - incomplete.length} of {gettingStarted.length}</span>
+          <ul>
+            {gettingStarted.map((step) => <li key={step.id} className={step.done ? "is-done" : ""}>{step.done ? <CheckCircle2 className="h-3.5 w-3.5" /> : <span aria-hidden="true" />}{step.label}</li>)}
+          </ul>
         </section>
       ) : null}
 
-      <section className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)]">
-        <section className={cn("overflow-hidden rounded-2xl border", tokens.surface)}>
-          <div className="flex items-center justify-between gap-3 border-b px-5 py-4 md:px-6 border-[var(--ui-line)]">
-            <h3 className={cn("text-sm font-black", tokens.text)}>Recent activity</h3>
-            <span className={cn("text-xs font-semibold", tokens.muted)}>{runs.length} runs · {successfulRuns} successful</span>
-          </div>
-          {runs.length ? runs.slice(0, 6).map((run) => {
-            const success = run.status === "success";
-            return <div key={run.id} className={cn("grid gap-3 border-b px-5 py-3 last:border-b-0 sm:grid-cols-[112px_minmax(0,1fr)_132px] sm:items-center md:px-6", tokens.divider)}>
-              <span className={cn("inline-flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.14em]", success ? "text-[var(--ui-accent-text)]" : tokens.subtle)}>{success ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Clock3 className="h-3.5 w-3.5" />}{run.status}</span>
-              <p className={cn("truncate text-sm font-semibold", tokens.textSoft)}>{run.message}</p>
-              <p className={cn("text-xs font-medium sm:text-right", tokens.subtle)}>{formatDate(run.startedAt)}</p>
-            </div>;
-          }) : <p className={cn("px-5 py-10 text-sm font-semibold", tokens.muted)}>No runs yet.</p>}
+      <div className="ag-overview-grid">
+        <section className="ag-feature" aria-label="Latest upload">
+          {latestUpload ? (
+            <>
+              <button type="button" className="ag-feature-media" onClick={() => latestPreview?.playbackUrl && setPreviewOpen(true)} aria-label={latestPreview?.playbackUrl ? `Play ${latestUpload.title}` : latestUpload.title}>
+                {latestPreview?.thumbnailUrl ? <img src={latestPreview.thumbnailUrl} alt="" /> : null}
+                {latestPreview?.playbackUrl ? <span className="ag-play"><Play className="h-5 w-5 fill-current" /></span> : null}
+              </button>
+              <div className="ag-feature-body">
+                <p className="ag-feature-when">Latest upload · {formatDate(latestUpload.createdAt)}</p>
+                <h2 className="ag-feature-title">{latestUpload.title}</h2>
+                <p className="ag-feature-stats">
+                  <span><Eye className="h-4 w-4" />{compact(metric(latestUpload, "viewCount"))} views</span>
+                  <span><Heart className="h-4 w-4" />{compact(metric(latestUpload, "likeCount"))} likes</span>
+                  <span><MessageCircle className="h-4 w-4" />{compact(metric(latestUpload, "commentCount"))} comments</span>
+                </p>
+                <button type="button" className="ui-btn is-sm" onClick={onUploads}><Table2 className="h-3.5 w-3.5" />All uploads</button>
+              </div>
+            </>
+          ) : (
+            <div className="ag-feature-empty">
+              <span className="ag-feature-empty-mark"><Film className="h-6 w-6" /></span>
+              <h2>No uploads yet</h2>
+              <p>Run the agent once to make its first video. It picks a clip from your source, identifies the film, and posts it the way Setup says.</p>
+              {agent ? (
+                <button type="button" className="ui-btn is-primary" onClick={() => void onRun(agent.id)} disabled={running || stopping}>
+                  {running || stopping ? <Loader2 className="h-4 w-4 ui-spin" /> : <Play className="h-4 w-4 fill-current" />}
+                  {stopping ? "Stopping" : running ? "Running" : "Make the first video"}
+                </button>
+              ) : null}
+            </div>
+          )}
         </section>
 
-        <section className={cn("overflow-hidden rounded-2xl border", tokens.surface)}>
-          <div className="flex items-center justify-between gap-3 border-b px-5 py-4 border-[var(--ui-line)]">
-            <h3 className={cn("text-sm font-black", tokens.text)}>Latest upload</h3>
-            {latestUpload ? <span className={cn("text-xs font-semibold", tokens.muted)}>{formatDate(latestUpload.createdAt)}</span> : null}
-          </div>
-          {latestUpload ? (
-            <div className="p-5">
-              <button type="button" onClick={() => latestPreview?.playbackUrl && setPreviewOpen(true)} className={cn("group relative grid aspect-video w-full place-items-center overflow-hidden rounded-xl border", theme === "dark" ? "border-white/10 bg-[#0d0f0d]" : "border-[var(--ui-line)] bg-[var(--ui-bg)]")}>
-                {latestPreview?.thumbnailUrl ? <img src={latestPreview.thumbnailUrl} alt="" className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.02]" /> : <span className="grid h-12 w-12 place-items-center rounded-full bg-[var(--ui-accent)] text-[var(--ui-accent-ink)]"><Play className="h-5 w-5 fill-current" /></span>}
-                {latestPreview?.playbackUrl ? <span className="absolute grid h-10 w-10 place-items-center rounded-full bg-[var(--ui-accent)] text-[var(--ui-accent-ink)] shadow-lg"><Play className="h-4 w-4 fill-current" /></span> : null}
-              </button>
-              <h4 className={cn("mt-4 line-clamp-2 text-sm font-bold leading-5", tokens.text)}>{latestUpload.title}</h4>
-              <div className={cn("mt-4 grid grid-cols-3 divide-x border-t pt-3", tokens.divider)}>
-                <AgentMiniStat theme={theme} label="Views" value={compact(metric(latestUpload, "viewCount"))} />
-                <AgentMiniStat theme={theme} label="Likes" value={compact(metric(latestUpload, "likeCount"))} />
-                <AgentMiniStat theme={theme} label="Comments" value={compact(metric(latestUpload, "commentCount"))} />
-              </div>
+        <aside className="ag-side">
+          <section className="ag-card">
+            <div className="ag-card-head">
+              <h2>Schedule</h2>
+              <button type="button" className="ag-link" onClick={onSetup}>Edit setup</button>
             </div>
-          ) : <p className={cn("px-5 py-10 text-sm font-semibold", tokens.muted)}>Run a candidate to create the first upload.</p>}
-        </section>
-      </section>
+            <dl className="ag-facts">
+              <div><dt>Next video</dt><dd>{nextRun}</dd></div>
+              <div><dt>Posts</dt><dd>{settings ? `${settings.maxPostsPerDay || 1} a day · ${schedule}` : "Not set"}</dd></div>
+              <div><dt>Publishing</dt><dd>{publishing}</dd></div>
+              <div><dt>So far</dt><dd>{compact(uploads.length)} {uploads.length === 1 ? "upload" : "uploads"} · {compact(views)} views</dd></div>
+            </dl>
+          </section>
+
+          <section className="ag-card">
+            <div className="ag-card-head">
+              <h2>Recent activity</h2>
+              <span className="ag-card-note">{successfulRuns} of {runs.length} runs worked</span>
+            </div>
+            {runs.length ? (
+              <ol className="ag-runs">
+                {runs.slice(0, 5).map((run) => {
+                  const ok = run.status === "success";
+                  return (
+                    <li key={run.id} className={ok ? "is-ok" : run.status === "failed" || run.status === "error" ? "is-bad" : ""}>
+                      <span className="ag-run-mark" aria-hidden="true">{ok ? <CheckCircle2 className="h-4 w-4" /> : <Clock3 className="h-4 w-4" />}</span>
+                      <p>{run.message}</p>
+                      <time>{formatDate(run.startedAt)}</time>
+                    </li>
+                  );
+                })}
+              </ol>
+            ) : <p className="ag-card-empty">Nothing yet. Runs show up here as the agent works.</p>}
+          </section>
+        </aside>
+      </div>
       {previewOpen && latestPreview ? <AgentVideoLightbox item={latestPreview} theme={theme} onClose={() => setPreviewOpen(false)} /> : null}
     </div>
   );
-}
-
-function OverviewValue({ theme, label, value }: { theme: "light" | "dark"; label: string; value: ReactNode }) {
-  const tokens = getAgentTheme(theme);
-  return <div className="min-w-0"><p className={cn("text-[10px] font-black uppercase tracking-[0.14em]", tokens.subtle)}>{label}</p><p className={cn("mt-1 truncate text-sm font-bold", tokens.text)}>{value}</p></div>;
 }
 
 function AgentMetricCard({ theme, icon, label, value, highlight = false }: { theme: AgentTheme; icon: ReactNode; label: string; value: ReactNode; highlight?: boolean }) {
@@ -2106,16 +2140,6 @@ function AgentMetricCard({ theme, icon, label, value, highlight = false }: { the
   );
 }
 
-function AgentMiniStat({ theme, label, value }: { theme: AgentTheme; label: string; value: ReactNode }) {
-  const tokens = getAgentTheme(theme);
-  return (
-    <div className={cn("p-4 text-center [&+&]:border-l", tokens.divider)}>
-      <p className={cn("text-[10px] font-semibold uppercase tracking-[0.14em]", tokens.muted)}>{label}</p>
-      <p className={cn("mt-2 text-base font-bold tabular-nums", tokens.text)}>{value}</p>
-    </div>
-  );
-}
-
 function AnalyticsPanel({ agent, uploads, runs, learning, theme = "light" }: { agent: AutomationAgent | null; uploads: AutomationUpload[]; runs: AutomationRun[]; learning: AgentLearningProfile | null; theme?: AgentTheme }) {
   const analytics = useMemo(() => buildAgentAnalytics(uploads, runs), [uploads, runs]);
   const viz = useMemo(() => buildAgentAnalyticsViz(uploads, runs), [uploads, runs]);
@@ -2127,12 +2151,8 @@ function AnalyticsPanel({ agent, uploads, runs, learning, theme = "light" }: { a
 
   return (
     <section className="space-y-4 pb-8">
-      <div className={cn("flex flex-col gap-3 border-b pb-4 lg:flex-row lg:items-end lg:justify-between", tokens.divider)}>
-        <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--ui-accent-text)]">Agent intelligence</p>
-          <h2 className={cn("mt-1 font-serif text-2xl font-bold md:text-3xl", tokens.text)}>Performance command center</h2>
-          <p className={cn("mt-1 max-w-2xl text-sm leading-6", tokens.muted)}>Find the content, timing, and operating patterns moving this channel toward monetization.</p>
-        </div>
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <p className={cn("max-w-2xl text-sm leading-6", tokens.muted)}>What's earning views, when to post, and how reliably the agent runs.</p>
         <div className={cn("flex w-fit items-center gap-2 rounded-lg border px-3 py-2 text-xs font-bold", tokens.surface)}>
           <Activity className="h-4 w-4 text-[var(--ui-accent-text)]" />
           {viz.reliability.successRate}% run reliability
@@ -4594,10 +4614,6 @@ function Field({ label, children, wide = false }: { label: string; children: Rea
       {children}
     </label>
   );
-}
-
-function Notice({ title, body, tone = "warn" }: { title: string; body: string; tone?: "warn" | "error" | "success" }) {
-  return <SharedNotice tone={tone === "warn" ? "warning" : tone} title={title}>{body}</SharedNotice>;
 }
 
 function SectionTitle({ title, body, theme = "light" }: { title: string; body: string; theme?: AgentTheme }) {
