@@ -24,6 +24,7 @@ Commands (all print one JSON object on stdout):
 """
 import argparse
 import html
+import io
 import json
 import os
 import random
@@ -43,6 +44,10 @@ SHOT_EVERY = 3.0  # one sampled frame every 3 s of film: the cut catalogue
 SHEET_COLS, SHEET_ROWS = 4, 3
 TILE_W = 256
 KEEP_DAYS = 4
+# A recap being edited in Vibe Edit (an "editing" mark, renewed whenever the editor asks for the film) keeps
+# its film this long after the last use, so trimming and replacing shots can still reach it.
+EDIT_KEEP_DAYS = 14
+PROXY_NAME = "film-proxy.mp4"
 PROJECT_ID = re.compile(r"^[A-Za-z0-9_-]{6,80}$")
 
 
@@ -122,18 +127,22 @@ def movie_path(pdir):
 def sweep_old():
     if not os.path.isdir(ROOT):
         return
-    cutoff = time.time() - KEEP_DAYS * 86400
     for name in os.listdir(ROOT):
         full = os.path.join(ROOT, name)
         try:
             status = read_json(os.path.join(full, "status.json"), {}) or {}
-            if os.path.isdir(full) and os.path.getmtime(full) < cutoff and status.get("state") != "running":
+            if os.path.isdir(full) and os.path.getmtime(full) < time.time() - keep_days(full) * 86400 and status.get("state") != "running":
                 shutil.rmtree(full, ignore_errors=True)
         except OSError:
             pass
 
 
-def spawn_detached(pdir, command, extra):
+def keep_days(full):
+    """Days a job folder is kept after its last use: longer while its recap is being edited."""
+    return EDIT_KEEP_DAYS if os.path.exists(os.path.join(full, "editing")) else KEEP_DAYS
+
+
+def spawn_detached(pdir, command, extra, pid_name="pid"):
     # The calling exec's scratch folder is deleted when it returns, so run a copy kept with the project.
     script = os.path.join(pdir, "movie_recap.py")
     shutil.copyfile(os.path.abspath(__file__), script)
@@ -152,7 +161,7 @@ def spawn_detached(pdir, command, extra):
         stdout=log, stderr=log, stdin=subprocess.DEVNULL, start_new_session=True, close_fds=True,
         cwd=pdir, env=env,
     )
-    with open(os.path.join(pdir, "pid"), "w", encoding="utf-8") as handle:
+    with open(os.path.join(pdir, pid_name), "w", encoding="utf-8") as handle:
         handle.write(str(proc.pid))
 
 
@@ -598,6 +607,11 @@ def run_analyze(args):
     options = read_json(os.path.join(pdir, "options.json"), {}) or {}
     try:
         movie = download(pdir, options.get("url", ""), options.get("file", ""))
+        # The editing proxy encodes alongside the analysis, at low priority, so the storyboard can play the film.
+        try:
+            start_proxy(pdir, args.project, options.get("language", ""))
+        except Exception as error:  # noqa: BLE001 - playback is a convenience, never a reason to fail analysis
+            print(f"proxy not started: {error}", file=sys.stderr, flush=True)
         if options.get("fetchOnly"):
             # The film was swept from the worker after its analysis; only the file is needed again.
             set_status(pdir, stage="fetched", state="done", message="Film ready", progress=1.0)
@@ -915,6 +929,53 @@ def cut_frames(durations, fps=FPS):
     return counts
 
 
+def cut_clips(movie, plan, fmt, cuts, work, report=None):
+    """Cuts every clip of a cut list from the film with the recap's look (cut_filter), each a whole number of
+    frames, into work/c0000.mp4...; returns (clip paths, frame counts). A cut's "seed" (its index in the
+    first render) keeps its zoom and pan the same when an edit reuses it."""
+    short = fmt == "short"
+    width, height = (1080, 1920) if short else (1920, 1080)
+    transforms = plan.get("transforms", {})
+    frame_counts = cut_frames([cut["duration"] for cut in cuts])
+    done = [0]
+    lock = threading.Lock()
+
+    def cut_one(index):
+        cut = cuts[index]
+        clip = os.path.join(work, f"c{index:04d}.mp4")
+        length = cut["end"] - cut["start"]
+        seed_index = cut.get("seed") if isinstance(cut.get("seed"), int) else index
+        run([
+            "ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-threads", "2",
+            "-ss", f"{cut['start']:.3f}", "-t", f"{length * (1.05 if transforms.get('speed') else 1) + 0.5:.3f}", "-i", movie,
+            "-filter_complex", cut_filter(transforms, width, height, short, f"{plan.get('seed', '')}-{seed_index}", cut, cut_luma(movie, cut["start"], length)) + ";[v]tpad=stop_mode=clone:stop_duration=1[vx]",
+            "-map", "[vx]", "-an", "-frames:v", str(frame_counts[index]), "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+            "-pix_fmt", "yuv420p", clip,
+        ], timeout=600)
+        with lock:
+            done[0] += 1
+            if report and done[0] % 5 == 0:
+                report(done[0], len(cuts))
+
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=CUT_LANES) as pool:
+        list(pool.map(cut_one, range(len(cuts))))
+    return [os.path.join(work, f"c{index:04d}.mp4") for index in range(len(cuts))], frame_counts
+
+
+def cut_picture(movie, plan, fmt, cuts, work, report=None):
+    """An edited cut list as one picture-only video (no graphics, narration, or captions: Vibe Edit adds those)."""
+    shutil.rmtree(work, ignore_errors=True)
+    os.makedirs(work, exist_ok=True)
+    clip_paths, _ = cut_clips(movie, plan, fmt, cuts, work, report)
+    listing = os.path.join(work, "cuts.txt")
+    with open(listing, "w", encoding="utf-8") as handle:
+        handle.write("\n".join(f"file '{path_}'" for path_ in clip_paths) + "\n")
+    picture = os.path.join(work, "picture.mp4")
+    run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", listing, "-c", "copy", "-movflags", "+faststart", picture], timeout=1800)
+    return picture
+
+
 def render_format(pdir, movie, plan, fmt, audio_dir):
     spec = plan["formats"][fmt]
     short = fmt == "short"
@@ -927,34 +988,15 @@ def render_format(pdir, movie, plan, fmt, audio_dir):
     # Every cut is a whole number of frames counted off the running timeline, so cut n starts on the frame
     # nearest its planned time. Encoding each cut to its own length rounded every one up to a whole frame,
     # and over 239 cuts the picture fell 2.4 s behind the narration.
-    frame_counts = cut_frames([cut["duration"] for cut in cuts])
     listing = [f"file '{os.path.join(work, f'c{index:04d}.mp4')}'" for index in range(len(cuts))]
-    done = [0]
-    lock = threading.Lock()
 
-    def cut_one(index):
-        cut = cuts[index]
-        clip = os.path.join(work, f"c{index:04d}.mp4")
-        length = cut["end"] - cut["start"]
-        run([
-            "ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-threads", "2",
-            "-ss", f"{cut['start']:.3f}", "-t", f"{length * (1.05 if transforms.get('speed') else 1) + 0.5:.3f}", "-i", movie,
-            "-filter_complex", cut_filter(transforms, width, height, short, f"{plan.get('seed', '')}-{index}", cut, cut_luma(movie, cut["start"], length)) + ";[v]tpad=stop_mode=clone:stop_duration=1[vx]",
-            "-map", "[vx]", "-an", "-frames:v", str(frame_counts[index]), "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
-            "-pix_fmt", "yuv420p", clip,
-        ], timeout=600)
-        with lock:
-            done[0] += 1
-            if done[0] % 5 == 0:
-                set_status(pdir, stage=f"render-{fmt}", message=f"Cutting the {'Short' if short else 'long recap'} ({done[0]}/{len(cuts)} cuts)",
-                           progress=0.05 + 0.65 * done[0] / max(1, len(cuts)))
+    # Three cuts at a time on the worker's four cores (CUT_LANES): each one seeks and decodes on its own, so
+    # running them side by side cuts the stage to about a third of the time with the same encode settings.
+    def report(done, total):
+        set_status(pdir, stage=f"render-{fmt}", message=f"Cutting the {'Short' if short else 'long recap'} ({done}/{total} cuts)",
+                   progress=0.05 + 0.65 * done / max(1, total))
 
-    # Three cuts at a time on the worker's four cores: each one seeks and decodes on its own, so running them
-    # side by side cuts the stage to about a third of the time with the same encode settings.
-    from concurrent.futures import ThreadPoolExecutor
-    with ThreadPoolExecutor(max_workers=CUT_LANES) as pool:
-        list(pool.map(cut_one, range(len(cuts))))
-    clip_paths = [os.path.join(work, f"c{index:04d}.mp4") for index in range(len(cuts))]
+    clip_paths, frame_counts = cut_clips(movie, plan, fmt, cuts, work, report)
     clip_starts, at = [], 0
     for count in frame_counts:
         clip_starts.append(at / FPS)
@@ -1406,6 +1448,190 @@ def cmd_recut(args):
     cmd_publish(args)
 
 
+# ---------------------------------------------------------------- editing: the film proxy and edited pictures
+
+def pid_alive(pdir, pid_name):
+    try:
+        with open(os.path.join(pdir, pid_name), "r", encoding="utf-8") as handle:
+            pid = int(handle.read().strip())
+        os.kill(pid, 0)
+        with open(f"/proc/{pid}/cmdline", "rb") as handle:
+            return b"movie_recap.py" in handle.read()
+    except FileNotFoundError:
+        return not os.path.isdir("/proc")
+    except (OSError, ValueError):
+        return False
+
+
+def proxy_target(project):
+    return os.path.join(MEDIA_ROOT, os.path.basename(project), PROXY_NAME)
+
+
+def start_proxy(pdir, project, language=""):
+    """Starts the film's editing proxy in the background unless it exists or is being made."""
+    state = read_json(os.path.join(pdir, "proxy.json"), {}) or {}
+    if os.path.isfile(proxy_target(project)):
+        return state
+    if state.get("state") == "running" and pid_alive(pdir, "proxy.pid"):
+        return state
+    state = {"state": "running", "progress": 0.0, "language": language, "updatedAt": time.time()}
+    write_json(os.path.join(pdir, "proxy.json"), state)
+    spawn_detached(pdir, "run-proxy", ["--project", project], pid_name="proxy.pid")
+    return state
+
+
+def run_proxy(args):
+    """A small, scrub-friendly copy of the film for playing it in the browser: H.264 at up to 854 px wide, a
+    keyframe every second, stereo AAC from the same audio track the transcript used, faststart. AV1, HEVC,
+    EAC3 and DTS releases don't play in browsers; this does. Runs at low priority beside the analysis."""
+    pdir = project_dir(args.project)
+    state_path = os.path.join(pdir, "proxy.json")
+    state = read_json(state_path, {}) or {}
+    try:
+        movie = ""
+        for _ in range(120):  # the analysis may still be finishing the download
+            movie = movie_path(pdir)
+            if movie:
+                break
+            time.sleep(10)
+        if not movie:
+            raise RuntimeError("The film isn't on the media worker.")
+        duration = probe_duration(movie)
+        track, _ = pick_audio(movie, state.get("language", ""))
+        target = proxy_target(args.project)
+        folder = os.path.dirname(target)
+        os.makedirs(folder, exist_ok=True)
+        os.chmod(MEDIA_ROOT, 0o755)
+        os.chmod(folder, 0o755)
+        partial = target + ".part.mp4"
+        lower = ["nice", "-n", "15"] + (["ionice", "-c3"] if shutil.which("ionice") else [])
+        cmd = lower + [
+            "ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-nostats", "-progress", "pipe:1", "-threads", "2", "-i", movie,
+            "-map", "0:v:0", "-map", f"0:a:{track}?", "-vf", "scale='min(854,iw)':-2", "-c:v", "libx264", "-preset", "veryfast", "-crf", "31",
+            "-g", "30", "-keyint_min", "30", "-sc_threshold", "0", "-pix_fmt", "yuv420p", "-threads", "2",
+            "-c:a", "aac", "-ac", "2", "-b:a", "96k", "-movflags", "+faststart", partial,
+        ]
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        last = 0.0
+        for line in proc.stdout:
+            if line.startswith("out_time_us=") or line.startswith("out_time_ms="):
+                try:
+                    done = int(line.split("=", 1)[1]) / 1e6
+                except ValueError:
+                    continue
+                progress = min(0.99, done / duration) if duration else 0.0
+                if progress - last >= 0.02:
+                    last = progress
+                    state.update({"state": "running", "progress": round(progress, 3), "updatedAt": time.time()})
+                    write_json(state_path, state)
+        code = proc.wait()
+        if code != 0:
+            raise RuntimeError(f"ffmpeg failed: {(proc.stderr.read() or '').strip().splitlines()[-1:] or 'no output'}")
+        os.replace(partial, target)
+        os.chmod(target, 0o644)
+        size = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "csv=p=0", target], capture_output=True, text=True, timeout=60).stdout.strip().split(",")
+        dims = {"width": int(size[0]), "height": int(size[1])} if len(size) == 2 and all(x.isdigit() for x in size) else {}
+        state.update({"state": "done", "progress": 1.0, "duration": round(probe_duration(target) or duration, 2), "size": os.path.getsize(target), **dims, "updatedAt": time.time()})
+        write_json(state_path, state)
+    except Exception as error:  # noqa: BLE001
+        print(f"proxy failed: {error}", file=sys.stderr, flush=True)
+        state.update({"state": "failed", "error": "The film couldn't be prepared for playback.", "updatedAt": time.time()})
+        write_json(state_path, state)
+
+
+def cmd_proxy(args):
+    """The editing proxy's state ({state, progress, path, duration}); starts it when asked and missing.
+    "keep" marks the recap as being edited, so the film stays for EDIT_KEEP_DAYS after its last use."""
+    o = json.loads(args.options or "{}")
+    pdir = project_dir(args.project)
+    target = proxy_target(args.project)
+    exists = os.path.isdir(pdir)
+    if exists and o.get("keep"):
+        with open(os.path.join(pdir, "editing"), "w", encoding="utf-8") as handle:
+            handle.write(str(time.time()))
+    state = (read_json(os.path.join(pdir, "proxy.json"), {}) or {}) if exists else {}
+    film = bool(exists and movie_path(pdir))
+    if os.path.isfile(target):
+        return emit({"state": "done", "progress": 1.0, "path": f"{os.path.basename(args.project)}/{PROXY_NAME}", "duration": state.get("duration") or round(probe_duration(target), 2),
+                     "width": state.get("width"), "height": state.get("height"), "film": film})
+    if state.get("state") == "running" and not pid_alive(pdir, "proxy.pid") and time.time() - state.get("updatedAt", 0) > 90:
+        state = {"state": "failed", "error": "Preparing the film for playback stopped. It will start again."}
+    if film and o.get("start") and state.get("state") != "running":
+        state = start_proxy(pdir, args.project, o.get("language", ""))
+    if not film and state.get("state") != "running":
+        return emit({"state": "missing", "film": False})
+    emit({"state": state.get("state", "none"), "progress": state.get("progress", 0), "film": film, **({"error": state["error"]} if state.get("error") else {})})
+
+
+def cmd_start_picture(args):
+    """Renders an edited cut list (from Vibe Edit) from the original film, with the recap's look, as a
+    picture-only video: options {format, name, cuts: [{start, end, flip, bw, freeze, subs, seed}]}."""
+    o = json.loads(args.options or "{}")
+    pdir = project_dir(args.project)
+    if not movie_path(pdir):
+        return emit({"error": "The film is no longer on the media worker."})
+    name = re.sub(r"[^a-z0-9-]", "", str(o.get("name", "")))[:40] or f"edit-{int(time.time())}"
+    cuts = [c for c in (o.get("cuts") or []) if float(c.get("end", 0)) > float(c.get("start", 0))]
+    if not cuts:
+        return emit({"error": "There are no film clips to render."})
+    write_json(os.path.join(pdir, f"{name}.request.json"), {"format": "short" if o.get("format") == "short" else "long", "cuts": cuts})
+    write_json(os.path.join(pdir, f"{name}.status.json"), {"state": "running", "progress": 0.0, "updatedAt": time.time()})
+    spawn_detached(pdir, "run-picture", ["--project", args.project, "--name", name], pid_name=f"{name}.pid")
+    emit({"started": True, "name": name})
+
+
+def run_picture(args):
+    pdir = project_dir(args.project)
+    name = os.path.basename(args.name)
+    status_path = os.path.join(pdir, f"{name}.status.json")
+    try:
+        request = read_json(os.path.join(pdir, f"{name}.request.json"), {}) or {}
+        plan = read_json(os.path.join(pdir, "plan.json"), {}) or {}
+        movie = movie_path(pdir)
+        if not movie:
+            raise RuntimeError("The film is no longer on the media worker.")
+        fmt = request.get("format", "long")
+        cuts = [{"start": float(c["start"]), "end": float(c["end"]), "duration": float(c["end"]) - float(c["start"]),
+                 **{k: bool(c.get(k)) for k in ("flip", "bw", "freeze", "subs") if c.get(k)}, "seed": c.get("seed")} for c in request.get("cuts", [])]
+
+        def report(done, total):
+            write_json(status_path, {"state": "running", "progress": round(0.95 * done / max(1, total), 3), "updatedAt": time.time()})
+
+        work = os.path.join(pdir, "render", name)
+        picture = cut_picture(movie, plan, fmt, cuts, work, report)
+        os.makedirs(os.path.join(pdir, "render"), exist_ok=True)
+        os.replace(picture, os.path.join(pdir, "render", f"{name}.mp4"))
+        shutil.rmtree(work, ignore_errors=True)
+        args.name = f"{name}.mp4"
+        out = io.StringIO()
+        saved = sys.stdout
+        sys.stdout = out
+        try:
+            cmd_publish(args)
+        finally:
+            sys.stdout = saved
+        published = json.loads(out.getvalue() or "{}")
+        if published.get("error"):
+            raise RuntimeError(published["error"])
+        write_json(status_path, {"state": "done", "progress": 1.0, "path": published["path"], "size": published.get("size", 0),
+                                 "duration": round(sum(c["duration"] for c in cuts), 3), "updatedAt": time.time()})
+    except Exception as error:  # noqa: BLE001
+        print(f"picture failed: {error}", file=sys.stderr, flush=True)
+        write_json(status_path, {"state": "failed", "error": plain_error(error, "render"), "updatedAt": time.time()})
+
+
+def cmd_picture_status(args):
+    pdir = project_dir(args.project)
+    name = os.path.basename(args.name or "")
+    status = read_json(os.path.join(pdir, f"{name}.status.json"), None)
+    if status is None:
+        return emit({"state": "missing"})
+    if status.get("state") == "running" and time.time() - status.get("updatedAt", 0) > 300 and not pid_alive(pdir, f"{name}.pid"):
+        status["state"] = "failed"
+        status["error"] = "The render stopped. Export again."
+    emit(status)
+
+
 def cmd_cleanup(args):
     cmd_stop(args)
     shutil.rmtree(project_dir(args.project), ignore_errors=True)
@@ -1445,6 +1671,11 @@ def main():
         "plan-info": cmd_plan_info,
         "film": cmd_film,
         "recut": cmd_recut,
+        "proxy": cmd_proxy,
+        "run-proxy": run_proxy,
+        "start-picture": cmd_start_picture,
+        "run-picture": run_picture,
+        "picture-status": cmd_picture_status,
     }
     if args.command not in commands:
         return emit({"error": f"unknown command {args.command}"})
