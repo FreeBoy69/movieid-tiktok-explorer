@@ -446,6 +446,20 @@ describe("Juel's hearing", () => {
     expect(spokenWords("00:00:01.200 Post it now")).toBe("Post it now");
   });
 
+  it("takes the first provider with words, and waits past a quick empty answer", async () => {
+    const { firstWords } = await import("./juel.js");
+    const later = <T,>(ms: number, value: T) => (signal: AbortSignal) => new Promise<T>((resolve, reject) => {
+      const t = setTimeout(() => resolve(value), ms);
+      signal.addEventListener("abort", () => { clearTimeout(t); reject(new Error("aborted")); });
+    });
+    expect(await firstWords([later(30, { text: "Hi", model: "a" }), later(5, { text: "", model: "b" })])).toEqual({ text: "Hi", model: "a" });
+    expect(await firstWords([later(5, { text: "Hi", model: "a" }), later(60, { text: "Later", model: "b" })])).toEqual({ text: "Hi", model: "a" });
+    expect(await firstWords([later(5, { text: "", model: "a" }), later(10, { text: "", model: "b" })])).toEqual({ text: "", model: "a" });
+    // One failing is fine while another answers; all failing is an error.
+    expect(await firstWords([() => Promise.reject(new Error("down")), later(5, { text: "Hi", model: "b" })])).toEqual({ text: "Hi", model: "b" });
+    await expect(firstWords([() => Promise.reject(new Error("down")), () => Promise.reject(new Error("also down"))])).rejects.toThrow("also down");
+  });
+
   it("drops words that can't fit in the recording (made up from noise)", async () => {
     const { plausibleWords } = await import("./juel.js");
     const stock = "I'm not sure if I'm going to be able to make it to the meeting today";

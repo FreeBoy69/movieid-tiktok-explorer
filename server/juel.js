@@ -7,6 +7,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { synthesizeHostedVoice } from "./hostedVoices.js";
 import { guardUsage, meterUsage } from "../src/utils/usageMeter.js";
+import { openRouterConfigured, transcribeOpenRouter } from "../src/utils/openRouterClient.js";
 
 /** The specialists the manager hands work to. Their briefs go into the manager's prompt. */
 export const JUEL_SPECIALISTS = {
@@ -965,6 +966,46 @@ export async function streamGeminiSpeech({ text, voice, onAudio, signal = undefi
   throw lastError;
 }
 
+/** The first words from several hearings of the same recording, each a function of an abort signal: Gemini's
+ *  time to answer runs from 1.4 s to 12 s for the same clip (measured 2026-10-10), so two providers race and
+ *  the slower is cancelled. An empty answer waits for the others (a quick "" must not beat real words); only
+ *  when every one is empty is nothing heard. One failing is ignored while another can still answer. */
+export async function firstWords(hearings, signal = undefined) {
+  const stop = new AbortController();
+  const onAbort = () => stop.abort(signal.reason);
+  signal?.addEventListener("abort", onAbort, { once: true });
+  try {
+    return await new Promise((resolve, reject) => {
+      let left = hearings.length;
+      let lastError = new Error("Juel couldn't hear that.");
+      let empty = null;
+      for (const hear of hearings) {
+        Promise.resolve()
+          .then(() => hear(stop.signal))
+          .then((heard) => {
+            const text = String(heard?.text ?? heard ?? "").trim();
+            if (text) return resolve({ text, model: heard?.model || "" });
+            empty ||= { text: "", model: heard?.model || "" };
+          }, (error) => {
+            if (error?.name === "UsageBlockedError") return resolve(Promise.reject(error));
+            lastError = error;
+          })
+          .then(() => {
+            if (--left === 0) empty ? resolve(empty) : reject(lastError);
+          });
+      }
+    });
+  } finally {
+    stop.abort(new Error("Another hearing answered first."));
+    signal?.removeEventListener("abort", onAbort);
+  }
+}
+
+/** The OpenRouter transcription's name for a recording's type, or "" when it can't read it. */
+export function openRouterAudioFormat(mimeType) {
+  return { "audio/wav": "wav", "audio/webm": "webm", "audio/mp4": "m4a", "audio/mpeg": "mp3", "audio/ogg": "ogg", "audio/flac": "flac" }[mimeType] || "";
+}
+
 /** The audio types Gemini reads inline, from what browsers record (Chrome: webm/opus, Safari: mp4/aac). */
 export function hearingMime(contentType) {
   const type = String(contentType || "").split(";")[0].trim().toLowerCase();
@@ -1704,7 +1745,13 @@ export function registerJuel(app, deps) {
     }
     if (!size) return res.status(400).json({ error: "The recording was empty." });
     try {
-      const heard = await deps.withUsage(who.userId, "juel", () => hearWithGemini({ audio: Buffer.concat(chunks), mimeType, signal: AbortSignal.timeout(20000) }));
+      const audio = Buffer.concat(chunks);
+      const format = openRouterAudioFormat(mimeType);
+      const heard = await deps.withUsage(who.userId, "juel", () => firstWords([
+        (signal) => hearWithGemini({ audio, mimeType, signal }),
+        // Gemini's slow tail is cut by a second provider on the same clip.
+        ...(openRouterConfigured() && format ? [(signal) => transcribeOpenRouter(audio, format, { signal }).then((text) => ({ text, model: "openrouter" }), (error) => (/No speech was detected/.test(error?.message) ? { text: "", model: "openrouter" } : Promise.reject(error)))] : []),
+      ], AbortSignal.timeout(20000)));
       const text = plausibleWords(heard.text, req.headers["x-recording-ms"]);
       if (text !== heard.text) console.warn(`[juel] dropped a made-up hearing (${req.headers["x-recording-ms"]} ms): ${heard.text.slice(0, 120)}`);
       res.json({ text });
