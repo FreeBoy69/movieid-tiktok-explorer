@@ -179,18 +179,17 @@ interface YouTubeMonetizationSnapshot {
   topVideos?: MonetizationMetricRow[];
 }
 
-// The agent's tabs. Report and Run log aren't in the bar: they open from their links
-// (/agent/<slug>/report, /runs) and Juel answers both; Overview shows the latest runs.
+// The agent's tabs: only the everyday ones. Remake, Compile, Report, and Run log open from the
+// More menu and their links (/agent/<slug>/voice, /compile, /report, /runs); Juel answers the
+// report and the run log too, and Overview shows the latest runs.
 const TABS: Array<{ id: AutomationTab; label: string; icon: ReactNode }> = [
   { id: "overview", label: "Overview", icon: <LayoutList className="h-4 w-4" /> },
   { id: "chat", label: "Chat", icon: <MessageSquare className="h-4 w-4" /> },
   { id: "uploads", label: "Uploads", icon: <Table2 className="h-4 w-4" /> },
   { id: "analytics", label: "Analytics", icon: <BarChart3 className="h-4 w-4" /> },
   { id: "setup", label: "Setup", icon: <Settings2 className="h-4 w-4" /> },
-  { id: "voice", label: "Remake", icon: <AudioLines className="h-4 w-4" /> },
-  { id: "compile", label: "Compile", icon: <Layers3 className="h-4 w-4" /> },
 ];
-const TAB_TITLES: Partial<Record<AutomationTab, string>> = { report: "Report", runs: "Run log" };
+const TAB_TITLES: Partial<Record<AutomationTab, string>> = { voice: "Remake", compile: "Compile", report: "Report", runs: "Run log" };
 
 type SetupSectionId = "essentials" | "format" | "sources" | "socials" | "learning" | "comments" | "compilations" | "rights";
 
@@ -1640,6 +1639,8 @@ function AgentHero({ agent, agents, compact: isCompact = false, tab, tabCounts, 
               <div className="ag-menu" role="menu">
                 <button type="button" role="menuitem" onClick={pick(onCreateAgent)}><Plus className="h-4 w-4" />New agent</button>
                 <button type="button" role="menuitem" onClick={pick(onRefresh)}><RefreshCw className="h-4 w-4" />Refresh</button>
+                <button type="button" role="menuitem" onClick={pick(() => onTab("voice"))}><AudioLines className="h-4 w-4" />Remake videos</button>
+                <button type="button" role="menuitem" onClick={pick(() => onTab("compile"))}><Layers3 className="h-4 w-4" />Compile a long video</button>
                 <button type="button" role="menuitem" onClick={pick(() => onTab("runs"))}><Clock3 className="h-4 w-4" />Run log</button>
                 <button type="button" role="menuitem" onClick={pick(() => onTab("report"))}><TrendingUp className="h-4 w-4" />Performance report</button>
                 <button type="button" role="menuitem" onClick={pick(openBackgroundProcessCenter)}><Activity className="h-4 w-4" />Background activity</button>
