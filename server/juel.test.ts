@@ -178,6 +178,31 @@ describe("Juel's turn", () => {
     expect(turn.reply).toBe("Your recap is ready.");
   });
 
+  it("talks on the quick model in live mode, and keeps his \"on it\" in front of the answer", async () => {
+    const options: any[] = [];
+    const prompts: string[] = [];
+    const think = async (prompt: string, opts: any) => {
+      prompts.push(prompt);
+      options.push(opts);
+      if (prompt.includes("Plan the turn")) {
+        opts?.onText?.('{"reply":"On it, checking.","plan":[{"specialist":"research","task":"look"}]}');
+        return { reply: "On it, checking.", plan: [{ specialist: "research", task: "look" }] };
+      }
+      if (prompt.includes("Write the reply")) {
+        opts?.onText?.('{"reply":"Rome is trending."}');
+        return { reply: "Rome is trending." };
+      }
+      return { calls: [], done: true, note: "Rome is trending." };
+    };
+    const seen: string[] = [];
+    const turn = await juelTurn({ message: "what's trending", live: true, think, call: async () => ({}), onReply: (t) => seen.push(t) });
+    expect(options[0].kind).toBe("text");
+    expect(options.at(-1).kind).toBe("text");
+    expect(prompts[0]).toContain("LIVE VOICE CHAT");
+    expect(turn.reply).toBe("On it, checking. Rome is trending.");
+    expect(seen).toEqual(["On it, checking.", "On it, checking. Rome is trending."]);
+  });
+
   it("runs reads planned together at once, and changes in order", async () => {
     let open = 0, most = 0;
     const order: string[] = [];

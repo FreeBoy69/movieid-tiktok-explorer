@@ -833,8 +833,10 @@ Return JSON only: {"read":["METHOD /path", ...], "calls":[{"method":"GET","path"
  *  under the reply (an operator's report, generations).
  *  `onReply` gets the reply's text so far while the model writes it.
  *  @param {{ message: string, history?: Array<{ role: string, content: string }>, context?: any, admin?: boolean, think: (prompt: string, options?: { onText?: (text: string) => void }) => Promise<any>, call: (call: any) => Promise<any>, page?: (action: any) => Promise<any>, show?: (items: any[], specialist: string) => number, onStep?: (step: { specialist: string, text: string }) => void, onReply?: (text: string) => void, shown?: () => string }} turn */
-export async function juelTurn({ message, history = [], context = {}, admin = false, think, call, page, show, onStep, onReply, shown }) {
-  const streamed = onReply ? { onText: replyStream(onReply) } : undefined;
+export async function juelTurn({ message, history = [], context = {}, admin = false, live = false, think, call, page, show, onStep, onReply, shown }) {
+  // Live (spoken) mode: the quick text model, so his first words come in about a second, not five.
+  const quick = live ? { kind: "text" } : {};
+  const streamed = onReply ? { ...quick, onText: replyStream(onReply) } : quick;
   const team = Object.entries(JUEL_SPECIALISTS).filter(([id]) => admin || id !== "admin").map(([id, s]) => `${id}: ${s.brief}`).join("\n");
   // The page's action list goes to its specialist's prompt, not into everyone's context.
   const { clientTools, ...where } = context || {};
@@ -854,11 +856,14 @@ ${history.slice(-12).map((m) => `${m.role === "user" ? "User" : "Juel"}: ${clipT
 USER: ${message}
 
 Plan the turn. If the message needs the app (reading data, changing something, making or posting something), list the specialists who do it, in order, each with a precise task; they share a board, so later ones see earlier results. If it's conversation or a question you can answer from the context, answer directly with no plan.
-Return JSON only: {"reply":"your answer when no plan is needed, else empty","plan":[{"specialist":"id","task":"..."}]}`, streamed);
+${live ? `${LIVE_VOICE}\nWhen the message needs a plan, "reply" is a few spoken words saying you're on it (like "On it, checking your channels now."), said while the specialists work.\n` : ""}Return JSON only: {"reply":"your answer when no plan is needed, else empty","plan":[{"specialist":"id","task":"..."}]}`, streamed);
   const steps = [];
   const board = [];
   const work = (Array.isArray(plan?.plan) ? plan.plan : []).filter((p) => JUEL_SPECIALISTS[p?.specialist] && (admin || p.specialist !== "admin")).slice(0, 4);
   if (!work.length) return { reply: String(plan?.reply || "").trim() || "I'm here. What should we do?", steps, board };
+  // Spoken: the final answer follows his "on it", as one reply, so nothing he already said is lost.
+  const ack = live ? String(plan?.reply || "").trim() : "";
+  const joined = (text) => (ack && text ? `${ack} ${text}` : text || ack);
   const step = (s) => {
     steps.push(s);
     onStep?.(s);
@@ -875,11 +880,14 @@ USER ASKED: ${message}
 THE BOARD:
 ${board.map((b) => `- ${b.specialist}: ${b.note}`).join("\n")}
 
-${shown?.() ? `SHOWN BELOW YOUR REPLY: ${shown()}. Don't repeat it; point to it in a few words.\n\n` : ""}Write the reply to the user: plain, short (under 120 words), what was done or found, with the facts that matter. Say what paid work started and that it spends credits; when something was refused for low credits, say what it needed. Never claim something happened that the board doesn't show.
+${shown?.() ? `SHOWN BELOW YOUR REPLY: ${shown()}. Don't repeat it; point to it in a few words.\n\n` : ""}${live ? `${LIVE_VOICE}\n` : ""}Write the reply to the user: plain, short (under ${live ? 50 : 120} words), what was done or found, with the facts that matter. Say what paid work started and that it spends credits; when something was refused for low credits, say what it needed. Never claim something happened that the board doesn't show.
 When the user asked for a report, numbers, a status overview, or a comparison, also give "report": a title, up to 6 headline numbers as cards, and a table (up to 8 columns, 20 rows) built only from facts on the board. Otherwise leave it out.
-Return JSON only: {"reply":"...", "report": {"title":"...", "cards":[{"label":"...","value":"...","tone":"good"|"warn"|"neutral"}], "table":{"columns":["..."],"rows":[["..."]]}} or null}`, streamed);
-  return { reply: String(final?.reply || "").trim() || board.map((b) => b.note).join(" "), steps, board, report: cleanReport(final?.report) };
+Return JSON only: {"reply":"...", "report": {"title":"...", "cards":[{"label":"...","value":"...","tone":"good"|"warn"|"neutral"}], "table":{"columns":["..."],"rows":[["..."]]}} or null}`, onReply ? { ...quick, onText: replyStream((text) => onReply(joined(text))) } : quick);
+  return { reply: joined(String(final?.reply || "").trim() || board.map((b) => b.note).join(" ")), steps, board, report: cleanReport(final?.report) };
 }
+
+/** How Juel talks in live mode, where every word is spoken aloud. */
+const LIVE_VOICE = "LIVE VOICE CHAT: your reply is spoken aloud the moment you write it. Talk like a friendly person on a call: one or two short sentences, no lists, markdown, links or emoji.";
 
 /** The "reply" string of a JSON object that's still being written, decoded as far as it goes ("" until it
  *  starts). Lets the reply show while the model writes it. */
@@ -1204,11 +1212,10 @@ export function registerJuel(app, deps) {
     return catalog.value;
   };
   /** @param {{ cookie?: string, authorization?: string }} signIn */
-  const quoteSources = async (signIn) => ({
-    pricing: await deps.credits?.pricing().catch(() => null),
-    history: (await deps.credits?.history().catch(() => null)) || {},
-    catalog: () => studioCatalog(signIn),
-  });
+  const quoteSources = async (signIn) => {
+    const [pricing, history] = await Promise.all([deps.credits?.pricing().catch(() => null), deps.credits?.history().catch(() => null)]);
+    return { pricing, history: history || {}, catalog: () => studioCatalog(signIn) };
+  };
   const snapshot = (userId) => deps.credits?.snapshot(userId).catch(() => null) ?? Promise.resolve(null);
   const signedIn = async (req, res) => {
     const session = await deps.session(req).catch(() => null);
@@ -1315,10 +1322,12 @@ export function registerJuel(app, deps) {
    *  new one), its events streamed through `send` (step, spend, credits, page, attach, done), and the
    *  conversation saved at the end. `auth` is how its route calls sign in: the browser's cookie or the
    *  caller's API token (whose scope then bounds what Juel may do). */
-  async function runTurn({ who, auth, message, threadId, where = {}, editFrom = -1, send, stop }) {
+  async function runTurn({ who, auth, message, threadId, where = {}, editFrom = -1, live = false, send, stop }) {
     const surface = String(where.surface || "").slice(0, 40);
     const entityId = String(where.entityId || "").slice(0, 120);
-    const threads = await deps.docs.read(who.userId, THREADS);
+    const signIn = { cookie: String(auth.cookie || ""), authorization: String(auth.authorization || "") };
+    // Looked up together, not one after another: the turn starts sooner.
+    const [threads, sources, before] = await Promise.all([deps.docs.read(who.userId, THREADS), quoteSources(signIn), snapshot(who.userId)]);
     let thread = threads.find((t) => t.id === threadId);
     if (!thread) {
       thread = { id: newId("juel"), title: message.slice(0, 60), surface, entityId, messages: [], createdAt: new Date().toISOString() };
@@ -1329,10 +1338,7 @@ export function registerJuel(app, deps) {
     delete thread.importedAt;
     // Editing an earlier message (or asking again) replaces it and everything after it.
     if (Number.isInteger(editFrom) && editFrom >= 0 && thread.messages[editFrom]?.role === "user") thread.messages.splice(editFrom);
-    const signIn = { cookie: String(auth.cookie || ""), authorization: String(auth.authorization || "") };
     const context = { surface, label: String(where.label || "").slice(0, 120), entityId, details: where.details ?? null, clientTools: pageTools(where.clientTools) };
-    const sources = await quoteSources(signIn);
-    const before = await snapshot(who.userId);
     const spends = [];
     const attachments = [];
     const attach = (attachment) => {
@@ -1437,7 +1443,8 @@ export function registerJuel(app, deps) {
     const at = new Date().toISOString();
     try {
       // A page that sends its live state (the open edit) needs no second look at the saved copy.
-      if (SURFACE_READS[surface] && entityId && !where.details) {
+      // Live mode skips it: speed matters more there, and the specialists can still look.
+      if (SURFACE_READS[surface] && entityId && !where.details && !live) {
         send({ type: "step", specialist: surface, text: "Looking at what you have open" });
         const open = await callRoute({ method: "GET", path: SURFACE_READS[surface](entityId) }, { baseUrl, ...signIn, admin: who.admin, signal: signal(20000) }).catch(() => null);
         if (open?.status === 200) {
@@ -1445,7 +1452,9 @@ export function registerJuel(app, deps) {
           urlsIn(open.data, seen);
         }
       }
-      const turn = await deps.withUsage(who.userId, "juel", () => juelTurn({ message, history: thread.messages, context, admin: who.admin, think, call, page, show, shown, onStep: (s) => send({ type: "step", ...s }), onReply: (text) => send({ type: "reply", text }) }));
+      const turn = await deps.withUsage(who.userId, "juel", () => juelTurn({ message, history: thread.messages, context, admin: who.admin, live, think, call, page, show, shown, onStep: (s) => send({ type: "step", ...s }), onReply: (text) => send({ type: "reply", text }) }));
+      // The answer is final: live mode speaks the rest now instead of waiting for the save.
+      send({ type: "said", text: turn.reply });
       if (turn.report) attach(turn.report);
       // What the turn has actually charged so far (Juel's own thinking included); long jobs keep charging after.
       const after = before ? await snapshot(who.userId) : null;
@@ -1497,7 +1506,7 @@ export function registerJuel(app, deps) {
       if (!res.writableEnded) res.write(`${JSON.stringify(event)}\n`);
     };
     const where = req.body?.context && typeof req.body.context === "object" ? req.body.context : {};
-    await runTurn({ who, auth: { cookie: req.headers.cookie }, message, threadId: req.body?.threadId, where, editFrom: typeof req.body?.editFrom === "number" ? req.body.editFrom : -1, send, stop });
+    await runTurn({ who, auth: { cookie: req.headers.cookie }, message, threadId: req.body?.threadId, where, editFrom: typeof req.body?.editFrom === "number" ? req.body.editFrom : -1, live: req.body?.live === true, send, stop });
     res.end();
   });
 

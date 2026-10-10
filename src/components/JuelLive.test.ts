@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { nextSentences, speakable, turnPause } from "./JuelLive";
+import { isEcho, nextSentences, resumeAt, speakable, turnPause } from "./JuelLive";
 import { reactionTo } from "./JuelMascot";
 
 describe("what Juel says out loud", () => {
@@ -23,8 +23,8 @@ describe("what Juel says out loud", () => {
 describe("turn-taking", () => {
   it("waits longer after a few words and less after a finished sentence", () => {
     expect(turnPause("make a", [])).toBeGreaterThan(turnPause("make a video about rome.", []));
-    expect(turnPause("make a video about rome", [])).toBeGreaterThanOrEqual(700);
-    expect(turnPause("make a video about rome", [])).toBeLessThanOrEqual(1500);
+    expect(turnPause("make a video about rome", [])).toBeGreaterThanOrEqual(550);
+    expect(turnPause("make a video about rome", [])).toBeLessThanOrEqual(1200);
   });
 });
 
@@ -36,5 +36,20 @@ describe("reactions", () => {
     expect(reactionTo("Your video is posted to Night Tales.", "juel")).toBe("party");
     expect(reactionTo("Sorry, I couldn't reach the voice service.", "juel")).toBe("sad");
     expect(reactionTo("make a recap of Alien", "user")).toBeNull();
+  });
+});
+
+describe("live mode echo and replies", () => {
+  it("knows his own words coming back from yours", () => {
+    const said = new Set(["hi", "there", "i'm", "juel", "what", "are", "we", "making", "today"]);
+    expect(isEcho("what are we making today", said)).toBe(true);
+    expect(isEcho("Hi there I'm Juel", said)).toBe(true);
+    expect(isEcho("make a video about rome", said)).toBe(false);
+    expect(isEcho("anything", new Set())).toBe(false);
+  });
+  it("never says the same words twice when the reply's text changes", () => {
+    expect(resumeAt("Hello there. How are", 13, "Hello there. How are you?")).toBe(13);
+    expect(resumeAt("Rome it is.!", 12, "Rome it is.")).toBe(11);
+    expect(resumeAt("On it.", 6, "Something else entirely.")).toBe(0);
   });
 });

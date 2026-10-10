@@ -12145,7 +12145,7 @@ async function generateTextJson(prompt, geminiFallback, options = {}) {
     if (typeof openRouterConfigured === "function" && openRouterConfigured()) {
         try {
             const result = await requestOpenRouter({
-                kind: options.deepSeekModel === deepSeekAgentModel() ? "agent" : "text",
+                kind: options.kind || (options.deepSeekModel === deepSeekAgentModel() ? "agent" : "text"),
                 messages: [{ role: "system", content: "Return valid compact JSON only. Include all requested fields." }, { role: "user", content: prompt }],
                 json: true, maxTokens: options.maxTokens || 4096,
                 signal: options.signal, timeoutMs: textProviderTimeoutMs(options.timeoutMs),

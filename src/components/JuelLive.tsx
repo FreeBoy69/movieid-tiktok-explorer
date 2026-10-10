@@ -83,13 +83,36 @@ export function nextSentences(text: string, from: number, final: boolean): { sen
 
 /** How long a pause ends your turn: short after a finished sentence, longer after a few words (you may
  *  still be thinking), and tuned to the gaps in how you speak. */
+const wordsOf = (text: string) => text.toLowerCase().replace(/[^\p{L}\p{N}' ]+/gu, " ").split(/\s+/).filter(Boolean);
+
+/** Whether words the microphone picked up are Juel's own voice coming back (the browser's voice isn't
+ *  removed by echo cancellation): mostly words he just said. */
+export function isEcho(heard: string, said: Set<string>): boolean {
+  const words = wordsOf(heard);
+  if (!words.length) return true;
+  if (!said.size) return false;
+  return words.filter((w) => said.has(w)).length / words.length >= 0.6;
+}
+
+/** Where to carry on speaking when the reply's text changes: after what was already said when the new text
+ *  still begins with it (or is all already said), else from the start (it's a different answer). */
+export function resumeAt(before: string, spokenUpTo: number, text: string): number {
+  const said = before.slice(0, spokenUpTo);
+  if (text.startsWith(said)) return spokenUpTo;
+  if (said.startsWith(text)) return text.length;
+  const a = wordsOf(said);
+  const b = wordsOf(text);
+  if (a.length && a.every((w, i) => b[i] === w)) return Math.min(spokenUpTo, text.length);
+  return 0;
+}
+
 export function turnPause(transcript: string, gaps: number[]): number {
   const sorted = [...gaps].sort((a, b) => a - b);
   const typical = sorted.length ? sorted[Math.floor(sorted.length / 2)] : 450;
-  let pause = Math.min(1500, Math.max(700, typical * 2.2));
+  let pause = Math.min(1200, Math.max(550, typical * 1.8));
   const words = transcript.trim().split(/\s+/).filter(Boolean).length;
-  if (/[.!?]$/.test(transcript.trim())) pause *= 0.75;
-  if (words <= 2) pause += 400;
+  if (/[.!?]$/.test(transcript.trim())) pause *= 0.7;
+  if (words <= 2) pause += 250;
   return Math.round(pause);
 }
 
@@ -101,6 +124,7 @@ export function JuelLive({
   interrupt,
   onEnd,
   error = "",
+  finished = false,
 }: {
   /** The reply as it streams (null when no turn is running). */
   reply: string | null;
@@ -112,6 +136,8 @@ export function JuelLive({
   onEnd: () => void;
   /** Why the last turn failed, if it did (the panel's error). */
   error?: string;
+  /** The answer is final (the server is still saving): speak the rest now. */
+  finished?: boolean;
 }) {
   const [phase, setPhase] = useState<Phase>("starting");
   const [heard, setHeard] = useState("");
@@ -145,7 +171,10 @@ export function JuelLive({
   const recognition = useRef<Recognition | null>(null);
   // The recogniser keeps everything it heard since it started (Juel's own voice included): a clean
   // session starts whenever the floor goes back to you. It restarts itself (see onend).
+  // The first result of the recogniser's session that is yours (earlier ones were his voice coming back).
+  const firstMine = useRef(0);
   const freshEars = () => {
+    firstMine.current = 0;
     try {
       recognition.current?.abort();
     } catch {}
@@ -193,17 +222,32 @@ export function JuelLive({
     [voice],
   );
 
+  // One sentence at a time: held from the moment a sentence is taken, while its voice may still be loading.
+  const busy = useRef(false);
+  // Words Juel said this turn, and when he stopped: what the microphone hears of them is ignored.
+  const saidWords = useRef<Set<string>>(new Set());
+  const stoppedAt = useRef(0);
   const playNext = useCallback(async () => {
-    if (playing.current || !queue.current.length) return;
+    if (busy.current || playing.current || !queue.current.length) return;
+    busy.current = true;
     const item = queue.current.shift()!;
     const gen = generation.current;
+    for (const w of wordsOf(item.text)) saidWords.current.add(w);
     setSaying(item.text);
     go("speaking");
     setJuelMood("speak");
     const blob = await item.audio;
-    if (gen !== generation.current) return;
+    if (gen !== generation.current) {
+      busy.current = false;
+      return;
+    }
+    let finished = false;
     const done = () => {
+      if (finished) return;
+      finished = true;
       playing.current = null;
+      busy.current = false;
+      stoppedAt.current = performance.now();
       setMouth(0);
       if (gen !== generation.current) return;
       if (queue.current.length) void playNext();
@@ -282,6 +326,8 @@ export function JuelLive({
 
   const stopSpeaking = useCallback(() => {
     generation.current += 1;
+    busy.current = false;
+    stoppedAt.current = performance.now();
     queue.current = [];
     playing.current?.pause();
     playing.current = null;
@@ -296,14 +342,14 @@ export function JuelLive({
     if (reply === null) return;
     turnDone.current = false;
     const text = speakable(reply);
-    if (text.length < spokenUpTo.current) spokenUpTo.current = 0;
+    spokenUpTo.current = resumeAt(lastSeen.current, spokenUpTo.current, text);
     const { sentences, next } = nextSentences(text, spokenUpTo.current, false);
     spokenUpTo.current = next;
     if (sentences.length) enqueue(sentences);
     lastSeen.current = text;
   }, [reply, enqueue]);
   useEffect(() => {
-    if (sending) {
+    if (sending && !finished) {
       if (phaseRef.current !== "speaking") go("thinking");
       return;
     }
@@ -327,7 +373,7 @@ export function JuelLive({
     spokenUpTo.current = 0;
     if (sentences.length) enqueue(sentences);
     else if (!playing.current && !queue.current.length) go("listening");
-  }, [sending, lastReply, enqueue]);
+  }, [sending, finished, lastReply, enqueue]);
 
   // ---------- Audio in: speech recognition, a voice-activity meter, and turn-taking ----------
   const stream = useRef<MediaStream | null>(null);
@@ -343,7 +389,13 @@ export function JuelLive({
   const discard = useRef(false);
   const live = useRef(true);
 
-  const commit = useCallback((text: string) => {
+  // Set while a recording is being transcribed: that turn's words are on their way.
+  const transcribing = useRef(false);
+  const commit = useCallback((text: string, fromRecording = false) => {
+    // One turn per thing you said: a second report of the same words (the recogniser and the recording
+    // both finishing) is dropped.
+    if (fromRecording ? !transcribing.current : phaseRef.current !== "listening" && phaseRef.current !== "hearing") return;
+    transcribing.current = false;
     const said = text.trim();
     transcript.current = "";
     gaps.current = [];
@@ -354,6 +406,7 @@ export function JuelLive({
     turnDone.current = false;
     replyBefore.current = lastReplyRef.current;
     lastSeen.current = "";
+    saidWords.current = new Set();
     discard.current = true;
     if (recorder.current?.state === "recording") recorder.current.stop();
     go("thinking");
@@ -361,13 +414,13 @@ export function JuelLive({
   }, []);
 
   // Talking over Juel stops him and gives you the floor.
-  const bargeIn = useCallback(() => {
+  const bargeIn = useCallback((keepEars = false) => {
     if (phaseRef.current !== "speaking" && phaseRef.current !== "thinking") return;
     stopSpeaking();
     interruptRef.current();
     turnDone.current = true;
     transcript.current = "";
-    freshEars();
+    if (!keepEars) freshEars();
     setJuelMood("listen");
     go("hearing");
   }, [stopSpeaking]);
@@ -421,12 +474,15 @@ export function JuelLive({
           quietSince = 0;
           if (!speaking && now - loudSince > (phaseNow === "speaking" ? (voiceRef.current === INSTANT ? 450 : 280) : 120)) {
             speaking = true;
-            if (phaseNow === "speaking" || phaseNow === "thinking") bargeIn();
-            else if (phaseNow === "listening") {
+            // With a recogniser, interrupting waits for words that aren't his own (see onresult): loudness
+            // alone can be his voice coming back through the speakers.
+            if (phaseNow === "speaking" || phaseNow === "thinking") {
+              if (!SR && voiceRef.current !== INSTANT) bargeIn();
+            } else if (phaseNow === "listening" && now - stoppedAt.current > 700) {
               setJuelMood("listen");
               go("hearing");
             }
-            if (recorder.current?.state === "inactive" && (phaseRef.current === "listening" || phaseRef.current === "hearing")) {
+            if (recorder.current?.state === "inactive" && (phaseRef.current === "listening" || phaseRef.current === "hearing") && now - stoppedAt.current > 700) {
               chunks.current = [];
               discard.current = false;
               recorder.current.start();
@@ -461,11 +517,27 @@ export function JuelLive({
         rec.interimResults = true;
         rec.lang = navigator.language || "en-US";
         rec.onresult = (event) => {
-          const p = phaseRef.current;
-          if (mutedRef.current || (p !== "listening" && p !== "hearing")) return;
+          let p = phaseRef.current;
+          if (mutedRef.current) return;
+          // What's new in this result: his own words coming back are ignored while he talks and just after.
+          let latest = "";
+          for (let i = event.resultIndex; i < event.results.length; i++) latest += ` ${event.results[i][0].transcript}`;
+          const echoing = p === "speaking" || performance.now() - stoppedAt.current < 1500;
+          if (echoing && isEcho(latest, saidWords.current)) {
+            if (event.results[event.results.length - 1]?.isFinal) firstMine.current = event.results.length;
+            return;
+          }
+          if (p === "speaking" || p === "thinking") {
+            // Real words from you while he talks or thinks: he stops and listens, from those words on.
+            if (wordsOf(latest).length < 2) return;
+            firstMine.current = event.resultIndex;
+            bargeIn(true);
+            p = phaseRef.current;
+          }
+          if (p !== "listening" && p !== "hearing") return;
           let finalText = "";
           let interim = "";
-          for (let i = 0; i < event.results.length; i++) {
+          for (let i = firstMine.current; i < event.results.length; i++) {
             const result = event.results[i];
             if (result.isFinal) finalText += result[0].transcript;
             else interim += result[0].transcript;
@@ -494,6 +566,7 @@ export function JuelLive({
         };
         // Recognition stops on its own now and then; keep it going while live.
         rec.onend = () => {
+          firstMine.current = 0;
           if (live.current) window.setTimeout(() => live.current && (() => { try { rec.start(); } catch {} })(), 150);
         };
         rec.onerror = (event) => {
@@ -520,11 +593,18 @@ export function JuelLive({
             return;
           }
           if (phaseRef.current !== "hearing" && phaseRef.current !== "listening") return;
+          transcribing.current = true;
           go("thinking");
           setJuelMood("think");
           const response = await fetch("/api/automation/agents/chat/transcribe", { method: "POST", headers: { "Content-Type": blob.type || "application/octet-stream" }, body: blob }).catch(() => null);
           const data = response?.ok ? await response.json().catch(() => ({})) : {};
-          commit(String(data.text || ""));
+          const text = String(data.text || "");
+          // A recording that caught only his voice is no turn.
+          if (isEcho(text, saidWords.current) && saidWords.current.size) {
+            transcribing.current = false;
+            return go("listening");
+          }
+          commit(text, true);
         };
         recorder.current = rec;
       } else if (!SR) {

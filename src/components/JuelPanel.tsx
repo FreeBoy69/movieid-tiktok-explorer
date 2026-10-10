@@ -20,7 +20,7 @@ type Step = { specialist: string; text: string };
 type Message = { role: "user" | "assistant"; content: string; steps?: Step[]; spends?: JuelSpend[]; attachments?: JuelAttachment[]; applied?: number; charged?: number; error?: boolean; stopped?: boolean; at: string };
 type Thread = { id: string; title: string; surface?: string; entityId?: string; messages: Message[] };
 type ThreadSummary = { id: string; title: string; surface: string; entityId: string; updatedAt: string };
-type Live = { text: string; reply: string; steps: Step[]; spends: JuelSpend[]; attachments: JuelAttachment[]; startedAt: number };
+type Live = { text: string; reply: string; steps: Step[]; spends: JuelSpend[]; attachments: JuelAttachment[]; startedAt: number; said?: boolean };
 /** What a page offers Juel to do on it, in the browser: which specialist uses it, and each action's args,
  *  what it does, its risk, and (for paid ones) a cost spec like "speech" or "image:2" for the quote. */
 export type JuelPageTools = { specialist: string; actions: Record<string, { args: string; about: string; risk: "read" | "change" | "paid" | "publish" | "delete"; cost?: string }> };
@@ -331,7 +331,7 @@ export function JuelPanel({ onClose, embedded = false, headStart, leaving = fals
     const controller = new AbortController();
     stopper.current = controller;
     try {
-      const response = await fetch("/api/juel/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: text, threadId: thread?.id, context: now, ...(from !== null ? { editFrom: from } : {}) }), signal: controller.signal });
+      const response = await fetch("/api/juel/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: text, threadId: thread?.id, context: now, ...(from !== null ? { editFrom: from } : {}), ...(liveMode ? { live: true } : {}) }), signal: controller.signal });
       if (!response.ok || !response.body) {
         const data = await response.json().catch(() => ({}));
         throw new Error(data.error || "Juel couldn't answer");
@@ -348,7 +348,8 @@ export function JuelPanel({ onClose, embedded = false, headStart, leaving = fals
         for (const line of lines) {
           if (!line.trim()) continue;
           const item = JSON.parse(line);
-          if (item.type === "reply") {
+          if (item.type === "said") setLive((l) => (l ? { ...l, reply: String(item.text || ""), said: true } : l));
+          else if (item.type === "reply") {
             if (Date.now() > busyUntil) setJuelMood("talk");
             setLive((l) => (l ? { ...l, reply: String(item.text || "") } : l));
           } else if (item.type === "step") {
@@ -386,7 +387,7 @@ export function JuelPanel({ onClose, embedded = false, headStart, leaving = fals
       setLive(null);
       if (!settling.current) setJuelMood("idle");
     }
-  }, [message, sending, thread, context, editFrom]);
+  }, [message, sending, thread, context, editFrom, liveMode]);
 
   // A message asked from the page's dock: sent once the page's conversation has loaded.
   const [asked, setAsked] = useState(0);
@@ -469,6 +470,7 @@ export function JuelPanel({ onClose, embedded = false, headStart, leaving = fals
           interrupt={() => stopper.current?.abort()}
           onEnd={() => setLiveMode(false)}
           error={error}
+          finished={Boolean(live?.said)}
         />
       ) : (<>
       <div className="juel-body" ref={body} onScroll={onScroll}>
