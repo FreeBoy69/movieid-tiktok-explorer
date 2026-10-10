@@ -303,6 +303,18 @@
 /* An agent's Chat tab: the conversation column stays centred beside the sidebar. */
 .agent-juel .juel-split .juel-embedded { max-width: none; }
 
+/* ---------- Expanded (the head's expand button): the whole page below the header, on the app's own
+   surface, the conversations as the sidebar and the chat as a centred reading column. ---------- */
+.juel-split.is-full { position: fixed; top: 56px; right: 0; bottom: 0; left: 0; z-index: 1200; height: auto; background: var(--ui-bg); animation: juel-full-in 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+.juel-split.is-full.is-leaving { opacity: 0; transition: opacity 0.2s ease; }
+.juel-split.is-full > .juel:not(.is-live) { position: relative; top: auto; right: auto; bottom: auto; width: auto; height: 100%; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.juel-split.is-full > .juel .juel-head { padding-left: 20px; }
+.juel-split.is-live > .juel-side { display: none; }
+@keyframes juel-full-in { from { opacity: 0; transform: scale(0.992); } }
+/* On a phone the panel already fills the screen. */
+@media (max-width: 760px) { .juel-full-btn { display: none; } }
+@media (prefers-reduced-motion: reduce) { .juel-split.is-full { animation: none; } .juel-split.is-full.is-leaving { transition: none; } }
+
 /* ---------- Side navigation rows (SideNav / SideNavItem), and a chat's history as a plain list ---------- */
 .juel-side-title { min-width: 0; flex: 1; }
 .juel-side-rail { display: grid; place-items: center; margin: 2px 0 6px; }

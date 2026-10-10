@@ -5,7 +5,7 @@
 import { FormEvent, type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import gsap from "gsap";
-import { AlertCircle, ArrowDown, AudioLines, ArrowUp, ArrowUpRight, Check, ChevronRight, Coins, Copy, History, Loader2, MapPin, Mic, PanelLeftClose, PanelLeftOpen, Pencil, Plus, RotateCcw, Search, Sparkles, Square, Trash2, X } from "lucide-react";
+import { AlertCircle, ArrowDown, AudioLines, ArrowUp, ArrowUpRight, Check, ChevronRight, Coins, Copy, History, Loader2, MapPin, Maximize2, Mic, Minimize2, PanelLeftClose, PanelLeftOpen, Pencil, Plus, RotateCcw, Search, Sparkles, Square, Trash2, X } from "lucide-react";
 import { readDeepLink } from "../utils/tiktokRoute";
 import { toast } from "../utils/toast";
 import { FormattedChatText } from "./AgentStructuredContent";
@@ -133,6 +133,15 @@ const DEFAULT_STARTERS = [
 
 /** Juel's conversation. The header panel uses it; a page can embed it in place of its own chat, where it
  *  fills its container and has no close button. `headStart` goes at the head's start (a page's collapse). */
+const FULL_KEY = "juel:full";
+const readFull = () => {
+  try {
+    return window.localStorage.getItem(FULL_KEY) === "1";
+  } catch {
+    return false;
+  }
+};
+
 export function JuelPanel({ onClose, embedded = false, headStart, leaving = false, onLeft, sidebar = false, sideHead, sideRail, sideNav }: { onClose?: () => void; embedded?: boolean; headStart?: ReactNode; leaving?: boolean; onLeft?: () => void; /** Conversations as a sidebar beside the chat (wide screens), instead of the head's dropdown. */ sidebar?: boolean; /** The sidebar's top (a page's switcher), its closed-rail item, and its nav rows above the chats. */ sideHead?: ReactNode; sideRail?: ReactNode; sideNav?: ReactNode }) {
   const [thread, setThread] = useState<Thread | null>(null);
   const [message, setMessage] = useState("");
@@ -144,6 +153,18 @@ export function JuelPanel({ onClose, embedded = false, headStart, leaving = fals
   const [error, setError] = useState("");
   const [announced, setAnnounced] = useState<JuelContext | null>(lastContext);
   const [historyOpen, setHistoryOpen] = useState(false);
+  // Expanded: the whole page below the header, with the conversations as a sidebar (the floating
+  // panel only; an embedded one is sized by its page). Remembered across opens.
+  const [full, setFull] = useState(readFull);
+  const toggleFull = () =>
+    setFull((on) => {
+      try {
+        window.localStorage.setItem(FULL_KEY, on ? "0" : "1");
+      } catch {}
+      return !on;
+    });
+  const expanded = full && !embedded;
+  const wide = sidebar || expanded;
   const [copied, setCopied] = useState(-1);
   const bottom = useRef<HTMLDivElement>(null);
   const body = useRef<HTMLDivElement>(null);
@@ -435,7 +456,7 @@ export function JuelPanel({ onClose, embedded = false, headStart, leaving = fals
   const intro = context.intro || { title: "Ask Juel anything in AutoYT", body: "It works with a team of specialists (recaps, editing, publishing, research, and more), runs what you ask straight away, and shows what each paid step costs in credits." };
 
   const panel = (
-    <aside ref={root} className={`juel${embedded ? " juel-embedded" : ""}${sidebar ? " has-side" : ""}${liveMode ? " is-live" : ""}`} role={embedded ? undefined : "dialog"} aria-label="Juel">
+    <aside ref={root} className={`juel${embedded ? " juel-embedded" : ""}${wide ? " has-side" : ""}${liveMode ? " is-live" : ""}`} role={embedded ? undefined : "dialog"} aria-label="Juel">
       <header className="juel-head">
         {headStart}
         <span className="juel-title"><span className="juel-mark" aria-hidden="true"><JuelMascot pose={mood} size={20} framing="bust" /></span>Juel</span>
@@ -446,6 +467,11 @@ export function JuelPanel({ onClose, embedded = false, headStart, leaving = fals
         </button>
         <button type="button" className={`juel-icon juel-history-btn${historyOpen ? " is-on" : ""}`} onClick={() => setHistoryOpen((o) => !o)} aria-label="Conversations" aria-expanded={historyOpen} title="Conversations"><History size={16} /></button>
         <button type="button" className="juel-icon" onClick={newChat} aria-label="New conversation" title="New conversation"><Plus size={16} /></button>
+        {!embedded ? (
+          <button type="button" className="juel-icon juel-full-btn" onClick={toggleFull} aria-pressed={full} aria-label={full ? "Back to the side panel" : "Expand to the whole page"} title={full ? "Back to the side panel" : "Expand to the whole page"}>
+            {full ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+          </button>
+        ) : null}
         {onClose ? <button type="button" className="juel-icon" onClick={onClose} aria-label="Close Juel" title="Close (Esc)"><X size={16} /></button> : null}
       </header>
       {historyOpen ? (
@@ -579,9 +605,9 @@ export function JuelPanel({ onClose, embedded = false, headStart, leaving = fals
       </>)}
     </aside>
   );
-  if (!sidebar) return panel;
+  if (!wide) return panel;
   return (
-    <div className="juel-split">
+    <div className={`juel-split${expanded ? " is-full" : ""}${expanded && leaving ? " is-leaving" : ""}${liveMode ? " is-live" : ""}`}>
       <JuelSidebar
         context={context}
         head={sideHead}
