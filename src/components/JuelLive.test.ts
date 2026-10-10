@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isEcho, nextSentences, resumeAt, speakable, turnPause } from "./JuelLive";
+import { isEcho, nextSentences, resumeAt, speakable, thoughtState, turnPause } from "./JuelLive";
 import { reactionTo } from "./JuelMascot";
 
 describe("what Juel says out loud", () => {
@@ -21,10 +21,26 @@ describe("what Juel says out loud", () => {
 });
 
 describe("turn-taking", () => {
-  it("waits longer after a few words and less after a finished sentence", () => {
-    expect(turnPause("make a", [])).toBeGreaterThan(turnPause("make a video about rome.", []));
-    expect(turnPause("make a video about rome", [])).toBeGreaterThanOrEqual(550);
-    expect(turnPause("make a video about rome", [])).toBeLessThanOrEqual(1200);
+  it("knows a finished thought from one that stopped mid-sentence", () => {
+    expect(thoughtState("make me a video about ancient Rome")).toBe("done");
+    expect(thoughtState("what's trending this week?")).toBe("done");
+    expect(thoughtState("hello")).toBe("done");
+    expect(thoughtState("yes")).toBe("done");
+    expect(thoughtState("thank you")).toBe("done");
+    expect(thoughtState("make me a video about")).toBe("open");
+    expect(thoughtState("I want to make a video and")).toBe("open");
+    expect(thoughtState("can you um")).toBe("open");
+    expect(thoughtState("check the")).toBe("open");
+    expect(thoughtState("new channel")).toBe("unsure");
+    expect(thoughtState("")).toBe("open");
+  });
+  it("answers quickly after a finished thought and waits after an unfinished one", () => {
+    expect(turnPause("make me a video about rome", [], true)).toBeLessThanOrEqual(300);
+    expect(turnPause("make me a video about rome", [])).toBeLessThanOrEqual(500);
+    expect(turnPause("make me a video about", [])).toBeGreaterThanOrEqual(1200);
+    expect(turnPause("new channel", [])).toBeGreaterThan(turnPause("new channel", [], true));
+    // A slow talker gets more room than a quick one.
+    expect(turnPause("make me a video", [700, 700, 700])).toBeGreaterThan(turnPause("make me a video", [250, 250, 250]));
   });
 });
 

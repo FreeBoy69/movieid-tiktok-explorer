@@ -108,14 +108,37 @@ export function resumeAt(before: string, spokenUpTo: number, text: string): numb
   return 0;
 }
 
-export function turnPause(transcript: string, gaps: number[]): number {
+// Words a thought doesn't end on: joining words, articles, prepositions, fillers, and the start of a request.
+const OPEN_ENDINGS = new Set("and or but so because if then than that which who whose where when while though although unless until the a an my your his her their our its this these those some any every to of for with without about from into onto in on at by as like um uh er erm hmm mean basically actually also just really very more most less please is are was were be been being am do does did can could would should will shall might must have has had want wanna gonna gotta need let make give get show tell put add use try".split(" "));
+// Whole replies that are complete on their own.
+const SHORT_REPLIES = /^(hi|hey|hello|yo|yes|yeah|yep|yup|no|nope|nah|ok|okay|sure|thanks|thank you|cool|great|perfect|nice|stop|wait|continue|go ahead|go on|do it|sounds good|got it|never mind|nevermind|bye|goodbye|that's it|that's all|exactly|right|correct|why|how|what)$/;
+
+/** Whether what you've said so far sounds like a finished thought: "done" (a whole request, question or
+ *  answer), "open" (stopped mid-sentence on "and", "the", "to", "um"...), or "unsure". */
+export function thoughtState(transcript: string): "done" | "open" | "unsure" {
+  const text = transcript.toLowerCase().replace(/[^\p{L}\p{N}' ?.!]+/gu, " ").replace(/\s+/g, " ").trim();
+  if (!text) return "open";
+  const bare = text.replace(/[?.!]+$/, "").trim();
+  if (SHORT_REPLIES.test(bare)) return "done";
+  const words = bare.split(" ");
+  if (OPEN_ENDINGS.has(words[words.length - 1])) return "open";
+  if (/[?.!]$/.test(text) && words.length >= 2) return "done";
+  if (words.length >= 4) return "done";
+  return "unsure";
+}
+
+/** How long a silence ends your turn (RealtimeVoiceChat's dynamic pause): short after a finished thought,
+ *  long when you stopped mid-sentence, a little shorter again once the recogniser has marked the phrase
+ *  final (it heard you stop), and scaled to how quickly you talk. */
+export function turnPause(transcript: string, gaps: number[], final = false): number {
   const sorted = [...gaps].sort((a, b) => a - b);
-  const typical = sorted.length ? sorted[Math.floor(sorted.length / 2)] : 450;
-  let pause = Math.min(1200, Math.max(550, typical * 1.8));
-  const words = transcript.trim().split(/\s+/).filter(Boolean).length;
-  if (/[.!?]$/.test(transcript.trim())) pause *= 0.7;
-  if (words <= 2) pause += 250;
-  return Math.round(pause);
+  const typical = sorted.length ? sorted[Math.floor(sorted.length / 2)] : 400;
+  // Slow, deliberate talkers get a little more room; quick ones a little less.
+  const pace = Math.min(1.4, Math.max(0.8, typical / 400));
+  const state = thoughtState(transcript);
+  // Mid-sentence, people pause to think: that wait never shrinks for a quick talker.
+  if (state === "open") return Math.round((final ? 1600 : 1800) * Math.max(1, pace));
+  return Math.round((state === "done" ? (final ? 220 : 450) : final ? 450 : 800) * pace);
 }
 
 export function JuelLive({
@@ -488,6 +511,8 @@ export function JuelLive({
   const gaps = useRef<number[]>([]);
   const lastWord = useRef(0);
   const endTimer = useRef(0);
+  // When the microphone last heard sound above the noise floor.
+  const voiceAt = useRef(0);
   const recorder = useRef<MediaRecorder | null>(null);
   const chunks = useRef<Blob[]>([]);
   // Every utterance is also recorded. If the browser's recogniser produced no words for it (a network or
@@ -581,6 +606,7 @@ export function JuelLive({
         const loudVoice = voiceRef.current === INSTANT ? 0.09 : 0.045;
         const threshold = Math.max(phaseNow === "speaking" ? loudVoice : 0.018, noise * (phaseNow === "speaking" ? (voiceRef.current === INSTANT ? 8 : 5) : 3));
         if (!mutedRef.current && rms > threshold) {
+          voiceAt.current = now;
           loudSince ||= now;
           quietSince = 0;
           if (!speaking && now - loudSince > (phaseNow === "speaking" ? (voiceRef.current === INSTANT ? 450 : 280) : 120)) {
@@ -604,7 +630,7 @@ export function JuelLive({
           quietSince ||= now;
           // A pause ends the recorded utterance. With the recogniser working it is thrown away (its own
           // timer ends the turn); with no words from it, the recording is transcribed.
-          if (speaking && now - quietSince > Math.max(SR ? 1300 : 0, turnPause(transcript.current, gaps.current))) {
+          if (speaking && now - quietSince > Math.max(SR ? 1300 : 0, turnPause(transcript.current, gaps.current, true))) {
             speaking = false;
             if (recorder.current?.state === "recording") {
               discard.current = Boolean(SR && transcript.current);
@@ -664,16 +690,23 @@ export function JuelLive({
             setJuelMood("listen");
             go("hearing");
           }
+          const final = Boolean(event.results[event.results.length - 1]?.isFinal);
           window.clearTimeout(endTimer.current);
-          endTimer.current = window.setTimeout(() => {
+          const end = () => {
             if (phaseRef.current !== "hearing") return;
+            // Still making sound (a word the recogniser hasn't reported yet): give it a moment longer.
+            if (performance.now() - voiceAt.current < 160) {
+              endTimer.current = window.setTimeout(end, 160);
+              return;
+            }
             const said = transcript.current;
             // A fresh session for the next turn, so old words don't come back.
             try {
               rec.abort();
             } catch {}
             commit(said);
-          }, turnPause(text, gaps.current));
+          };
+          endTimer.current = window.setTimeout(end, turnPause(text, gaps.current, final));
         };
         // Recognition stops on its own now and then; keep it going while live.
         rec.onend = () => {
