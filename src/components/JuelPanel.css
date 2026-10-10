@@ -256,3 +256,44 @@
 .juel-gen { padding: 10px; border-radius: 16px; }
 .juel-gen-images button, .juel-gen-video { border-radius: 10px; }
 .juel-action { min-height: 34px; border-radius: 999px; padding: 6px 13px; }
+
+/* ---------- Conversations as a sidebar (an agent's Chat tab), in Vibe Edit's sidebar language:
+   a slim icon column that opens into a card. Wide screens only; phones keep the head's dropdown. ---------- */
+.juel-split { display: flex; min-width: 0; min-height: 0; height: 100%; flex: 1; }
+.juel-split > .juel { min-width: 0; flex: 1; }
+.juel-side { display: flex; flex: none; min-height: 0; flex-direction: column; align-items: center; gap: 4px; width: 56px; padding: 12px 9px; }
+.juel-side.is-open { width: 272px; align-items: stretch; margin: 12px 0 12px 12px; padding: 10px; overflow-y: auto; border-radius: 18px; background: var(--ui-panel); box-shadow: 0 0 0 1px var(--ui-line), 0 2px 6px -2px rgb(0 0 0 / 0.08); animation: juel-side-in 0.22s cubic-bezier(0.16, 1, 0.3, 1); scrollbar-width: thin; }
+@keyframes juel-side-in { from { opacity: 0; transform: translateX(-6px); } }
+.juel-side-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.juel-side-head strong { flex: 1; color: var(--ui-text); font-size: 15px; font-weight: 650; letter-spacing: -0.01em; }
+.juel-side-btn { display: grid; width: 38px; height: 38px; flex: none; place-items: center; padding: 0; border: 0; border-radius: 11px; background: transparent; color: var(--ui-text-muted); cursor: pointer; transition: background 0.18s ease, color 0.18s ease; }
+.juel-side-btn:hover { background: var(--ui-raised); color: var(--ui-text); }
+.juel-side-btn > span { display: none; }
+.juel-side.is-open .juel-side-row { display: flex; width: 100%; justify-content: flex-start; gap: 11px; padding: 0 10px; color: var(--ui-text); font: 500 14px/1 var(--font-sans); }
+.juel-side.is-open .juel-side-row > span { display: block; }
+.juel-side.is-open .juel-side-row > svg { color: var(--ui-text-muted); }
+.juel-side-search { display: flex; height: 36px; align-items: center; gap: 8px; margin: 2px 0 4px; padding: 0 10px; border-radius: 11px; background: var(--ui-sunken); box-shadow: 0 0 0 1px var(--ui-line) inset; color: var(--ui-text-faint); }
+.juel-side-search input { min-width: 0; flex: 1; border: 0; outline: none; background: transparent; color: var(--ui-text); font: 400 14px/1 var(--font-sans); }
+.juel-side-search input::placeholder { color: var(--ui-text-faint); }
+.juel-side-list { display: grid; gap: 10px; margin-top: 6px; }
+.juel-side-list h4 { margin: 4px 10px 4px; color: var(--ui-text-faint); font-size: 12px; font-weight: 600; }
+.juel-side-list ul { display: grid; gap: 1px; margin: 0; padding: 0; list-style: none; }
+.juel-side-list li { position: relative; display: flex; align-items: center; border-radius: 10px; }
+.juel-side-list li:hover { background: var(--ui-raised); }
+.juel-side-list li.is-current { background: var(--ui-sunken); }
+.juel-side-item { display: flex; min-width: 0; min-height: 36px; flex: 1; align-items: center; gap: 8px; padding: 0 10px; border: 0; border-radius: 10px; background: transparent; color: var(--ui-text); font: 500 13.5px/1.3 var(--font-sans); text-align: left; cursor: pointer; }
+.juel-side-item span { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.juel-side-list li.is-current .juel-side-item { font-weight: 600; }
+.juel-side-item time { flex: none; color: var(--ui-text-faint); font-family: var(--font-mono); font-size: 10.5px; }
+.juel-side-delete { display: grid; width: 26px; height: 26px; flex: none; place-items: center; margin-right: 4px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--ui-text-faint); opacity: 0; cursor: pointer; transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease; }
+.juel-side-list li:hover .juel-side-delete, .juel-side-delete:focus-visible { opacity: 1; }
+.juel-side-list li:hover .juel-side-item time { display: none; }
+.juel-side-delete:hover { background: var(--ui-panel); color: var(--ui-danger); }
+.juel-side-empty { display: flex; align-items: center; gap: 8px; margin: 4px 10px; color: var(--ui-text-muted); font-size: 13px; line-height: 1.5; }
+@media (hover: none) { .juel-side-delete { opacity: 1; } .juel-side-list li .juel-side-item time { display: none; } }
+/* The sidebar replaces the head's history dropdown where there's room for it. */
+@media (min-width: 900px) { .juel.has-side .juel-history-btn { display: none; } }
+@media (max-width: 899px) { .juel-side { display: none; } }
+@media (prefers-reduced-motion: reduce) { .juel-side.is-open { animation: none; } }
+/* An agent's Chat tab: the conversation column stays centred beside the sidebar. */
+.agent-juel .juel-split .juel-embedded { max-width: none; }

@@ -5,7 +5,7 @@
 import { FormEvent, type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import gsap from "gsap";
-import { AlertCircle, ArrowDown, ArrowUp, ArrowUpRight, Check, ChevronRight, Coins, Copy, History, Loader2, MapPin, Mic, Pencil, Plus, RotateCcw, Sparkles, Square, Trash2, X } from "lucide-react";
+import { AlertCircle, ArrowDown, ArrowUp, ArrowUpRight, Check, ChevronRight, Coins, Copy, History, Loader2, MapPin, Mic, PanelLeftClose, PanelLeftOpen, Pencil, Plus, RotateCcw, Search, Sparkles, Square, Trash2, X } from "lucide-react";
 import { readDeepLink } from "../utils/tiktokRoute";
 import { toast } from "../utils/toast";
 import { FormattedChatText } from "./AgentStructuredContent";
@@ -130,7 +130,7 @@ const DEFAULT_STARTERS = [
 
 /** Juel's conversation. The header panel uses it; a page can embed it in place of its own chat, where it
  *  fills its container and has no close button. `headStart` goes at the head's start (a page's collapse). */
-export function JuelPanel({ onClose, embedded = false, headStart, leaving = false, onLeft }: { onClose?: () => void; embedded?: boolean; headStart?: ReactNode; leaving?: boolean; onLeft?: () => void }) {
+export function JuelPanel({ onClose, embedded = false, headStart, leaving = false, onLeft, sidebar = false }: { onClose?: () => void; embedded?: boolean; headStart?: ReactNode; leaving?: boolean; onLeft?: () => void; /** Conversations as a sidebar beside the chat (wide screens), instead of the head's dropdown. */ sidebar?: boolean }) {
   const [thread, setThread] = useState<Thread | null>(null);
   const [message, setMessage] = useState("");
   const [editFrom, setEditFrom] = useState<number | null>(null);
@@ -387,13 +387,13 @@ export function JuelPanel({ onClose, embedded = false, headStart, leaving = fals
   const starters = context.starters?.length ? context.starters : context.surface === "automation" && context.entityId ? AGENT_STARTERS : DEFAULT_STARTERS;
   const intro = context.intro || { title: "Ask Juel anything in AutoYT", body: "It works with a team of specialists (recaps, editing, publishing, research, and more), runs what you ask straight away, and shows what each paid step costs in credits." };
 
-  return (
-    <aside ref={root} className={`juel${embedded ? " juel-embedded" : ""}`} role={embedded ? undefined : "dialog"} aria-label="Juel">
+  const panel = (
+    <aside ref={root} className={`juel${embedded ? " juel-embedded" : ""}${sidebar ? " has-side" : ""}`} role={embedded ? undefined : "dialog"} aria-label="Juel">
       <header className="juel-head">
         {headStart}
         <span className="juel-title"><span className="juel-mark" aria-hidden="true"><Sparkles size={13} /></span>Juel</span>
         <span className="juel-thread-title" title={thread?.title || undefined}>{thread?.messages.length ? thread.title || "Conversation" : "New conversation"}</span>
-        <button type="button" className={`juel-icon${historyOpen ? " is-on" : ""}`} onClick={() => setHistoryOpen((o) => !o)} aria-label="Conversations" aria-expanded={historyOpen} title="Conversations"><History size={16} /></button>
+        <button type="button" className={`juel-icon juel-history-btn${historyOpen ? " is-on" : ""}`} onClick={() => setHistoryOpen((o) => !o)} aria-label="Conversations" aria-expanded={historyOpen} title="Conversations"><History size={16} /></button>
         <button type="button" className="juel-icon" onClick={newChat} aria-label="New conversation" title="New conversation"><Plus size={16} /></button>
         {onClose ? <button type="button" className="juel-icon" onClick={onClose} aria-label="Close Juel" title="Close (Esc)"><X size={16} /></button> : null}
       </header>
@@ -509,6 +509,24 @@ export function JuelPanel({ onClose, embedded = false, headStart, leaving = fals
       </form>
     </aside>
   );
+  if (!sidebar) return panel;
+  return (
+    <div className="juel-split">
+      <JuelSidebar
+        context={context}
+        current={thread?.id || ""}
+        refresh={`${thread?.id || ""}:${thread?.messages.length || 0}`}
+        onPick={(picked) => {
+          setThread(picked);
+          remember(context, picked.id);
+          setHistoryOpen(false);
+        }}
+        onNew={newChat}
+        onDeleted={(id) => thread?.id === id && newChat()}
+      />
+      {panel}
+    </div>
+  );
 }
 
 /** What Juel's specialists did. While it works: each step, the latest one live. After: one line
@@ -609,31 +627,28 @@ function Attachments({ items, onAsk }: { items?: JuelAttachment[]; onAsk: (text:
 }
 
 /** Saved conversations: this page's (the open agent, edit, or film) first, then the rest. Delete has undo. */
-function Conversations({ context, current, onClose, onPick, onDeleted }: { context: JuelContext; current: string; onClose: () => void; onPick: (thread: Thread) => void; onDeleted: (id: string) => void }) {
+/** The saved conversations, split into this page's and the rest, with open and a delete that Undo can
+ *  take back. Shared by the history dropdown and the sidebar. `refresh` reloads the list when it changes. */
+function useConversations(context: JuelContext, refresh: unknown = 0) {
   const [threads, setThreads] = useState<ThreadSummary[] | null>(null);
   const [opening, setOpening] = useState("");
-  const panel = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    if (!panel.current || calm()) return;
-    const tween = gsap.from(panel.current, { ...GPU, y: -8, autoAlpha: 0, duration: 0.45, ease: RISE, clearProps: DONE });
-    return () => {
-      tween.kill();
-    };
-  }, []);
   useEffect(() => {
-    fetch("/api/juel/threads").then((r) => (r.ok ? r.json() : { threads: [] })).then((d) => setThreads(d.threads || [])).catch(() => setThreads([]));
-    panel.current?.focus();
-  }, []);
+    let live = true;
+    fetch("/api/juel/threads").then((r) => (r.ok ? r.json() : { threads: [] })).then((d) => live && setThreads(d.threads || [])).catch(() => live && setThreads((t) => t || []));
+    return () => {
+      live = false;
+    };
+  }, [refresh]);
   const here = (t: ThreadSummary) => (context.entityId ? t.entityId === context.entityId : t.surface === context.surface);
   const groups = useMemo(() => {
     const list = threads || [];
     return [
-      { title: "On this page", items: list.filter(here) },
+      { title: context.entityId ? "This agent" : "On this page", items: list.filter(here) },
       { title: "Everything else", items: list.filter((t) => !here(t)) },
     ].filter((g) => g.items.length);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [threads, context.entityId, context.surface]);
-  const open = async (id: string) => {
+  const open = async (id: string, onPick: (thread: Thread) => void) => {
     setOpening(id);
     try {
       const data = await fetch(`/api/juel/threads/${encodeURIComponent(id)}`).then((r) => r.json());
@@ -642,7 +657,7 @@ function Conversations({ context, current, onClose, onPick, onDeleted }: { conte
       setOpening("");
     }
   };
-  const remove = (t: ThreadSummary) => {
+  const remove = (t: ThreadSummary, onDeleted: (id: string) => void) => {
     setThreads((list) => (list || []).filter((x) => x.id !== t.id));
     onDeleted(t.id);
     // Deleting waits a few seconds, so Undo can bring it back.
@@ -660,6 +675,106 @@ function Conversations({ context, current, onClose, onPick, onDeleted }: { conte
       },
     });
   };
+  return { threads, groups, opening, open, remove };
+}
+
+const SIDE_OPEN_KEY = "juel-side-open";
+const readSideOpen = () => {
+  try {
+    return window.localStorage.getItem(SIDE_OPEN_KEY) !== "0";
+  } catch {
+    return true;
+  }
+};
+
+/** Conversations as a sidebar beside the chat (an agent's Chat tab), in Vibe Edit's sidebar language:
+ *  a slim icon column, or open, a card with search, a new-chat row, and the conversations. */
+function JuelSidebar({ context, current, refresh, onPick, onNew, onDeleted }: { context: JuelContext; current: string; refresh: unknown; onPick: (thread: Thread) => void; onNew: () => void; onDeleted: (id: string) => void }) {
+  const [open, setOpen] = useState(readSideOpen);
+  const [query, setQuery] = useState("");
+  const search = useRef<HTMLInputElement>(null);
+  const wantSearch = useRef(false);
+  const list = useConversations(context, refresh);
+  const toggle = () =>
+    setOpen((o) => {
+      try {
+        window.localStorage.setItem(SIDE_OPEN_KEY, o ? "0" : "1");
+      } catch {}
+      return !o;
+    });
+  useEffect(() => {
+    if (open && wantSearch.current) {
+      wantSearch.current = false;
+      search.current?.focus();
+    }
+  }, [open]);
+  const q = query.trim().toLowerCase();
+  const groups = list.groups.map((g) => ({ ...g, items: q ? g.items.filter((t) => (t.title || "").toLowerCase().includes(q)) : g.items })).filter((g) => g.items.length);
+  return (
+    <nav className={`juel-side${open ? " is-open" : ""}`} aria-label="Conversations">
+      <div className="juel-side-head">
+        <button type="button" className="juel-side-btn" onClick={toggle} aria-expanded={open} aria-label={open ? "Collapse conversations" : "Expand conversations"} title={open ? "Collapse" : "Conversations"}>
+          {open ? <PanelLeftClose size={18} strokeWidth={1.75} /> : <PanelLeftOpen size={18} strokeWidth={1.75} />}
+        </button>
+        {open ? <strong>Chats</strong> : null}
+      </div>
+      {open ? (
+        <label className="juel-side-search">
+          <Search size={15} aria-hidden="true" />
+          <input ref={search} value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => event.key === "Escape" && setQuery("")} placeholder="Search chats" aria-label="Search chats" />
+        </label>
+      ) : (
+        <button type="button" className="juel-side-btn" aria-label="Search chats" title="Search chats" onClick={() => { wantSearch.current = true; toggle(); }}>
+          <Search size={18} strokeWidth={1.75} />
+        </button>
+      )}
+      <button type="button" className="juel-side-btn juel-side-row" onClick={onNew} aria-label="New chat" title="New chat">
+        <Plus size={18} strokeWidth={1.75} />
+        <span>New chat</span>
+      </button>
+      {open ? (
+        <div className="juel-side-list">
+          {list.threads === null ? <p className="juel-side-empty"><Loader2 size={14} className="juel-spin" aria-hidden="true" />Loading</p> : null}
+          {list.threads?.length === 0 ? <p className="juel-side-empty">Your chats show up here.</p> : null}
+          {list.threads?.length && !groups.length ? <p className="juel-side-empty">No chat is called “{query.trim()}”.</p> : null}
+          {groups.map((g) => (
+            <section key={g.title}>
+              <h4>{g.title}</h4>
+              <ul>
+                {g.items.map((t) => (
+                  <li key={t.id} className={t.id === current ? "is-current" : undefined}>
+                    <button type="button" className="juel-side-item" aria-current={t.id === current ? "true" : undefined} onClick={() => void list.open(t.id, onPick)} title={t.title || "Untitled"}>
+                      {list.opening === t.id ? <Loader2 size={13} className="juel-spin" aria-hidden="true" /> : null}
+                      <span>{t.title || "Untitled"}</span>
+                      <time dateTime={t.updatedAt}>{ago(t.updatedAt)}</time>
+                    </button>
+                    <button type="button" className="juel-side-delete" onClick={() => list.remove(t, onDeleted)} aria-label={`Delete "${t.title}"`} title="Delete"><Trash2 size={13} /></button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ))}
+        </div>
+      ) : null}
+    </nav>
+  );
+}
+
+function Conversations({ context, current, onClose, onPick, onDeleted }: { context: JuelContext; current: string; onClose: () => void; onPick: (thread: Thread) => void; onDeleted: (id: string) => void }) {
+  const panel = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (!panel.current || calm()) return;
+    const tween = gsap.from(panel.current, { ...GPU, y: -8, autoAlpha: 0, duration: 0.45, ease: RISE, clearProps: DONE });
+    return () => {
+      tween.kill();
+    };
+  }, []);
+  useEffect(() => {
+    panel.current?.focus();
+  }, []);
+  const { threads, groups, opening, open: openThread, remove: removeThread } = useConversations(context);
+  const open = (id: string) => openThread(id, onPick);
+  const remove = (t: ThreadSummary) => removeThread(t, onDeleted);
   return (
     <div className="juel-history" ref={panel} tabIndex={-1} onKeyDown={(event) => event.key === "Escape" && (event.stopPropagation(), onClose())}>
       {threads === null ? <p className="juel-history-empty"><Loader2 size={14} className="juel-spin" aria-hidden="true" />Loading</p> : null}

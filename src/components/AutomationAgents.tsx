@@ -458,7 +458,7 @@ async function readApiJson(response: Response, fallback: string): Promise<any> {
 }
 
 
-export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUploadId = "", onDetailChange, chatSidebarHost = null, theme = "light" }: { auth: AuthSessionPayload; initialSlug?: string; initialTab?: AutomationTab; initialUploadId?: string; onDetailChange?: (open: boolean) => void; chatSidebarHost?: HTMLElement | null; theme?: "light" | "dark" }) {
+export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUploadId = "", onDetailChange, theme = "light" }: { auth: AuthSessionPayload; initialSlug?: string; initialTab?: AutomationTab; initialUploadId?: string; onDetailChange?: (open: boolean) => void; theme?: "light" | "dark" }) {
   const [accounts, setAccounts] = useState<ConnectedYouTubeAccount[]>(auth.accounts || []);
   const [sources, setSources] = useState<AutomationSourceSummary[]>([]);
   const [agents, setAgents] = useState<AutomationAgent[]>([]);
@@ -1197,7 +1197,6 @@ export function AutomationAgents({ auth, initialSlug = "", initialTab, initialUp
         accounts={accounts}
         activeAccount={activeAccount}
         activeTab={activeTab}
-        chatSidebarHost={chatSidebarHost}
         agents={agents}
         creatingNew={creatingNew}
         createStep={createStep}
@@ -1282,7 +1281,6 @@ function AgentBoard({
   accounts,
   activeAccount,
   activeTab,
-  chatSidebarHost,
   agents,
   creatingNew,
   createStep,
@@ -1344,7 +1342,6 @@ function AgentBoard({
   accounts: ConnectedYouTubeAccount[];
   activeAccount: ConnectedYouTubeAccount | null;
   activeTab: AutomationTab;
-  chatSidebarHost: HTMLElement | null;
   agents: AutomationAgent[];
   creatingNew: boolean;
   createStep: number;
@@ -1419,7 +1416,6 @@ function AgentBoard({
           accounts={accounts}
           activeAccount={activeAccount}
           activeTab={visibleTab}
-          chatSidebarHost={chatSidebarHost}
           agent={detailAgent}
           agents={agents}
           createStep={createStep}
@@ -1705,7 +1701,6 @@ function ExpandedAgentCard({
   accounts,
   activeAccount,
   activeTab,
-  chatSidebarHost,
   agent,
   agents,
   createStep,
@@ -1764,7 +1759,6 @@ function ExpandedAgentCard({
   accounts: ConnectedYouTubeAccount[];
   activeAccount: ConnectedYouTubeAccount | null;
   activeTab: AutomationTab;
-  chatSidebarHost: HTMLElement | null;
   agent: AutomationAgent | null;
   agents: AutomationAgent[];
   createStep: number;
@@ -1890,7 +1884,7 @@ function ExpandedAgentCard({
         {tab === "chat" ? (
           // The agent's chat is Juel: it consults this agent's own operator for anything about it.
           <div className="agent-juel">
-            <JuelPanel embedded />
+            <JuelPanel embedded sidebar />
           </div>
         ) : null}
         {tab === "overview" ? (

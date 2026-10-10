@@ -93,7 +93,6 @@ function WorkspaceApp() {
   const initialLink = useMemo(() => readDeepLink(), []);
   const [routeLink, setRouteLink] = useState(initialLink);
   const [activeView, setActiveView] = useState<View>(initialLink.view);
-  const [agentChatSidebarHost, setAgentChatSidebarHost] = useState<HTMLDivElement | null>(null);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const [channelTheme, setChannelTheme] = useState<"light" | "dark">(() => {
@@ -590,7 +589,7 @@ function WorkspaceApp() {
   const isGuest = !session.user;
 
   const isDarkMode = channelTheme === "dark";
-  // Agent chat history is mounted into the app rail so chat never creates a second sidebar.
+  // An open agent lays itself out edge to edge (its chat has its own conversations sidebar).
   const hasAutomationWorkspaceSidebar = activeView === "automation" && automationDetailOpen;
   // Full-height apps still sit inside the same gutters as Image Studio; the creator workspace and studio pages pad themselves.
   const isInsetEdgeView = !focusMode && !hasAutomationWorkspaceSidebar && ["movie", "downloader", "tiktok", "youtube", "niches", "compile", "tts", "prompts", "automation", "rewriter", "voiceover"].includes(activeView);
@@ -632,10 +631,6 @@ function WorkspaceApp() {
       <SignInDialog open={signInOpen} onClose={() => setSignInOpen(false)} googleConfigured={session.googleConfigured} theme={channelTheme} />
 
       <div className="flex min-h-0 flex-1">
-      {hasAutomationWorkspaceSidebar ? (
-        // Agent chats get their own panel beside the conversation, like a generation page's control column.
-        <div ref={setAgentChatSidebarHost} role="complementary" className={cn("hidden w-[280px] shrink-0 overflow-hidden border-r md:block", isDarkMode ? "border-white/8 bg-[var(--ui-bg)]" : "border-[var(--ui-line)] bg-[var(--ui-bg)]")} aria-label="Chats" />
-      ) : null}
       <main className={cn(
         "workspace-content min-w-0 flex-1 overflow-x-clip",
         isEdgeToEdgeView
@@ -841,7 +836,6 @@ function WorkspaceApp() {
                   initialTab={routeLink.view === "automation" ? routeLink.automationTab : undefined}
                   initialUploadId={routeLink.view === "automation" ? routeLink.uploadId : undefined}
                   onDetailChange={setAutomationDetailOpen}
-                  chatSidebarHost={agentChatSidebarHost}
                   theme={channelTheme}
                 />
               </PageView>
