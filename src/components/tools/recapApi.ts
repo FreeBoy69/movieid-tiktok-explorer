@@ -6,7 +6,9 @@ export type RecapTone = "dramatic" | "suspense" | "funny" | "calm";
 export type RecapPace = "natural" | "brisk" | "fast";
 /** zoomPct: the screen size (0-30% zoom, 10% unless set); pan: freeze and zoom shots (on unless false). */
 export type RecapTransforms = { zoom: boolean; color: boolean; mirror: boolean; speed: boolean; zoomPct?: number; pan?: boolean };
-export type RecapBeat = { id: string; text: string; from: number; to: number; shots: number[] ; /** The intro line, played over a quick montage of the best shots. */ teaser?: boolean };
+export type RecapBeat = { id: string; text: string; from: number; to: number; shots: number[] ; /** The intro line, played over a quick montage of the best shots. */ teaser?: boolean; /** Its stretch was set by hand on the storyboard; placing the lines again keeps it. */ pinned?: boolean };
+/** The film's editing copy on the media server: being made (progress 0-1), ready (url), or gone. */
+export type RecapFilm = { state: "running" | "done" | "failed" | "missing" | "none"; progress: number; film: boolean; url?: string; duration?: number; error?: string };
 export type RecapScript = {
   title: string;
   logline?: string;
@@ -217,6 +219,11 @@ export async function rewriteScript(id: string, longMinutes?: number): Promise<R
     await fetch(`/api/recaps/${encodeURIComponent(id)}/rewrite`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(longMinutes ? { longMinutes } : {}) }),
     "Couldn't write the script again",
   )).recap;
+}
+
+/** The film for playing on the storyboard and in Vibe Edit; asking starts its editing copy when missing. */
+export async function getFilm(id: string): Promise<RecapFilm> {
+  return json<RecapFilm>(await fetch(`/api/recaps/${encodeURIComponent(id)}/film`), "Couldn't reach the film");
 }
 
 export async function saveScript(id: string, script: RecapScript): Promise<Recap> {

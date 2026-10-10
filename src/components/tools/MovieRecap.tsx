@@ -30,6 +30,9 @@ import {
   X,
   PenLine,
   Image as ImageIcon,
+  Pause,
+  Play,
+  Pin,
 } from "lucide-react";
 import { toast, useErrorToast } from "../../utils/toast";
 import { isVoiceReady, loadVoiceProfiles, type VoiceProfile } from "../../utils/voiceProfiles";
@@ -49,7 +52,7 @@ import {
   saveSources,
   searchFilmSources,
   backToStoryboard, cancelRecap, recapStartBlocker, clock, correctNames, rewriteScript, setPostThumbnail, draftPost, followRecapPost, postChannels, postRecap, setIntro, type PostChannel, createRecap, deleteRecap, getRecap, listRecaps, parseClock, renderRecap, retryRecap, saveScript, shotTile, spokenSeconds,
-  uploadFilm, type Recap, type RecapBeat, type RecapFormat, type RecapPace, type RecapScript, type RecapTone, type RecapTransforms,
+  uploadFilm, getFilm, type RecapFilm, type Recap, type RecapBeat, type RecapFormat, type RecapPace, type RecapScript, type RecapTone, type RecapTransforms,
 } from "./recapApi";
 import "./MovieRecap.css";
 import { YouTubePublishFields } from "../YouTubePublishForm";
@@ -939,6 +942,137 @@ function beatShots(beat: RecapBeat, shotEvery: number, total: number, count = 4)
   return Array.from({ length: count }, (_, i) => Math.min(total - 1, Math.round(first + ((last - first) * i) / Math.max(1, count - 1))));
 }
 
+/** The film's editing copy for the storyboard: asked for once it's analyzed, polled while it's being made. */
+function useRecapFilm(recapId: string, enabled: boolean) {
+  const [film, setFilm] = useState<RecapFilm | null>(null);
+  useEffect(() => {
+    if (!enabled) return;
+    let live = true;
+    let timer = 0;
+    const poll = async () => {
+      try {
+        const next = await getFilm(recapId);
+        if (!live) return;
+        setFilm(next);
+        if (next.state === "running" || next.state === "none") timer = window.setTimeout(poll, 8000);
+      } catch (error) {
+        if (live) setFilm({ state: "failed", progress: 0, film: false, error: error instanceof Error ? error.message : "Couldn't reach the film" });
+      }
+    };
+    void poll();
+    return () => {
+      live = false;
+      window.clearTimeout(timer);
+    };
+  }, [recapId, enabled]);
+  return film;
+}
+
+/** One player for the storyboard: plays a line's stretch of the film with its words shown, and sets where
+ *  the stretch starts and ends ([ and ] at the current frame, or a second either way). */
+function StretchPlayer({ film, beats, active, playing, onPlaying, onStop, onPatch, filmDuration }: {
+  film: RecapFilm | null; beats: RecapBeat[]; active: number; playing: boolean; filmDuration: number;
+  onPlaying: (on: boolean) => void; onStop: () => void; onPatch: (index: number, patch: Partial<RecapBeat>) => void;
+}) {
+  const video = useRef<HTMLVideoElement>(null);
+  const [time, setTime] = useState(0);
+  const beat = beats[active];
+  // Start playing a line from its start whenever another line is picked.
+  useEffect(() => {
+    const el = video.current;
+    if (!el || !beat || !playing) return;
+    if (time < beat.from - 0.5 || time > beat.to + 0.5) el.currentTime = beat.from;
+    void el.play().catch(() => onPlaying(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, playing, beat?.id]);
+  useEffect(() => {
+    const el = video.current;
+    if (el && !playing) el.pause();
+  }, [playing]);
+  if (!film || film.state !== "done" || !film.url) {
+    const making = !film || film.state === "running" || film.state === "none";
+    return (
+      <div className="mr-player is-waiting" role="status">
+        {making ? <Loader2 size={16} className="ui-spin" aria-hidden="true" /> : <AlertCircle size={16} aria-hidden="true" />}
+        <span>
+          {making
+            ? `Preparing the film for playback${film?.progress ? ` · ${Math.round(film.progress * 100)}%` : ""}. You can edit lines meanwhile.`
+            : film.state === "missing" ? "The film is no longer on the media server, so its stretches can't play here." : film.error || "The film couldn't be prepared for playback."}
+        </span>
+      </div>
+    );
+  }
+  const set = (patch: Partial<RecapBeat>) => beat && onPatch(active, { ...patch, pinned: true, shots: [] });
+  const startAt = (t: number) => beat && set({ from: Math.max(0, Math.min(t, beat.to - 3)) });
+  const endAt = (t: number) => beat && set({ to: Math.min(filmDuration || t, Math.max(t, beat.from + 3)) });
+  const spoken = beat ? spokenSeconds(beat.text) : 0;
+  const length = beat ? beat.to - beat.from : 0;
+  const within = beat ? Math.min(1, Math.max(0, (time - beat.from) / Math.max(0.1, length))) : 0;
+  return (
+    <div
+      className="mr-player"
+      tabIndex={-1}
+      onKeyDown={(event) => {
+        if ((event.target as HTMLElement).closest("textarea, input")) return;
+        if (event.key === " ") onPlaying(!playing);
+        else if (event.key === "[") startAt(time);
+        else if (event.key === "]") endAt(time);
+        else return;
+        event.preventDefault();
+      }}
+    >
+      <div className="mr-player-screen">
+        <video
+          ref={video}
+          src={film.url}
+          muted
+          playsInline
+          preload="metadata"
+          onTimeUpdate={(event) => {
+            const t = event.currentTarget.currentTime;
+            setTime(t);
+            if (beat && t >= beat.to) {
+              event.currentTarget.pause();
+              onPlaying(false);
+            }
+          }}
+          onLoadedMetadata={(event) => beat && (event.currentTarget.currentTime = beat.from)}
+          onClick={() => onPlaying(!playing)}
+        />
+      </div>
+      {beat ? (
+        <div className="mr-player-body">
+          <div className="mr-player-head">
+            <button type="button" className="mr-player-play" onClick={() => onPlaying(!playing)} aria-label={playing ? "Pause" : `Play line ${active + 1}'s stretch`} title={playing ? "Pause (Space)" : "Play (Space)"}>
+              {playing ? <Pause size={16} /> : <Play size={16} />}
+            </button>
+            <strong>Line {active + 1}</strong>
+            <span className="mr-player-times">{clock(beat.from)}–{clock(beat.to)} · {Math.round(length)}s of film for ~{Math.round(spoken)}s of narration</span>
+            <button type="button" className="ui-icon-btn" onClick={onStop} aria-label="Close the player" title="Close"><X size={15} /></button>
+          </div>
+          <p className="mr-player-line">{beat.text || "(no words yet)"}</p>
+          <span className="mr-player-track" aria-hidden="true"><span style={{ width: `${within * 100}%` }} /></span>
+          <div className="mr-player-set">
+            <span className="mr-player-group">
+              <span>Start</span>
+              <button type="button" className="mr-chip" onClick={() => startAt(beat.from - 1)} aria-label="Start a second earlier">−1s</button>
+              <button type="button" className="mr-chip" onClick={() => startAt(beat.from + 1)} aria-label="Start a second later">+1s</button>
+              <button type="button" className="mr-chip" onClick={() => startAt(time)} title="Start the stretch at this frame ([)">Here <kbd>[</kbd></button>
+            </span>
+            <span className="mr-player-group">
+              <span>End</span>
+              <button type="button" className="mr-chip" onClick={() => endAt(beat.to - 1)} aria-label="End a second earlier">−1s</button>
+              <button type="button" className="mr-chip" onClick={() => endAt(beat.to + 1)} aria-label="End a second later">+1s</button>
+              <button type="button" className="mr-chip" onClick={() => endAt(time)} title="End the stretch at this frame (])">Here <kbd>]</kbd></button>
+            </span>
+          </div>
+          {beat.pinned ? <p className="mt-note mr-player-pinned"><Pin size={12} aria-hidden="true" /> You set this stretch: the render keeps it.</p> : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function ScriptReview({ recap, onChange, onRender, onError }: { recap: Recap; onChange: (recap: Recap) => void; onRender: (voiceId: string, captions: boolean, look: { zoomPct: number; pan: boolean }) => Promise<void>; onError: (message: string) => void }) {
   const [script, setScript] = useState<RecapScript>(recap.script as RecapScript);
   const [format, setFormat] = useState<RecapFormat>(recap.options.formats[0]);
@@ -994,6 +1128,10 @@ function ScriptReview({ recap, onChange, onRender, onError }: { recap: Recap; on
   const [rendering, setRendering] = useState(false);
   const film = recap.film;
   const aspect = useTileAspect(recap.id, Boolean(film));
+  // The storyboard plays each line's stretch of the film from its editing copy.
+  const playback = useRecapFilm(recap.id, Boolean(film));
+  const [active, setActive] = useState(-1);
+  const [playing, setPlaying] = useState(false);
   const timer = useRef<number>(0);
 
   useEffect(() => {
@@ -1090,6 +1228,9 @@ function ScriptReview({ recap, onChange, onRender, onError }: { recap: Recap; on
             aria-label="Short title"
           />
         ) : null}
+        {active >= 0 && beats[active] ? (
+          <StretchPlayer film={playback} beats={beats} active={active} playing={playing} filmDuration={film?.duration || 0} onPlaying={setPlaying} onStop={() => { setPlaying(false); setActive(-1); }} onPatch={patchBeat} />
+        ) : null}
         <ol className="mr-beats">
           {beats.map((beat, i) => (
             <BeatRow
@@ -1097,6 +1238,16 @@ function ScriptReview({ recap, onChange, onRender, onError }: { recap: Recap; on
               index={i}
               beat={beat}
               recapId={recap.id}
+              active={active === i}
+              playing={active === i && playing}
+              canPlay={Boolean(film)}
+              onPlay={() => {
+                if (active === i) setPlaying(!playing);
+                else {
+                  setActive(i);
+                  setPlaying(true);
+                }
+              }}
               shots={film ? beatShots(beat, film.shotEvery, film.shots) : []}
               filmDuration={film?.duration || 0}
               onPatch={(patch) => patchBeat(i, patch)}
@@ -1188,15 +1339,20 @@ function ClockInput({ value, max, onCommit, label }: { value: number; max: numbe
   return <input className="mr-clock" value={text} onChange={(event) => setText(event.target.value)} onBlur={commit} onKeyDown={(event) => event.key === "Enter" && (event.target as HTMLInputElement).blur()} aria-label={label} inputMode="numeric" />;
 }
 
-function BeatRow({ index, beat, recapId, shots, filmDuration, onPatch, onRemove, onAdd }: {
-  index: number; beat: RecapBeat; recapId: string; shots: number[]; filmDuration: number;
+function BeatRow({ index, beat, recapId, shots, filmDuration, active = false, playing = false, canPlay = false, onPlay, onPatch, onRemove, onAdd }: {
+  index: number; beat: RecapBeat; recapId: string; shots: number[]; filmDuration: number; active?: boolean; playing?: boolean; canPlay?: boolean; onPlay?: () => void;
   onPatch: (patch: Partial<RecapBeat>) => void; onRemove?: () => void; onAdd: () => void;
 }) {
   const seconds = spokenSeconds(beat.text);
   return (
-    <li className="mr-beat">
+    <li className={`mr-beat${active ? " is-active" : ""}`}>
       <div className="mr-beat-frames">
         {shots.map((n, i) => <Shot key={`${n}-${i}`} recapId={recapId} n={n} />)}
+        {canPlay && onPlay ? (
+          <button type="button" className="mr-beat-play" onClick={onPlay} aria-label={playing ? `Pause line ${index + 1}` : `Play line ${index + 1}'s stretch of the film`} title={playing ? "Pause" : "Play this stretch of the film"}>
+            {playing ? <Pause size={16} /> : <Play size={16} />}
+          </button>
+        ) : null}
       </div>
       <div className="mr-beat-body">
         <textarea
@@ -1211,9 +1367,10 @@ function BeatRow({ index, beat, recapId, shots, filmDuration, onPatch, onRemove,
         <div className="mr-beat-meta">
           <span className="mr-beat-range">
             <span>Film</span>
-            <ClockInput value={beat.from} max={filmDuration} onCommit={(from) => onPatch({ from, to: Math.max(beat.to, from + 10), shots: [] })} label={`Line ${index + 1} starts in the film at`} />
+            <ClockInput value={beat.from} max={filmDuration} onCommit={(from) => onPatch({ from, to: Math.max(beat.to, from + 3), shots: [], pinned: true })} label={`Line ${index + 1} starts in the film at`} />
             <span aria-hidden="true">to</span>
-            <ClockInput value={beat.to} max={filmDuration} onCommit={(to) => onPatch({ to: Math.max(to, beat.from + 10), shots: [] })} label={`Line ${index + 1} ends in the film at`} />
+            <ClockInput value={beat.to} max={filmDuration} onCommit={(to) => onPatch({ to: Math.max(to, beat.from + 3), shots: [], pinned: true })} label={`Line ${index + 1} ends in the film at`} />
+            {beat.pinned ? <Pin size={12} className="mr-beat-pin" aria-label="Set by hand" /> : null}
           </span>
           <span className="mr-beat-len">{Math.round(seconds)}s spoken</span>
           <span className="mr-beat-actions">
