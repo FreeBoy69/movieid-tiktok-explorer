@@ -404,12 +404,15 @@ export function JuelLive({
   const root = useRef<HTMLDivElement | null>(null);
   const setMouth = (value: number) => (root.current || document.documentElement).style.setProperty("--jm-mouth", value.toFixed(3));
 
+  // Set while the server speaks with its slow backup voice (Gemini's out of quota): see enqueue.
+  const slowVoice = useRef(false);
   const fetchVoice = useCallback(
     (text: string) =>
       voice === INSTANT
         ? Promise.resolve(null)
         : fetch("/api/juel/speak", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, voice, stream: true }) })
         .then(async (response) => {
+          slowVoice.current = response.headers.get("X-Juel-Voice") === "backup";
           if (response.ok) return response;
           const data = await response.json().catch(() => ({}));
           if (response.status === 402) setProblem(data.error || "You're out of credits for Juel's voice.");
@@ -658,16 +661,35 @@ export function JuelLive({
     } else done();
   }, []);
 
+  // Sentences held back while the voice is the slow backup (see `slowVoice`), and when they go anyway.
+  const held = useRef("");
+  const heldTimer = useRef(0);
   const enqueue = useCallback(
-    (sentences: string[]) => {
+    (sentences: string[], final = false) => {
+      const speak = (text: string) => {
+        // Fetched now, played in order: the next one is ready when the current one ends.
+        queue.current.push({ text, audio: fetchVoice(text) });
+        void playNext();
+      };
       for (const text of sentences) {
         if (spokenTotal.current >= MAX_SPOKEN) break;
         spokenTotal.current += text.length;
         const said = spokenTotal.current >= MAX_SPOKEN ? `${text} I've put the rest in the chat.` : text;
-        // Fetched now, played in order: the next sentence is ready when the current one ends.
-        queue.current.push({ text: said, audio: fetchVoice(said) });
+        if (slowVoice.current) held.current = `${held.current} ${said}`.trim();
+        else speak(said);
       }
-      void playNext();
+      if (!held.current) return;
+      // The backup voice takes ~4 s to start each request, so a reply sent sentence by sentence stops
+      // between every one: it goes as one request when the reply ends (or after 0.9 s, or when it's long).
+      const flush = () => {
+        window.clearTimeout(heldTimer.current);
+        heldTimer.current = 0;
+        const text = held.current;
+        held.current = "";
+        if (text) speak(text);
+      };
+      if (final || held.current.length > 450) flush();
+      else if (!heldTimer.current) heldTimer.current = window.setTimeout(flush, 900);
     },
     [fetchVoice, playNext],
   );
@@ -677,6 +699,9 @@ export function JuelLive({
     busy.current = false;
     stoppedAt.current = performance.now();
     queue.current = [];
+    held.current = "";
+    window.clearTimeout(heldTimer.current);
+    heldTimer.current = 0;
     playing.current?.pause();
     playing.current = null;
     if ("speechSynthesis" in window) window.speechSynthesis.cancel();
@@ -716,13 +741,13 @@ export function JuelLive({
       const why = errorRef.current || "I couldn't get an answer just now. Try saying it again.";
       setProblem(why);
       spokenUpTo.current = 0;
-      enqueue([`Sorry. ${why}`]);
+      enqueue([`Sorry. ${why}`], true);
       return;
     }
     setProblem("");
     const { sentences } = nextSentences(text, Math.min(spokenUpTo.current, text.length), true);
     spokenUpTo.current = 0;
-    if (sentences.length) enqueue(sentences);
+    if (sentences.length || held.current) enqueue(sentences, true);
     else if (!busy.current && !playing.current && !queue.current.length) go("listening");
   }, [sending, finished, lastReply, enqueue]);
 

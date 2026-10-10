@@ -1671,6 +1671,8 @@ export function registerJuel(app, deps) {
     }
     try {
       // Streamed too when asked: the live view keeps one player, and the voice starts with its first bytes.
+      // The header tells it this voice is slow to start (~4 s a request), so it sends fewer, longer ones.
+      res.setHeader("X-Juel-Voice", "backup");
       const spoken = await synthesizeHostedVoice({ profileId: `openrouter:${voice}`, text, signal: AbortSignal.any([stop.signal, AbortSignal.timeout(45000)]), onPcm: req.body?.stream === true ? streamPcm : undefined });
       if (started) return res.end();
       res.setHeader("Content-Type", spoken.contentType);
