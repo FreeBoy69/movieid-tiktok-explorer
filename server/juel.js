@@ -6,6 +6,7 @@
 // MCP server at /mcp gives AI agents Juel and the whole API.
 import { createHash, randomBytes } from "node:crypto";
 import { synthesizeHostedVoice } from "./hostedVoices.js";
+import { guardUsage, meterUsage } from "../src/utils/usageMeter.js";
 
 /** The specialists the manager hands work to. Their briefs go into the manager's prompt. */
 export const JUEL_SPECIALISTS = {
@@ -886,6 +887,64 @@ Return JSON only: {"reply":"...", "report": {"title":"...", "cards":[{"label":".
   return { reply: joined(String(final?.reply || "").trim() || board.map((b) => b.note).join(" ")), steps, board, report: cleanReport(final?.report) };
 }
 
+/** Juel's HD voice, streamed straight from Gemini: raw 24 kHz 16-bit mono PCM handed to `onAudio` as it
+ *  arrives, so the first word plays in under a second (a whole sentence through OpenRouter took 7 to 9).
+ *  Tries the configured (lite) model then the full one, each with the main then the backup key, until one speaks. */
+export async function streamGeminiSpeech({ text, voice, onAudio, signal = undefined, fetchImpl = fetch, env = process.env }) {
+  const keys = [env.GEMINI_API_KEY, env.GEMINI_API_KEY_BACKUP || env.GEMINI_BACKUP_API_KEY].map((k) => String(k || "").replace(/^["']|["']$/g, "").trim()).filter(Boolean);
+  if (!keys.length) throw new Error("Juel's streamed voice isn't set up on this server.");
+  // The lite model starts speaking in about 0.6 s, the full one in about 1 s.
+  const models = [...new Set([String(env.JUEL_TTS_MODEL || "gemini-3.8-flash-lite-tts").trim(), "gemini-3.8-flash-tts"])];
+  let lastError = new Error("Juel's voice isn't available right now.");
+  for (const model of models) {
+    for (const key of keys) {
+      await guardUsage("gemini", { operation: "speech", model });
+      const response = await fetchImpl(`https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+        body: JSON.stringify({ contents: [{ parts: [{ text }] }], generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } } } }),
+        signal,
+      }).catch((error) => {
+        lastError = error;
+        return null;
+      });
+      if (!response?.ok || !response.body) {
+        if (response) lastError = new Error(`Gemini speech failed (${response.status})`);
+        signal?.throwIfAborted();
+        continue;
+      }
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let usage = null;
+      let sent = 0;
+      for await (const chunk of response.body) {
+        buffer += decoder.decode(chunk, { stream: true }).replace(/\r/g, "");
+        for (let end = buffer.indexOf("\n\n"); end >= 0; end = buffer.indexOf("\n\n")) {
+          const data = buffer.slice(0, end).split("\n").filter((line) => line.startsWith("data:")).map((line) => line.slice(5)).join("");
+          buffer = buffer.slice(end + 2);
+          let event;
+          try {
+            event = JSON.parse(data);
+          } catch {
+            continue;
+          }
+          usage = event.usageMetadata || usage;
+          for (const part of event.candidates?.[0]?.content?.parts || []) {
+            if (!part.inlineData?.data) continue;
+            const pcm = Buffer.from(part.inlineData.data, "base64");
+            sent += pcm.length;
+            onAudio(pcm);
+          }
+        }
+      }
+      if (usage) meterUsage({ provider: "gemini", model, operation: "speech", usage });
+      if (sent) return { model, bytes: sent };
+      lastError = new Error("Gemini returned no audio.");
+    }
+  }
+  throw lastError;
+}
+
 /** How Juel talks in live mode, where every word is spoken aloud. */
 const LIVE_VOICE = "LIVE VOICE CHAT: your reply is spoken aloud the moment you write it. Talk like a friendly person on a call: one or two short sentences, no lists, markdown, links or emoji.";
 
@@ -1479,6 +1538,35 @@ export function registerJuel(app, deps) {
     const text = String(req.body?.text || "").replace(/\s+/g, " ").trim().slice(0, 600);
     if (!text) return res.status(400).json({ error: "Nothing to say." });
     const voice = /^[A-Za-z]{3,20}$/.test(String(req.body?.voice || "")) ? String(req.body.voice) : "Puck";
+    // Streamed: the audio goes out as Gemini makes it. Falls back to the whole-sentence voice below when
+    // it can't start.
+    if (req.body?.stream === true) {
+      const stop = new AbortController();
+      res.on("close", () => {
+        if (!res.writableEnded) stop.abort(new Error("Stopped."));
+      });
+      let started = false;
+      try {
+        await deps.withUsage(who.userId, "juel", () => streamGeminiSpeech({
+          text: `Say warmly and upbeat, like a friendly helper: ${text}`,
+          voice,
+          signal: stop.signal,
+          onAudio: (pcm) => {
+            if (!started) {
+              started = true;
+              res.setHeader("Content-Type", "audio/L16; rate=24000; channels=1");
+              res.setHeader("Cache-Control", "no-store");
+            }
+            res.write(pcm);
+          },
+        }));
+        return res.end();
+      } catch (error) {
+        if (started || stop.signal.aborted) return res.end();
+        if (error?.name === "UsageBlockedError") return res.status(error.status || 402).json({ error: error.message });
+        console.warn(`[juel] streamed voice failed, using the whole-sentence voice: ${error instanceof Error ? error.message : error}`);
+      }
+    }
     try {
       const spoken = await synthesizeHostedVoice({ profileId: `openrouter:${voice}`, text, direction: "Say this in a warm, upbeat, conversational way, like a friendly helper", signal: AbortSignal.timeout(45000) });
       res.setHeader("Content-Type", spoken.contentType);

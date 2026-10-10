@@ -8,15 +8,16 @@ import { Mic, MicOff, PhoneOff, Square } from "lucide-react";
 import { JuelMascot, type JuelPose, setJuelMood } from "./JuelMascot";
 
 type Phase = "starting" | "listening" | "hearing" | "thinking" | "speaking" | "error";
-// "instant" is the browser's own voice: it starts speaking at once and costs nothing. The HD voices sound
-// better but take several seconds per sentence to make, too slow for a quick back-and-forth.
+// The HD voices stream from Gemini and start in under a second. "Basic" is the browser's own voice:
+// immediate and free, and what he falls back to when an HD voice can't start.
 const INSTANT = "instant";
+const HD = "Puck";
 const VOICES: Array<[string, string]> = [
-  [INSTANT, "Instant"],
-  ["Puck", "Upbeat HD (slower)"],
-  ["Zephyr", "Bright HD (slower)"],
-  ["Achird", "Friendly HD (slower)"],
-  ["Kore", "Calm HD (slower)"],
+  ["Puck", "Upbeat"],
+  ["Zephyr", "Bright"],
+  ["Achird", "Friendly"],
+  ["Kore", "Calm"],
+  [INSTANT, "Basic (browser)"],
 ];
 /** A pleasant built-in voice for the page's language, when the browser has one. */
 function browserVoice(): SpeechSynthesisVoice | null {
@@ -26,7 +27,8 @@ function browserVoice(): SpeechSynthesisVoice | null {
   const pick = (test: RegExp) => fit.find((v) => test.test(v.name));
   return pick(/natural|neural|premium|enhanced/i) || pick(/google/i) || pick(/samantha|ava|allison|karen|daniel/i) || fit[0] || null;
 }
-const VOICE_KEY = "juel:voice";
+// ":2": the old default ("instant", from when HD was slow) isn't carried over.
+const VOICE_KEY = "juel:voice:2";
 const MAX_SPOKEN = 900; // Longer replies: the start is spoken, the rest is in the chat.
 
 type Recognition = {
@@ -146,10 +148,10 @@ export function JuelLive({
   const [problem, setProblem] = useState("");
   const [voice, setVoice] = useState(() => {
     try {
-      const kept = window.localStorage.getItem(VOICE_KEY) || INSTANT;
-      return VOICES.some(([id]) => id === kept) ? kept : INSTANT;
+      const kept = window.localStorage.getItem(VOICE_KEY) || HD;
+      return VOICES.some(([id]) => id === kept) ? kept : HD;
     } catch {
-      return INSTANT;
+      return HD;
     }
   });
   const voiceRef = useRef(voice);
@@ -223,7 +225,7 @@ export function JuelLive({
   // ---------- Audio out: a queue of spoken sentences, mouth from the playing voice ----------
   const ctx = useRef<AudioContext | null>(null);
   const outAnalyser = useRef<AnalyserNode | null>(null);
-  const queue = useRef<Array<{ text: string; audio: Promise<Blob | null> }>>([]);
+  const queue = useRef<Array<{ text: string; audio: Promise<Response | null> }>>([]);
   const playing = useRef<HTMLAudioElement | null>(null);
   const spokenUpTo = useRef(0);
   const spokenTotal = useRef(0);
@@ -245,9 +247,9 @@ export function JuelLive({
     (text: string) =>
       voice === INSTANT
         ? Promise.resolve(null)
-        : fetch("/api/juel/speak", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, voice }) })
+        : fetch("/api/juel/speak", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, voice, stream: true }) })
         .then(async (response) => {
-          if (response.ok) return response.blob();
+          if (response.ok) return response;
           const data = await response.json().catch(() => ({}));
           if (response.status === 402) setProblem(data.error || "You're out of credits for Juel's voice.");
           return null;
@@ -270,9 +272,10 @@ export function JuelLive({
     setSaying(item.text);
     go("speaking");
     setJuelMood("speak");
-    const blob = await item.audio;
+    const response = await item.audio;
     if (gen !== generation.current) {
       busy.current = false;
+      void response?.body?.cancel().catch(() => undefined);
       return;
     }
     let finished = false;
@@ -292,6 +295,68 @@ export function JuelLive({
         go("listening");
       }
     };
+    // Streamed HD voice: raw PCM played chunk by chunk as it arrives, each piece queued right after the last.
+    if (response && /^audio\/l16/i.test(response.headers.get("Content-Type") || "") && response.body) {
+      const context = audioContext();
+      void context.resume();
+      const reader = response.body.getReader();
+      const sources: AudioBufferSourceNode[] = [];
+      let stopped = false;
+      let at = 0;
+      let carry: Uint8Array | null = null;
+      playing.current = {
+        pause: () => {
+          stopped = true;
+          void reader.cancel().catch(() => undefined);
+          for (const source of sources) {
+            try {
+              source.stop();
+            } catch {}
+          }
+        },
+      } as unknown as HTMLAudioElement;
+      let last: AudioBufferSourceNode | null = null;
+      try {
+        for (;;) {
+          const { value, done: ended } = await reader.read();
+          if (ended || stopped) break;
+          let bytes = value;
+          if (carry) {
+            bytes = new Uint8Array(carry.length + value.length);
+            bytes.set(carry);
+            bytes.set(value, carry.length);
+            carry = null;
+          }
+          if (bytes.length % 2) {
+            carry = bytes.slice(-1);
+            bytes = bytes.slice(0, -1);
+          }
+          if (!bytes.length) continue;
+          const samples = new Int16Array(bytes.buffer, bytes.byteOffset, bytes.length / 2);
+          const buffer = context.createBuffer(1, samples.length, 24000);
+          const channel = buffer.getChannelData(0);
+          for (let i = 0; i < samples.length; i++) channel[i] = samples[i] / 32768;
+          const source = context.createBufferSource();
+          source.buffer = buffer;
+          source.connect(outAnalyser.current!);
+          at = Math.max(at, context.currentTime + 0.03);
+          source.start(at);
+          at += buffer.duration;
+          sources.push(source);
+          last = source;
+        }
+      } catch {}
+      if (stopped || gen !== generation.current) return;
+      // Done when the last piece ends (or already has, if the stream ran slower than the speech).
+      if (last) last.onended = done;
+      window.setTimeout(done, Math.max(0, at - context.currentTime) * 1000 + 250);
+      return;
+    }
+    const blob = response ? await response.blob().catch(() => null) : null;
+    if (gen !== generation.current) {
+      busy.current = false;
+      return;
+    }
     if (blob) {
       const audio = new Audio(URL.createObjectURL(blob));
       playing.current = audio;

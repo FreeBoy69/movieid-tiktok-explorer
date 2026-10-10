@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { callRoute, cleanReport, cleanShows, creditShortfall, estimateCredits, JUEL_COSTS, JUEL_EXCLUDED, JUEL_RISKS, JUEL_ROUTES, JUEL_SPECIALISTS, juelTools, juelTurn, matchRoute, partialReply, MCP_TOOLS, mcpRespond, openApiSpec, pageActionCredits, pageTools, spendsCredits, tokenRefusal, urlsIn } from "./juel.js";
+import { callRoute, cleanReport, streamGeminiSpeech, cleanShows, creditShortfall, estimateCredits, JUEL_COSTS, JUEL_EXCLUDED, JUEL_RISKS, JUEL_ROUTES, JUEL_SPECIALISTS, juelTools, juelTurn, matchRoute, partialReply, MCP_TOOLS, mcpRespond, openApiSpec, pageActionCredits, pageTools, spendsCredits, tokenRefusal, urlsIn } from "./juel.js";
 
 /** Every route the server registers, as "METHOD /path". */
 function registeredRoutes() {
@@ -357,5 +357,50 @@ describe("Tokens and MCP over HTTP", () => {
     } finally {
       server.close();
     }
+  });
+});
+
+describe("Juel's streamed voice", () => {
+  const sse = (events: any[]) => new Response(new ReadableStream({
+    start(c) {
+      const enc = new TextEncoder();
+      // Split mid-event, the way the network delivers it.
+      const text = events.map((e) => `data: ${JSON.stringify(e)}\r\n\r\n`).join("");
+      c.enqueue(enc.encode(text.slice(0, 30)));
+      c.enqueue(enc.encode(text.slice(30)));
+      c.close();
+    },
+  }));
+  const audio = (bytes: number[]) => ({ candidates: [{ content: { parts: [{ inlineData: { data: Buffer.from(bytes).toString("base64") } }] } }] });
+
+  it("hands over the audio as it arrives, on the lite model first", async () => {
+    const urls: string[] = [];
+    const got: number[] = [];
+    const result = await streamGeminiSpeech({
+      text: "Hi", voice: "Puck", env: { GEMINI_API_KEY: "k1" } as any,
+      fetchImpl: (async (url: string) => { urls.push(url); return sse([audio([1, 2]), audio([3, 4])]); }) as any,
+      onAudio: (pcm: Buffer) => got.push(...pcm),
+    });
+    expect(urls[0]).toContain("gemini-3.8-flash-lite-tts:streamGenerateContent?alt=sse");
+    expect(got).toEqual([1, 2, 3, 4]);
+    expect(result.bytes).toBe(4);
+  });
+
+  it("tries the backup key, then the full model, when one can't speak", async () => {
+    const tried: string[] = [];
+    const result = await streamGeminiSpeech({
+      text: "Hi", voice: "Puck", env: { GEMINI_API_KEY: "k1", GEMINI_API_KEY_BACKUP: "k2" } as any,
+      fetchImpl: (async (url: string, init: any) => {
+        tried.push(`${url.includes("lite") ? "lite" : "full"}/${init.headers["x-goog-api-key"]}`);
+        return url.includes("lite") ? new Response("busy", { status: 429 }) : sse([audio([9])]);
+      }) as any,
+      onAudio: () => undefined,
+    });
+    expect(tried).toEqual(["lite/k1", "lite/k2", "full/k1"]);
+    expect(result.model).toBe("gemini-3.8-flash-tts");
+  });
+
+  it("says so when there's no key", async () => {
+    await expect(streamGeminiSpeech({ text: "Hi", voice: "Puck", env: {} as any, onAudio: () => undefined })).rejects.toThrow("isn't set up");
   });
 });
