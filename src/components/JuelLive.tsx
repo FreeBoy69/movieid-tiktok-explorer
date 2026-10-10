@@ -8,12 +8,24 @@ import { Mic, MicOff, PhoneOff } from "lucide-react";
 import { JuelMascot, type JuelPose, setJuelMood } from "./JuelMascot";
 
 type Phase = "starting" | "listening" | "hearing" | "thinking" | "speaking" | "error";
+// "instant" is the browser's own voice: it starts speaking at once and costs nothing. The HD voices sound
+// better but take several seconds per sentence to make, too slow for a quick back-and-forth.
+const INSTANT = "instant";
 const VOICES: Array<[string, string]> = [
-  ["Puck", "Upbeat"],
-  ["Zephyr", "Bright"],
-  ["Achird", "Friendly"],
-  ["Kore", "Calm"],
+  [INSTANT, "Instant"],
+  ["Puck", "Upbeat HD (slower)"],
+  ["Zephyr", "Bright HD (slower)"],
+  ["Achird", "Friendly HD (slower)"],
+  ["Kore", "Calm HD (slower)"],
 ];
+/** A pleasant built-in voice for the page's language, when the browser has one. */
+function browserVoice(): SpeechSynthesisVoice | null {
+  const voices = window.speechSynthesis?.getVoices?.() || [];
+  const lang = (navigator.language || "en-US").slice(0, 2);
+  const fit = voices.filter((v) => v.lang?.toLowerCase().startsWith(lang));
+  const pick = (test: RegExp) => fit.find((v) => test.test(v.name));
+  return pick(/natural|neural|premium|enhanced/i) || pick(/google/i) || pick(/samantha|ava|allison|karen|daniel/i) || fit[0] || null;
+}
 const VOICE_KEY = "juel:voice";
 const MAX_SPOKEN = 900; // Longer replies: the start is spoken, the rest is in the chat.
 
@@ -105,11 +117,20 @@ export function JuelLive({
   const [problem, setProblem] = useState("");
   const [voice, setVoice] = useState(() => {
     try {
-      return window.localStorage.getItem(VOICE_KEY) || "Puck";
+      const kept = window.localStorage.getItem(VOICE_KEY) || INSTANT;
+      return VOICES.some(([id]) => id === kept) ? kept : INSTANT;
     } catch {
-      return "Puck";
+      return INSTANT;
     }
   });
+  const voiceRef = useRef(voice);
+  voiceRef.current = voice;
+  // The panel's callbacks change on every render; live mode reads them through refs so its microphone,
+  // recogniser and audio are set up once, not torn down each time the panel updates.
+  const askRef = useRef(ask);
+  askRef.current = ask;
+  const interruptRef = useRef(interrupt);
+  interruptRef.current = interrupt;
   const phaseRef = useRef<Phase>("starting");
   const recognition = useRef<Recognition | null>(null);
   // The recogniser keeps everything it heard since it started (Juel's own voice included): a clean
@@ -149,7 +170,9 @@ export function JuelLive({
 
   const fetchVoice = useCallback(
     (text: string) =>
-      fetch("/api/juel/speak", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, voice }) })
+      voice === INSTANT
+        ? Promise.resolve(null)
+        : fetch("/api/juel/speak", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, voice }) })
         .then(async (response) => {
           if (response.ok) return response.blob();
           const data = await response.json().catch(() => ({}));
@@ -196,16 +219,24 @@ export function JuelLive({
       await audio.play().catch(done);
       return;
     }
-    // No hosted voice: the browser's own, with the mouth timed to its words.
+    // The browser's own voice (the instant choice, or when an HD voice failed): the mouth opens on each
+    // word as it is spoken and closes between words.
     if ("speechSynthesis" in window) {
       const utterance = new SpeechSynthesisUtterance(item.text);
-      utterance.rate = 1.05;
-      utterance.pitch = 1.15;
-      let flap = 0;
+      utterance.voice = browserVoice();
+      utterance.rate = 1.04;
+      utterance.pitch = 1.18;
+      let open = 0;
+      let wordAt = performance.now();
+      utterance.onboundary = () => {
+        wordAt = performance.now();
+      };
       const timer = window.setInterval(() => {
-        flap = (flap + 1) % 4;
-        setMouth([0.15, 0.8, 0.4, 0.95][flap]);
-      }, 110);
+        // Open on each word, then a quick flutter that settles while the word lasts.
+        const since = performance.now() - wordAt;
+        open = since < 90 ? 0.95 : Math.max(0.12, open * 0.78 + (Math.random() < 0.3 ? 0.35 : 0));
+        setMouth(open);
+      }, 45);
       playing.current = { pause: () => window.speechSynthesis.cancel() } as unknown as HTMLAudioElement;
       utterance.onend = utterance.onerror = () => {
         window.clearInterval(timer);
@@ -276,36 +307,35 @@ export function JuelLive({
   const chunks = useRef<Blob[]>([]);
   const live = useRef(true);
 
-  const commit = useCallback(
-    (text: string) => {
-      const said = text.trim();
-      transcript.current = "";
-      gaps.current = [];
-      setHeard("");
-      if (!said) return go("listening");
-      spokenUpTo.current = 0;
-      spokenTotal.current = 0;
-      turnDone.current = false;
-      go("thinking");
-      ask(said);
-    },
-    [ask],
-  );
+  const commit = useCallback((text: string) => {
+    const said = text.trim();
+    transcript.current = "";
+    gaps.current = [];
+    setHeard("");
+    if (!said) return go("listening");
+    spokenUpTo.current = 0;
+    spokenTotal.current = 0;
+    turnDone.current = false;
+    go("thinking");
+    askRef.current(said);
+  }, []);
 
   // Talking over Juel stops him and gives you the floor.
   const bargeIn = useCallback(() => {
     if (phaseRef.current !== "speaking" && phaseRef.current !== "thinking") return;
     stopSpeaking();
-    interrupt();
+    interruptRef.current();
     turnDone.current = true;
     transcript.current = "";
     freshEars();
     setJuelMood("listen");
     go("hearing");
-  }, [interrupt, stopSpeaking]);
+  }, [stopSpeaking]);
 
   useEffect(() => {
     live.current = true;
+    // Chrome fills its voice list after a moment: ask early so the first sentence gets the nice voice.
+    window.speechSynthesis?.getVoices?.();
     let frame = 0;
     let noise = 0.008;
     let loudSince = 0;
@@ -342,11 +372,14 @@ export function JuelLive({
         const phaseNow = phaseRef.current;
         if (!speaking) noise = noise * 0.995 + Math.min(rms, 0.05) * 0.005;
         // While Juel talks, only a clearly louder voice counts (echo cancellation removes most of his).
-        const threshold = Math.max(phaseNow === "speaking" ? 0.045 : 0.018, noise * (phaseNow === "speaking" ? 5 : 3));
+        // The browser's voice isn't removed by echo cancellation, so with it Juel needs a clearly louder
+        // voice before he stops for you.
+        const loudVoice = voiceRef.current === INSTANT ? 0.09 : 0.045;
+        const threshold = Math.max(phaseNow === "speaking" ? loudVoice : 0.018, noise * (phaseNow === "speaking" ? (voiceRef.current === INSTANT ? 8 : 5) : 3));
         if (!mutedRef.current && rms > threshold) {
           loudSince ||= now;
           quietSince = 0;
-          if (!speaking && now - loudSince > (phaseNow === "speaking" ? 280 : 120)) {
+          if (!speaking && now - loudSince > (phaseNow === "speaking" ? (voiceRef.current === INSTANT ? 450 : 280) : 120)) {
             speaking = true;
             if (phaseNow === "speaking" || phaseNow === "thinking") bargeIn();
             else if (phaseNow === "listening") {

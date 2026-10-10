@@ -696,6 +696,9 @@ function Extras({ pose }: { pose: JuelPose }) {
   return null;
 }
 
+/** Poses where a hand touches the face (chin, eyes, cheeks, belly) and so is drawn over the body. */
+const HAND_IN_FRONT = new Set<JuelPose>(["think", "facepalm", "shocked", "scared", "laugh"]);
+
 export type JuelMascotProps = {
   pose?: JuelPose;
   /** Height in pixels. */
@@ -795,7 +798,9 @@ export function JuelMascot({ pose = "idle", size = 120, framing = "full", flip =
           </g>
         ) : null}
         <g className="jm-body">
+          {/* Arms come out from behind the body, as in the drawing; only a hand on the face goes in front. */}
           {framing === "full" ? <Arm className="jm-arm-l" from={SHOULDER_L} {...arms.left} /> : null}
+          {framing === "full" && !HAND_IN_FRONT.has(pose) ? <Arm className="jm-arm-r" from={SHOULDER_R} {...arms.right} /> : null}
           {/* The second eye peeks over the top edge, behind the body. */}
           <Eye className="jm-eye-back" cx={133} cy={63} r={19} look={eyes} closed={closed} kind={backEye} side="back" />
           <path d={BODY} fill="var(--jm-body)" />
@@ -809,7 +814,7 @@ export function JuelMascot({ pose = "idle", size = 120, framing = "full", flip =
           {face ? <EmotionMouth kind={face.mouth} /> : <Mouth pose={pose} />}
           {face?.brows ? <Brows kind={face.brows} /> : null}
           {face?.touches?.length ? <FaceTouches touches={face.touches} /> : null}
-          {framing === "full" ? <Arm className="jm-arm-r" from={SHOULDER_R} {...arms.right} /> : null}
+          {framing === "full" && HAND_IN_FRONT.has(pose) ? <Arm className="jm-arm-r" from={SHOULDER_R} {...arms.right} /> : null}
         </g>
       </g>
     </svg>
