@@ -203,6 +203,16 @@ describe("system-browser sign-in handoff", () => {
     expect(back.headers.get("location")).toBe("autoyt://auth?error=Denied");
   });
 
+  it("hands Android back to the app through an intent page, since Chrome can block a plain autoyt:// redirect", async () => {
+    const { flow } = await startFlow();
+    const android = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Mobile Safari/537.36";
+    const back = await fetch(`${base}/api/auth/google/callback?code=c`, { redirect: "manual", headers: { cookie: flow, "user-agent": android } });
+    expect(back.status).toBe(200);
+    const html = await back.text();
+    expect(html).toMatch(/intent:\/\/auth\?code=[^"#]+#Intent;scheme=autoyt;package=cc\.autoyt\.app;end/);
+    expect(html).toContain("Open AutoYT");
+  });
+
   it("bounces WebView navigations to auth URLs back to the app page", async () => {
     const res = await fetch(`${base}/api/auth/google?mode=connect&next=/channels`, {
       redirect: "manual",

@@ -2,6 +2,12 @@
    which only the apps set, so the website is unaffected. */
 
 html[data-native] {
+  /* Safe areas: Capacitor's SystemBars (insetsHandling "css") sets --safe-area-inset-* on Android, where
+     the WebView can report env() as 0; iOS reports env(). */
+  --sat: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+  --sab: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+  --sal: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
+  --sar: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
   --app-tabbar-offset: 0px;
   --ntb-bg: rgb(15 17 19 / 0.82);
   --ntb-line: rgb(255 255 255 / 0.08);
@@ -34,13 +40,37 @@ html[data-native] :is(button, nav, header, [role="tab"], [role="menuitem"], .ntb
 
 /* The header extends under the status bar and Dynamic Island; its 56px row stays. */
 html[data-native] .ah {
-  height: calc(56px + env(safe-area-inset-top));
-  padding-top: env(safe-area-inset-top);
-  padding-left: max(18px, env(safe-area-inset-left));
-  padding-right: max(16px, env(safe-area-inset-right));
+  height: calc(56px + var(--sat));
+  min-height: calc(56px + var(--sat));
+  padding-top: var(--sat);
+  padding-left: max(18px, var(--sal));
+  padding-right: max(16px, var(--sar));
 }
-html[data-native] .ah-overlay.is-mobile .ah-sheet {
-  padding-top: env(safe-area-inset-top);
+html[data-native] .ah-overlay.is-mobile .ah-sheet,
+html[data-native] .ah-overlay.is-drawer .ah-sheet {
+  padding-top: var(--sat);
+}
+/* Full-screen pages hide the header (Vibe Edit, focus mode): the page itself keeps clear of the status bar. */
+html[data-native] [data-build]:not(:has(> .ah)) {
+  padding-top: var(--sat);
+}
+/* The floating dock sits above the home indicator / gesture bar. */
+html[data-native] .mdock-slot {
+  padding-bottom: calc(10px + var(--sab));
+}
+html[data-native][data-mobile-dock] .mdock-pad {
+  padding-bottom: calc(96px + var(--sab)) !important;
+  scroll-padding-bottom: calc(96px + var(--sab));
+}
+/* Juel's panel opens under the taller header. */
+html[data-native] .juel:not(.juel-embedded) {
+  top: calc(56px + var(--sat) + var(--j-gap, 10px));
+  bottom: calc(var(--j-gap, 10px) + var(--sab));
+}
+@media (max-width: 640px) {
+  html[data-native] .toaster {
+    bottom: calc(96px + var(--sab));
+  }
 }
 
 /* ---------- Section bar ---------- */

@@ -371,7 +371,8 @@
 .ah-account {
   position: relative;
 }
-.ah .ah-get-started {
+.ah .ah-get-started,
+.ah-overlay .ah-get-started {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -387,7 +388,8 @@
   white-space: nowrap;
   cursor: pointer;
 }
-.ah .ah-get-started:hover { background: var(--ui-accent-hover); }
+.ah .ah-get-started:hover,
+.ah-overlay .ah-get-started:hover { background: var(--ui-accent-hover); }
 .ah .ah-avatar {
   width: 34px;
   height: 34px;
@@ -783,3 +785,4 @@
   .juel-trigger span { display: none; }
   .juel-trigger { width: 34px; justify-content: center; padding: 0; }
 }
+.ah-overlay .ah-d-signin { min-height: 44px; font-size: 14px; }

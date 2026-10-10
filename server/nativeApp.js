@@ -186,6 +186,28 @@ SELECT 'ok';
 `;
 }
 
+/** The page that hands a finished sign-in back to the Android app. Chrome Custom Tabs can block a plain
+ *  redirect to autoyt:// at the end of an OAuth flow (no user gesture), so the page opens the app through an
+ *  intent:// link, which Chrome allows, and keeps a button to tap if it didn't. */
+export function androidHandBackPage(callbackUrl) {
+  const query = callbackUrl.slice(NATIVE_CALLBACK.length);
+  const intent = `intent://auth${query}#Intent;scheme=autoyt;package=cc.autoyt.app;end`;
+  const href = intent.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Back to AutoYT</title>
+<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0f1113;color:#eceae3;font:16px/1.5 system-ui,sans-serif;text-align:center}main{padding:24px}a{display:inline-block;margin-top:18px;padding:14px 28px;border-radius:999px;background:#f9dc0b;color:#15130a;font-weight:700;text-decoration:none}p{color:#a3a29b;margin:6px 0 0}</style></head>
+<body><main><strong>Signed in</strong><p>Returning you to the AutoYT app.</p><a id="back" href="${href}">Open AutoYT</a></main>
+<script>location.replace(document.getElementById("back").href);</script></body></html>`;
+}
+
+/** Sends the browser back to the app with a sign-in result: a redirect, or the Android hand-back page. */
+function handBack(req, res, redirect, callbackUrl) {
+  if (/Android/i.test(String(req.headers["user-agent"] || ""))) {
+    res.status(200).set({ "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" }).send(androidHandBackPage(callbackUrl));
+    return;
+  }
+  redirect(302, callbackUrl);
+}
+
 export function registerNativeApp(app, deps) {
     const { getSessionRecord, setSessionCookie, clearSessionCookie, createAuthSession, upsertAuthUser, signedValue, verifySignedValue, publicAppUrl, runPsql, sqlString, signupAllowed } = deps;
     const nonces = createNonceRegistry();
@@ -251,7 +273,7 @@ export function registerNativeApp(app, deps) {
             appendSetCookie(res, flowCookie("", 0));
             if (local.startsWith("/auth/error")) {
                 const message = new URL(local, origin).searchParams.get("message") || "Sign-in failed";
-                return redirect(302, `${NATIVE_CALLBACK}?error=${encodeURIComponent(message)}`);
+                return handBack(req, res, redirect, `${NATIVE_CALLBACK}?error=${encodeURIComponent(message)}`);
             }
             Promise.resolve().then(async () => {
                 let sessionId = sessionIdFromSetCookie(res, verifySignedValue);
@@ -260,9 +282,9 @@ export function registerNativeApp(app, deps) {
                 if (!sessionId)
                     throw new Error("Sign-in did not finish. Try again.");
                 const code = sealToken(signedValue, { sid: sessionId, challenge: flow.challenge, next: safeAppPath(local) });
-                redirect(302, `${NATIVE_CALLBACK}?code=${encodeURIComponent(code)}`);
+                handBack(req, res, redirect, `${NATIVE_CALLBACK}?code=${encodeURIComponent(code)}`);
             }).catch((error) => {
-                redirect(302, `${NATIVE_CALLBACK}?error=${encodeURIComponent(error instanceof Error ? error.message : "Sign-in failed")}`);
+                handBack(req, res, redirect, `${NATIVE_CALLBACK}?error=${encodeURIComponent(error instanceof Error ? error.message : "Sign-in failed")}`);
             });
         };
         next();
@@ -302,7 +324,7 @@ export function registerNativeApp(app, deps) {
             res.redirect(ticket.to);
         }
         catch (error) {
-            res.redirect(`${NATIVE_CALLBACK}?error=${encodeURIComponent(error instanceof Error ? error.message : "Sign-in failed")}`);
+            handBack(req, res, res.redirect.bind(res), `${NATIVE_CALLBACK}?error=${encodeURIComponent(error instanceof Error ? error.message : "Sign-in failed")}`);
         }
     });
 

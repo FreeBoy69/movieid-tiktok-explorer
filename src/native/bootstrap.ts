@@ -8,6 +8,9 @@ import { messageOf, toast } from "../utils/toast";
 import { AuthCancelled, isAuthInFlight, isAuthStartHref, resumeNativeAuth, startNativeAuth } from "./auth";
 import { isDownloadLink, saveToDevice } from "./downloads";
 import { nativePlatform } from "./platform";
+// The app shell's own styles (safe areas, header, dock). Imported here, with the shell, so they ship
+// with every build: they used to ride along with the old native tab bar and vanished when it went.
+import "./native.css";
 
 let installed = false;
 
