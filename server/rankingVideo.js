@@ -31,10 +31,14 @@ export const RANKING = {
   preferSeconds: 90,
   maxSourceSeconds: 240,
   checkFrames: 6,
-  // An entry's screen time: the clip window, stretched to fit its narration line.
-  windowMin: 2.5,
-  windowMax: 4.5,
-  entryMax: 6.5,
+  // An entry's screen time: its narration line, then a few seconds of the clip's own sound, sized so
+  // the countdown lands near targetSeconds (20-30 s).
+  windowMin: 4,
+  windowMax: 8,
+  entryMax: 10,
+  targetSeconds: 24,
+  afterMin: 1.5,
+  afterMax: 5,
   hold: 0.8,
   loopTail: 0.3,
   // Clip audio while the narrator speaks (-12 dB).
@@ -121,7 +125,7 @@ export function conceptPrompt({ topic, count, language, template, format = "", n
   return `You plan viral vertical Shorts made from real clips found on YouTube and TikTok.
 ${loop
     ? `FORMAT: a ~7 second loop. One real fail clip: the setup, a cut to a funny AI reaction, the payoff, the reaction again. Plan exactly 1 entry: the fail clip to search for.`
-    : `FORMAT: a 20-25 second countdown from #${count} to #1, about 3-4 seconds per entry, hard cuts, real clips, a big two-line title band on top, a rank list on the left. #1 is the most shocking or funniest.`}
+    : `FORMAT: a 20-30 second countdown from #${count} to #1; each entry is the narrator's line, then a few seconds of the clip playing with its own sound; hard cuts, real clips, a big two-line title band on top, a rank list on the left. #1 is the most shocking or funniest.`}
 ${format ? `${format}\n` : ""}${niche ? `NICHE: ${niche.macroNiche} > ${niche.subNiche}\n` : ""}
 ${topic ? `TOPIC: ${topic}` : `NO TOPIC GIVEN: pick one topic that real short clips exist for in abundance on YouTube Shorts and TikTok (funny animals, kids, fails, sports moments, satisfying, nature), phrased like "funniest toddler fails".`}
 LANGUAGE for the title, hook, and labels: ${language}. Search queries stay in English unless the topic is local to another language.
@@ -245,7 +249,7 @@ Judge from the frames only; never invent what you can't see.
 - "quality" 0-10: sharp, well lit, the action readable on a phone, not a screen recording of another video.
 - "sees": what actually happens, one sentence.
 - "branding": true when a licensing agency or reposting brand shows anywhere (ViralHog, Jukin, Storyful, Newsflare, Caters, "upload & license", "licensing"), else false.
-- "window": the best ${loop ? "4-6" : "3-4"} seconds of the action {"start","end"} in seconds, ending just after the payoff; never on an intro, end card, subscribe screen, or title card.
+- "window": the best ${loop ? "4-6" : "5-8"} seconds of the action {"start","end"} in seconds, ending just after the payoff; never on an intro, end card, subscribe screen, or title card.
 - "cuts": 1-3 pieces inside the window to play in order (hard cuts between them); one piece when the moment is one take.
 ${loop ? `- "payoff": the second the funny or shocking moment hits, inside the window.\n` : ""}- "boxes": burned-in captions, subtitles, usernames, logos, or watermarks added on top of the footage, each {"kind":"captions|watermark|logo|text","x","y","w","h"} as fractions 0-1 of the frame (x,y the top-left). [] when there are none.
 - "label": an on-screen label for THIS clip, at most 3 words, from what it really shows (e.g. "Cake Faceplant"), and "emoji": one emoji that fits.
@@ -303,16 +307,34 @@ export function normalizeCheck(value, { duration, loop = false }) {
 }
 
 /**
- * The picture inside any black bars, from ffmpeg cropdetect's frame metadata (printed with
- * metadata=mode=print; its last reading is the widest, since it never resets). Null when there are none.
+ * The picture inside any black bars, from ffmpeg cropdetect's per-frame metadata (reset=1, printed with
+ * metadata=mode=print): the box most frames agree on, so a full-frame intro or end card doesn't hide
+ * bars the rest of the clip has. With `window` ({ start, end } seconds) only frames inside it count
+ * (a video can switch between full-frame and boxed footage), all frames when none are. Null when there
+ * are no bars.
  */
-export function parseCropDetect(text, { width, height }) {
-  const last = {};
-  for (const m of String(text || "").matchAll(/lavfi\.cropdetect\.(w|h|x|y)=(\d+)/g)) last[m[1]] = Number(m[2]);
-  if (!["w", "h", "x", "y"].every((k) => Number.isFinite(last[k]))) return null;
-  const { w, h, x, y } = last;
-  // Bars thinner than 2% are noise; a "picture" under a third of the frame is a dark scene, not bars.
-  if (w < width * 0.33 || h < height * 0.33 || (w >= width * 0.98 && h >= height * 0.98)) return null;
+export function parseCropDetect(text, { width, height }, window = null) {
+  const all = new Map(), inside = new Map();
+  let frame = {};
+  let t = null;
+  for (const m of String(text || "").matchAll(/pts_time:([\d.]+)|lavfi\.cropdetect\.(w|h|x|y)=(\d+)/g)) {
+    if (m[1] !== undefined) { t = Number(m[1]); frame = {}; continue; }
+    frame[m[2]] = Number(m[3]);
+    if (m[2] !== "y") continue;
+    if (["w", "h", "x"].every((k) => Number.isFinite(frame[k]))) {
+      const key = `${frame.w}:${frame.h}:${frame.x}:${frame.y}`;
+      all.set(key, (all.get(key) || 0) + 1);
+      if (window && t !== null && t >= window.start && t <= window.end) inside.set(key, (inside.get(key) || 0) + 1);
+    }
+    frame = {};
+  }
+  const counts = inside.size ? inside : all;
+  if (!counts.size) return null;
+  const [w, h, x, y] = [...counts].sort((a, b) => b[1] - a[1])[0][0].split(":").map(Number);
+  // Bars thinner than 2% are noise. A narrow picture is a real one only when it spans the full other
+  // side (a 9:16 phone video boxed into 16:9 is 32% wide); otherwise it's a dark scene, not bars.
+  const narrow = (w < width * 0.3 && h < height * 0.9) || (h < height * 0.3 && w < width * 0.9);
+  if (narrow || w < width * 0.2 || h < height * 0.2 || (w >= width * 0.98 && h >= height * 0.98)) return null;
   return { x, y, w, h };
 }
 
@@ -387,7 +409,7 @@ export function pickClips(entries, checked, { min = RANKING.minCount } = {}) {
 
 export function scriptPrompt({ topic, language, hook, picked }) {
   const rows = [...picked].sort((a, b) => b.rank - a.rank);
-  return `You write the narration for a vertical countdown Short about "${topic}" in ${language}. It counts down from #${rows.length} to #1, about 3-4 seconds per clip.
+  return `You write the narration for a vertical countdown Short about "${topic}" in ${language}. It counts down from #${rows.length} to #1. Each line is said as its clip starts; then the clip plays on with its own sound for a few seconds, so the line must not describe the payoff before it happens: set it up.
 Draft hook: "${hook}"
 THE CLIPS, in the order they play (what each really shows):
 ${rows.map((p) => `#${p.rank}: ${p.chosen.check.sees || p.entry.moment} (label idea: ${p.chosen.check.label || p.entry.label})`).join("\n")}
@@ -431,12 +453,18 @@ export function buildTimeline(entries, { hookSeconds = 0, hold = RANKING.hold, l
   const voice = [];
   const rows = [];
   let t = 0;
+  const leadOf = (k) => (k === 0 && hookSeconds > 0 ? hookSeconds + 0.25 : 0.15);
+  // After each line the clip plays on with its own sound; how long is shared out so the whole video
+  // lands near the target length.
+  const spoken = order.reduce((sum, e, k) => sum + leadOf(k) + (e.lineSeconds || 0), 0) + hold;
+  const after = order.length ? clamp((RANKING.targetSeconds - spoken) / order.length, RANKING.afterMin, RANKING.afterMax) : 0;
   order.forEach((e, k) => {
-    const lead = k === 0 && hookSeconds > 0 ? hookSeconds + 0.25 : 0.15;
-    const need = lead + (e.lineSeconds || 0) + 0.3;
+    const lead = leadOf(k);
+    const need = lead + (e.lineSeconds || 0) + after;
     const cuts = e.cuts.map((c) => ({ ...c }));
     const have = cuts.reduce((sum, c) => sum + (c.end - c.start), 0);
-    let want = clamp(Math.max(have, need), RANKING.windowMin, RANKING.entryMax);
+    // A long window plays at most a second past its share, so the video stays near the target.
+    let want = clamp(Math.max(need, Math.min(have, need + 1)), RANKING.windowMin, RANKING.entryMax);
     // Longer than the cuts: start the first one earlier (the run-up to the moment), then run the last
     // one on by at most a second (past the payoff a source often cuts to an end card).
     let extra = want - have;
@@ -445,13 +473,20 @@ export function buildTimeline(entries, { hookSeconds = 0, hold = RANKING.hold, l
       cuts[0].start -= before;
       extra -= before;
       const last = cuts[cuts.length - 1];
-      const after = Math.min(extra, 1, Math.max(0, (e.duration || last.end) - last.end - 0.1));
-      last.end += after;
-      extra -= after;
+      const runOn = Math.min(extra, 2, Math.max(0, (e.duration || last.end) - last.end - 0.3));
+      last.end += runOn;
+      extra -= runOn;
       want -= extra;
     } else if (have > want + 0.01) {
-      // Too long: trim the last cut.
-      cuts[cuts.length - 1].end -= have - want;
+      // Too long: trim from the front, so the payoff at the end of the window stays.
+      let cut = have - want;
+      while (cut > 0.01 && cuts.length) {
+        const first = cuts[0];
+        const take = Math.min(cut, first.end - first.start);
+        first.start += take;
+        cut -= take;
+        if (first.end - first.start < 0.2) cuts.shift();
+      }
     }
     const from = t;
     for (const c of cuts) {
@@ -967,11 +1002,12 @@ async function checkCandidate({ candidate, entry, topic, dir, loop, download, tr
     const frameDir = path.join(dir, `${base}-frames`);
     await fs.mkdir(frameDir, { recursive: true });
     const times = checkTimes(media.duration);
-    const [scenes, bars] = await Promise.all([
+    // Scene cuts, the check frames (written to frameDir), and black bars, at once.
+    const [scenes, , bars] = await Promise.all([
       command(process.env.FFMPEG_PATH || "ffmpeg", ["-hide_banner", "-nostats", "-v", "error", "-t", String(Math.ceil(window)), "-i", local, "-an", "-sn", "-vf", "scale=320:-2,select='gt(scene\\,0.3)',metadata=mode=print:file=-", "-f", "null", "-"], signal).catch(() => ""),
       command(process.env.FFMPEG_PATH || "ffmpeg", frameArgs({ file: local, dir: frameDir, times, window, hook: false }), signal),
       // Black bars (a vertical video letterboxed into 16:9, or the reverse) are cropped off too.
-      command(process.env.FFMPEG_PATH || "ffmpeg", ["-hide_banner", "-nostats", "-v", "error", "-t", String(Math.ceil(window)), "-i", local, "-an", "-sn", "-vf", "fps=1,cropdetect=limit=0.09:round=2:reset=0,metadata=mode=print:file=-", "-f", "null", "-"], signal).catch(() => ""),
+      command(process.env.FFMPEG_PATH || "ffmpeg", ["-hide_banner", "-nostats", "-v", "error", "-t", String(Math.ceil(window)), "-i", local, "-an", "-sn", "-vf", "fps=2,cropdetect=limit=0.09:round=2:reset=1,metadata=mode=print:file=-", "-f", "null", "-"], signal).catch(() => ""),
     ]);
     const names = (await fs.readdir(frameDir)).filter((n) => n.endsWith(".jpg")).sort();
     if (!names.length) return null;
@@ -1000,7 +1036,7 @@ async function checkCandidate({ candidate, entry, topic, dir, loop, download, tr
     await fs.rm(frameDir, { recursive: true, force: true }).catch(() => {});
     const check = normalizeCheck(value, { duration: media.duration, loop });
     console.info(`[ranking] checked ${candidate.url}: fit ${check.fit}, quality ${check.quality}${check.usable ? "" : " (not used)"}: ${check.sees}`);
-    return { ...candidate, file: local, duration: round(media.duration, 2), width: media.width, height: media.height, audio: media.audio, check: { ...check, crop: keepRegion(check.boxes, media, parseCropDetect(bars, media)) } };
+    return { ...candidate, file: local, duration: round(media.duration, 2), width: media.width, height: media.height, audio: media.audio, check: { ...check, crop: keepRegion(check.boxes, media, parseCropDetect(bars, media, check.window)) } };
   } catch (error) {
     signal?.throwIfAborted();
     if (blocked(error)) throw error;

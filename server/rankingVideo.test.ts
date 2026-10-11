@@ -136,9 +136,9 @@ describe("ranking video check", () => {
     expect(Math.max(...checkTimes(600))).toBeLessThan(90);
   });
 
-  it("cleans the vision answer into a 3-4 s window with cuts inside it and a score", () => {
+  it("cleans the vision answer into a 4-8 s window with cuts inside it and a score", () => {
     const c = normalizeCheck({ fit: 9, quality: 6, window: { start: 10, end: 30 }, cuts: [{ start: 26, end: 28 }, { start: 27, end: 30 }, { start: 1, end: 2 }], boxes: [{ kind: "captions", x: 0.1, y: 0.8, w: 0.8, h: 0.1 }, { x: 2, y: 0, w: 0, h: 0 }], label: "Big 🤣 Splash Zone Wow", emoji: "💦 yes", line: "one two three four five six seven eight nine ten eleven twelve thirteen", branding: false }, { duration: 40 });
-    expect(c.window).toEqual({ start: 25.5, end: 30 });
+    expect(c.window).toEqual({ start: 22, end: 30 });
     expect(c.cuts).toEqual([{ start: 26, end: 28 }]);
     expect(c.boxes).toHaveLength(1);
     expect(c.score).toBe(7.95);
@@ -161,6 +161,14 @@ describe("ranking video check", () => {
     expect(parseCropDetect("lavfi.cropdetect.w=640\nlavfi.cropdetect.w=360\nlavfi.cropdetect.h=360\nlavfi.cropdetect.x=140\nlavfi.cropdetect.y=0", { width: 640, height: 360 })).toEqual({ x: 140, y: 0, w: 360, h: 360 });
     expect(parseCropDetect("lavfi.cropdetect.w=640\nlavfi.cropdetect.h=360\nlavfi.cropdetect.x=0\nlavfi.cropdetect.y=0", { width: 640, height: 360 })).toBeNull();
     expect(parseCropDetect("", { width: 640, height: 360 })).toBeNull();
+    // A full-frame intro doesn't hide the bars most of the clip has.
+    const frame = (w: number, x: number) => `lavfi.cropdetect.x1=${x}\nlavfi.cropdetect.w=${w}\nlavfi.cropdetect.h=360\nlavfi.cropdetect.x=${x}\nlavfi.cropdetect.y=0\n`;
+    expect(parseCropDetect(frame(640, 0).repeat(2) + frame(204, 218).repeat(9), { width: 640, height: 360 })).toEqual({ x: 218, y: 0, w: 204, h: 360 });
+    // A video that switches between full-frame and boxed footage: only the chosen window counts.
+    const timed = (t: number, w: number, x: number) => `frame:0 pts:0 pts_time:${t}\n${frame(w, x)}`;
+    const mixed = [0, 0.5, 1, 1.5, 2, 2.5].map((t) => timed(t, 640, 0)).join("") + [5, 5.5, 6].map((t) => timed(t, 204, 218)).join("");
+    expect(parseCropDetect(mixed, { width: 640, height: 360 })).toBeNull();
+    expect(parseCropDetect(mixed, { width: 640, height: 360 }, { start: 4.5, end: 12.5 })).toEqual({ x: 218, y: 0, w: 204, h: 360 });
     const size = { width: 1000, height: 1000 };
     // Captions low in the frame trim the bottom; a watermark high trims the top.
     expect(keepRegion([{ x: 0.1, y: 0.8, w: 0.8, h: 0.1 }, { x: 0.05, y: 0.02, w: 0.2, h: 0.06 }], size)).toEqual({ x: 0, y: 80, w: 1000, h: 720 });
@@ -209,19 +217,25 @@ describe("ranking video script and timeline", () => {
     expect(firstEmoji("ok 👍🏽 then")).toBe("👍");
   });
 
-  it("counts down with hard cuts, stretches clips for their lines, holds #1, and loops back", () => {
+  it("counts down with hard cuts, lets each clip play on after its line, holds #1, and loops back", () => {
     const t = buildTimeline([
       { rank: 1, cuts: [{ start: 10, end: 13.5 }], duration: 20, lineSeconds: 2 },
       { rank: 2, cuts: [{ start: 1, end: 2 }, { start: 3, end: 5 }], duration: 6, lineSeconds: 4 },
       { rank: 3, cuts: [{ start: 5, end: 8.5 }], duration: 30, lineSeconds: 2 },
     ], { hookSeconds: 1.8 });
     expect(t.rows.map((r) => r.rank)).toEqual([3, 2, 1]);
-    // #3 carries the hook (1.8 + 0.25 lead + 2 s line + 0.3): its window starts earlier.
-    expect(t.segments[0]).toMatchObject({ rank: 3, start: 4.15, length: 4.35, at: 0 });
-    // #2 needs 4.45 s: its first cut starts 1 s earlier, its last runs on the remaining 0.45 s.
-    expect(t.segments.filter((s) => s.rank === 2).map((s) => [s.start, s.length])).toEqual([[0, 2], [3, 2.45]]);
+    // Three entries share out the run-on so the video lands in 20-30 s.
+    expect(t.duration).toBeGreaterThanOrEqual(20);
+    expect(t.duration).toBeLessThanOrEqual(30);
+    // After each line the clip keeps playing with its own sound (the 6 s #2 source runs out sooner).
+    for (const row of t.rows) {
+      const line = t.voice.find((v) => v.kind === "line" && v.rank === row.rank)!;
+      expect(row.to - (line.at + line.seconds)).toBeGreaterThanOrEqual(row.rank === 2 ? 0.5 : 1.5);
+    }
+    // #2's short source is stretched from both ends: its first cut starts at 0.
+    expect(t.segments.filter((s) => s.rank === 2)[0].start).toBe(0);
     expect(t.segments.find((s) => s.rank === 1)).toMatchObject({ hold: RANKING.hold });
-    expect(t.segments.at(-1)).toMatchObject({ tail: true, muted: true, rank: 3, start: 4.15 });
+    expect(t.segments.at(-1)).toMatchObject({ tail: true, muted: true, rank: 3 });
     expect(t.voice[0]).toMatchObject({ kind: "hook", at: 0.1 });
     expect(t.voice[1].at).toBe(2.05);
     // Lines never overlap.
@@ -231,6 +245,14 @@ describe("ranking video script and timeline", () => {
     expect(states.map((s) => s.shown)).toEqual([[3], [3, 2], [3, 2, 1], [3]]);
     expect(states.at(-1).t1).toBe(t.duration);
     expect(duckWindows([{ at: 1, seconds: 2 }])).toEqual([{ from: 0.92, to: 3.12 }]);
+  });
+
+  it("keeps a five-entry countdown near 30 s, trimming long windows from the front so the payoff stays", () => {
+    const t = buildTimeline([1, 2, 3, 4, 5].map((rank) => ({ rank, cuts: [{ start: 10, end: 18 }], duration: 60, lineSeconds: 2.5 })), { hookSeconds: 1.8 });
+    expect(t.duration).toBeLessThanOrEqual(30);
+    expect(t.duration).toBeGreaterThanOrEqual(20);
+    // Every trimmed window still ends on its payoff at 18 s.
+    for (const rank of [2, 3, 4]) expect(t.segments.filter((s) => s.rank === rank && !s.tail).map((s) => s.start + s.length).at(-1)).toBeCloseTo(18, 2);
   });
 
   it("lists every source to credit", () => {
@@ -307,6 +329,8 @@ describe("makeRankingVideo", () => {
     const command = async (program: string, args: string[]) => {
       calls.push(`${path.basename(program)} ${args.join(" ")}`);
       if (/ffprobe/.test(program)) return JSON.stringify({ format: { duration: /voice/.test(args.at(-1) || "") ? "1.5" : "20" }, streams: [{ codec_type: "video", width: 1280, height: 720 }, { codec_type: "audio" }] });
+      // Every clip is a 9:16 phone video boxed into 16:9 (the bar check runs alongside the frame grab).
+      if (args.some((a) => a.includes("cropdetect"))) return [1, 2, 3, 4, 5, 6, 7].map((t) => `frame:${t} pts:${t} pts_time:${t / 2}\nlavfi.cropdetect.w=404\nlavfi.cropdetect.h=720\nlavfi.cropdetect.x=438\nlavfi.cropdetect.y=0\n`).join("");
       const pattern = args.find((a) => /frame-%03d\.jpg$/.test(a));
       if (pattern) for (let i = 1; i <= 6; i++) await fs.writeFile(pattern.replace("%03d", String(i).padStart(3, "0")), "jpg");
       const out = args.at(-1) || "";
@@ -351,7 +375,8 @@ describe("makeRankingVideo", () => {
       expect(statuses.some((s) => /^Checking \d+ clips$/.test(s))).toBe(true);
       expect(made.plan.entries.map((e: { rank: number }) => e.rank)).toEqual([1, 2, 3]);
       expect(made.plan.entries[0].label).toBe("Pick 1");
-      expect(made.plan.entries[0].chosen.check.crop).toEqual({ x: 0, y: 0, w: 1280, h: 648 });
+      // The bars come off; the watermark sits on a bar, so it goes with them.
+      expect(made.plan.entries[0].chosen.check.crop).toEqual({ x: 438, y: 0, w: 404, h: 720 });
       expect(made.plan.entries.some((e: { runnersUp: unknown[] }) => e.runnersUp.length)).toBe(true);
       expect(made.sources).toHaveLength(3);
       expect(made.markdown).toMatch(/Kid Clips on YouTube/);
