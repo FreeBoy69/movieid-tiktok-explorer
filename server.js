@@ -18044,7 +18044,8 @@ async function fetchYouTubeJson(pathName, params = {}) {
  */
 // `params` is YouTube's search filter token: EgIQAQ== is videos only; the radar also uses
 // upload-date and view-count sorted variants (see webSearchLanes).
-async function searchYouTubeWebVideoIds(query, limit = 20, params = "EgIQAQ==") {
+// `details` (a Map), when given, collects each hit's title, channel, length, and snippet by id.
+async function searchYouTubeWebVideoIds(query, limit = 20, params = "EgIQAQ==", details = null) {
     const response = await fetch("https://www.youtube.com/youtubei/v1/search?prettyPrint=false", {
         method: "POST",
         headers: {
@@ -18077,8 +18078,12 @@ async function searchYouTubeWebVideoIds(query, limit = 20, params = "EgIQAQ==") 
             return;
         }
         const id = node.videoRenderer?.videoId;
-        if (typeof id === "string" && /^[\w-]{11}$/.test(id) && !ids.includes(id))
+        if (typeof id === "string" && /^[\w-]{11}$/.test(id) && !ids.includes(id)) {
             ids.push(id);
+            const r = node.videoRenderer;
+            const text = (value) => String(value?.simpleText || (value?.runs || []).map((run) => run.text).join("") || "");
+            details?.set(id, { id, title: text(r.title), channel: text(r.ownerText || r.longBylineText), duration: text(r.lengthText), description: (r.detailedMetadataSnippets || []).map((snippet) => text(snippet.snippetText)).join(" ") });
+        }
         for (const value of Object.values(node))
             walk(value);
     };
@@ -18101,10 +18106,10 @@ async function withYtDlpSearchSlot(run) {
         ytDlpSearchSlots.waiting.shift()?.();
     }
 }
-function searchYouTubeVideoIdsWithYtDlp(query, limit = 20, params = "EgIQAQ==") {
-    return withYtDlpSearchSlot(() => runYtDlpSearch(query, limit, params));
+function searchYouTubeVideoIdsWithYtDlp(query, limit = 20, params = "EgIQAQ==", details = null) {
+    return withYtDlpSearchSlot(() => runYtDlpSearch(query, limit, params, details));
 }
-function runYtDlpSearch(query, limit, params) {
+function runYtDlpSearch(query, limit, params, details = null) {
     const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}&sp=${encodeURIComponent(params)}`;
     const python = resolvePythonExecutable("-m").cmd;
     return new Promise((resolve, reject) => {
@@ -18128,6 +18133,9 @@ function runYtDlpSearch(query, limit, params) {
                 return reject(new Error(cleanYtDlpMessage(stderr) || `yt-dlp search exited with code ${code}`));
             try {
                 const entries = JSON.parse(stdout).entries || [];
+                for (const entry of entries)
+                    if (typeof entry?.id === "string")
+                        details?.set(entry.id, { id: entry.id, title: String(entry.title || ""), channel: String(entry.channel || entry.uploader || ""), duration: Number(entry.duration) || null, description: String(entry.description || "") });
                 resolve(entries.map((entry) => entry?.id).filter((id) => typeof id === "string" && /^[\w-]{11}$/.test(id)).slice(0, limit));
             }
             catch {
@@ -18140,11 +18148,11 @@ function runYtDlpSearch(query, limit, params) {
 // the host IP), the same search runs through yt-dlp on the YouTube worker. Returns the ids and
 // whether any route answered, so a search with no hits isn't mistaken for an outage.
 let youtubeWebSearchBlockedUntil = 0;
-async function searchYouTubeVideoIdsAnyRoute(query, limit, params) {
+async function searchYouTubeVideoIdsAnyRoute(query, limit, params, details = null) {
     let answered = false;
     if (Date.now() >= youtubeWebSearchBlockedUntil) {
         try {
-            const direct = await searchYouTubeWebVideoIds(query, limit, params);
+            const direct = await searchYouTubeWebVideoIds(query, limit, params, details);
             if (direct.length)
                 return { ids: direct, ok: true };
             // No hits: a real empty search, or a soft bot check. yt-dlp on the worker tells them apart.
@@ -18158,12 +18166,27 @@ async function searchYouTubeVideoIdsAnyRoute(query, limit, params) {
         }
     }
     try {
-        return { ids: await searchYouTubeVideoIdsWithYtDlp(query, limit, params), ok: true };
+        return { ids: await searchYouTubeVideoIdsWithYtDlp(query, limit, params, details), ok: true };
     }
     catch (error) {
         console.warn("YouTube yt-dlp search failed:", query, error instanceof Error ? error.message : error);
         return { ids: [], ok: answered };
     }
+}
+/** Short YouTube videos (under 4 minutes) for a keyword, with title, channel, length, and snippet
+ *  (Ranking Video's clip search): the Niche Finder's route, web search then yt-dlp on the worker. */
+async function searchYouTubeShortVideos(query, limit = 10) {
+    const details = new Map();
+    // EgQQARgB: videos only, under 4 minutes.
+    const { ids } = await searchYouTubeVideoIdsAnyRoute(query, limit, "EgQQARgB", details);
+    return ids.map((id) => ({ ...(details.get(id) || {}), id, uploader: details.get(id)?.channel || "" }));
+}
+/** TikTok videos for a keyword, through the TikTok list script's search mode. */
+async function searchTikTokVideos(query, limit = 12) {
+    const { playlist, error } = await runTikTokListScriptSafe(`https://www.tiktok.com/search?q=${encodeURIComponent(query)}`, limit);
+    if (!playlist)
+        throw error || new Error("TikTok search failed");
+    return playlist.videos || [];
 }
 async function fetchYouTubeDiscoveryJson(account, pathName, params = {}) {
     if (youtubeApiKey())
@@ -21232,6 +21255,9 @@ async function startServer() {
         transcribe: transcribeMediaFileWithSegments,
         // Explainer Studio narrates every script line in the chosen voice.
         speak: speakForStudio,
+        // Ranking Video finds its clips with the Niche Finder's YouTube search and TikTok keyword search.
+        searchYouTube: searchYouTubeShortVideos,
+        searchTikTok: searchTikTokVideos,
         voiceAllowed: async (userId, voiceId) => {
             if (isHostedVoice(voiceId))
                 return Boolean(hostedVoiceProfile(voiceId));

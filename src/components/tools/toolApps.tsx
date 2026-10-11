@@ -4,7 +4,7 @@
 import type { ToolId } from "../../utils/tiktokRoute";
 import { navEntryFor } from "../../utils/appNavigation";
 
-export type ToolKind = "image" | "thumbnail" | "video-upscale" | "stems" | "watch" | "transcribe" | "audio-extract" | "thumbnail-download" | "poster" | "text" | "design" | "recap";
+export type ToolKind = "image" | "thumbnail" | "video-upscale" | "stems" | "watch" | "ranking" | "transcribe" | "audio-extract" | "thumbnail-download" | "poster" | "text" | "design" | "recap";
 export type TextTask = "titles" | "description" | "hashtags";
 export type ToolOperation = { value: string; label: string; hint: string };
 export type ToolDef = {
@@ -177,6 +177,15 @@ export const TOOLS: Record<ToolId, ToolDef> = {
     heading: "Any video, broken down",
     body: "Paste a YouTube, TikTok, or other video link, or upload one. It's watched shot by shot with the transcript: you get the hook frame by frame, cuts per minute, captions and look, the story beats, and the tool, settings, and prompt to recreate it here.",
     prompt: { label: "What do you want to know? (optional)", placeholder: "e.g. How do they keep people watching past the first 10 seconds?", required: false },
+  },
+  ranking: {
+    id: "ranking",
+    kind: "ranking",
+    tagline: "Give it a topic. Real clips are found on YouTube and TikTok, checked, ranked, and narrated as a vertical countdown Short.",
+    action: "Make the countdown",
+    heading: "A countdown from real clips",
+    body: "Type a topic like funniest toddler fails, or leave it empty for a suggestion. Clips are searched, watched, and cropped clean of other creators' captions, then counted down with a spoken hook, a big rank list, and a sources list to credit.",
+    prompt: { label: "Topic (optional)", placeholder: "e.g. funniest toddler fails", required: false },
   },
   "thumbnail-downloader": {
     id: "thumbnail-downloader",

@@ -80,11 +80,11 @@ export function studioDraftFor(studio: "image" | "video" | "audio" | "music", pr
 
 // Hand-off between pages: the library writes, the target page takes it once.
 export type PendingTemplate = {
-  target: "image" | "video" | "music" | "create" | "promo" | "marketing" | "explainer" | "drama";
+  target: "image" | "video" | "music" | "create" | "promo" | "marketing" | "explainer" | "drama" | "ranking";
   title: string;
   prompt: string;
   aspect?: string;
-  /** The studio's own template id (promo, marketing format, explainer, drama). */
+  /** The studio's own template id (promo, marketing format, explainer, drama, ranking format). */
   templateId?: string;
   /** Image/Video Studio: the model picked on the Create page, its references, and whether to start right away. */
   model?: string;

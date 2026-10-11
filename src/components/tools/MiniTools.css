@@ -752,3 +752,37 @@
   .mt-watch { padding: 16px; }
   .mt-watch-times li { grid-template-columns: 52px minmax(0, 1fr); }
 }
+
+/* Ranking Video: the 9:16 video beside its countdown, each entry's clip and the runners-up to swap in. */
+.mt-rank { display: grid; grid-template-columns: minmax(200px, 300px) minmax(0, 1fr); gap: 20px; align-items: start; padding: 20px; border: 1px solid var(--cs-line); border-radius: 16px; background: var(--cs-surface); }
+.mt-rank h3 { margin: 0 0 4px; font-size: 17px; font-weight: 650; line-height: 1.3; }
+.mt-rank p { margin: 0; }
+.mt-rank-video { position: sticky; top: 72px; }
+.mt-rank-video video { display: block; width: 100%; aspect-ratio: 9 / 16; border-radius: 12px; background: var(--cs-sunken); object-fit: contain; }
+.mt-rank-side { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.mt-rank-hook { font-size: 15px; line-height: 1.5; color: var(--ui-text); }
+.mt-rank-list { display: flex; flex-direction: column; gap: 16px; margin: 0; padding: 0; list-style: none; }
+.mt-rank-list > li { display: flex; flex-direction: column; gap: 8px; padding-top: 16px; border-top: 1px solid var(--cs-line); }
+.mt-rank-list > li:first-child { padding-top: 0; border-top: 0; }
+.mt-rank-row { display: flex; align-items: flex-start; gap: 12px; }
+.mt-rank-num { display: inline-grid; flex: none; place-items: center; width: 32px; height: 32px; border-radius: 10px; background: var(--ui-chip); color: var(--ui-text); font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.mt-rank-num.is-1 { background: #ffd60a; color: #1b1b18; }
+.mt-rank-num.is-2 { background: #ff8a00; color: #1b1b18; }
+.mt-rank-num.is-3 { background: #e5322a; color: #fdfcfa; }
+.mt-rank-entry { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding-top: 4px; }
+.mt-rank-entry strong { font-size: 15px; font-weight: 650; line-height: 1.35; }
+.mt-rank-line { color: var(--cs-faint); font-size: 13px; line-height: 1.5; }
+.mt-rank-clip { display: grid; grid-template-columns: 96px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 8px; border-radius: 12px; background: var(--cs-sunken); }
+.mt-rank-thumb { display: grid; place-items: center; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 8px; background: var(--ui-chip); color: var(--cs-faint); font-size: 12px; font-weight: 600; }
+.mt-rank-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.mt-rank-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; font-size: 13px; line-height: 1.5; }
+.mt-rank-body a { display: inline-flex; align-items: center; gap: 2px; color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.mt-rank-more { margin-left: 44px; }
+.mt-rank-more > .mt-rank-clip { margin-top: 8px; }
+@media (max-width: 760px) {
+  .mt-rank { grid-template-columns: minmax(0, 1fr); padding: 16px; }
+  .mt-rank-video { position: static; max-width: 320px; width: 100%; margin: 0 auto; }
+  .mt-rank-more { margin-left: 0; }
+  .mt-rank-clip { grid-template-columns: 72px minmax(0, 1fr); }
+  .mt-rank-clip > .ui-btn { grid-column: 1 / -1; justify-self: start; }
+}

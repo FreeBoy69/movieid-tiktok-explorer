@@ -16,7 +16,7 @@ export const JUEL_SPECIALISTS = {
   recap: { name: "Recap", brief: "Movie to Recap: analysing a film, the script and storyboard, matching footage, rendering, posting" },
   editor: { name: "Editor", brief: "Vibe Edit: the timeline, captions, voiceover, music, B-roll, auto edit, and exports" },
   producer: { name: "Producer", brief: "Create Video projects (script, voice, visuals, thumbnail, export), digital products, production profiles, channel styles" },
-  studio: { name: "Studio", brief: "image, video, and music generation, workflows, design, explainers, the prompt library, mini tools, and voices; watching a video someone shares to break it down and explain how to recreate it in AutoYT (Watch a video)" },
+  studio: { name: "Studio", brief: "image, video, and music generation, workflows, design, explainers, the prompt library, mini tools, and voices; watching a video someone shares to break it down and explain how to recreate it in AutoYT (Watch a video); ranking videos: a topic becomes a narrated countdown Short from real YouTube and TikTok clips (Ranking Video)" },
   film: { name: "Film", brief: "Drama and Film: series, episodes, characters, locations, voices, clips, and the final cut" },
   research: { name: "Research", brief: "YouTube Radar, niches, competitors, growth insights, Movie ID, source scans, downloads, transcripts, rewriting" },
   community: { name: "Community", brief: "comment replies on YouTube and TikTok and their rules" },
@@ -298,7 +298,7 @@ export const JUEL_ROUTES = {
   "POST /api/saved/tiktok-playlists/genre-scan": ["research", "paid", "Scans the next batch of a saved TikTok source's videos for story genres with AI."],
   "POST /api/saved/tiktok-playlists/movie-scan": ["research", "paid", "Identifies the movies in the next batch of a saved TikTok source's videos."],
   "POST /api/saved/tiktok-post-analyses": ["research", "change", "Saves a movie-ID analysis result for a TikTok post."],
-  "POST /api/studio/generations": ["studio", "paid", "Starts a new Creator Studio generation such as an image, video, audio, design, or explainer. Also watches, analyses, and breaks down a video: tab \"watch\" with settings.sourceUrl (a public video link) or settings.sourceVideo (an upload), and the user's question as prompt, explains what's in it and how to recreate it in AutoYT."],
+  "POST /api/studio/generations": ["studio", "paid", "Starts a new Creator Studio generation such as an image, video, audio, design, or explainer. Also watches, analyses, and breaks down a video: tab \"watch\" with settings.sourceUrl (a public video link) or settings.sourceVideo (an upload), and the user's question as prompt, explains what's in it and how to recreate it in AutoYT. Makes a ranking video: tab \"ranking\" with the topic as prompt (empty suggests one) and settings {template: \"countdown\" (a narrated #N to #1 vertical Short, 20-25 s) | \"reaction-loop\" (a real fail clip cut with an AI reaction, about 7 s), count 3-10 (default 5), language (default English), voiceId, captions true|false, captionStyle, music true|false, reactionPrompt (reaction-loop)}: real clips are found on YouTube and TikTok, checked, ranked, narrated, and rendered with a sources list to credit. A finished one lists runners-up per rank; swapping one in is the same call with settings.planId (that generation id) and settings.picks {\"<rank>\": \"<candidate id>\"}, which only renders again."],
   "POST /api/studio/generations/:id/design": ["studio", "change", "Saves your edited HTML back into an Editable Design generation."],
   "POST /api/studio/generations/:id/vibe-edit": ["studio", "change", "Opens a Promo, Explainer, or Vibe Motion graphic in Vibe Edit (its own edit, reopened as it was left; {rebuild: true} starts over). Returns {projectId}."],
   "POST /api/studio/generations/:id/vibe-edit/export": ["studio", "change", "Makes a Vibe Edit export (gen-vibe-….mp4) the generation's video and saves the edits into its document (file, edits)."],
@@ -603,6 +603,15 @@ export const JUEL_COSTS = {
     if (tab === "music" || tab === "audio") return s.audioMode === "voice" ? "speech" : "music";
     // Watch a video: the transcript, a vision pass over its frames in batches, and the write-up.
     if (tab === "watch") return "transcription llm:6";
+    // Ranking Video: a plan and a script, a vision read and a short transcript of about four clips per
+    // entry, and a voice line per entry plus the hook; the reaction loop draws and animates its reaction
+    // (once per prompt) and makes a music bed. A swap (planId) only re-records the narration and renders.
+    if (tab === "ranking") {
+      const loop = s.template === "reaction-loop";
+      const n = loop ? 1 : Math.max(3, Math.min(10, Math.round(Number(s.count) || 5)));
+      if (s.planId) return loop ? "" : `speech:${n + 1}`;
+      return [`llm:${2 + n * 4}`, `transcription:${n * 4}`, loop ? "image video" : `speech:${n + 1}`, s.music === true || (loop && s.music !== false) ? "music" : ""].filter(Boolean).join(" ");
+    }
     return VIDEO_TABS.has(tab) ? "video" : `image:${count(s.count, 6)}`;
   },
 };
@@ -739,6 +748,7 @@ const SPECIALIST_GUIDES = {
   studio: (context) => {
     const persona = STUDIO_PERSONAS[context?.details?.persona];
     return `${persona ? `WORK AS: ${persona.brief}.\n` : ""}MAKING THINGS: POST /api/studio/generations with {"tab": "image" | "video" | "music" (or another studio app), "prompt": "a rich, specific generation prompt", "settings": {"aspectRatio": "16:9" | "9:16" | "1:1" | "4:5", "count": 1-4 (images), "duration": 5 | 8 (video), "instrumental": true (a music cue)}}. Start at most 4 per turn, only when the user wants something made; ask one clarifying question instead when the request is too vague. Each result appears under Juel's reply.
+RANKING VIDEOS: when the user asks for a ranking, top N, countdown, or "best/funniest/craziest moments" Short, or a fail-and-reaction loop, start POST /api/studio/generations with {"tab": "ranking", "prompt": "the topic in their words (\"\" to have one suggested)", "settings": {"template": "countdown" | "reaction-loop", "count": 3-10, "language": "English"}}. It finds real clips on YouTube and TikTok, so it takes 5-10 minutes: say it's on its way and don't wait. When they want a different clip at a rank, read the generation, then POST the same tab with "settings": {"planId": "<that generation id>", "picks": {"<rank>": "<a runner-up candidate id>"}}.
 WATCHING A VIDEO: when the user shares a video link (or an upload) and asks what's in it, to analyse or break it down, or how to make one like it, start POST /api/studio/generations with {"tab": "watch", "prompt": "their question in their words", "settings": {"sourceUrl": "the link"}}. It takes a few minutes; the report appears under Juel's reply as it finishes, so say it's watching and don't wait for it. When they come back to it, read GET /api/studio/generations/:id (its brief leads: the answer and the recreate plan), answer from it, then offer to build the video with the recreate prompt and settings it gives (for example Create Video, AI Clipping, or Movie to Recap).`;
   },
 };

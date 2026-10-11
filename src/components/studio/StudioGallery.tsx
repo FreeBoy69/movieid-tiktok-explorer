@@ -350,7 +350,7 @@ function MediaTile({ tile, handlers, now, onOpen }: { tile: Extract<Tile, { kind
 function StatusTile({ item, handlers, now }: { item: Generation; handlers: GalleryHandlers; now: number }) {
   const s = item.settings || {};
   return (
-    <div className="cs-tile cs-tile-status" style={{ aspectRatio: item.tab === "audio" || item.tab === "vocal-remover" || item.tab === "watch" ? "3 / 1" : ratio(item.tab === "clipping" ? "9:16" : s.aspectRatio) }}>
+    <div className="cs-tile cs-tile-status" style={{ aspectRatio: item.tab === "audio" || item.tab === "vocal-remover" || item.tab === "watch" || item.tab === "ranking" ? "3 / 1" : ratio(item.tab === "clipping" ? "9:16" : s.aspectRatio) }}>
       <Loader2 className="h-5 w-5 animate-spin" />
       <strong>{`${item.message || (item.tab === "audio" ? "Composing" : item.tab === "vocal-remover" ? "Splitting" : item.tab === "watch" ? "Watching" : "Generating")} · ${elapsed(item.createdAt, now)}`}</strong>
       {item.prompt ? <p className="is-quiet">{item.prompt}</p> : null}

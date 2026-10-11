@@ -38,7 +38,7 @@ export function ToolPage({ toolId, theme, onNavigate }: { toolId: ToolId; theme:
         {tool.kind === "text" ? <TextTool key={tool.id} tool={tool} /> : null}
         {tool.kind === "design" ? <EditableDesignTool theme={theme} /> : null}
         {tool.kind === "recap" ? <MovieRecap /> : null}
-        {tool.kind === "image" || tool.kind === "thumbnail" || tool.kind === "video-upscale" || tool.kind === "stems" || tool.kind === "watch" ? <StudioTool key={tool.id} tool={tool} /> : null}
+        {tool.kind === "image" || tool.kind === "thumbnail" || tool.kind === "video-upscale" || tool.kind === "stems" || tool.kind === "watch" || tool.kind === "ranking" ? <StudioTool key={tool.id} tool={tool} /> : null}
       </ToolShell>
     </div>
   );

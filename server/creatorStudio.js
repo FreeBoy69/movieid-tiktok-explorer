@@ -31,6 +31,7 @@ import { STUDIO_PERSONAS } from "./juel.js";
 import { cleanMotionEdits, readMotionEdits, stripMotionEdits, withMotionEdits } from "../src/utils/videoGraphics.js";
 import { loadVibeProject, saveVibeProject } from "./vibeEdit.js";
 import { watchVideo } from "./videoWatch.js";
+import { makeRankingVideo, RANKING_DEFAULT_VOICE, rankingSettings } from "./rankingVideo.js";
 import { EXPLAINER_ASPECTS, EXPLAINER_LENGTHS, EXPLAINER_MAX_SECONDS, EXPLAINER_MAX_WORDS, findExplainerTemplate, normalizeExplainerScript, scriptWords } from "../src/utils/explainerPresets.js";
 
 const API = "https://openrouter.ai/api/v1";
@@ -93,6 +94,8 @@ export const STUDIO_APPS = {
   "vocal-remover": "stems",
   // Watch a video: a breakdown of any video and how to make one like it in AutoYT (Juel uses it too).
   watch: "watch",
+  // Ranking Video: a topic becomes a narrated countdown Short from real clips found on YouTube and TikTok.
+  ranking: "ranking",
 };
 export const STUDIO_TABS = Object.keys(STUDIO_APPS);
 // Each image tool edits one uploaded image with a fixed set of operations; the first is its default.
@@ -921,6 +924,93 @@ async function runWatch(userId, item, signal, report) {
   } finally {
     await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
   }
+}
+
+// Ranking Video (server/rankingVideo.js): the topic is planned, clips are searched on YouTube and
+// TikTok, downloaded and checked by a vision call, narrated, and rendered as one vertical Short. A
+// swap (settings.planId + picks) reuses that generation's plan and only downloads and renders again.
+// The plan rides on the generation so the page can offer the runners-up.
+async function runRanking(userId, item, signal, report) {
+  const s = item.settings;
+  if (!dependencies.downloadVideo) throw fail("Downloading videos isn't available on this server", 503);
+  let previous = null;
+  if (s.planId) {
+    const prior = (await history(userId)).find((entry) => entry.id === s.planId && entry.tab === "ranking");
+    if (!prior?.ranking?.entries?.length) throw fail("That ranking video's plan is no longer available. Make it again.", 404);
+    previous = prior.ranking;
+  } else if (!dependencies.searchYouTube && !dependencies.searchTikTok) throw fail("Clip search isn't available on this server", 503);
+  const profiles = hostedVoiceProfiles();
+  const voiceId = s.voiceId || (profiles.find((v) => v.id.endsWith(`:${RANKING_DEFAULT_VOICE}`)) || profiles[0])?.id;
+  if (s.template === "countdown" && !voiceId) throw fail("Narration isn't available on this server", 503);
+  const dir = await scratchDir(userId, item.id);
+  try {
+    const made = await makeRankingVideo({
+      topic: item.prompt,
+      settings: s,
+      dir,
+      plan: previous,
+      picks: s.picks || {},
+      download: dependencies.downloadVideo,
+      searchYouTube: dependencies.searchYouTube,
+      searchTikTok: dependencies.searchTikTok,
+      // Cloned voices go through the app's speech path; the built-in ones are Gemini voices.
+      speak: (request) => (dependencies.speak ? dependencies.speak(request) : synthesizeHostedVoice({ profileId: request.voiceId, text: request.text, direction: request.direction, signal: request.signal })),
+      transcribe: dependencies.transcribe,
+      reaction: ({ prompt }) => rankingReaction(userId, prompt, signal, report),
+      music: ({ prompt }) => rankingMusic(prompt, dir, signal),
+      voiceId,
+      burnCaptions: s.template === "countdown" && s.captions && (await ffmpegSupportsSubtitles(signal)),
+      signal,
+      onStatus: (message) => report(message),
+    });
+    const title = made.plan.title.lines.join(" ");
+    // Written last, so a failed render never leaves part of a result behind.
+    const video = await fs.readFile(made.file);
+    const outputs = [
+      await writeOutput(userId, video, "mp4", { title, duration: made.plan.timeline?.duration }),
+      await writeOutput(userId, Buffer.from(made.markdown, "utf8"), "md", { title: "Sources to credit" }),
+      await writeOutput(userId, Buffer.from(JSON.stringify({ title, sources: made.sources }, null, 2), "utf8"), "json", { title: "Sources (data)" }),
+    ];
+    return { outputs, ranking: made.plan };
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+// The reaction-loop cutaway: a still from the image model, animated by the video model. One per prompt
+// per user is kept, so a rerun with the same prompt doesn't pay for it again.
+const reactionKey = (prompt) => crypto.createHash("sha256").update(clip(prompt, 300).toLowerCase()).digest("hex").slice(0, 24);
+async function rankingReaction(userId, prompt, signal, report) {
+  const cache = await doc(userId, "ranking-reactions.json");
+  const key = reactionKey(prompt);
+  const hit = cache.find((entry) => entry.key === key);
+  if (hit) {
+    const file = await readableFile(userId, hit.file).catch(() => null);
+    if (file) return file;
+  }
+  await report("Drawing the reaction");
+  const still = await runImage(userId, { id: newId("job"), tab: "image", model: "", prompt: `${prompt}. One clear funny reaction, vertical 9:16 frame, no text, no captions.`, settings: { count: 1, aspectRatio: "9:16" } }, signal);
+  await report("Animating the reaction");
+  const child = { id: newId("job"), tab: "video", model: "", prompt: `${prompt}. They burst out laughing, a big exaggerated reaction; the camera holds still.`, settings: { firstFrame: still.outputs[0].file, duration: 5, aspectRatio: "9:16", audio: false } };
+  const remote = await submitVideo(userId, child, signal);
+  const out = await pollVideo(userId, remote, signal, (status) => void report(status === "pending" ? "Queued at the provider" : "Animating the reaction"));
+  const kept = [{ key, file: out.file, prompt: clip(prompt, 300), at: new Date().toISOString() }, ...cache.filter((entry) => entry.key !== key)].slice(0, 20);
+  cache.splice(0, cache.length, ...kept);
+  await saveDoc(userId, "ranking-reactions.json", 20);
+  return userFile(userId, out.file);
+}
+
+// A short music bed for a ranking video, as a file in its scratch folder.
+async function rankingMusic(prompt, dir, signal) {
+  const capability = musicCapability();
+  if (!capability.available) throw new Error(capability.reason);
+  const audio = await streamOpenRouterAudio({ model: capability.model, messages: [{ role: "user", content: `${prompt}. Instrumental only: no vocals, no lyrics.` }], modalities: ["text", "audio"], audio: { format: "wav" }, stream: true }, signal);
+  const file = path.join(dir, `music.${audio.extension}`);
+  await fs.writeFile(file, audio.bytes);
+  if (audio.extension === "wav" || audio.extension === "mp3") return file;
+  const target = path.join(dir, "music-bed.wav");
+  await creatorCommand(process.env.FFMPEG_PATH || "ffmpeg", ["-y", ...audio.input, "-i", file, target], signal);
+  return target;
 }
 
 async function runClipping(userId, item, signal, report) {
@@ -1801,6 +1891,7 @@ function start(userId, item) {
       else if (runner === "clip") result = await runClipping(userId, item, controller.signal, report);
       else if (runner === "stems") result = await runStems(userId, item, controller.signal, report);
       else if (runner === "watch") result = await runWatch(userId, item, controller.signal, report);
+      else if (runner === "ranking") result = await runRanking(userId, item, controller.signal, report);
       else if (runner === "workflow") result = await runWorkflow(userId, item, controller.signal, report);
       else if (runner === "ad") result = await runAd(userId, item, controller.signal, report);
       else if (runner === "promo") result = await runPromo(userId, item, controller.signal, report);
@@ -1916,6 +2007,7 @@ export function normalizeRequest(body = {}) {
         }
       : {}),
     ...(tab === "explainer" ? explainerSettings(s) : {}),
+    ...(tab === "ranking" ? rankingSettings(s) : {}),
     ...(tab === "editable-design" ? designSettings(s, { ref }) : {}),
     ...(tab === "cinema"
       ? {
@@ -1940,6 +2032,7 @@ export function normalizeRequest(body = {}) {
   if (tab === "video-upscaler" && !settings.sourceVideo) throw fail("Add the video to upscale");
   if (tab === "vocal-remover" && !settings.sourceVideo && !settings.sourceUrl) throw fail("Add the video to split, or paste its link");
   if (tab === "watch" && !settings.sourceVideo && !settings.sourceUrl) throw fail("Paste a public video link, or upload a video");
+  if (tab === "ranking" && settings.picks && !settings.planId) throw fail("Choose a clip from a finished ranking video");
   if (tab === "promo" && settings.baseFile && !prompt) throw fail("Describe what to change in the film");
   if (tab === "promo" && !prompt && !settings.sourceUrl && !settings.uploads.length) throw fail("Add a link, images, or a description first");
   if (tab === "explainer" && settings.stage === "plan" && !prompt && !settings.sourceUrl && !settings.uploads.length && !settings.recordings.length)
@@ -2004,6 +2097,12 @@ async function enqueue(userId, request) {
     await readableFile(userId, request.settings.kitFile);
     if (dependencies.voiceAllowed && !(await dependencies.voiceAllowed(userId, request.settings.voiceId)))
       throw fail("That voice isn't available. Pick another voice.", 403);
+  }
+  if (request.tab === "ranking") {
+    if (request.settings.voiceId && dependencies.voiceAllowed && !(await dependencies.voiceAllowed(userId, request.settings.voiceId)))
+      throw fail("That voice isn't available. Pick another voice.", 403);
+    if (request.settings.planId && !items.some((item) => item.id === request.settings.planId && item.tab === "ranking" && item.ranking?.entries?.length))
+      throw fail("That ranking video's plan is no longer available. Make it again.", 404);
   }
   if (items.filter((item) => ["queued", "running"].includes(item.status)).length >= MAX_ACTIVE_PER_USER)
     throw fail(`You can run ${MAX_ACTIVE_PER_USER} generations at once. Wait for one to finish.`, 429);

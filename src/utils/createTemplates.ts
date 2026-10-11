@@ -76,6 +76,15 @@ export const CREATE_TEMPLATES: CreateTemplate[] = [
     ratio: 16 / 9, kind: "workspace", studio: "Explainer Studio",
     target: { view: "studio", studioTab: "explainer" }, pending: { target: "explainer", templateId: e.id },
   })),
+  // Ranking Video: the countdown Short from real clips, and the reaction loop.
+  ...[
+    { id: "countdown", title: "Ranking countdown", blurb: "A topic becomes a narrated #5 to #1 Short made from real YouTube and TikTok clips." },
+    { id: "reaction-loop", title: "Fail + reaction loop", blurb: "A real fail clip cut with a funny AI reaction, about 7 seconds, built to loop." },
+  ].map((r): CreateTemplate => ({
+    key: `ranking:${r.id}`, tab: "shorts", title: r.title, blurb: r.blurb, by: "Ranking Video",
+    ratio: 9 / 16, kind: "workspace", studio: "Ranking Video",
+    target: { view: "tool", toolId: "ranking" }, pending: { target: "ranking", templateId: r.id },
+  })),
   ...ART_STYLE_PRESETS.map((a: any): CreateTemplate => ({
     key: `style:${a.id}`, tab: "styles", title: a.name, blurb: "Image style", image: a.preview, ratio: 1, kind: "style", styleText: a.prompt,
   })),
