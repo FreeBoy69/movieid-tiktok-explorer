@@ -27,7 +27,7 @@ export const WATCH = {
   hookFps: 2,
   // The hook pass only runs on videos this long; shorter ones are already sampled about once a second.
   hookMinSeconds: 30,
-  imagesPerCall: 24,
+  imagesPerCall: 16,
 };
 
 const clip = (value, max) => String(value ?? "").replace(/\s+/g, " ").trim().slice(0, max);
@@ -222,7 +222,7 @@ ${transcript || "(no speech)"}
 WHAT AUTOYT CAN MAKE (name only these tools, templates, caption styles, and voices, exactly as written):
 ${catalog}
 
-Write the report. Be concrete and honest: the frames and the transcript are all you have, so you can't hear music, sound effects, or the voice's timbre; say what you infer and from what, and say what you can't tell. Timestamps in seconds.
+Write the report. Keep it tight so it fits: at most 8 key moments, 8 hook frames, 8 structure beats, 5 quotes, 8 steps, and about 30 words in any one field. Be concrete and honest: the frames and the transcript are all you have, so you can't hear music, sound effects, or the voice's timbre; say what you infer and from what, and say what you can't tell. Timestamps in seconds.
 "recreate" is a plan the creator can follow in AutoYT today: pick the one tool that makes this kind of video best, the template, caption style, and voice closest to what you saw (ids from the lists, or "" when nothing fits), the settings to choose (only settings that tool takes), concrete steps, and a ready-to-paste "prompt" for that tool (for Create Video: the idea and script direction with hook, structure, tone, scene seconds, and visual style; for Movie to Recap or AI Clipping: the focus or angle to give it). Name other tools only for parts the main one can't do. Never invent a tool, setting, template, or style.
 Return JSON only:
 {"answer":"","summary":["3-5 bullets"],"keyMoments":[{"t":0,"what":""}],"hook":{"pattern":"question | contrarian claim | in medias res | demo first | shock visual | list promise | story tease | other (say which)","breakdown":[{"t":0,"see":"","say":""}]},"editorialProfile":{"fingerprint":"one line, e.g. Tight jump-cut talking head, B-roll every sentence, word-by-word yellow captions"},"visualStyle":{"shots":"","framing":"","colour":"","textOverlays":"","captions":""},"audio":{"narration":"","music":"","sfx":"","cantTell":""},"narration":{"person":"first | second | third | none","tense":"present | past | mixed | none","voice":""},"structure":[{"from":0,"to":0,"beat":""}],"quotable":[{"t":0,"line":""}],"recreate":{"tool":"","why":"","template":"","captionStyle":"","voice":"","settings":{"setting":"value"},"steps":[""],"prompt":"","alsoUse":[{"tool":"","for":""}]}}`;
@@ -464,6 +464,8 @@ async function getTranscript({ file, url, window, transcribe, captions, signal, 
   return { source: "none", segments: [], title };
 }
 
+const tooLong = (error) => /too long to finish/i.test(error?.message || "");
+
 async function pool(items, limit, run) {
   const out = new Array(items.length);
   let next = 0;
@@ -486,7 +488,8 @@ async function observe({ frames, segments, request, signal, onStatus }) {
   }
   let done = 0;
   let lastError;
-  const results = await pool(chunks, 2, async (chunk) => {
+  // A batch the model can't finish within its output cap is read again as two halves.
+  const read = async (chunk) => {
     const from = chunk[0].t;
     const to = chunk[chunk.length - 1].t;
     const said = (segments || []).filter((s) => Number(s.end ?? s.start) >= from - 2 && Number(s.start) <= to + 2);
@@ -498,7 +501,7 @@ async function observe({ frames, segments, request, signal, onStatus }) {
     }
     try {
       const { value } = await request({
-        kind: "vision", json: true, maxTokens: 6000, temperature: 0.2, signal, timeoutMs: 180000,
+        kind: "vision", json: true, maxTokens: 8000, temperature: 0.2, reasoningEffort: "low", signal, timeoutMs: 180000,
         messages: [{ role: "user", content }],
         validate: (v) => { if (!Array.isArray(v?.frames)) throw new Error("No frames returned"); },
       });
@@ -509,9 +512,19 @@ async function observe({ frames, segments, request, signal, onStatus }) {
     } catch (error) {
       signal?.throwIfAborted();
       if (blocked(error)) throw error;
+      if (tooLong(error) && chunk.length > 3) {
+        const half = Math.ceil(chunk.length / 2);
+        const parts = (await Promise.all([read(chunk.slice(0, half)), read(chunk.slice(half))])).filter(Boolean);
+        if (parts.length) return { frames: parts.flatMap((p) => p.frames), notes: parts.map((p) => p.notes).filter(Boolean).join(" ") };
+      }
       lastError = error;
       console.warn(`[watch] a frame batch could not be read: ${error.message}`);
       return null;
+    }
+  };
+  const results = await pool(chunks, 2, async (chunk) => {
+    try {
+      return await read(chunk);
     } finally {
       done += 1;
       await onStatus(`Watching (${done} of ${chunks.length})`);
@@ -548,11 +561,18 @@ export async function watchVideo({ file, url = "", title = "", question = "", ma
   };
   const { observations, notes } = await observe({ frames: [...measured.hookFrames, ...measured.frames], segments: transcript.segments, request, signal, onStatus });
   await onStatus("Writing the breakdown");
-  const { value } = await request({
+  const prompt = reportPrompt({ facts, observations, notes, transcript: transcriptLines(transcript.segments, 30000), hook: hookTranscript(transcript.segments), question, catalog: watchCatalog({ voices }) });
+  const write = (content) => request({
     // Long JSON from a reasoning model comes back empty unless reasoning is kept low.
-    kind: "text", json: true, maxTokens: 9000, temperature: 0.3, reasoningEffort: "low", signal, timeoutMs: 240000,
-    messages: [{ role: "user", content: reportPrompt({ facts, observations, notes, transcript: transcriptLines(transcript.segments, 30000), hook: hookTranscript(transcript.segments), question, catalog: watchCatalog({ voices }) }) }],
+    kind: "text", json: true, maxTokens: 16000, temperature: 0.3, reasoningEffort: "low", signal, timeoutMs: 240000,
+    messages: [{ role: "user", content }],
     validate: (v) => { if (!v?.recreate || !Array.isArray(v?.summary)) throw new Error("The breakdown came back incomplete"); },
+  });
+  // A breakdown that runs past the output cap, or comes back empty (it happens now and then on long
+  // answers), is asked for once more, shorter.
+  const { value } = await write(prompt).catch((error) => {
+    if (!tooLong(error) && !/empty response/i.test(error?.message || "")) throw error;
+    return write(`${prompt}\n\nYour last answer ran out of room. Write it again at half the length: half as many items in every list, one short sentence per field.`);
   });
   const report = normalizeReport(value, facts);
   return { report, markdown: reportMarkdown(report), brief: reportBrief(report), heroes: heroFrames(measured.frames, measured.pacing), pacing: measured.pacing };

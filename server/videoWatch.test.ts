@@ -243,8 +243,8 @@ describe("watchVideo", () => {
     expect(transcribed).toBe(false);
     expect(calls.filter(([p]) => p.includes("ffmpeg"))).toHaveLength(2);
     const vision = requests.filter((r) => r.kind === "vision");
-    // 20 hook frames in one call, then 60 shot frames in batches of at most 24.
-    expect(vision).toHaveLength(4);
+    // 20 hook frames in two calls, then 60 shot frames in batches of at most 16.
+    expect(vision).toHaveLength(6);
     expect(vision.every((r) => r.messages[0].content.filter((p: any) => p.type === "image_url").length <= WATCH.imagesPerCall)).toBe(true);
     expect(requests.at(-1).kind).toBe("text");
     expect(requests.at(-1).messages[0].content).toContain("Here is the hook.");
@@ -276,6 +276,37 @@ describe("watchVideo", () => {
     const result = await watchVideo({ file: "/tmp/s.mp4", command: command as any, request: request as any, transcribe: async () => ({ segments: [{ start: 0, end: 2, text: "hi there" }] }) });
     expect(result.report.source.transcript).toBe("Whisper");
     expect(result.report.source.hookFrames).toBe(0);
+  });
+});
+
+describe("watchVideo when the model runs out of room", () => {
+  it("splits a frame batch that's too long and asks for a shorter breakdown", async () => {
+    const command = async (program: string, args: string[]) => {
+      if (program.includes("ffprobe")) return JSON.stringify({ format: { duration: "20" }, streams: [{ codec_type: "video", width: 720, height: 1280 }] });
+      if (args.includes("null")) return "";
+      const dir = path.dirname(args.find((a) => a.endsWith("frame-%03d.jpg"))!);
+      for (let i = 1; i <= 16; i++) await fs.writeFile(path.join(dir, `frame-${String(i).padStart(3, "0")}.jpg`), "jpg");
+      return "";
+    };
+    const sizes: number[] = [];
+    const prompts: string[] = [];
+    const request = async (options: any) => {
+      if (options.kind === "vision") {
+        const images = options.messages[0].content.filter((p: any) => p.type === "image_url").length;
+        sizes.push(images);
+        if (images > 8) throw new Error("The AI response was too long to finish.");
+        return { value: { frames: Array.from({ length: images }, () => ({ shot: "wide", subject: "fruit" })), notes: "fruit drama" } };
+      }
+      prompts.push(options.messages[0].content);
+      if (prompts.length === 1) throw new Error("The AI response was too long to finish.");
+      return { value: { summary: ["Fruit drama"], recreate: { tool: "Create Video", prompt: "Make it" } } };
+    };
+    const result = await watchVideo({ file: "/tmp/f.mp4", command: command as any, request: request as any });
+    expect(sizes).toEqual([16, 8, 8]);
+    expect(result.report.source.frames).toBe(16);
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain("ran out of room");
+    expect(result.report.summary).toEqual(["Fruit drama"]);
   });
 });
 
